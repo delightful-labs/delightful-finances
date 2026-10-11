@@ -1,0 +1,17 @@
+# Local editor and agent state that may contain credentials.
+.cursor/mcp.json
+.cursor/*.log
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Dependencies and build outputs (for the upcoming app scaffold)
+node_modules/
+.svelte-kit/
+build/
+dist/
+.env
+.env.*
+!.env.example
