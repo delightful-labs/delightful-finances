@@ -167,7 +167,12 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 				{ isSystem: false }
 			])
 		)
-		.whereNew((category) => ({ isSystem: false }))
+		.whereNew((category) =>
+			allOf([
+				anyOf([isAdmin(category.organizationId), hasRole(category.organizationId, 'member')]),
+				{ isSystem: false }
+			])
+		)
 	policy.categories.allowDelete.where((category) =>
 		allOf([isAdmin(category.organizationId), { isSystem: false }])
 	)
