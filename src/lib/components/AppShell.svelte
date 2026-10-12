@@ -10,10 +10,10 @@
 	let accounts = $state<Account[]>([])
 	let organizationLoadError = $state(false)
 	let accountLoadError = $state(false)
+	const db = getDb()
 	const dataLoadError = $derived(organizationLoadError || accountLoadError)
 
 	onMount(() => {
-		const db = getDb()
 		const unsubscribeOrganizations = db.subscribe(app.organizations.orderBy('name'), {
 			onUpdate: (rows) => {
 				organizations = rows

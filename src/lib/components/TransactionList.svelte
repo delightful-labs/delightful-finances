@@ -9,6 +9,7 @@
 	let { kind }: { kind: 'expense' | 'income' } = $props()
 	let transactions = $state<TransactionRow[]>([])
 	let loadError = $state(false)
+	const db = getDb()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const visibleTransactions = $derived(
 		transactions.filter(
@@ -21,7 +22,7 @@
 	)
 
 	onMount(() =>
-		getDb().subscribe(app.transactions.orderBy('bookedOn', 'desc'), {
+		db.subscribe(app.transactions.orderBy('bookedOn', 'desc'), {
 			onUpdate: (rows) => {
 				transactions = rows
 				loadError = false

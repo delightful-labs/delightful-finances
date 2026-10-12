@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte'
-	import { getDb, getSession } from 'jazz-tools/svelte'
+	import { getContext } from 'svelte'
+	import { getDb } from 'jazz-tools/svelte'
 	import { createAccount } from '#lib/data.js'
 	import type { Account } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -9,22 +9,12 @@
 	let saveError = $state(false)
 	let saving = $state(false)
 	let savedAccount = $state<Account | null>(null)
-	let db: ReturnType<typeof getDb> | null = null
-	let userId = $state<string | null>(null)
+	const db = getDb()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
-
-	onMount(() => {
-		db = getDb()
-		userId = getSession().current?.user.account ?? null
-	})
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		if (!db || !userId) {
-			saveError = true
-			return
-		}
 
 		saving = true
 		saveError = false
@@ -78,7 +68,7 @@
 			<p role="alert">{m['accounts.save_error']()}</p>
 		{/if}
 
-		<button type="submit" disabled={saving || !userId}>
+		<button type="submit" disabled={saving}>
 			{saving ? m['accounts.saving']() : m['actions.add_account']()}
 		</button>
 	</form>

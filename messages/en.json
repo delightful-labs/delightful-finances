@@ -7,7 +7,12 @@
 		"loading": "Getting your private workspace ready…",
 		"loading_description": "Setting up your profile and starter categories.",
 		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
-		"label": "Workspace"
+		"label": "Workspace",
+		"saving": "Saving…",
+		"name_saved": "Workspace name saved on this device.",
+		"name_required": "Enter a workspace name.",
+		"save_error": "The workspace name could not be saved. Please try again.",
+		"rename_restricted": "Only workspace owners and admins can change the name."
 	},
 	"navigation": {
 		"label": "Main navigation",
@@ -18,6 +23,7 @@
 	"labels": {
 		"accounts": "Accounts",
 		"account_name": "Account name",
+		"workspace_name": "Workspace name",
 		"account_type": "Account type",
 		"currency": "Currency",
 		"date": "Date",
@@ -31,7 +37,8 @@
 	"actions": {
 		"add_account": "Add an account",
 		"add_expense": "Add expense",
-		"add_income": "Add income"
+		"add_income": "Add income",
+		"save": "Save"
 	},
 	"accounts": {
 		"type": {

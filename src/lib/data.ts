@@ -105,11 +105,24 @@ async function stableUuid(namespaceId: string, name: string) {
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-export function createAccount(db: Db, organizationId: string, name: string, kind: Account['kind']) {
+export function renameWorkspace(
+	db: Pick<Db, 'update'>,
+	workspaceId: Organization['id'],
+	name: Organization['name']
+) {
+	return db.update(app.organizations, workspaceId, { name }).wait({ tier: 'local' })
+}
+
+export function createAccount(
+	db: Pick<Db, 'insert'>,
+	organizationId: string,
+	name: string,
+	kind: Account['kind']
+) {
 	return db.insert(app.accounts, { organizationId, name, kind, currency: 'USD' }).value
 }
 
-export async function createTransaction(db: Db, transaction: AppTransaction) {
+export async function createTransaction(db: Pick<Db, 'transaction'>, transaction: AppTransaction) {
 	const error = validateTransaction(transaction)
 	if (error) return { error }
 	const result = await db.transaction((tx) => {

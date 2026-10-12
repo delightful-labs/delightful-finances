@@ -16,7 +16,7 @@
 	let accountLoadError = $state(false)
 	let categoryLoadError = $state(false)
 	let selectionError = $state(false)
-	let db: ReturnType<typeof getDb> | null = null
+	const db = getDb()
 	let { kind }: { kind: 'expense' | 'income' } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accounts = $derived(
@@ -35,15 +35,11 @@
 	const { snapshot, send } = useMachine(transactionFormMachine, {
 		input: {
 			draft: {},
-			save: (transaction) => {
-				if (!db) throw new Error('The Jazz database is not ready.')
-				return createTransaction(db, transaction)
-			}
+			save: (transaction) => createTransaction(db, transaction)
 		}
 	})
 
 	onMount(() => {
-		db = getDb()
 		const unsubscribeAccounts = db.subscribe(app.accounts.orderBy('name'), {
 			onUpdate: (rows) => {
 				allAccounts = rows.filter((account) => account.archivedAt == null)

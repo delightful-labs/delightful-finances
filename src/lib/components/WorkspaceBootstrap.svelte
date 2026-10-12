@@ -9,6 +9,7 @@
 
 	let { children, filters }: { children: Snippet; filters: FinanceFilters } = $props()
 	const session = getJazzSession()
+	const db = getDb()
 	let ready = $state(false)
 	let setupError = $state(false)
 	let attempt = 0
@@ -25,7 +26,7 @@
 		const userId = $session.account.id
 		ready = false
 		setupError = false
-		void ensurePersonalWorkspace(getDb(), userId)
+		void ensurePersonalWorkspace(db, userId)
 			.then(() => {
 				if (currentAttempt === attempt) ready = true
 			})

@@ -82,6 +82,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-011**: The UI MUST use accessible native HTML controls, SvelteKit/Svelte 5, native CSS and CSS variables, and responsive layouts.
 - **FR-012**: Multi-step transaction compose and tag selection flows MUST be modeled with XState; simple UI state may use Svelte runes/stores.
 - **FR-013**: The application MUST expose a lightweight organization switcher shell and sync/pending status affordance; creating/joining another organization may be deferred.
+- **FR-022**: Workspace settings MUST let owners/admins rename the active workspace without changing its identity or associated accounts. The form MUST trim the submitted name, reject blank names, use local persistence, and remain read-only for members/viewers. Jazz permissions remain the authorization boundary.
 
 ### Schema and authorization readiness
 

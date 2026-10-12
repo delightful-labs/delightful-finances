@@ -7,13 +7,14 @@
 
 	let accounts = $state<Account[]>([])
 	let loadError = $state(false)
+	const db = getDb()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const visibleAccounts = $derived(
 		accounts.filter((account) => account.organizationId === filters.activeOrganizationId)
 	)
 
 	onMount(() =>
-		getDb().subscribe(app.accounts.orderBy('name'), {
+		db.subscribe(app.accounts.orderBy('name'), {
 			onUpdate: (rows) => {
 				accounts = rows.filter((account) => account.archivedAt == null)
 				loadError = false

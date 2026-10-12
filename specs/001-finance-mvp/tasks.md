@@ -63,6 +63,8 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
 - [ ] T032 Build tag settings with optional category assignment and archive behavior.
 - [ ] T033 Build XState tag picker with search, create, multi-select, and archived-tag exclusion.
 - [ ] T034 Add organization switcher state and settings shell; second-org creation/join flow may remain deferred.
+  - Workspace naming: `WorkspaceNameForm` implemented for review; active-workspace/role wiring, `/settings/workspace`, navigation, and automated coverage remain pending.
+  - Shared form workflow: generic `Form` API reviewed; `WorkspaceNameForm` now supplies its schema, save operation, fixed workspace ID, and field/control/feedback snippets. Review this integration before adding relevant tests; settings page wiring remains pending.
 - [ ] T035 Add unit tests for money/date/domain validation and transaction/tag state machines.
 - [ ] T036 Add Playwright coverage for expense/income entry (including check details), transaction history, category management, and tag selection/archive behavior.
 
