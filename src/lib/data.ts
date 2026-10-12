@@ -1,11 +1,11 @@
 import { ReadTier } from 'jazz-tools'
-import { getDb } from 'jazz-tools/svelte'
+import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization } from './schema.js'
 import { validateTransaction, type AppTransaction } from './domain/transaction.js'
 
 type Db = ReturnType<typeof getDb>
 
-export async function ensurePersonalWorkspace(db: Db, userId: string) {
+export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'>, userId: string) {
 	const organizationId = await stableUuid(userId, 'personal-organization')
 	const profileId = await stableUuid(userId, 'profile')
 	const membershipId = await stableUuid(userId, 'personal-membership')

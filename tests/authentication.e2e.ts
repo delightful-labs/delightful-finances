@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { RecoveryPhrase } from 'jazz-tools/passphrase'
 
 async function createAccount(page: Page, name: string) {
 	await page.goto('/accounts/new')
@@ -13,6 +14,37 @@ async function restoreAccount(page: Page, phrase: string) {
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
 	await expect(page).toHaveURL('/')
+}
+
+const invalidPhrases = [
+	{ name: 'wrong word count', phrase: 'abandon' },
+	{ name: 'unknown word', phrase: Array(24).fill('notaword').join(' ') },
+	{ name: 'invalid checksum', phrase: Array(24).fill('abandon').join(' ') }
+]
+
+for (const { name, phrase } of invalidPhrases) {
+	test(`rejects ${name} without replacing the current account or data`, async ({ page }) => {
+		// Confirm each fixture is invalid using Jazz's own recovery validator.
+		expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
+		await createAccount(page, 'Retained checking')
+		const workspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		await page.goto('/login')
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+		await expect(page.getByRole('alert')).toHaveText(
+			'The account could not be restored. Check the recovery phrase and try again.'
+		)
+		await expect(page).toHaveURL('/login')
+		await expect(page.getByRole('button', { name: 'Restore account', exact: true })).toBeEnabled()
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
+		await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
+
+		await page.goto('/accounts')
+		await page.reload()
+		await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
+		await expect(page.getByLabel('Workspace', { exact: true }).locator('option')).toHaveCount(1)
+		await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(1)
+	})
 }
 
 test('restores existing workspace data without duplicates or previous identity accounts', async ({

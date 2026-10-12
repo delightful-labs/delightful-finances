@@ -8,5 +8,9 @@ export default defineConfig({
 		reuseExistingServer: !process.env.CI
 	},
 	testMatch: '**/*.e2e.{ts,js}',
-	testIgnore: ['**/tests/pwa.e2e.ts', '**/tests/authentication.e2e.ts']
+	testIgnore: [
+		'**/tests/pwa.e2e.ts',
+		'**/tests/authentication.e2e.ts',
+		'**/tests/permissions.e2e.ts'
+	]
 })
