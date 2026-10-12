@@ -1,0 +1,275 @@
+import { schema as s } from 'jazz-tools'
+import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
+import { app, type OrganizationMember, type TransactionRow } from './schema.js'
+
+type Role = NonNullable<OrganizationMember['role']>
+type IdExpression = string | RowRefValue
+type TransactionContext = Pick<
+	RowContext<TransactionRow>,
+	'accountId' | 'categoryId' | 'organizationId' | 'currency' | 'kind'
+>
+
+export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowedTo }) => {
+	const isMember = (organizationId: IdExpression) =>
+		policy.organizationMembers.exists.where({ organizationId, userId: session.user.account })
+
+	const hasRole = (organizationId: IdExpression, role: Role) =>
+		policy.organizationMembers.exists.where({ organizationId, userId: session.user.account, role })
+
+	const isAdmin = (organizationId: IdExpression) =>
+		anyOf([hasRole(organizationId, 'owner'), hasRole(organizationId, 'admin')])
+
+	const canReadAllAccounts = (organizationId: IdExpression) =>
+		anyOf([
+			policy.organizationMembers.exists.where({
+				organizationId,
+				userId: session.user.account,
+				role: 'member',
+				accountAccessMode: 'all'
+			}),
+			policy.organizationMembers.exists.where({
+				organizationId,
+				userId: session.user.account,
+				role: 'viewer',
+				accountAccessMode: 'all'
+			})
+		])
+
+	const canWriteAllAccounts = (organizationId: IdExpression) =>
+		anyOf([
+			hasRole(organizationId, 'owner'),
+			hasRole(organizationId, 'admin'),
+			policy.organizationMembers.exists.where({
+				organizationId,
+				userId: session.user.account,
+				role: 'member',
+				accountAccessMode: 'all'
+			})
+		])
+
+	const canReadAccount = (accountId: IdExpression, organizationId: IdExpression) =>
+		anyOf([
+			isAdmin(organizationId),
+			canReadAllAccounts(organizationId),
+			allOf([
+				isMember(organizationId),
+				policy.accountMemberships.exists.where({
+					organizationId,
+					accountId,
+					userId: session.user.account
+				})
+			])
+		])
+
+	const canWriteAccount = (accountId: IdExpression, organizationId: IdExpression) =>
+		anyOf([
+			canWriteAllAccounts(organizationId),
+			allOf([
+				hasRole(organizationId, 'member'),
+				policy.organizationMembers.exists.where({
+					organizationId,
+					userId: session.user.account,
+					accountAccessMode: 'selected'
+				}),
+				policy.accountMemberships.exists.where({
+					organizationId,
+					accountId,
+					userId: session.user.account,
+					access: 'write'
+				})
+			])
+		])
+
+	const transactionReferencesAreValid = (transaction: TransactionContext) =>
+		allOf([
+			policy.categories.exists.where({
+				id: transaction.categoryId,
+				organizationId: transaction.organizationId,
+				kind: transaction.kind,
+				archivedAt: { isNull: true }
+			}),
+			policy.accounts.exists.where({
+				id: transaction.accountId,
+				organizationId: transaction.organizationId,
+				currency: transaction.currency,
+				archivedAt: { isNull: true }
+			})
+		])
+
+	const canWriteTransaction = (transaction: TransactionContext) =>
+		allOf([
+			canWriteAccount(transaction.accountId, transaction.organizationId),
+			transactionReferencesAreValid(transaction)
+		])
+
+	policy.organizations.allowRead.where((organization) => isMember(organization.id))
+	policy.organizations.allowInsert.where({ ownerId: session.user.account })
+	policy.organizations.allowUpdate
+		.whereOld((organization) => isAdmin(organization.id))
+		.whereNew((organization) => isAdmin(organization.id))
+	policy.organizations.allowDelete.never()
+
+	policy.organizationMembers.allowRead.where((member) =>
+		anyOf([{ userId: session.user.account }, isAdmin(member.organizationId)])
+	)
+	policy.organizationMembers.allowInsert.where((member) =>
+		anyOf([
+			isAdmin(member.organizationId),
+			allOf([
+				{ userId: session.user.account, role: 'owner' },
+				policy.organizations.exists.where({
+					id: member.organizationId,
+					ownerId: session.user.account
+				})
+			])
+		])
+	)
+	policy.organizationMembers.allowUpdate
+		.whereOld((member) => isAdmin(member.organizationId))
+		.whereNew((member) => isAdmin(member.organizationId))
+	policy.organizationMembers.allowDelete.where((member) =>
+		anyOf([{ userId: session.user.account }, isAdmin(member.organizationId)])
+	)
+
+	policy.profiles.allowRead.where({ userId: session.user.account })
+	policy.profiles.allowInsert.where({ userId: session.user.account })
+	policy.profiles.allowUpdate
+		.whereOld({ userId: session.user.account })
+		.whereNew({ userId: session.user.account })
+	policy.profiles.allowDelete.never()
+
+	policy.accounts.allowRead.where((account) => canReadAccount(account.id, account.organizationId))
+	policy.accounts.allowInsert.where((account) =>
+		allOf([isAdmin(account.organizationId), { archivedAt: { isNull: true } }])
+	)
+	policy.accounts.allowUpdate
+		.whereOld((account) => canWriteAccount(account.id, account.organizationId))
+		.whereNew((account) => canWriteAccount(account.id, account.organizationId))
+	policy.accounts.allowDelete.never()
+
+	policy.accountMemberships.allowRead.where((grant) =>
+		anyOf([{ userId: session.user.account }, isAdmin(grant.organizationId)])
+	)
+	policy.accountMemberships.allowInsert.where((grant) => isAdmin(grant.organizationId))
+	policy.accountMemberships.allowUpdate
+		.whereOld((grant) => isAdmin(grant.organizationId))
+		.whereNew((grant) => isAdmin(grant.organizationId))
+	policy.accountMemberships.allowDelete.where((grant) => isAdmin(grant.organizationId))
+
+	policy.categories.allowRead.where((category) => isMember(category.organizationId))
+	policy.categories.allowInsert.where((category) =>
+		anyOf([isAdmin(category.organizationId), hasRole(category.organizationId, 'member')])
+	)
+	policy.categories.allowUpdate
+		.whereOld((category) =>
+			allOf([
+				anyOf([isAdmin(category.organizationId), hasRole(category.organizationId, 'member')]),
+				{ isSystem: false }
+			])
+		)
+		.whereNew((category) => ({ isSystem: false }))
+	policy.categories.allowDelete.where((category) =>
+		allOf([isAdmin(category.organizationId), { isSystem: false }])
+	)
+
+	policy.tags.allowRead.where((tag) => isMember(tag.organizationId))
+	policy.tags.allowInsert.where((tag) =>
+		anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')])
+	)
+	policy.tags.allowUpdate
+		.whereOld((tag) => anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]))
+		.whereNew((tag) => anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]))
+	policy.tags.allowDelete.where((tag) => isAdmin(tag.organizationId))
+
+	policy.transactions.allowRead.where((transaction) =>
+		canReadAccount(transaction.accountId, transaction.organizationId)
+	)
+	policy.transactions.allowInsert.where((transaction) => canWriteTransaction(transaction))
+	policy.transactions.allowUpdate
+		.whereOld((transaction) => canWriteAccount(transaction.accountId, transaction.organizationId))
+		.whereNew((transaction) => canWriteTransaction(transaction))
+	policy.transactions.allowDelete.where((transaction) =>
+		canWriteAccount(transaction.accountId, transaction.organizationId)
+	)
+
+	policy.transactionTags.allowRead.where((link) =>
+		policy.transactions.exists.where({ id: link.transactionId })
+	)
+	// The current server cannot enforce the transaction/tag workspace join.
+	// Keep inserts denied until that guard is supported; tag linking has no UI yet.
+	policy.transactionTags.allowInsert.never()
+	policy.transactionTags.allowDelete.where(allowedTo.update('transaction'))
+
+	policy.checkDetails.allowRead.where((details) =>
+		policy.transactions.exists.where({ id: details.transactionId })
+	)
+	policy.checkDetails.allowInsert.where((details) =>
+		allOf([
+			allowedTo.update('transaction'),
+			policy.transactions.exists.where({
+				id: details.transactionId,
+				kind: 'income',
+				paymentMethod: 'check'
+			})
+		])
+	)
+	policy.checkDetails.allowUpdate.whereOld(allowedTo.update('transaction')).whereNew((details) =>
+		allOf([
+			allowedTo.update('transaction'),
+			policy.transactions.exists.where({
+				id: details.transactionId,
+				kind: 'income',
+				paymentMethod: 'check'
+			})
+		])
+	)
+	policy.checkDetails.allowDelete.where(allowedTo.update('transaction'))
+
+	policy.simplefinConnections.allowRead.where((connection) => isAdmin(connection.organizationId))
+	policy.simplefinConnections.allowInsert.where((connection) => isAdmin(connection.organizationId))
+	policy.simplefinConnections.allowUpdate
+		.whereOld((connection) => isAdmin(connection.organizationId))
+		.whereNew((connection) => isAdmin(connection.organizationId))
+	policy.simplefinConnections.allowDelete.where((connection) => isAdmin(connection.organizationId))
+
+	policy.simplefinAccountLinks.allowRead.where((link) => isAdmin(link.organizationId))
+	policy.simplefinAccountLinks.allowInsert.where((link) => isAdmin(link.organizationId))
+	policy.simplefinAccountLinks.allowUpdate
+		.whereOld((link) => isAdmin(link.organizationId))
+		.whereNew((link) => isAdmin(link.organizationId))
+	policy.simplefinAccountLinks.allowDelete.where((link) => isAdmin(link.organizationId))
+
+	policy.transactionAttachments.allowRead.where((attachment) =>
+		policy.transactions.exists.where({ id: attachment.transactionId })
+	)
+	policy.transactionAttachments.allowInsert.where(allowedTo.update('transaction'))
+	policy.transactionAttachments.allowDelete.where(allowedTo.update('transaction'))
+
+	policy.files.allowRead.never()
+	policy.files.allowInsert.never()
+	policy.files.allowUpdate.never()
+	policy.files.allowDelete.never()
+	policy.fileParts.allowRead.never()
+	policy.fileParts.allowInsert.never()
+	policy.fileParts.allowUpdate.never()
+	policy.fileParts.allowDelete.never()
+	policy.uploads.allowRead.never()
+	policy.uploads.allowInsert.never()
+	policy.uploads.allowUpdate.never()
+	policy.uploads.allowDelete.never()
+
+	policy.transactionBatches.allowRead.where((batch) => isMember(batch.organizationId))
+	policy.transactionBatches.allowInsert.where((batch) => canWriteAllAccounts(batch.organizationId))
+	policy.transactionBatches.allowUpdate
+		.whereOld((batch) => canWriteAllAccounts(batch.organizationId))
+		.whereNew((batch) => canWriteAllAccounts(batch.organizationId))
+	policy.transactionBatches.allowDelete.where((batch) => isAdmin(batch.organizationId))
+	policy.batchTemplates.allowRead.where((template) => isMember(template.organizationId))
+	policy.batchTemplates.allowInsert.where((template) =>
+		canWriteAllAccounts(template.organizationId)
+	)
+	policy.batchTemplates.allowUpdate
+		.whereOld((template) => canWriteAllAccounts(template.organizationId))
+		.whereNew((template) => canWriteAllAccounts(template.organizationId))
+	policy.batchTemplates.allowDelete.where((template) => isAdmin(template.organizationId))
+})

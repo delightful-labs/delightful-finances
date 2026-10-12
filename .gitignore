@@ -1,17 +1,31 @@
-# Local editor and agent state that may contain credentials.
-.cursor/mcp.json
-.cursor/*.log
+node_modules
+.pnpm-store/
 
-# OS/editor noise
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# OS
 .DS_Store
-.idea/
-.vscode/
+Thumbs.db
 
-# Dependencies and build outputs (for the upcoming app scaffold)
-node_modules/
-.svelte-kit/
-build/
-dist/
+# Env
 .env
 .env.*
 !.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+# Playwright
+test-results
+playwright-report/
+coverage/
+# Paraglide
+src/lib/paraglide
+project.inlang/cache/

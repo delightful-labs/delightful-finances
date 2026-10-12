@@ -1,0 +1,112 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"app": {
+		"name": "Delightful Finance"
+	},
+	"workspace": {
+		"loading": "Getting your private workspace ready…",
+		"loading_description": "Setting up your profile and starter categories.",
+		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
+		"label": "Workspace"
+	},
+	"navigation": {
+		"label": "Main navigation",
+		"overview": "Overview",
+		"account_recovery": "Account recovery",
+		"login": "Restore account"
+	},
+	"labels": {
+		"accounts": "Accounts",
+		"account_name": "Account name",
+		"account_type": "Account type",
+		"currency": "Currency",
+		"date": "Date",
+		"amount": "Amount",
+		"memo": "Memo",
+		"account": "Account",
+		"category": "Category",
+		"income": "Income",
+		"expenses": "Expenses"
+	},
+	"actions": {
+		"add_account": "Add an account",
+		"add_expense": "Add expense",
+		"add_income": "Add income"
+	},
+	"accounts": {
+		"type": {
+			"cash": "Cash",
+			"bank": "Bank",
+			"card": "Card"
+		},
+		"currency_usd": "Currency: USD",
+		"filters": {
+			"all": "All accounts",
+			"toggle": "Show {name}"
+		},
+		"sidebar_empty": "No accounts yet.",
+		"load_error": "Accounts could not be loaded.",
+		"saved": "Account {name} saved.",
+		"save_error": "The account could not be saved. Please try again.",
+		"saving": "Saving account…",
+		"empty": {
+			"title": "Start with one place you keep money."
+		}
+	},
+	"transactions": {
+		"load_error": "Transactions could not be loaded.",
+		"empty": {
+			"title": "Your recent activity will appear here."
+		},
+		"no_accounts_selected": "Turn on an account to see its transactions.",
+		"select_account": "Select an account",
+		"select_category": "Select a category",
+		"payment": {
+			"method": "Payment method",
+			"cash": "Cash",
+			"check": "Check",
+			"transfer": "Transfer",
+			"electronic": "Electronic"
+		},
+		"check": {
+			"number": "Check number",
+			"date": "Check date"
+		},
+		"no_accounts": "Add an account before recording a transaction.",
+		"data_load_error": "Account and category data could not be loaded.",
+		"validation_error": "Check the transaction details and try again.",
+		"save_error": "The transaction could not be saved. Please try again.",
+		"saved": "Transaction saved.",
+		"add_another": "Add another transaction",
+		"saving": "Saving transaction…",
+		"save": "Save transaction"
+	},
+	"login": {
+		"heading": "Restore an account",
+		"description": "Enter the recovery phrase for an existing local-first account.",
+		"recovery_phrase": "Recovery phrase",
+		"restore_error": "The account could not be restored. Check the recovery phrase and try again.",
+		"restoring": "Restoring account…",
+		"restore_action": "Restore account"
+	},
+	"recovery": {
+		"heading": "Account recovery",
+		"description": "Save this phrase somewhere private so you can restore your account on another device.",
+		"show": "Show recovery phrase",
+		"hide": "I saved the phrase",
+		"phrase_label": "Your recovery phrase",
+		"warning": "Anyone with this phrase can access your account and finances. Keep it private.",
+		"confirm": "I saved this phrase somewhere safe.",
+		"error": "Your recovery phrase could not be loaded. Try again."
+	},
+	"database": {
+		"starting": {
+			"heading": "Starting database",
+			"description": "Preparing your local database."
+		},
+		"start_error": {
+			"heading": "Database could not start",
+			"description": "Refresh the page to try again."
+		}
+	}
+}

@@ -1,12 +1,12 @@
 ---
 name: Finance Jazz Svelte
-overview: Bootstrap with GitHub Spec Kit (Cursor integration), then scaffold a SvelteKit + Jazz local-first finance MVP with Bits UI and XState—schema-ready for multi-org, SimpleFIN BYOK, multi-currency, and attachments.
+overview: Bootstrap with GitHub Spec Kit (Codex integration), then scaffold a SvelteKit + Jazz local-first finance MVP with native HTML controls and XState—schema-ready for multi-org, SimpleFIN BYOK, multi-currency, and attachments.
 todos:
   - id: speckit-bootstrap
-    content: Install specify-cli; init repo with cursor-agent; write constitution, MVP spec, plan, and tasks from this document
+    content: Install specify-cli; init repo with codex; write constitution, MVP spec, plan, and tasks from this document
     status: pending
   - id: scaffold
-    content: Scaffold Jazz SvelteKit app; add Bits UI, XState, Paraglide, Vite PWA
+    content: Scaffold Jazz SvelteKit app; add XState, Paraglide, native SvelteKit PWA
     status: pending
   - id: schema-permissions
     content: Define full forward-compatible schema + RLS (orgs, accounts, grants, tags, txs, SimpleFIN connection/links, stubs for files/batches)
@@ -30,35 +30,35 @@ isProject: false
 
 ## Locked stack decisions
 
-| Concern | Choice |
-|---|---|
-| Data / sync | [Jazz](https://jazz.tools/) (`jazz-tools` v2, Jazz Cloud or self-host later) |
-| Framework | SvelteKit + latest Svelte 5 |
-| Styling | Native Svelte CSS + CSS variables (no Tailwind) |
-| UI primitives | [Bits UI](https://bits-ui.com/docs/introduction) (headless, accessible) |
-| Complex UI state | XState + `@xstate/svelte` |
-| Simple UI state | Svelte runes / stores |
-| i18n | [Paraglide JS](https://paraglidejs.com/sveltekit) (English message catalog only at first) |
-| Installable shell | PWA via `@vite-pwa/sveltekit` |
-| Native wrap | Deferred (Capacitor/Tauri later; Socket Runtime is deprecated) |
+| Concern           | Choice                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| Data / sync       | [Jazz](https://jazz.tools/) (`jazz-tools` v2, Jazz Cloud or self-host later)              |
+| Framework         | SvelteKit + latest Svelte 5                                                               |
+| Styling           | Native Svelte CSS + CSS variables (no Tailwind)                                           |
+| UI primitives     | Accessible native HTML controls                                                           |
+| Complex UI state  | XState + `@xstate/svelte`                                                                 |
+| Simple UI state   | Svelte runes / stores                                                                     |
+| i18n              | [Paraglide JS](https://paraglidejs.com/sveltekit) (English message catalog only at first) |
+| Installable shell | PWA via a native SvelteKit service worker                                                 |
+| Native wrap       | Deferred (Capacitor/Tauri later; Socket Runtime is deprecated)                            |
 
 Project directory: `~/finance` (adjust if you prefer another name).
 
 ## Spec Kit bootstrap (step 0)
 
-Adopt full [GitHub Spec Kit](https://github.com/github/spec-kit) with the Cursor integration before app scaffolding.
+Adopt full [GitHub Spec Kit](https://github.com/github/spec-kit) with the Codex integration before app scaffolding.
 
 1. Install CLI: `uv tool install specify-cli` (or pinned release from Spec Kit docs).
-2. Init: `specify init finance --integration cursor-agent --non-interactive` (or `specify init --here --force --integration cursor-agent` if the folder already exists).
-3. This installs Spec Kit skills under `.cursor/skills/` (`speckit-constitution`, `speckit-specify`, `speckit-plan`, `speckit-tasks`, etc.).
-4. **Migrate this Cursor plan into Spec Kit artifacts:**
-   - `.specify/memory/constitution.md` — TypeScript hard rules (no `any` / no `as` / discriminated unions); Jazz local-first; organizations not “accounts” for tenancy; money as `amountMinor` + ISO 4217; SimpleFIN BYOK per org; Paraglide for all UI strings; Bits UI + native CSS (no Tailwind).
+2. Init: `specify init finance --integration codex --non-interactive` (or `specify init --here --force --integration codex` if the folder already exists).
+3. This installs Spec Kit skills under `.agents/skills/` (`speckit-constitution`, `speckit-specify`, `speckit-plan`, `speckit-tasks`, etc.).
+4. **Migrate these planning notes into Spec Kit artifacts:**
+   - `.specify/memory/constitution.md` — TypeScript hard rules (no `any` / no `as` / discriminated unions); Jazz local-first; organizations not “accounts” for tenancy; money as `amountMinor` + ISO 4217; SimpleFIN BYOK per org; Paraglide for all UI strings; semantic HTML controls + native CSS (no Tailwind).
    - `specs/001-finance-mvp/spec.md` — product requirements (MVP vs later, transaction shape, tags, orgs/grants, SimpleFIN).
    - `specs/001-finance-mvp/plan.md` — technical design (stack, schema, RLS, sync worker).
    - `specs/001-finance-mvp/tasks.md` — implementation checklist aligned with the todos below.
-5. Keep the Cursor plan file as a working scratchpad only until migration is done; Spec Kit files become the source of truth.
+5. Keep this planning file as a working scratchpad only until migration is done; Spec Kit files become the source of truth.
 
-Then scaffold with `pnpm create jazz` (Svelte template) inside/alongside that repo, and add Bits UI, XState, Paraglide, and PWA.
+Then scaffold with `pnpm create jazz` (Svelte template) inside/alongside that repo, and add XState, Paraglide, and PWA.
 
 ## TypeScript rules (hard)
 
@@ -69,47 +69,47 @@ Then scaffold with `pnpm create jazz` (Svelte template) inside/alongside that re
 Example domain view (app layer; Jazz rows stay relational and are mapped at the boundary):
 
 ```ts
-type Money = { amountMinor: number; currency: string };
+type Money = { amountMinor: number; currency: string }
 
 type ExpenseTx = {
-  kind: "expense";
-  money: Money;
-  categoryId: string;
-  accountId: string;
-  bookedOn: string; // mapped from Jazz date
-  memo?: string;
-};
+	kind: 'expense'
+	money: Money
+	categoryId: string
+	accountId: string
+	bookedOn: string // mapped from Jazz date
+	memo?: string
+}
 
 type IncomeTx =
-  | {
-      kind: "income";
-      paymentMethod: "cash" | "transfer" | "electronic";
-      money: Money;
-      categoryId: string;
-      accountId: string;
-      bookedOn: string;
-      memo?: string;
-    }
-  | {
-      kind: "income";
-      paymentMethod: "check";
-      money: Money;
-      categoryId: string;
-      accountId: string;
-      bookedOn: string;
-      memo?: string;
-      check: {
-        checkNumber: string;
-        checkDate?: string;
-        payerName?: string;
-        bankName?: string;
-      };
-    };
+	| {
+			kind: 'income'
+			paymentMethod: 'cash' | 'transfer' | 'electronic'
+			money: Money
+			categoryId: string
+			accountId: string
+			bookedOn: string
+			memo?: string
+	  }
+	| {
+			kind: 'income'
+			paymentMethod: 'check'
+			money: Money
+			categoryId: string
+			accountId: string
+			bookedOn: string
+			memo?: string
+			check: {
+				checkNumber: string
+				checkDate?: string
+				payerName?: string
+				bankName?: string
+			}
+	  }
 
-type AppTransaction = ExpenseTx | IncomeTx;
+type AppTransaction = ExpenseTx | IncomeTx
 ```
 
-Encode these in Spec Kit **constitution** (primary) and mirror as a Cursor project rule (`.cursor/rules`) so IDE agents see them even outside Spec Kit commands.
+Encode these in Spec Kit **constitution** (primary) and mirror them in `AGENTS.md` so Codex sees them outside Spec Kit skills.
 
 ## Architecture
 
@@ -117,7 +117,7 @@ Encode these in Spec Kit **constitution** (primary) and mirror as a Cursor proje
 flowchart TB
   subgraph clients [Clients]
     PWA[SvelteKit PWA]
-    Bits[Bits UI + native CSS]
+    UI[Native HTML + native CSS]
     XState[XState machines]
   end
   subgraph jazz [Jazz]
@@ -125,7 +125,7 @@ flowchart TB
     Sync[Sync + RLS policies]
     Cloud[Jazz Cloud / self-host]
   end
-  PWA --> Bits
+  PWA --> UI
   PWA --> XState
   PWA --> Local
   Local <--> Sync
@@ -155,23 +155,23 @@ Keep finance **accounts** distinct from login identity. Multi-tenancy uses **org
 
 Transactions **reference** an account via `accountId` (not nested-only children). Also store `organizationId` for RLS and cross-account queries.
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `amountMinor` | `s.int()` | yes | Always ≥ 0 (minor units / cents). Never floats. |
-| `kind` | `s.enum("expense", "income")` | yes | Sign is not encoded in the amount. Account-to-account `transfer` can be added later as a third kind or linked pair. |
-| `currency` | `s.string()` | yes | **ISO 4217** code (`"USD"`). Copied from the account on create; stored on the row even when the UI locks editing. |
-| `categoryId` | `s.uuid()` | yes | Always set; default to the org’s Uncategorized category for that `kind`. |
-| `accountId` | `s.uuid()` | yes | FK to financial account. |
-| `organizationId` | `s.uuid()` | yes | Denormalized for permissions/queries. |
-| `bookedOn` | `s.date()` | yes | Business/calendar date the user assigns (“happened on”). |
-| `memo` | `s.string().optional()` | no | Optional note. |
-| `paymentMethod` | `s.enum("cash", "check", "transfer", "electronic").optional()` | income: yes | How the income was received. Nullable on expenses for now; same column can be reused for expenses later if needed. |
-| `source` | `s.enum("manual", "simplefin")` | yes | Provenance; default `manual`. |
-| `externalId` | `s.string().optional()` | simplefin: yes | Provider transaction id for idempotent sync. |
-| `batchId` | `s.uuid().optional()` | no | Ready for future batch/salary flows. |
-| tags | `transactionTags` | no | 0..n |
-| images | `transactionAttachments` | no | 0..n (MVP UI may allow 0–1) |
-| check details | `checkDetails` 1:1 | when method is check | See below — not sparse null columns on every row. |
+| Field            | Type                                                           | Required             | Notes                                                                                                               |
+| ---------------- | -------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `amountMinor`    | `s.int()`                                                      | yes                  | Always ≥ 0 (minor units / cents). Never floats.                                                                     |
+| `kind`           | `s.enum("expense", "income")`                                  | yes                  | Sign is not encoded in the amount. Account-to-account `transfer` can be added later as a third kind or linked pair. |
+| `currency`       | `s.string()`                                                   | yes                  | **ISO 4217** code (`"USD"`). Copied from the account on create; stored on the row even when the UI locks editing.   |
+| `categoryId`     | `s.uuid()`                                                     | yes                  | Always set; default to the org’s Uncategorized category for that `kind`.                                            |
+| `accountId`      | `s.uuid()`                                                     | yes                  | FK to financial account.                                                                                            |
+| `organizationId` | `s.uuid()`                                                     | yes                  | Denormalized for permissions/queries.                                                                               |
+| `bookedOn`       | `s.date()`                                                     | yes                  | Business/calendar date the user assigns (“happened on”).                                                            |
+| `memo`           | `s.string().optional()`                                        | no                   | Optional note.                                                                                                      |
+| `paymentMethod`  | `s.enum("cash", "check", "transfer", "electronic").optional()` | income: yes          | How the income was received. Nullable on expenses for now; same column can be reused for expenses later if needed.  |
+| `source`         | `s.enum("manual", "simplefin")`                                | yes                  | Provenance; default `manual`.                                                                                       |
+| `externalId`     | `s.string().optional()`                                        | simplefin: yes       | Provider transaction id for idempotent sync.                                                                        |
+| `batchId`        | `s.uuid().optional()`                                          | no                   | Ready for future batch/salary flows.                                                                                |
+| tags             | `transactionTags`                                              | no                   | 0..n                                                                                                                |
+| images           | `transactionAttachments`                                       | no                   | 0..n (MVP UI may allow 0–1)                                                                                         |
+| check details    | `checkDetails` 1:1                                             | when method is check | See below — not sparse null columns on every row.                                                                   |
 
 **Categories** also carry `kind: expense | income` so pickers only show matching categories. Seed system **Uncategorized** per org per kind.
 
@@ -233,9 +233,7 @@ Browser-only claim is unreliable (CORS + secret leakage into every partial repli
 **App-layer union (no optional soup):**
 
 ```ts
-type TxSource =
-  | { source: "manual" }
-  | { source: "simplefin"; externalId: string };
+type TxSource = { source: 'manual' } | { source: 'simplefin'; externalId: string }
 ```
 
 ### Tables stubbed for later (schema + policies; limited or no UI in MVP)
@@ -268,13 +266,13 @@ src/lib/schema.ts          # Jazz tables + relations
 src/lib/permissions.ts     # RLS policies
 src/lib/money.ts           # minor units helpers
 src/lib/machines/          # XState: transactionForm, tagPicker, orgSwitch
-src/lib/components/ui/     # Bits UI wrappers + CSS
+src/lib/components/ui/     # reusable semantic HTML controls
 src/routes/                # SvelteKit pages
 messages/en.json           # Paraglide
 static/                    # PWA icons/manifest inputs
 ```
 
-Routes (initial): `/` dashboard, `/accounts`, `/accounts/[id]`, `/transactions/new`, `/settings/tags`, `/settings/organization`.
+Current routes: `/` overview, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, and `/account` (account recovery). Account detail and category/tag/organization settings remain planned work.
 
 ## XState usage
 
@@ -282,16 +280,16 @@ Routes (initial): `/` dashboard, `/accounts`, `/accounts/[id]`, `/transactions/n
 - `tagPickerMachine` — query → suggest → create/archive-aware selection
 - Keep org current-id in a small Svelte store persisted locally (UI preference, not source of truth)
 
-## Styling / Bits UI
+## Styling / UI controls
 
-- CSS variables for color, type, spacing; expressive fonts (not Inter/system defaults)
-- Bits UI for Dialog, Combobox/Select (tag typeahead), Dropdown (org switcher), Checkbox
-- Style via classes / `data-*`; no Tailwind
+- Keep controls unstyled; use minimal CSS for layout until a visual direction is approved.
+- Use accessible native HTML controls, including selects and checkboxes.
+- No Tailwind.
 
 ## Offline / PWA
 
 - Jazz partial local copy = never wait on network for reads; writes apply locally then sync
-- Vite PWA: offline shell, caching strategy that does not fight Jazz’s own storage
+- native SvelteKit PWA: offline shell, caching strategy that does not fight Jazz’s own storage
 - Surface sync/pending state lightly in the shell
 
 ## i18n
@@ -301,8 +299,8 @@ Routes (initial): `/` dashboard, `/accounts`, `/accounts/[id]`, `/transactions/n
 
 ## Implementation order
 
-1. Spec Kit init (cursor-agent) + constitution / spec / plan / tasks migration
-2. Scaffold Jazz Svelte app + Bits UI + XState + Paraglide + PWA baseline
+1. Spec Kit init (codex) + constitution / spec / plan / tasks migration
+2. Scaffold Jazz Svelte app + XState + Paraglide + PWA baseline
 3. Land full schema + permissions (including stub tables, account grants, SimpleFIN)
 4. Auth + personal org bootstrap
 5. Accounts CRUD UI

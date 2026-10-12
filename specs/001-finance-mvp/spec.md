@@ -37,7 +37,7 @@ As a user, I can create and review income and expense transactions for an accoun
 
 **Acceptance Scenarios**
 
-1. **Given** an active account, **When** I save an expense or income, **Then** the transaction stores a non-negative integer amount in minor units, currency copied from the account, organization and account references, a calendar `bookedOn` date, and a category matching its kind.
+1. **Given** an active account, **When** I save an expense or income, **Then** the transaction stores a non-negative integer amount in minor units, currency copied from the account, organization and account references, a `bookedOn` calendar date stored as an ISO 8601 `YYYY-MM-DD` string, and a category matching its kind.
 2. **Given** I record income paid by check, **When** I save it, **Then** check-specific details are required and stored in a related check-details record; other income methods do not require those fields.
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
@@ -59,9 +59,11 @@ As the product evolves, organizations can support multiple roles, selective acco
 **Acceptance Scenarios**
 
 1. **Given** an org owner/admin, **When** they access org accounts, **Then** they can access all accounts in that org.
-2. **Given** a member/viewer and no account grant rows, **When** they access the org, **Then** org-wide access is allowed; after any grant rows exist, they can access only granted accounts and related data.
-3. **Given** a SimpleFIN connection, **When** an owner/admin reads connection settings, **Then** they can read its status; members/viewers cannot read its Access URL.
-4. **Given** a setup token is submitted, **When** a future server-side worker claims it, **Then** the setup token is not persisted and the resulting credential is protected as an Access URL.
+2. **Given** a member/viewer in `all` account access mode, **When** they access the org, **Then** they can access all org accounts and related data.
+3. **Given** a member/viewer in `selected` account access mode with no account grants, **When** they access the org, **Then** they have no account access.
+4. **Given** a member/viewer in `selected` account access mode with account grants, **When** they access the org, **Then** they can access only granted accounts and related data; members may write only grants with write access, and viewers remain read-only.
+5. **Given** a SimpleFIN connection, **When** an owner/admin reads connection settings, **Then** they can read its status; members/viewers cannot read its Access URL.
+6. **Given** a setup token is submitted, **When** a future server-side worker claims it, **Then** the setup token is not persisted and the resulting credential is protected as an Access URL.
 
 ## Product Requirements
 
@@ -70,24 +72,24 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-001**: The application MUST provide Jazz-backed sign-in and automatically create/reuse a personal organization for each first-time user.
 - **FR-002**: The application MUST provide create, list, and archive flows for USD financial accounts scoped to the active organization.
 - **FR-003**: The application MUST provide create/list flows for income and expense transactions on an account.
-- **FR-004**: Every transaction MUST have `amountMinor >= 0`, an ISO 4217 currency, `kind`, `accountId`, `organizationId`, `bookedOn`, and a category matching its kind.
-- **FR-005**: Income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details.
+- **FR-004**: Every transaction MUST have `amountMinor >= 0`, an ISO 4217 currency, `kind`, `accountId`, `organizationId`, `bookedOn` as an ISO 8601 `YYYY-MM-DD` calendar-date string, and a category matching its kind.
+- **FR-005**: Manually entered income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details. Imported SimpleFIN income may omit the payment method.
 - **FR-006**: Each organization MUST have non-deletable system Uncategorized categories for both expense and income.
 - **FR-007**: Users MUST be able to create and archive org-scoped categories and tags; tags MUST support optional category association and many-to-many transaction assignment.
 - **FR-008**: Archived accounts MUST be excluded from new transaction selection while historical data remains accessible. Archived tags MUST be excluded from new selection while retained on historical transactions.
 - **FR-009**: The application MUST be usable offline for previously available data and local writes, with synchronization handled by Jazz when connectivity returns.
 - **FR-010**: User-visible strings MUST use Paraglide message functions; initial supported locale is English.
-- **FR-011**: The UI MUST use accessible Bits UI primitives, SvelteKit/Svelte 5, native CSS and CSS variables, and responsive layouts.
+- **FR-011**: The UI MUST use accessible native HTML controls, SvelteKit/Svelte 5, native CSS and CSS variables, and responsive layouts.
 - **FR-012**: Multi-step transaction compose and tag selection flows MUST be modeled with XState; simple UI state may use Svelte runes/stores.
 - **FR-013**: The application MUST expose a lightweight organization switcher shell and sync/pending status affordance; creating/joining another organization may be deferred.
 
 ### Schema and authorization readiness
 
 - **FR-014**: The schema MUST include profiles, organizations, organizationMembers, accounts, categories, tags, transactions, transactionTags, checkDetails, and accountMemberships.
-- **FR-015**: Authorization MUST implement the organization and account grant rules in the constitution, including inherited access to associated transaction/tag data.
+- **FR-015**: Authorization MUST implement the organization roles and explicit `accountAccessMode` rules in the constitution, including inherited access to associated transaction/tag data. Account grants MUST NOT grant access without active organization membership; viewer access MUST remain read-only.
 - **FR-016**: The schema MUST include SimpleFIN connection/account-link records, transaction source and optional externalId, and organization-scoped admin-only credential access.
 - **FR-017**: The schema MUST reserve attachment and batch records/relationships for later use; full attachment/batch UI is out of scope.
-- **FR-018**: Jazz audit fields MUST be used rather than adding redundant createdOn/updatedOn columns. `bookedOn` is the user-assigned business date.
+- **FR-018**: Jazz audit fields MUST be used rather than adding redundant createdOn/updatedOn columns. `bookedOn` is the user-assigned business date stored as a date-only string, separate from timestamps.
 - **FR-019**: Every application feature and production code path MUST include appropriate automated unit tests and Playwright end-to-end tests. Tests MUST be added or updated with the feature implementation.
 - **FR-020**: Unit tests MUST cover domain logic, money/date handling, validation, state machines, permission helpers/adapters, and relevant edge cases. Playwright MUST cover each primary user workflow, authorization behavior, and offline workflows where supported by the runtime.
 - **FR-021**: A feature MUST NOT be considered complete until its relevant automated tests pass. New code requires coverage at the level appropriate to its behavior; tests need not be written to test test code or generated/vendor assets.
@@ -115,7 +117,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **Organization**: personal or business workspace with a default currency.
 - **Organization Member**: organization/user association with owner, admin, member, or viewer role.
 - **Account**: USD cash/bank/card ledger belonging to an organization; archivable.
-- **Account Membership**: optional read/write grant to an account for an org member.
+- **Account Membership**: explicit read/write grant to an account for an org member in `selected` access mode.
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
 - **Tag**: org-scoped label with optional category; can be archived.
 - **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional memo/provider id/batch, and tags.
@@ -129,14 +131,14 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **NFR-002**: Unauthorized organization/account data and SimpleFIN secrets MUST be unavailable through Jazz permissions.
 - **NFR-003**: Money handling MUST avoid floating-point arithmetic and preserve the stored currency code.
 - **NFR-004**: Main flows MUST work on mobile-size screens and with keyboard/screen-reader accessible controls.
-- **NFR-005**: PWA shell caching MUST coexist with Jazz's own persistence and synchronization.
+- **NFR-005**: Native SvelteKit service-worker caching MUST cover public page shells and build assets and coexist with Jazz's persistence and synchronization. Jazz data/auth/sync requests MUST NOT be added to the service-worker runtime cache.
 - **NFR-006**: The automated test suite MUST include unit tests and browser-level Playwright tests and run reliably in local development and CI.
 
 ## Assumptions and Dependencies
 
 - Jazz Cloud is the initial hosted sync/auth option; self-hosting can be considered later.
 - Personal org defaults to USD and English. The schema stores currency codes for future multi-currency use.
-- The starting repository is initialized for Spec Kit and Cursor; application scaffolding is the next implementation phase.
+- The starting repository is initialized for Spec Kit and Codex; application scaffolding is the next implementation phase.
 - Planned GitHub namespace is `https://github.com/delightful-labs/`.
 
 ## Success Criteria

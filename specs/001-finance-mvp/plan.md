@@ -9,7 +9,7 @@ Build a local-first personal finance MVP using SvelteKit/Svelte 5 and Jazz v2. E
 ## Technical Context
 
 **Language/Version**: TypeScript (strict), Svelte 5
-**Primary Dependencies**: SvelteKit, `jazz-tools` v2, Bits UI, XState + `@xstate/svelte`, Paraglide JS, `@vite-pwa/sveltekit`
+**Primary Dependencies**: SvelteKit 3, `jazz-tools` v2, XState + `@xstate/svelte`, Paraglide JS
 **Storage/Sync**: Jazz local-first data and sync; Jazz Cloud initially
 **Testing**: Automated unit tests plus Playwright end-to-end tests are required for all application features and production code paths. Unit tests cover domain logic, validators, state machines, and permission boundaries; Playwright covers primary user journeys, authorization outcomes, and supported offline behavior. Tests ship with the implementation and run in CI.
 **Target Platform**: Responsive browser/PWA
@@ -24,7 +24,7 @@ Build a local-first personal finance MVP using SvelteKit/Svelte 5 and Jazz v2. E
 - **Type safety**: strict TS, no `any`/`as`, discriminated domain unions.
 - **Financial integrity**: integer minor units, ISO currency, explicit transaction kind and references.
 - **Access control**: organization tenancy and grant-aware Jazz permissions are part of the initial schema.
-- **Accessible/localized UI**: Bits UI, native CSS, Paraglide, responsive design.
+- **Accessible/localized UI**: semantic HTML controls, native CSS, Paraglide, responsive design.
 - **Secrets**: SimpleFIN claiming/fetching is server-side; setup tokens are transient and Access URLs admin-only.
 - **Evolution**: additive Jazz migrations and related tables for check details, attachments, batches, and provider links.
 - **Testability**: isolate domain logic and Jazz boundary adapters so they can be unit-tested; provide stable browser flows and fixtures for Playwright coverage.
@@ -34,7 +34,7 @@ Build a local-first personal finance MVP using SvelteKit/Svelte 5 and Jazz v2. E
 ```mermaid
 flowchart TB
   subgraph client [SvelteKit PWA]
-    UI[Bits UI + native CSS]
+    UI[Native HTML + native CSS]
     Flow[XState workflows]
     Local[Local Jazz data]
   end
@@ -51,7 +51,7 @@ flowchart TB
 - Jazz owns data, authentication, local persistence, sync, and authorization. Permission checks filter reads and reject illegal writes.
 - XState models multi-step transaction composition (including check details) and tag picker flows. Simple toggles and current org selection use Svelte state.
 - Paraglide provides all labels, errors, and other visible text.
-- The PWA shell must not interfere with Jazz's storage/sync. Show sync/pending state without blocking local work.
+- Use SvelteKit's native service worker with prerendered public page shells and a web app manifest. Cache only public shells/build assets; do not intercept Jazz data, authentication, or synchronization. Workbox is deferred. Show sync/pending state without blocking local work.
 - SimpleFIN claim and fetch are future server-side worker operations. Never broadcast the Access URL through normal user replicas.
 
 ## Data Design
@@ -79,8 +79,9 @@ flowchart TB
 ### Permission rules
 
 - Org owner/admin: all organization accounts and associated data.
-- Member/viewer with zero account grant records for the organization: all org accounts (personal-org default).
-- Member/viewer with one or more grant records: only granted accounts and related transactions/tags through membership-aware checks.
+- Member/viewer with `accountAccessMode: all`: all org accounts.
+- Member/viewer with `accountAccessMode: selected`: only explicitly granted accounts; zero grants means no account access.
+- Grants are effective only while the user is an active organization member; viewers remain read-only even if a grant row has write access.
 - SimpleFIN credential fields: org owner/admin only, independent of access to normal financial data.
 - Writes must validate organization/account/category relationships; unauthorized writes are rejected.
 
@@ -89,21 +90,21 @@ flowchart TB
 ```text
 src/lib/schema.ts
 src/lib/permissions.ts
-src/lib/money.ts
+src/lib/domain/money.ts
 src/lib/machines/transactionForm.ts
-src/lib/machines/tagPicker.ts
-src/lib/machines/orgSwitch.ts
-src/lib/components/ui/
+src/lib/schema/
+src/lib/components/
+src/service-worker/
 src/routes/
 messages/en.json
 static/
 ```
 
-Initial routes: `/`, `/accounts`, `/accounts/[id]`, `/transactions/new`, `/settings/tags`, `/settings/organization`.
+Current routes: `/`, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, and `/account` (account recovery). Account detail and category/tag/organization settings remain planned work.
 
 ## Implementation Phases
 
-1. **Scaffold**: create the Jazz SvelteKit app; establish strict TypeScript, Bits UI, XState, Paraglide, and PWA baseline.
+1. **Scaffold**: create the Jazz SvelteKit app; establish strict TypeScript, semantic HTML controls, XState, Paraglide, and PWA baseline.
 2. **Schema and permissions**: implement complete forward-compatible domain schema, checks/invariants, org/account-grant access rules, and admin-only SimpleFIN secret access.
 3. **Authentication and workspace**: wire Jazz auth; first login creates profile, personal org, owner membership, and required categories.
 4. **Accounts**: create/list/archive UI for USD ledgers; preserve historical data.
@@ -119,7 +120,7 @@ Initial routes: `/`, `/accounts`, `/accounts/[id]`, `/transactions/new`, `/setti
 
 ## Risks and Decisions to Resolve During Implementation
 
-- Confirm Jazz v2 schema/permission APIs for relational checks and whether the account-grant “no grants means all accounts” condition can be enforced directly in client-visible rules. If not, design an equivalent secure policy before account sharing ships.
+- Keep authorization rules aligned with the explicit `accountAccessMode` field; grants are effective only for active organization members, and viewers remain read-only.
 - The chosen SimpleFIN credential storage model is not end-to-end secret against users able to read the record or operate the worker; limit readers and document operational access.
 - PWA caching must avoid stale app code conflicting with synchronized local data.
 - Confirm exact check-specific fields and any Jazz file-table requirements when implementing those stubs.
