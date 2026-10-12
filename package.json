@@ -20,7 +20,8 @@
 		"test:unit": "vitest",
 		"test": "pnpm test:unit --run && pnpm test:e2e",
 		"test:e2e": "playwright test",
-		"test:pwa": "playwright test --config playwright.pwa.config.ts"
+		"test:pwa": "playwright test --config playwright.pwa.config.ts",
+		"test:auth": "playwright test --config playwright.auth.config.ts"
 	},
 	"devDependencies": {
 		"@inlang/paraglide-js": "^2.18.2",

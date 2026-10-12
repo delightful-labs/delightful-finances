@@ -1,3 +1,4 @@
+import { ReadTier } from 'jazz-tools'
 import { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization } from './schema.js'
 import { validateTransaction, type AppTransaction } from './domain/transaction.js'
@@ -18,66 +19,72 @@ export async function ensurePersonalWorkspace(db: Db, userId: string) {
 		{ name: 'Salary', kind: 'income', isSystem: false },
 		{ name: 'Other income', kind: 'income', isSystem: false }
 	]
+	// Hydrate existing rows before opening a transaction: a cold transaction's
+	// read snapshot can miss records arriving from sync and recreate protected rows.
+	const readOptions = { tier: ReadTier.LocalFirstUnlessEmpty }
+	const [profiles, ownedOrganizations] = await Promise.all([
+		db.all(app.profiles.where({ userId }), readOptions),
+		db.all(app.organizations.where({ ownerId: userId, kind: 'personal' }), readOptions)
+	])
+	const existingOrganization = ownedOrganizations[0]
+	const activeOrganizationId = existingOrganization?.id ?? organizationId
+	const [memberships, categories] = await Promise.all([
+		db.all(
+			app.organizationMembers.where({ organizationId: activeOrganizationId, userId }),
+			readOptions
+		),
+		db.all(app.categories.where({ organizationId: activeOrganizationId }), readOptions)
+	])
 	const categoriesWithIds = await Promise.all(
 		defaultCategories.map(async (category) => ({
 			category,
 			id: await stableUuid(
-				organizationId,
+				activeOrganizationId,
 				`category:${category.kind}:${category.name.toLowerCase()}`
 			)
 		}))
 	)
+	const missingCategories = categoriesWithIds.filter(
+		({ category, id }) =>
+			!categories.some(
+				(existing) =>
+					existing.id === id ||
+					(existing.kind === category.kind && existing.name === category.name) ||
+					(category.isSystem && existing.kind === category.kind && existing.isSystem)
+			)
+	)
+	if (
+		existingOrganization &&
+		profiles.length > 0 &&
+		memberships.length > 0 &&
+		missingCategories.length === 0
+	) {
+		return existingOrganization
+	}
 
-	const result = await db.transaction(async (tx) => {
-		const profiles = await tx.all(app.profiles.where({ userId }))
-		if (profiles.length === 0) {
-			tx.insert(app.profiles, { userId }, { id: profileId })
-		}
-
-		const ownedOrganizations = await tx.all(
-			app.organizations.where({ ownerId: userId, kind: 'personal' })
-		)
+	const result = await db.transaction((tx) => {
+		if (profiles.length === 0) tx.insert(app.profiles, { userId }, { id: profileId })
 		const organization: Organization =
-			ownedOrganizations[0] ??
+			existingOrganization ??
 			tx.insert(
 				app.organizations,
-				{
-					name: 'Personal workspace',
-					kind: 'personal',
-					defaultCurrency: 'USD',
-					ownerId: userId
-				},
+				{ name: 'Personal workspace', kind: 'personal', defaultCurrency: 'USD', ownerId: userId },
 				{ id: organizationId }
 			)
-
-		const memberships = await tx.all(
-			app.organizationMembers.where({ organizationId: organization.id, userId })
-		)
 		if (memberships.length === 0) {
 			tx.insert(
 				app.organizationMembers,
-				{
-					organizationId: organization.id,
-					userId,
-					role: 'owner',
-					accountAccessMode: 'all'
-				},
+				{ organizationId: organization.id, userId, role: 'owner', accountAccessMode: 'all' },
 				{ id: membershipId }
 			)
 		}
-
-		const categories = await tx.all(app.categories.where({ organizationId: organization.id }))
-		for (const { category, id } of categoriesWithIds) {
-			const exists = categories.some(
-				(existing) => existing.kind === category.kind && existing.name === category.name
-			)
-			if (!exists) {
-				tx.insert(app.categories, { organizationId: organization.id, ...category }, { id })
-			}
+		for (const { category, id } of missingCategories) {
+			tx.insert(app.categories, { organizationId: organization.id, ...category }, { id })
 		}
 		return organization
 	})
-	return result.value
+	// Persist the bootstrap locally before another page can reopen the database.
+	return result.wait({ tier: 'local' })
 }
 
 async function stableUuid(namespaceId: string, name: string) {

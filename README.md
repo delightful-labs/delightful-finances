@@ -22,6 +22,8 @@ For local verification, keep the development database running and build with `FI
 
 ## Project documents
 
+Account restoration checks run with `pnpm test:auth`. The dedicated suite uses two isolated browser profiles and reuses the development server at `http://127.0.0.1:5173`, or starts one there if needed. It checks recovered accounts, workspace reuse, repeated restoration, reloads, and starter category counts. Trace, screenshot, and video capture are disabled for this recovery-phrase workflow. Workspace initialization reads existing records before opening its write transaction and waits for local persistence. This prevents cold reloads from recreating protected records and leaving rejected writes that block account restoration. Eight consecutive restoration runs passed after the fix; the final three also checked starter category counts. The account creation/expense entry regression passed as well.
+
 - [Constitution](.specify/memory/constitution.md): architecture and implementation rules.
 - [MVP specification](specs/001-finance-mvp/spec.md): product requirements and acceptance criteria.
 - [Implementation plan](specs/001-finance-mvp/plan.md): technical design and phases.

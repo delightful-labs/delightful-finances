@@ -9,7 +9,7 @@ test('creates a workspace account and records an expense', async ({ page }) => {
 	await expect(page.getByRole('status')).toContainText('Everyday checking')
 
 	await page.goto('/expenses/new')
-	await page.getByLabel('Account').selectOption({ label: 'Everyday checking' })
+	await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Everyday checking' })
 	await page.getByLabel('Category').selectOption({ label: 'Groceries' })
 	await page.getByLabel(/Amount/).fill('12.34')
 	await page.getByLabel('Memo').fill('Weekly market')
