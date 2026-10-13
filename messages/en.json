@@ -39,7 +39,9 @@
 		"workspace_settings": "Workspace settings",
 		"transactions": "Transactions",
 		"transaction": "Transaction",
-		"accounts_and_categories": "Accounts and categories"
+		"accounts_and_categories": "Accounts and categories",
+		"categories": "Categories",
+		"tags": "Tags"
 	},
 	"actions": {
 		"add_account": "Add an account",
@@ -48,7 +50,8 @@
 		"add_expense": "Add expense",
 		"add_income": "Add income",
 		"save": "Save",
-		"add_category": "Add category"
+		"add_category": "Add category",
+		"archive_category": "Archive {name}"
 	},
 	"accounts": {
 		"type": {
@@ -123,7 +126,9 @@
 	},
 	"categories": {
 		"saved": "Category {name} saved.",
-		"validation_error": "Enter a category name and select income or expense."
+		"validation_error": "Enter a category name and select income or expense.",
+		"archived": "Category {name} archived.",
+		"empty": "No categories yet."
 	},
 	"status": {
 		"loading": "Loading {subject}…",

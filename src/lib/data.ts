@@ -175,3 +175,7 @@ export function createCategory(
 	const category = appCategorySchema.parse({ organizationId, name, kind })
 	return db.insert(app.categories, category).wait({ tier: 'local' })
 }
+
+export function archiveCategory(db: Pick<Db, 'update'>, categoryId: Category['id']) {
+	return db.update(app.categories, categoryId, { archivedAt: new Date() }).wait({ tier: 'local' })
+}

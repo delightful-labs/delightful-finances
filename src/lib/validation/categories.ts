@@ -9,3 +9,7 @@ export const appCategorySchema = z.strictObject({
 })
 
 export const categoryFormSchema = appCategorySchema.pick({ name: true, kind: true }).strip()
+
+export const categoryArchiveSchema = appCategorySchema
+	.pick({ organizationId: true })
+	.extend({ categoryId: z.uuid() })

@@ -1088,3 +1088,379 @@ for (const role of ['admin', 'member', 'viewer']) {
 		}
 	})
 }
+
+test('category page creates both kinds, validates names, resets drafts, and persists after reload', async ({
+	page
+}) => {
+	await start(page)
+	const navigation = page.getByRole('navigation')
+	await navigation.getByRole('link', { name: 'Categories', exact: true }).click()
+	await expect(page).toHaveURL('/settings/categories')
+	const main = page.getByRole('main')
+	const name = main.getByLabel('Category name', { exact: true })
+	const kind = main.getByLabel('Transaction type', { exact: true })
+	const add = main.getByRole('button', { name: 'Add category', exact: true })
+	await name.fill('   ')
+	await add.click()
+	await expect(main.getByRole('alert')).toHaveText(
+		'Enter a category name and select income or expense.'
+	)
+	await name.fill('  Travel  ')
+	await add.click()
+	await expect(main.getByRole('status')).toHaveText('Category Travel saved.')
+	await expect(main.getByRole('row', { name: /Travel Expenses/ })).toBeVisible()
+	await add.click()
+	await name.fill('  Bonus  ')
+	await kind.selectOption('income')
+	await add.click()
+	await expect(main.getByRole('status')).toHaveText('Category Bonus saved.')
+	await expect(main.getByRole('row', { name: /Bonus Income/ })).toBeVisible()
+	await add.click()
+	await name.fill('Unsaved category')
+	const secondId = await page.evaluate(async () => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const org = await db
+			.insert(app.organizations, {
+				name: 'Category second workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: org.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		return org.id
+	})
+	const selector = page.getByLabel('Workspace', { exact: true })
+	const firstId = await selector.inputValue()
+	await expect(selector.locator(`option[value="${secondId}"]`)).toHaveCount(1)
+	await selector.selectOption(secondId)
+	await expect(name).toHaveValue('')
+	await expect(main.getByRole('row', { name: /Travel Expenses/ })).toHaveCount(0)
+	await expect(main.getByText('No categories yet.')).toBeVisible()
+	await name.fill('Second workspace category')
+	await add.click()
+	await expect(main.getByRole('status')).toHaveText('Category Second workspace category saved.')
+	await selector.selectOption(firstId)
+	await expect(main.getByRole('row', { name: /Travel Expenses/ })).toBeVisible()
+	await expect(main.getByRole('row', { name: /Second workspace category/ })).toHaveCount(0)
+	await page.reload()
+	await expect(main.getByRole('row', { name: /Travel Expenses/ })).toBeVisible()
+	await expect(main.getByRole('row', { name: /Bonus Income/ })).toBeVisible()
+})
+
+test('category page counts connections, archives offline, protects system categories, and retains history', async ({
+	page,
+	context
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db } = window.workspaceSettingsTest
+		const category = await db
+			.insert(app.categories, {
+				organizationId,
+				name: 'Counted category',
+				kind: 'expense',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		const account = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Count account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const transaction = await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 100,
+				currency: 'USD',
+				bookedOn: '2026-10-13',
+				memo: 'Category retained history',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.tags, { organizationId, name: 'Active connected tag', categoryId: category.id })
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.tags, {
+				organizationId,
+				name: 'Archived connected tag',
+				categoryId: category.id,
+				archivedAt: new Date()
+			})
+			.wait({ tier: 'global' })
+		await db.insert(app.tags, { organizationId, name: 'Unconnected tag' }).wait({ tier: 'global' })
+		const system = await db.one(
+			app.categories.where({ organizationId, isSystem: true, kind: 'expense' })
+		)
+		if (!system) throw new Error('Missing system category')
+		return { categoryId: category.id, transactionId: transaction.id, systemId: system.id }
+	}, organizationId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Categories', exact: true }).click()
+	const main = page.getByRole('main')
+	const row = main
+		.getByRole('row')
+		.filter({ has: page.getByRole('rowheader', { name: 'Counted category', exact: true }) })
+	await expect(row.getByRole('cell').nth(1)).toHaveText('1')
+	await expect(row.getByRole('cell').nth(2)).toHaveText('2')
+	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).uncheck()
+	await expect(row.getByRole('cell').nth(1)).toHaveText('1')
+	const systemRows = main
+		.getByRole('row')
+		.filter({ has: page.getByRole('rowheader', { name: 'Uncategorized', exact: true }) })
+	await expect(systemRows).toHaveCount(2)
+	await expect(systemRows.getByRole('button')).toHaveCount(0)
+	const systemOutcome = await page.evaluate(async (id) => {
+		const { app, db } = window.workspaceSettingsTest
+		try {
+			await db.update(app.categories, id, { archivedAt: new Date() }).wait({ tier: 'global' })
+			return 'accepted'
+		} catch (error) {
+			return error instanceof Error ? error.message : 'unknown-error'
+		}
+	}, fixture.systemId)
+	expect(systemOutcome).toMatch(/AuthorizationDenied|permission_denied/)
+	await context.setOffline(true)
+	try {
+		await row.getByRole('button', { name: 'Archive Counted category', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Category Counted category archived.')
+		await expect(row).toHaveCount(0)
+	} finally {
+		await context.setOffline(false)
+	}
+	await expect
+		.poll(() =>
+			page.evaluate(async ({ categoryId, transactionId }) => {
+				const { app, db } = window.workspaceSettingsTest
+				const category = await db.one(app.categories.where({ id: categoryId }), { tier: 'remote' })
+				const transaction = await db.one(app.transactions.where({ id: transactionId }), {
+					tier: 'remote'
+				})
+				const tags = await db.all(app.tags.where({ categoryId }), { tier: 'remote' })
+				return {
+					archived: Boolean(category?.archivedAt),
+					retained: transaction?.categoryId === categoryId,
+					tags: tags.length
+				}
+			}, fixture)
+		)
+		.toEqual({ archived: true, retained: true, tags: 2 })
+	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
+	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(
+		main.getByRole('cell', { name: 'Category retained history', exact: true })
+	).toBeVisible()
+	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
+	await expect(
+		main.getByLabel('Category', { exact: true }).locator(`option[value="${fixture.categoryId}"]`)
+	).toHaveCount(0)
+})
+
+for (const role of ['admin', 'member', 'viewer']) {
+	test(`category page permissions: ${role}`, async ({ page, browser }) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		try {
+			const subject = await otherContext.newPage()
+			await start(subject)
+			const subjectId = await subject.evaluate(() => window.workspaceSettingsTest.userId)
+			const categoryId = await page.evaluate(
+				async ({ organizationId, subjectId, role }) => {
+					const { app, db } = window.workspaceSettingsTest
+					if (role !== 'admin' && role !== 'member' && role !== 'viewer')
+						throw new Error('Invalid role')
+					await db
+						.insert(app.organizationMembers, {
+							organizationId,
+							userId: subjectId,
+							role,
+							accountAccessMode: 'all'
+						})
+						.wait({ tier: 'global' })
+					return (
+						await db
+							.insert(app.categories, {
+								organizationId,
+								name: 'Permission category',
+								kind: 'expense',
+								isSystem: false
+							})
+							.wait({ tier: 'global' })
+					).id
+				},
+				{ organizationId, subjectId, role }
+			)
+			await start(subject)
+			const selector = subject.getByLabel('Workspace', { exact: true })
+			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
+			await selector.selectOption(organizationId)
+			await subject
+				.getByRole('navigation')
+				.getByRole('link', { name: 'Categories', exact: true })
+				.click()
+			const main = subject.getByRole('main')
+			const row = main.getByRole('row').filter({
+				has: subject.getByRole('rowheader', { name: 'Permission category', exact: true })
+			})
+			await expect(row).toBeVisible()
+			const add = main.getByRole('button', { name: 'Add category', exact: true })
+			if (role === 'viewer') {
+				await expect(add).toBeDisabled()
+				await expect(main.getByLabel('Category name', { exact: true })).toBeDisabled()
+				await expect(row.getByRole('button')).toHaveCount(0)
+				const outcomes = await subject.evaluate(
+					async ({ organizationId, categoryId }) => {
+						const { app, db } = window.workspaceSettingsTest
+						const results: string[] = []
+						try {
+							await db
+								.insert(app.categories, {
+									organizationId,
+									name: 'Forbidden category',
+									kind: 'expense',
+									isSystem: false
+								})
+								.wait({ tier: 'global' })
+							results.push('accepted')
+						} catch (error) {
+							results.push(error instanceof Error ? error.message : 'unknown-error')
+						}
+						try {
+							await db
+								.update(app.categories, categoryId, { archivedAt: new Date() })
+								.wait({ tier: 'global' })
+							results.push('accepted')
+						} catch (error) {
+							results.push(error instanceof Error ? error.message : 'unknown-error')
+						}
+						return results
+					},
+					{ organizationId, categoryId }
+				)
+				for (const outcome of outcomes)
+					expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
+			} else {
+				await main.getByLabel('Category name', { exact: true }).fill(`${role} category`)
+				await add.click()
+				await expect(main.getByRole('status')).toHaveText(`Category ${role} category saved.`)
+				await row.getByRole('button', { name: 'Archive Permission category', exact: true }).click()
+				await expect(
+					main.getByRole('status').filter({ hasText: 'Permission category archived.' })
+				).toBeVisible()
+				await expect(row).toHaveCount(0)
+			}
+			await expect
+				.poll(() =>
+					page.evaluate(async (id) => {
+						const { app, db } = window.workspaceSettingsTest
+						return Boolean(
+							(await db.one(app.categories.where({ id }), { tier: 'remote' }))?.archivedAt
+						)
+					}, categoryId)
+				)
+				.toBe(role !== 'viewer')
+		} finally {
+			await otherContext.close()
+		}
+	})
+}
+
+test('category page counts only readable transactions for selected account access', async ({
+	page,
+	browser
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+	try {
+		const subject = await otherContext.newPage()
+		await start(subject)
+		const subjectId = await subject.evaluate(() => window.workspaceSettingsTest.userId)
+		await page.evaluate(
+			async ({ organizationId, subjectId }) => {
+				const { app, db } = window.workspaceSettingsTest
+				await db
+					.insert(app.organizationMembers, {
+						organizationId,
+						userId: subjectId,
+						role: 'viewer',
+						accountAccessMode: 'selected'
+					})
+					.wait({ tier: 'global' })
+				const category = await db
+					.insert(app.categories, {
+						organizationId,
+						name: 'Scoped count',
+						kind: 'expense',
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				for (const name of ['Readable count account', 'Private count account']) {
+					const account = await db
+						.insert(app.accounts, { organizationId, name, kind: 'cash', currency: 'USD' })
+						.wait({ tier: 'global' })
+					await db
+						.insert(app.transactions, {
+							organizationId,
+							accountId: account.id,
+							categoryId: category.id,
+							kind: 'expense',
+							amountMinor: 100,
+							currency: 'USD',
+							bookedOn: '2026-10-13',
+							source: 'manual'
+						})
+						.wait({ tier: 'global' })
+					if (name === 'Readable count account') {
+						await db
+							.insert(app.accountMemberships, {
+								organizationId,
+								userId: subjectId,
+								accountId: account.id,
+								access: 'read'
+							})
+							.wait({ tier: 'global' })
+					}
+				}
+			},
+			{ organizationId, subjectId }
+		)
+		await start(subject)
+		const selector = subject.getByLabel('Workspace', { exact: true })
+		await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
+		await selector.selectOption(organizationId)
+		await subject
+			.getByRole('navigation')
+			.getByRole('link', { name: 'Categories', exact: true })
+			.click()
+		await page
+			.getByRole('navigation')
+			.getByRole('link', { name: 'Categories', exact: true })
+			.click()
+		const ownerRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('rowheader', { name: 'Scoped count', exact: true }) })
+		const subjectRow = subject
+			.getByRole('row')
+			.filter({ has: subject.getByRole('rowheader', { name: 'Scoped count', exact: true }) })
+		await expect(ownerRow.getByRole('cell').nth(1)).toHaveText('2')
+		await expect(subjectRow.getByRole('cell').nth(1)).toHaveText('1')
+	} finally {
+		await otherContext.close()
+	}
+})

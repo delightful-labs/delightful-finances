@@ -63,6 +63,7 @@
 				<li><a href="/expenses">{m['labels.expenses']()}</a></li>
 				<li><a href="/incomes">{m['labels.income']()}</a></li>
 				<li><a href="/accounts">{m['labels.accounts']()}</a></li>
+				<li><a href="/settings/categories">{m['labels.categories']()}</a></li>
 				<li><a href="/settings/workspace">{m['workspace.label']()}</a></li>
 				<li><a href="/account">{m['navigation.account_recovery']()}</a></li>
 				<li><a href="/login">{m['navigation.login']()}</a></li>

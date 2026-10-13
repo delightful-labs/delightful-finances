@@ -3,6 +3,8 @@ import { ReadTier, Transaction } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import {
 	archiveAccount,
+	archiveCategory,
+	createCategory,
 	createAccount,
 	createTransaction,
 	ensurePersonalWorkspace
@@ -264,3 +266,49 @@ async function starterCategories() {
 			: []
 	)
 }
+
+describe('category persistence', () => {
+	it('creates a trimmed non-system category in the selected workspace and waits locally', async () => {
+		const wait = vi.fn().mockResolvedValue({ id: 'category' })
+		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
+		await expect(createCategory(db, organization.id, '  Food  ', 'expense')).resolves.toEqual({
+			id: 'category'
+		})
+		expect(db.insert).toHaveBeenCalledExactlyOnceWith(app.categories, {
+			organizationId: organization.id,
+			name: 'Food',
+			kind: 'expense',
+			isSystem: false,
+			archivedAt: null
+		})
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it('rejects invalid input before inserting', () => {
+		const db = { insert: vi.fn() } satisfies Pick<Db, 'insert'>
+		expect(() => createCategory(db, organization.id, ' ', 'income')).toThrow()
+		expect(db.insert).not.toHaveBeenCalled()
+	})
+	it('propagates category creation persistence failures', async () => {
+		const failure = new Error('Persistence failed')
+		const db = {
+			insert: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
+		} satisfies Pick<Db, 'insert'>
+		await expect(createCategory(db, organization.id, 'Food', 'expense')).rejects.toBe(failure)
+	})
+	it('archives without deleting the category or its connections and waits locally', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await archiveCategory(db, 'category')
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.categories, 'category', {
+			archivedAt: expect.any(Date)
+		})
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it('propagates category archive persistence failures', async () => {
+		const failure = new Error('Persistence failed')
+		const db = {
+			update: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
+		} satisfies Pick<Db, 'update'>
+		await expect(archiveCategory(db, 'category')).rejects.toBe(failure)
+	})
+})
