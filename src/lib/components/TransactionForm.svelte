@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { getContext } from 'svelte'
-	import { useMachine } from '@xstate/svelte'
 	import { getDb, QuerySubscription } from 'jazz-tools/svelte'
 	import { createTransaction } from '#lib/data.js'
-	import { AMOUNT_INPUT_PATTERN, parseAmountMinor } from '#lib/domain/money.js'
+	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
-	import type { IncomePaymentMethod } from '#lib/domain/transaction.js'
+	import type { AppTransaction } from '#lib/domain/transaction.js'
+	import type { FormSave } from '#lib/machines/form.js'
+	import { transactionFormSchema } from '#lib/validation/transaction-form-input.js'
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import { transactionFormMachine } from '#lib/machines/transactionForm.js'
+	import Form from './Form.svelte'
 	import QueryContent from './QueryContent.svelte'
 
-	let selectionError = $state(false)
 	const db = getDb()
 	let { kind }: { kind: 'expense' | 'income' } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -37,76 +37,26 @@
 	const accounts = $derived(accountQuery.current ?? [])
 	const availableCategories = $derived(categoryQuery.current ?? [])
 
-	const { snapshot, send } = useMachine(transactionFormMachine, {
-		input: {
-			draft: {},
-			save: (transaction) => createTransaction(db, transaction)
-		}
-	})
-
-	function submit(event: SubmitEvent) {
-		event.preventDefault()
-		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const formData = new FormData(event.currentTarget)
-		const accountId = String(formData.get('accountId') ?? '')
-		const categoryId = String(formData.get('categoryId') ?? '')
-		const selectedAccount = accounts.find((account) => account.id === accountId)
-		const selectedCategory = availableCategories.find((category) => category.id === categoryId)
+	const schema = transactionFormSchema(() => ({
+		organizationId: filters.activeOrganizationId,
+		kind,
+		accounts,
+		categories: availableCategories
+	}))
+	const save: FormSave<
+		AppTransaction,
+		void,
+		{ organizationId: string | null; kind: typeof kind }
+	> = async (transaction, { context, signal }) => {
+		signal.throwIfAborted()
 		if (
-			!selectedAccount ||
-			!selectedCategory ||
-			selectedCategory.organizationId !== selectedAccount.organizationId
-		) {
-			selectionError = true
-			return
-		}
-		selectionError = false
-		const amountText = String(formData.get('amount') ?? '')
-		const parsedAmount = parseAmountMinor(amountText)
-		const paymentMethodValue = String(formData.get('paymentMethod') ?? 'cash')
-		const paymentMethod: IncomePaymentMethod =
-			paymentMethodValue === 'check' ||
-			paymentMethodValue === 'transfer' ||
-			paymentMethodValue === 'electronic'
-				? paymentMethodValue
-				: 'cash'
-		const transactionBase = {
-			accountId,
-			organizationId: selectedAccount?.organizationId ?? '',
-			categoryId,
-			bookedOn: String(formData.get('bookedOn') ?? ''),
-			money: {
-				amountMinor: parsedAmount.kind === 'valid' ? parsedAmount.amountMinor : amountText,
-				currency: selectedAccount?.currency ?? ''
-			},
-			...(String(formData.get('memo') ?? '').trim()
-				? { memo: String(formData.get('memo')).trim() }
-				: {})
-		}
-		const transactionDraft =
-			kind === 'expense'
-				? { ...transactionBase, kind, source: { source: 'manual' } }
-				: paymentMethod === 'check'
-					? {
-							...transactionBase,
-							kind,
-							source: { source: 'manual' },
-							paymentMethod,
-							checkDetails: {
-								checkNumber: String(formData.get('checkNumber') ?? ''),
-								...(String(formData.get('checkDate') ?? '')
-									? { checkDate: String(formData.get('checkDate')) }
-									: {})
-							}
-						}
-					: { ...transactionBase, kind, source: { source: 'manual' }, paymentMethod }
-
-		send({ type: 'UPDATE_DRAFT', draft: transactionDraft })
-		send({ type: 'SUBMIT' })
-	}
-
-	function resetForm() {
-		send({ type: 'RESET' })
+			transaction.organizationId !== context.organizationId ||
+			transaction.kind !== context.kind ||
+			context.organizationId !== filters.activeOrganizationId
+		)
+			throw new Error('The transaction workspace changed before saving.')
+		const result = await createTransaction(db, transaction)
+		if ('error' in result) throw new Error(result.error)
 	}
 </script>
 
@@ -127,73 +77,91 @@
 >
 	{#if accounts.length === 0}
 		<p>{m['transactions.no_accounts']()}</p>
-	{:else if $snapshot.matches('success')}
-		<p role="status">{m['transactions.saved']()}</p>
-		<button type="button" onclick={resetForm}>{m['transactions.add_another']()}</button>
 	{:else}
-		<form onsubmit={submit}>
-			<label for="transaction-account">{m['labels.account']()}</label>
-			<select id="transaction-account" name="accountId" required>
-				<option value="" selected disabled>{m['transactions.select_account']()}</option>
-				{#each accounts as account (account.id)}
-					<option value={account.id}>{account.name}</option>
-				{/each}
-			</select>
-
-			<label for="transaction-category">{m['labels.category']()}</label>
-			<select id="transaction-category" name="categoryId" required>
-				<option value="" selected disabled>{m['transactions.select_category']()}</option>
-				{#each availableCategories as category (category.id)}
-					<option value={category.id}>{category.name}</option>
-				{/each}
-			</select>
-
-			<label for="transaction-amount">{m['labels.amount']()} (USD)</label>
-			<input
-				id="transaction-amount"
-				name="amount"
-				type="text"
-				inputmode="decimal"
-				autocomplete="off"
-				pattern={AMOUNT_INPUT_PATTERN}
-				required
-			/>
-
-			<label for="transaction-date">{m['labels.date']()}</label>
-			<input id="transaction-date" name="bookedOn" type="date" value={todayDateOnly()} required />
-
-			{#if kind === 'income'}
-				<label for="transaction-payment-method">{m['transactions.payment.method']()}</label>
-				<select id="transaction-payment-method" name="paymentMethod" required>
-					<option value="cash">{m['transactions.payment.cash']()}</option>
-					<option value="check">{m['transactions.payment.check']()}</option>
-					<option value="transfer">{m['transactions.payment.transfer']()}</option>
-					<option value="electronic">{m['transactions.payment.electronic']()}</option>
-				</select>
-
-				<label for="check-number">{m['transactions.check.number']()}</label>
-				<input id="check-number" name="checkNumber" />
-
-				<label for="check-date">{m['transactions.check.date']()}</label>
-				<input id="check-date" name="checkDate" type="date" />
-			{/if}
-
-			<label for="transaction-memo">{m['labels.memo']()}</label>
-			<textarea id="transaction-memo" name="memo"></textarea>
-
-			{#if selectionError || $snapshot.context.validationIssues.length > 0}
-				<p role="alert">{m['transactions.validation_error']()}</p>
-			{/if}
-			{#if $snapshot.matches('error')}
-				<p role="alert">{m['transactions.save_error']()}</p>
-			{/if}
-
-			<button
-				type="submit"
-				disabled={$snapshot.matches('saving') || availableCategories.length === 0}
+		{#key `${filters.activeOrganizationId}:${kind}`}
+			<Form
+				{schema}
+				{save}
+				context={{ organizationId: filters.activeOrganizationId, kind }}
+				disabled={availableCategories.length === 0}
 			>
-				{$snapshot.matches('saving') ? m['transactions.saving']() : m['transactions.save']()}
-			</button>
-		</form>
+				{#snippet fields(form)}
+					{#if !form.state.matches('success')}
+						<label for="transaction-account">{m['labels.account']()}</label>
+						<select id="transaction-account" name="accountId" required>
+							<option value="" selected disabled>{m['transactions.select_account']()}</option>
+							{#each accounts as account (account.id)}
+								<option value={account.id}>{account.name}</option>
+							{/each}
+						</select>
+
+						<label for="transaction-category">{m['labels.category']()}</label>
+						<select id="transaction-category" name="categoryId" required>
+							<option value="" selected disabled>{m['transactions.select_category']()}</option>
+							{#each availableCategories as category (category.id)}
+								<option value={category.id}>{category.name}</option>
+							{/each}
+						</select>
+
+						<label for="transaction-amount">{m['labels.amount']()} (USD)</label>
+						<input
+							id="transaction-amount"
+							name="amount"
+							type="text"
+							inputmode="decimal"
+							autocomplete="off"
+							pattern={AMOUNT_INPUT_PATTERN}
+							required
+						/>
+
+						<label for="transaction-date">{m['labels.date']()}</label>
+						<input
+							id="transaction-date"
+							name="bookedOn"
+							type="date"
+							value={todayDateOnly()}
+							required
+						/>
+
+						{#if kind === 'income'}
+							<label for="transaction-payment-method">{m['transactions.payment.method']()}</label>
+							<select id="transaction-payment-method" name="paymentMethod" required>
+								<option value="cash">{m['transactions.payment.cash']()}</option>
+								<option value="check">{m['transactions.payment.check']()}</option>
+								<option value="transfer">{m['transactions.payment.transfer']()}</option>
+								<option value="electronic">{m['transactions.payment.electronic']()}</option>
+							</select>
+
+							<label for="check-number">{m['transactions.check.number']()}</label>
+							<input id="check-number" name="checkNumber" />
+
+							<label for="check-date">{m['transactions.check.date']()}</label>
+							<input id="check-date" name="checkDate" type="date" />
+						{/if}
+
+						<label for="transaction-memo">{m['labels.memo']()}</label>
+						<textarea id="transaction-memo" name="memo"></textarea>
+					{/if}
+				{/snippet}
+				{#snippet controls(form)}
+					{#if form.state.matches('success')}
+						<button type="reset">{m['transactions.add_another']()}</button>
+					{:else}
+						<button type="submit" disabled={form.disabled}>
+							{form.busy ? m['transactions.saving']() : m['transactions.save']()}
+						</button>
+					{/if}
+				{/snippet}
+				{#snippet feedback(form)}
+					{#if form.state.matches('success')}
+						<p role="status">{m['transactions.saved']()}</p>
+					{:else if form.state.matches('invalid')}
+						<p role="alert">{m['transactions.validation_error']()}</p>
+					{:else if form.state.matches('error')}
+						<p role="alert">{m['transactions.save_error']()}</p>
+					{/if}
+				{/snippet}
+			</Form>
+		{/key}
 	{/if}
 </QueryContent>

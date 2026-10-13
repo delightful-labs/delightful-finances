@@ -478,9 +478,11 @@ for (const scenario of formScenarios) {
 		await expect(
 			category.getByRole('option', { name: 'Personal category', exact: true })
 		).toHaveCount(1)
+		await page.getByLabel('Memo', { exact: true }).fill('Draft from previous workspace')
 		await page.getByLabel('Workspace', { exact: true }).selectOption(secondWorkspaceId)
 		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
 		await expect(category.locator('option')).toHaveText(['Select a category', 'Business category'])
+		await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('')
 		await account.selectOption({ label: 'Business checking' })
 		await category.selectOption({ label: 'Business category' })
 		await page.getByLabel(/Amount/).fill('42.50')
@@ -488,6 +490,11 @@ for (const scenario of formScenarios) {
 		await page.getByLabel('Memo', { exact: true }).fill(scenario.memo)
 		if (scenario.kind === 'income') {
 			await page.getByLabel('Payment method').selectOption('check')
+			await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+				'Check the transaction details and try again.'
+			)
+			await expect(page.getByLabel('Memo', { exact: true })).toHaveValue(scenario.memo)
 			await page.getByLabel('Check number').fill('12345')
 			await page.getByLabel('Check date').fill('2026-10-12')
 		}

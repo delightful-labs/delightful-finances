@@ -1,6 +1,6 @@
 # Reusable forms
 
-`Form.svelte` collects native form fields on submission and connects them to an XState machine. `WorkspaceNameForm` uses this API. The machine has unit coverage for validation, transformed values, save failures and retries, busy-state event handling, and reset. Five browser tests cover sidebar navigation preserving the workspace and database session, workspace renaming, whitespace validation and retry, reload persistence, owner/admin access, member/viewer read-only controls and server-denied writes, and workspace switching. Run `pnpm test:workspace` against the shared development server.
+`Form.svelte` collects native form fields on submission and connects them to an XState machine. `WorkspaceNameForm` and `TransactionForm` use this API. The transaction migration is reviewed: 29 adapter unit tests and three form browser regressions pass, including workspace draft reset and check validation retry. The machine has unit coverage for validation, transformed values, save failures and retries, busy-state event handling, and reset. Five browser tests cover sidebar navigation preserving the workspace and database session, workspace renaming, whitespace validation and retry, reload persistence, owner/admin access, member/viewer read-only controls and server-denied writes, and workspace switching. Run `pnpm test:workspace` against the shared development server.
 
 ## Inputs
 
@@ -68,3 +68,7 @@ Bind the record ID through context:
 ```
 
 The example omits error feedback for brevity; `WorkspaceNameForm` provides translated validation/save errors and a read-only explanation. Field collection currently uses `Object.fromEntries(FormData)`; repeated field names require a deliberate mapping before supporting multi-value controls.
+
+## Transaction forms
+
+`transactionFormSchema` converts submitted native field values into the existing transaction domain schema. It uses the current account/category rows to resolve workspace and currency, rejects unavailable or archived selections, parses integer minor-unit amounts, and delegates calendar-date and check validation to `appTransactionSchema`. The component supplies a save callback to the shared machine. Keying by workspace and transaction kind resets the actor and native fields when either changes. “Add another transaction” uses native form reset.
