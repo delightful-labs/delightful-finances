@@ -125,6 +125,10 @@ export function createAccount(
 	return db.insert(app.accounts, account).wait({ tier: 'local' })
 }
 
+export function archiveAccount(db: Pick<Db, 'update'>, accountId: Account['id']) {
+	return db.update(app.accounts, accountId, { archivedAt: new Date() }).wait({ tier: 'local' })
+}
+
 export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppTransaction) {
 	const parsed = appTransactionSchema.safeParse(input)
 	if (!parsed.success) return { error: validateTransaction(input) ?? 'invalid-transaction' }

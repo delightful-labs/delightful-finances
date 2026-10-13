@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReadTier, Transaction } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
-import { createAccount, createTransaction, ensurePersonalWorkspace } from './data.js'
+import {
+	archiveAccount,
+	createAccount,
+	createTransaction,
+	ensurePersonalWorkspace
+} from './data.js'
 import type { AppTransaction } from './domain/transaction.js'
 import { app, type Account, type Organization } from './schema.js'
 
@@ -75,6 +80,28 @@ describe('createAccount', () => {
 		const db = { insert: vi.fn() } satisfies Pick<Db, 'insert'>
 		expect(() => createAccount(db, organization.id, ' ', 'cash')).toThrow()
 		expect(db.insert).not.toHaveBeenCalled()
+	})
+})
+
+describe('archiveAccount', () => {
+	it('only sets the archive timestamp and waits for local persistence', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		const before = Date.now()
+		await archiveAccount(db, 'account')
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.accounts, 'account', {
+			archivedAt: expect.any(Date)
+		})
+		const archivedAt = db.update.mock.calls[0]?.[2]?.archivedAt
+		expect(archivedAt.getTime()).toBeGreaterThanOrEqual(before)
+		expect(archivedAt.getTime()).toBeLessThanOrEqual(Date.now())
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it('propagates local persistence errors', async () => {
+		const failure = new Error('Archive persistence failed')
+		const wait = vi.fn().mockRejectedValue(failure)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await expect(archiveAccount(db, 'account')).rejects.toBe(failure)
 	})
 })
 

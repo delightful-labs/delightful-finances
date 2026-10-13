@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import type { OrganizationMember } from '../src/lib/schema.js'
 
 declare global {
 	interface Window {
@@ -748,6 +749,203 @@ for (const scenario of formScenarios) {
 		await expect(category).toHaveValue(fixture.secondSystemId)
 		await selector.selectOption(firstWorkspaceId)
 		await expect(category).toHaveValue(fixture.systemId)
+	})
+}
+
+test('account archive works offline, retains history, and excludes new-entry options', async ({
+	page,
+	context
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db } = window.workspaceSettingsTest
+		const account = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Archive checking',
+				kind: 'bank',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const category = await db.one(
+			app.categories.where({ organizationId, kind: 'expense', isSystem: true }),
+			{ tier: 'remote' }
+		)
+		if (!category) throw new Error('Expense category is missing.')
+		const transaction = await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 1200,
+				currency: 'USD',
+				bookedOn: '2026-10-13',
+				source: 'manual',
+				memo: 'Retained archived history'
+			})
+			.wait({ tier: 'global' })
+		return { accountId: account.id, transactionId: transaction.id }
+	}, organizationId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
+	const main = page.getByRole('main')
+	await expect(
+		main.getByRole('button', { name: 'Archive Archive checking', exact: true })
+	).toBeEnabled()
+	await context.setOffline(true)
+	try {
+		await main.getByRole('button', { name: 'Archive Archive checking', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Account Archive checking archived.')
+		await expect(main.getByRole('cell', { name: 'Archive checking', exact: true })).toHaveCount(0)
+		await expect(
+			page.getByRole('checkbox', { name: 'Show Archive checking', exact: true })
+		).toHaveCount(0)
+	} finally {
+		await context.setOffline(false)
+	}
+	await expect
+		.poll(() =>
+			page.evaluate(async (fixture) => {
+				const { app, db } = window.workspaceSettingsTest
+				const account = await db.one(app.accounts.where({ id: fixture.accountId }), {
+					tier: 'remote'
+				})
+				const transaction = await db.one(app.transactions.where({ id: fixture.transactionId }), {
+					tier: 'remote'
+				})
+				return {
+					archived: Boolean(account?.archivedAt),
+					retained: transaction?.id === fixture.transactionId
+				}
+			}, fixture)
+		)
+		.toEqual({ archived: true, retained: true })
+	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(
+		main.getByRole('cell', { name: 'Retained archived history', exact: true })
+	).toBeVisible()
+	await main.getByRole('link', { name: 'Add expense', exact: true }).click()
+	await expect(main.getByText('Add an account before recording a transaction.')).toBeVisible()
+	await page.goto('/accounts')
+	await expect(main.getByText('Start with one place you keep money.')).toBeVisible()
+})
+
+const archiveScenarios: {
+	name: string
+	role: NonNullable<OrganizationMember['role']>
+	mode: OrganizationMember['accountAccessMode']
+	grant?: 'read' | 'write'
+	write: boolean
+}[] = [
+	{ name: 'admin', role: 'admin', mode: 'selected', write: true },
+	{ name: 'member with all access', role: 'member', mode: 'all', write: true },
+	{
+		name: 'member with a write grant',
+		role: 'member',
+		mode: 'selected',
+		grant: 'write',
+		write: true
+	},
+	{
+		name: 'member with a read grant',
+		role: 'member',
+		mode: 'selected',
+		grant: 'read',
+		write: false
+	},
+	{ name: 'viewer with a write grant', role: 'viewer', mode: 'all', grant: 'write', write: false }
+]
+
+for (const scenario of archiveScenarios) {
+	test(`account archive permissions: ${scenario.name}`, async ({ page, browser }) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		try {
+			const subject = await subjectContext.newPage()
+			await start(subject)
+			const subjectId = await subject.evaluate(() => window.workspaceSettingsTest.userId)
+			const accountId = await page.evaluate(
+				async ({ organizationId, subjectId, scenario }) => {
+					const { app, db } = window.workspaceSettingsTest
+					const account = await db
+						.insert(app.accounts, {
+							organizationId,
+							name: 'Permission checking',
+							kind: 'bank',
+							currency: 'USD'
+						})
+						.wait({ tier: 'global' })
+					await db
+						.insert(app.organizationMembers, {
+							organizationId,
+							userId: subjectId,
+							role: scenario.role,
+							accountAccessMode: scenario.mode
+						})
+						.wait({ tier: 'global' })
+					if (scenario.grant)
+						await db
+							.insert(app.accountMemberships, {
+								organizationId,
+								accountId: account.id,
+								userId: subjectId,
+								access: scenario.grant
+							})
+							.wait({ tier: 'global' })
+					return account.id
+				},
+				{ organizationId, subjectId, scenario }
+			)
+			await start(subject)
+			await subject
+				.getByRole('navigation')
+				.getByRole('link', { name: 'Accounts', exact: true })
+				.click()
+			const selector = subject.getByLabel('Workspace', { exact: true })
+			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
+			await selector.selectOption(organizationId)
+			const row = subject
+				.getByRole('main')
+				.getByRole('row')
+				.filter({ has: subject.getByRole('cell', { name: 'Permission checking', exact: true }) })
+			await expect(row).toBeVisible()
+			const archive = row.getByRole('button', { name: 'Archive Permission checking', exact: true })
+			if (scenario.write) {
+				await expect(archive).toBeEnabled()
+				await archive.click()
+				await expect(subject.getByRole('main').getByRole('status')).toHaveText(
+					'Account Permission checking archived.'
+				)
+				await expect(row).toHaveCount(0)
+			} else {
+				await expect(archive).toHaveCount(0)
+				const outcome = await subject.evaluate(async (accountId) => {
+					const { app, db } = window.workspaceSettingsTest
+					try {
+						await db
+							.update(app.accounts, accountId, { archivedAt: new Date() })
+							.wait({ tier: 'global' })
+						return 'accepted'
+					} catch (error) {
+						return error instanceof Error ? error.message : 'unknown-error'
+					}
+				}, accountId)
+				expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
+			}
+			await expect
+				.poll(() =>
+					page.evaluate(async (id) => {
+						const { app, db } = window.workspaceSettingsTest
+						const account = await db.one(app.accounts.where({ id }), { tier: 'remote' })
+						return { exists: Boolean(account), archived: Boolean(account?.archivedAt) }
+					}, accountId)
+				)
+				.toEqual({ exists: true, archived: scenario.write })
+		} finally {
+			await subjectContext.close()
+		}
 	})
 }
 

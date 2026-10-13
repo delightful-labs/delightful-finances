@@ -10,3 +10,7 @@ export const appAccountSchema = z.strictObject({
 })
 
 export const accountFormSchema = appAccountSchema.pick({ name: true, kind: true }).strip()
+
+export const accountArchiveSchema = appAccountSchema
+	.pick({ organizationId: true })
+	.extend({ accountId: z.uuid() })

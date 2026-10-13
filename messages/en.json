@@ -27,6 +27,7 @@
 	},
 	"labels": {
 		"accounts": "Accounts",
+		"actions": "Actions",
 		"account_name": "Account name",
 		"workspace_name": "Workspace name",
 		"account_type": "Account type",
@@ -41,6 +42,8 @@
 	},
 	"actions": {
 		"add_account": "Add an account",
+		"archive": "Archive",
+		"archive_account": "Archive {name}",
 		"add_expense": "Add expense",
 		"add_income": "Add income",
 		"save": "Save"
@@ -63,6 +66,9 @@
 		"save_error": "The account could not be saved. Please try again.",
 		"validation_error": "Enter an account name and select an account type.",
 		"saving": "Saving account…",
+		"archiving": "Archiving account…",
+		"archived": "Account {name} archived.",
+		"archive_error": "The account could not be archived. Please try again.",
 		"empty": {
 			"title": "Start with one place you keep money."
 		}

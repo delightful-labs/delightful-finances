@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountFormSchema, appAccountSchema } from './accounts.js'
+import { accountArchiveSchema, accountFormSchema, appAccountSchema } from './accounts.js'
 
 describe('canonical account schema', () => {
 	const input = {
@@ -31,6 +31,24 @@ describe('canonical account schema', () => {
 		{ archivedAt: '2026-10-13' }
 	])('rejects invalid entity fields %j', (values) => {
 		expect(appAccountSchema.safeParse({ ...input, ...values }).success).toBe(false)
+	})
+})
+
+describe('account archive schema', () => {
+	const values = {
+		organizationId: '11111111-1111-4111-8111-111111111111',
+		accountId: '22222222-2222-4222-8222-222222222222'
+	}
+	it('accepts valid account/workspace IDs', () => {
+		expect(accountArchiveSchema.parse(values)).toEqual(values)
+	})
+	it.each([
+		{ accountId: '' },
+		{ accountId: undefined },
+		{ organizationId: '' },
+		{ organizationId: undefined }
+	])('rejects invalid archive IDs %j', (input) => {
+		expect(accountArchiveSchema.safeParse({ ...values, ...input }).success).toBe(false)
 	})
 })
 
