@@ -8,6 +8,8 @@
 		"loading_description": "Setting up your profile and starter categories.",
 		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
 		"label": "Workspace",
+		"list_loading": "Loading workspaces…",
+		"list_load_error": "Workspaces could not be loaded.",
 		"load_error": "Workspace settings could not be loaded.",
 		"loading_settings": "Loading workspace settings…",
 		"select_workspace": "Select a workspace.",

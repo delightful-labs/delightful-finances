@@ -1,51 +1,33 @@
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte'
-	import { getDb } from 'jazz-tools/svelte'
-	import { app, type Account, type Organization } from '#lib/schema.js'
+	import type { Snippet } from 'svelte'
+	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { app } from '#lib/schema.js'
 	import type { FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import QueryContent from './QueryContent.svelte'
 
 	let { children, filters }: { children: Snippet; filters: FinanceFilters } = $props()
-	let organizations = $state<Organization[]>([])
-	let accounts = $state<Account[]>([])
-	let organizationLoadError = $state(false)
-	let accountLoadError = $state(false)
-	const db = getDb()
-	const dataLoadError = $derived(organizationLoadError || accountLoadError)
-
-	onMount(() => {
-		const unsubscribeOrganizations = db.subscribe(app.organizations.orderBy('name'), {
-			onUpdate: (rows) => {
-				organizations = rows
-				organizationLoadError = false
-				if (!rows.some((organization) => organization.id === filters.activeOrganizationId)) {
-					filters.activeOrganizationId =
-						rows.find((organization) => organization.kind === 'personal')?.id ?? rows[0]?.id ?? null
-					filters.selectedAccountIds = null
-				}
-			},
-			onError: () => {
-				organizationLoadError = true
-			}
-		})
-		const unsubscribeAccounts = db.subscribe(app.accounts.orderBy('name'), {
-			onUpdate: (rows) => {
-				accounts = rows.filter((account) => account.archivedAt == null)
-				accountLoadError = false
-			},
-			onError: () => {
-				accountLoadError = true
-			}
-		})
-		return () => {
-			unsubscribeOrganizations()
-			unsubscribeAccounts()
-		}
-	})
-
-	const activeAccounts = $derived(
-		accounts.filter((account) => account.organizationId === filters.activeOrganizationId)
+	const organizationQuery = new QuerySubscription(app.organizations.orderBy('name'))
+	const accountQuery = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.accounts
+					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
+					.orderBy('name')
+			: undefined
 	)
+	const organizations = $derived(organizationQuery.current ?? [])
+	const activeAccounts = $derived(accountQuery.current ?? [])
+
+	$effect(() => {
+		if (organizationQuery.isLoading || organizationQuery.error || !organizationQuery.current) return
+		if (organizations.some((organization) => organization.id === filters.activeOrganizationId))
+			return
+		filters.activeOrganizationId =
+			organizations.find((organization) => organization.kind === 'personal')?.id ??
+			organizations[0]?.id ??
+			null
+		filters.selectedAccountIds = null
+	})
 
 	function setActiveOrganization(value: string) {
 		filters.activeOrganizationId = value || null
@@ -87,47 +69,59 @@
 		</nav>
 
 		<section aria-labelledby="account-filters-heading">
-			<label for="active-organization">{m['workspace.label']()}</label>
-			<select
-				id="active-organization"
-				value={filters.activeOrganizationId ?? ''}
-				onchange={(event) => setActiveOrganization(event.currentTarget.value)}
+			<QueryContent
+				queries={[organizationQuery]}
+				loadingMessage={m['workspace.list_loading']()}
+				errorMessage={m['workspace.list_load_error']()}
 			>
-				{#each organizations as organization (organization.id)}
-					<option value={organization.id}>{organization.name}</option>
-				{/each}
-			</select>
+				<label for="active-organization">{m['workspace.label']()}</label>
+				<select
+					id="active-organization"
+					value={filters.activeOrganizationId ?? ''}
+					onchange={(event) => setActiveOrganization(event.currentTarget.value)}
+				>
+					{#each organizations as organization (organization.id)}
+						<option value={organization.id}>{organization.name}</option>
+					{/each}
+				</select>
+			</QueryContent>
 
 			<h2 id="account-filters-heading">{m['labels.accounts']()}</h2>
-			{#if dataLoadError}
-				<p role="alert">{m['accounts.load_error']()}</p>
-			{:else if activeAccounts.length > 0}
-				<ul>
-					<li class="account-filter">
-						<span>{m['accounts.filters.all']()}</span>
-						<input
-							type="checkbox"
-							checked={filters.selectedAccountIds === null ||
-								activeAccounts.every((account) => filters.selectedAccountIds?.includes(account.id))}
-							aria-label={m['accounts.filters.all']()}
-							onchange={(event) => setAllAccountsSelected(event.currentTarget.checked)}
-						/>
-					</li>
-					{#each activeAccounts as account (account.id)}
+			<QueryContent
+				queries={[organizationQuery, accountQuery]}
+				loadingMessage={m['accounts.loading']()}
+				errorMessage={m['accounts.load_error']()}
+			>
+				{#if activeAccounts.length > 0}
+					<ul>
 						<li class="account-filter">
-							<span>{account.name}</span>
+							<span>{m['accounts.filters.all']()}</span>
 							<input
 								type="checkbox"
-								checked={isAccountSelected(account.id)}
-								aria-label={m['accounts.filters.toggle']({ name: account.name })}
-								onchange={(event) => setAccountSelected(account.id, event.currentTarget.checked)}
+								checked={filters.selectedAccountIds === null ||
+									activeAccounts.every((account) =>
+										filters.selectedAccountIds?.includes(account.id)
+									)}
+								aria-label={m['accounts.filters.all']()}
+								onchange={(event) => setAllAccountsSelected(event.currentTarget.checked)}
 							/>
 						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p>{m['accounts.sidebar_empty']()}</p>
-			{/if}
+						{#each activeAccounts as account (account.id)}
+							<li class="account-filter">
+								<span>{account.name}</span>
+								<input
+									type="checkbox"
+									checked={isAccountSelected(account.id)}
+									aria-label={m['accounts.filters.toggle']({ name: account.name })}
+									onchange={(event) => setAccountSelected(account.id, event.currentTarget.checked)}
+								/>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p>{m['accounts.sidebar_empty']()}</p>
+				{/if}
+			</QueryContent>
 			<a href="/accounts/new">{m['actions.add_account']()}</a>
 		</section>
 	</aside>
