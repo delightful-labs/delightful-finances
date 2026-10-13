@@ -1,10 +1,16 @@
 <script lang="ts">
+	import { LoadingSpinner } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let { error = false, workspace = false }: { error?: boolean; workspace?: boolean } = $props()
 </script>
 
 <main>
+	{#if !error}
+		<LoadingSpinner
+			text={workspace ? m['workspace.loading']() : m['database.starting.heading']()}
+		/>
+	{/if}
 	<h1>
 		{workspace
 			? m['workspace.loading']()

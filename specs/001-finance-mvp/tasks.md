@@ -101,3 +101,11 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
 - [ ] T049 Select and display Jazz creator/latest-editor metadata for transactions, resolving author identities to profiles with fallbacks.
 - [ ] T050 Add owner-editable login profile name and avatar upload/replace/remove, with permissions for authorized workspace members to read author display profiles.
 - [ ] T051 After implementation review, add unit and Playwright coverage for attribution, profile permissions, avatar lifecycle, missing-profile fallbacks, and persistence across workspace switches/recovery.
+
+## Delightful UI Integration Trial
+
+- [x] T052 Create an isolated Finance integration branch/worktree and consume a packed local Delightful UI snapshot with a compatible Svelte peer range.
+- [x] T053 Apply the approved global theme and migrate applicable existing controls while preserving native forms, localization and business logic.
+- [x] T054 Record evidence-based future component suggestions in code, integration documentation and the active spec/plan.
+- [x] T055 Prepare implementation review: packaging/publint, production build, application/service-worker static checks and changed-file formatting pass; isolated preview runs at http://127.0.0.1:5180. Implementation approved by the user.
+- [x] T056 After approval, verify 89 focused unit tests and 27 browser scenarios for form defaults/resets, conditional check fields, workspace/filter state, recovery/restore, modal dismissal, archiving and permissions. Browser-test type checks pass.

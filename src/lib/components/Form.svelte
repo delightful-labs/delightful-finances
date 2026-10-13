@@ -49,7 +49,42 @@
 </script>
 
 <form onsubmit={submit} onreset={reset} aria-busy={busy}>
-	{@render fields(view)}
-	{@render controls?.(view)}
-	{@render feedback?.(view)}
+	<div class="form-fields">{@render fields(view)}</div>
+	{#if controls}
+		<div class="form-controls">{@render controls(view)}</div>
+	{/if}
+	<!-- Future field feedback: docs/delightful-ui-integration.md#field-feedback -->
+	{#if feedback}
+		<div class="form-feedback">{@render feedback(view)}</div>
+	{/if}
 </form>
+
+<style>
+	form {
+		display: grid;
+		gap: var(--dui-space-sm, 1rem);
+	}
+
+	.form-fields,
+	.form-feedback {
+		display: grid;
+		gap: var(--dui-space-xs, 0.5rem);
+		min-width: 0;
+	}
+
+	.form-controls {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--dui-space-xs, 0.5rem);
+	}
+
+	.form-fields:empty,
+	.form-controls:empty,
+	.form-feedback:empty {
+		display: none;
+	}
+
+	form :global(p) {
+		margin: 0;
+	}
+</style>

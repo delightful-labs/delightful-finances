@@ -48,6 +48,7 @@
 	{:else if visibleTransactions.length === 0}
 		<p>{m['transactions.empty.title']()}</p>
 	{:else}
+		<!-- Future DataTable: docs/delightful-ui-integration.md#tables -->
 		<table>
 			<thead>
 				<tr>

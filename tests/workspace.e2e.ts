@@ -920,10 +920,10 @@ const archiveScenarios: {
 ]
 
 for (const scenario of archiveScenarios) {
-	test(`account archive permissions: ${scenario.name}`, async ({ page, browser }) => {
+	test(`account archive permissions: ${scenario.name}`, async ({ page, browser, baseURL }) => {
 		await start(page)
 		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
-		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const subjectContext = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
 		try {
 			const subject = await subjectContext.newPage()
 			await start(subject)
@@ -1012,10 +1012,14 @@ for (const scenario of archiveScenarios) {
 }
 
 for (const role of ['admin', 'member', 'viewer']) {
-	test(`${role} has the correct rename access in a shared workspace`, async ({ page, browser }) => {
+	test(`${role} has the correct rename access in a shared workspace`, async ({
+		page,
+		browser,
+		baseURL
+	}) => {
 		await start(page)
 		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
-		const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const otherContext = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
 		try {
 			const subject = await otherContext.newPage()
 			await start(subject)

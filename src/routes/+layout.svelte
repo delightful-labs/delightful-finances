@@ -1,4 +1,5 @@
 <script lang="ts">
+	import 'delightful-ui/theme.css'
 	import { PUBLIC_JAZZ_APP_ID, PUBLIC_JAZZ_SERVER_URL } from '$app/env/public'
 	import { onMount, setContext, type Snippet } from 'svelte'
 	import {

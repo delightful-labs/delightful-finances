@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button, Textarea } from 'delightful-ui'
 	import { goto } from '$app/navigation'
 	import { getJazzSession } from 'jazz-tools/svelte'
 	import { RecoveryPhrase } from 'jazz-tools/passphrase'
@@ -34,12 +35,17 @@
 <p>{m['login.description']()}</p>
 
 <form onsubmit={restoreAccount}>
-	<label for="recovery-phrase">{m['login.recovery_phrase']()}</label>
-	<textarea id="recovery-phrase" name="recoveryPhrase" rows="4" required></textarea>
+	<Textarea
+		label={m['login.recovery_phrase']()}
+		id="recovery-phrase"
+		name="recoveryPhrase"
+		rows={4}
+		required
+	></Textarea>
 	{#if restoreError}
 		<p role="alert">{m['login.restore_error']()}</p>
 	{/if}
-	<button type="submit" disabled={restoring}>
+	<Button type="submit" disabled={restoring}>
 		{restoring ? m['login.restoring']() : m['login.restore_action']()}
-	</button>
+	</Button>
 </form>

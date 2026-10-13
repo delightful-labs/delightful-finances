@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button, InputText, InputDate, Select, Textarea } from 'delightful-ui'
 	import { getContext } from 'svelte'
 	import { getDb, QuerySubscription } from 'jazz-tools/svelte'
 	import { createTransaction } from '#lib/data.js'
@@ -102,52 +103,64 @@
 			>
 				{#snippet fields(form)}
 					{#if !form.state.matches('success')}
-						<label for="transaction-account">{m['labels.account']()}</label>
-						<select id="transaction-account" name="accountId" required>
-							<option value="" selected disabled>{m['transactions.select_account']()}</option>
+						<Select
+							label={m['labels.account']()}
+							id="transaction-account"
+							name="accountId"
+							required
+							defaultValue=""
+						>
+							<option value="" disabled>{m['transactions.select_account']()}</option>
 							{#each accounts as account (account.id)}
 								<option value={account.id}>{account.name}</option>
 							{/each}
-						</select>
+						</Select>
 
-						<label for="transaction-category">{m['labels.category']()}</label>
-						<select id="transaction-category" name="categoryId" required>
-							<option value="" selected={!defaultCategory} disabled>
-								{m['transactions.select_category']()}
-							</option>
-							{#each availableCategories as category (category.id)}
-								<option value={category.id} selected={category.id === defaultCategory?.id}>
-									{category.name}
+						{#key defaultCategory?.id}
+							<Select
+								label={m['labels.category']()}
+								id="transaction-category"
+								name="categoryId"
+								required
+								defaultValue={defaultCategory?.id ?? ''}
+							>
+								<option value="" disabled>
+									{m['transactions.select_category']()}
 								</option>
-							{/each}
-						</select>
+								{#each availableCategories as category (category.id)}
+									<option value={category.id}>
+										{category.name}
+									</option>
+								{/each}
+							</Select>
+						{/key}
 
-						<label for="transaction-amount">{m['labels.amount']()} (USD)</label>
-						<input
+						<!-- Future currency entry: docs/delightful-ui-integration.md#currency-entry -->
+						<InputText
+							label={`${m['labels.amount']()} (USD)`}
 							id="transaction-amount"
 							name="amount"
-							type="text"
 							inputmode="decimal"
 							autocomplete="off"
 							pattern={AMOUNT_INPUT_PATTERN}
 							required
 						/>
 
-						<label for="transaction-date">{m['labels.date']()}</label>
-						<input
+						<InputDate
+							label={m['labels.date']()}
 							id="transaction-date"
 							name="bookedOn"
-							type="date"
 							defaultValue={todayDateOnly()}
 							required
 						/>
 
 						{#if kind === 'income'}
-							<label for="transaction-payment-method">{m['transactions.payment.method']()}</label>
-							<select
+							<Select
+								label={m['transactions.payment.method']()}
 								id="transaction-payment-method"
 								name="paymentMethod"
 								required
+								defaultValue="cash"
 								{@attach syncPaymentMethod}
 								onchange={(event) => syncPaymentMethod(event.currentTarget)}
 							>
@@ -155,30 +168,37 @@
 								<option value="check">{m['transactions.payment.check']()}</option>
 								<option value="transfer">{m['transactions.payment.transfer']()}</option>
 								<option value="electronic">{m['transactions.payment.electronic']()}</option>
-							</select>
+							</Select>
 
 							{#if showCheckFields}
-								<label for="check-number">{m['transactions.check.number']()}</label>
-								<input id="check-number" name="checkNumber" required />
+								<InputText
+									label={m['transactions.check.number']()}
+									id="check-number"
+									name="checkNumber"
+									required
+								/>
 
-								<label for="check-date">{m['transactions.check.date']()}</label>
-								<input id="check-date" name="checkDate" type="date" required />
+								<InputDate
+									label={m['transactions.check.date']()}
+									id="check-date"
+									name="checkDate"
+									required
+								/>
 							{/if}
 						{/if}
 
-						<label for="transaction-memo">{m['labels.memo']()}</label>
-						<textarea id="transaction-memo" name="memo"></textarea>
+						<Textarea label={m['labels.memo']()} id="transaction-memo" name="memo"></Textarea>
 					{/if}
 				{/snippet}
 				{#snippet controls(form)}
 					{#if form.state.matches('success')}
-						<button type="reset">{m['transactions.add_another']()}</button>
+						<Button type="reset">{m['transactions.add_another']()}</Button>
 					{:else}
-						<button type="submit" disabled={form.disabled}>
+						<Button type="submit" disabled={form.disabled}>
 							{form.busy
 								? m['status.saving']({ subject: m['labels.transaction']() })
 								: m['transactions.save']()}
-						</button>
+						</Button>
 					{/if}
 				{/snippet}
 				{#snippet feedback(form)}

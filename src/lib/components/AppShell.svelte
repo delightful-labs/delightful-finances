@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Select, Checkbox } from 'delightful-ui'
 	import { getContext, type Snippet } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
@@ -57,6 +58,7 @@
 
 <div class="app-shell">
 	<aside>
+		<!-- Future navigation: docs/delightful-ui-integration.md#navigation -->
 		<nav aria-label={m['navigation.label']()}>
 			<ul>
 				<li><a href="/">{m['navigation.overview']()}</a></li>
@@ -75,8 +77,8 @@
 				loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
 				errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
 			>
-				<label for="active-organization">{m['workspace.label']()}</label>
-				<select
+				<Select
+					label={m['workspace.label']()}
 					id="active-organization"
 					value={filters.activeOrganizationId ?? ''}
 					onchange={(event) => setActiveOrganization(event.currentTarget.value)}
@@ -84,7 +86,7 @@
 					{#each organizations as organization (organization.id)}
 						<option value={organization.id}>{organization.name}</option>
 					{/each}
-				</select>
+				</Select>
 			</QueryContent>
 
 			<h2 id="account-filters-heading">{m['labels.accounts']()}</h2>
@@ -96,23 +98,20 @@
 				{#if activeAccounts.length > 0}
 					<ul>
 						<li class="account-filter">
-							<span>{m['accounts.filters.all']()}</span>
-							<input
-								type="checkbox"
+							<Checkbox
 								checked={filters.selectedAccountIds === null ||
 									activeAccounts.every((account) =>
 										filters.selectedAccountIds?.includes(account.id)
 									)}
-								aria-label={m['accounts.filters.all']()}
+								label={m['accounts.filters.all']()}
 								onchange={(event) => setAllAccountsSelected(event.currentTarget.checked)}
 							/>
 						</li>
 						{#each activeAccounts as account (account.id)}
 							<li class="account-filter">
-								<span>{account.name}</span>
-								<input
-									type="checkbox"
+								<Checkbox
 									checked={isAccountSelected(account.id)}
+									label={account.name}
 									aria-label={m['accounts.filters.toggle']({ name: account.name })}
 									onchange={(event) => setAccountSelected(account.id, event.currentTarget.checked)}
 								/>

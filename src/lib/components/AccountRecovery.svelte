@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button, Textarea, Checkbox, Dialog } from 'delightful-ui'
 	import { exportLocalFirstSecret } from 'jazz-tools'
 	import { getJazzSession } from 'jazz-tools/svelte'
 	import { RecoveryPhrase } from 'jazz-tools/passphrase'
@@ -40,21 +41,54 @@
 <h1>{m['recovery.heading']()}</h1>
 <p>{m['recovery.description']()}</p>
 
-{#if !revealed}
-	<button type="button" onclick={revealPhrase}>{m['recovery.show']()}</button>
-{:else}
-	<p role="alert">{m['recovery.warning']()}</p>
-	<label for="account-recovery-phrase">{m['recovery.phrase_label']()}</label>
-	<textarea id="account-recovery-phrase" rows="4" readonly value={phrase}></textarea>
-	<label>
-		<input type="checkbox" bind:checked={savedConfirmed} />
-		{m['recovery.confirm']()}
-	</label>
-	<button type="button" disabled={!savedConfirmed} onclick={hidePhrase}>
-		{m['recovery.hide']()}
-	</button>
-{/if}
+<Button type="button" onclick={revealPhrase}>{m['recovery.show']()}</Button>
+
+<Dialog
+	heading={m['recovery.heading']()}
+	aria-describedby="recovery-warning"
+	bind:open={revealed}
+	closedby="any"
+	oncancel={hidePhrase}
+	onclose={hidePhrase}
+>
+	{#if revealed}
+		<div class="recovery-content">
+			<p id="recovery-warning">{m['recovery.warning']()}</p>
+			<Textarea
+				label={m['recovery.phrase_label']()}
+				id="account-recovery-phrase"
+				rows={4}
+				readonly
+				value={phrase}
+			></Textarea>
+			<Checkbox label={m['recovery.confirm']()} bind:checked={savedConfirmed} />
+			<div class="recovery-controls">
+				<Button type="button" disabled={!savedConfirmed} onclick={hidePhrase}>
+					{m['recovery.hide']()}
+				</Button>
+				<Button type="button" onclick={hidePhrase}>{m['recovery.close']()}</Button>
+			</div>
+		</div>
+	{/if}
+</Dialog>
 
 {#if loadError}
 	<p role="alert">{m['recovery.error']()}</p>
 {/if}
+
+<style>
+	.recovery-content {
+		display: grid;
+		gap: var(--dui-space-sm, 1rem);
+	}
+
+	.recovery-content p {
+		margin: 0;
+	}
+
+	.recovery-controls {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--dui-space-xs, 0.5rem);
+	}
+</style>

@@ -167,3 +167,11 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **SC-005**: Permission rules prevent cross-organization access and protect SimpleFIN credentials from member/viewer roles.
 - **SC-006**: Every visible label, hint, and error in shipped UI is sourced from Paraglide messages.
 - **SC-007**: Every shipped application module has appropriate unit coverage, and each primary user workflow has a passing Playwright end-to-end test.
+
+## Delightful UI Integration Trial and Future Components
+
+The approved trial replaces applicable existing controls with Delightful UI and imports its full default light theme. This is an explicit exception to the wireframe-only presentation default. Existing responsive layouts, Paraglide labels, native form semantics, permissions, local-first persistence, integer money and date-only values remain requirements. Amount entry stays text-based; keypad workflows and new domain features are deferred. Form layout spacing uses grid/flex gap, with a small gap between fields and a larger gap before actions; sibling spacing should generally use gap rather than margin or padding.
+
+Future reusable component proposals, based on integration call sites, are currency-entry composition, linked field help/error feedback, status feedback, semantic table presentation and navigation/layout primitives. These are candidates for later library specifications, not additional MVP requirements. See `docs/delightful-ui-integration.md` and linked code comments for evidence, current solutions and ownership boundaries.
+
+Recovery phrase revelation uses the library's native modal Dialog with translated warning, read-only phrase and saved confirmation. Completion requires confirmation, while backdrop clicks, Close and Escape allow immediate dismissal. The dialog uses native `closedby="any"` light dismissal. Every dismissal clears the phrase and confirmation state; closed dialog content excludes the phrase.

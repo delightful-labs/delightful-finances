@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button, InputText } from 'delightful-ui'
 	import { getDb } from 'jazz-tools/svelte'
 	import { z } from 'zod'
 	import Form from './Form.svelte'
@@ -23,8 +24,8 @@
 {#key workspace.id}
 	<Form {schema} {save} context={{ id: workspace.id }} disabled={!canRename}>
 		{#snippet fields(form)}
-			<label for="workspace-name">{m['labels.workspace_name']()}</label>
-			<input
+			<InputText
+				label={m['labels.workspace_name']()}
 				id="workspace-name"
 				name="name"
 				value={workspace.name}
@@ -34,9 +35,9 @@
 			/>
 		{/snippet}
 		{#snippet controls(form)}
-			<button type="submit" disabled={form.disabled}>
+			<Button type="submit" disabled={form.disabled}>
 				{form.busy ? m['status.saving']({ subject: m['workspace.label']() }) : m['actions.save']()}
-			</button>
+			</Button>
 		{/snippet}
 		{#snippet feedback(form)}
 			{#if form.state.matches('success')}

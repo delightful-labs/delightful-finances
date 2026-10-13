@@ -35,7 +35,7 @@
 		"@types/node": "^26.6.5",
 		"prettier": "^3.9.10",
 		"prettier-plugin-svelte": "^4.1.1",
-		"svelte": "^5.57.1",
+		"svelte": "^5.57.2",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.3.0",
@@ -46,6 +46,7 @@
 	},
 	"dependencies": {
 		"@xstate/svelte": "^5.0.0",
+		"delightful-ui": "file:vendor/delightful-ui-0.0.24.tgz",
 		"jazz-tools": "2.0.0-alpha.59",
 		"xstate": "^5.33.2",
 		"zod": "4.1.11"

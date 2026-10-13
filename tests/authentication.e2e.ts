@@ -49,7 +49,8 @@ for (const { name, phrase } of invalidPhrases) {
 
 test('restores existing workspace data without duplicates or previous identity accounts', async ({
 	page,
-	browser
+	browser,
+	baseURL
 }) => {
 	await createAccount(page, 'Original checking')
 	const workspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
@@ -59,7 +60,7 @@ test('restores existing workspace data without duplicates or previous identity a
 	await page.getByLabel('I saved this phrase somewhere safe.').check()
 	await page.getByRole('button', { name: 'I saved the phrase' }).click()
 
-	const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+	const otherContext = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
 	try {
 		const otherPage = await otherContext.newPage()
 		await createAccount(otherPage, 'Previous identity checking')
@@ -91,5 +92,42 @@ test('restores existing workspace data without duplicates or previous identity a
 		await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(4)
 	} finally {
 		await otherContext.close()
+	}
+})
+
+test('recovery modal clears its content and confirmation on every dismissal', async ({ page }) => {
+	await createAccount(page, 'Recovery modal checking')
+	await page.goto('/account')
+	const show = page.getByRole('button', { name: 'Show recovery phrase' })
+	const dialog = page.getByRole('dialog', { name: 'Account recovery' })
+	const phrase = page.getByLabel('Your recovery phrase', { exact: true })
+	const confirmation = page.getByLabel('I saved this phrase somewhere safe.')
+	const complete = page.getByRole('button', { name: 'I saved the phrase', exact: true })
+
+	for (const dismissal of ['close', 'escape', 'backdrop', 'complete']) {
+		await show.click()
+		await expect(dialog).toBeVisible()
+		// Never include recovery secrets in assertion output or test artifacts.
+		expect(await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)).toBe(
+			true
+		)
+		await expect(confirmation).not.toBeChecked()
+		await expect(complete).toBeDisabled()
+		await phrase.click()
+		await expect(dialog).toBeVisible()
+		if (dismissal === 'complete') {
+			await confirmation.check()
+			await complete.click()
+		} else if (dismissal === 'escape') {
+			await confirmation.check()
+			await page.keyboard.press('Escape')
+		} else if (dismissal === 'backdrop') {
+			await page.mouse.click(1, 1)
+		} else {
+			await page.getByRole('button', { name: 'Close', exact: true }).click()
+		}
+		await expect(dialog).not.toBeVisible()
+		await expect(phrase).toHaveCount(0)
+		await expect(show).toBeFocused()
 	}
 })

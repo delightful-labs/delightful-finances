@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button, InputText, Select } from 'delightful-ui'
 	import { getContext } from 'svelte'
 	import { getDb } from 'jazz-tools/svelte'
 	import type { z } from 'zod'
@@ -39,27 +40,38 @@
 	>
 		{#snippet fields(form)}
 			{#if !form.state.matches('success')}
-				<label for="account-name">{m['labels.account_name']()}</label>
-				<input id="account-name" name="name" required disabled={form.busy} />
+				<InputText
+					label={m['labels.account_name']()}
+					id="account-name"
+					name="name"
+					required
+					disabled={form.busy}
+				/>
 
-				<label for="account-kind">{m['labels.account_type']()}</label>
-				<select id="account-kind" name="kind" required disabled={form.busy}>
-					<option value="" selected disabled>{m['labels.account_type']()}</option>
+				<Select
+					label={m['labels.account_type']()}
+					id="account-kind"
+					name="kind"
+					required
+					disabled={form.busy}
+					defaultValue=""
+				>
+					<option value="" disabled>{m['labels.account_type']()}</option>
 					<option value="cash">{m['accounts.type.cash']()}</option>
 					<option value="bank">{m['accounts.type.bank']()}</option>
 					<option value="card">{m['accounts.type.card']()}</option>
-				</select>
+				</Select>
 
 				<p>{m['accounts.currency_usd']()}</p>
 			{/if}
 		{/snippet}
 		{#snippet controls(form)}
 			{#if !form.state.matches('success')}
-				<button type="submit" disabled={form.disabled}>
+				<Button type="submit" disabled={form.disabled}>
 					{form.busy
 						? m['status.saving']({ subject: m['labels.account']() })
 						: m['actions.add_account']()}
-				</button>
+				</Button>
 			{/if}
 		{/snippet}
 		{#snippet feedback(form)}

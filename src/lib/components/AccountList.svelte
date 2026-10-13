@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from 'delightful-ui'
 	import { getContext } from 'svelte'
 	import { useMachine } from '@xstate/svelte'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
@@ -90,6 +91,7 @@
 	{#if visibleAccounts.length === 0}
 		<p>{m['accounts.empty.title']()}</p>
 	{:else}
+		<!-- Future DataTable: docs/delightful-ui-integration.md#tables -->
 		<table>
 			<thead>
 				<tr>
@@ -113,7 +115,7 @@
 						<td>{account.currency}</td>
 						<td>
 							{#if canArchive(account.id)}
-								<button
+								<Button
 									type="button"
 									disabled={archiving}
 									aria-label={m['actions.archive_account']({ name: account.name })}
@@ -126,7 +128,7 @@
 									{archiving && $snapshot.context.validated?.value.accountId === account.id
 										? m['status.archiving']({ subject: m['labels.account']() })
 										: m['actions.archive']()}
-								</button>
+								</Button>
 							{/if}
 						</td>
 					</tr>
