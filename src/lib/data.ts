@@ -2,6 +2,8 @@ import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization } from './schema.js'
 import { validateTransaction, type AppTransaction } from './domain/transaction.js'
+import { appTransactionSchema } from './validation/transactions.js'
+import { appAccountSchema } from './validation/accounts.js'
 
 type Db = ReturnType<typeof getDb>
 
@@ -119,14 +121,14 @@ export function createAccount(
 	name: string,
 	kind: Account['kind']
 ) {
-	return db
-		.insert(app.accounts, { organizationId, name, kind, currency: 'USD' })
-		.wait({ tier: 'local' })
+	const account = appAccountSchema.parse({ organizationId, name, kind })
+	return db.insert(app.accounts, account).wait({ tier: 'local' })
 }
 
-export async function createTransaction(db: Pick<Db, 'transaction'>, transaction: AppTransaction) {
-	const error = validateTransaction(transaction)
-	if (error) return { error }
+export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppTransaction) {
+	const parsed = appTransactionSchema.safeParse(input)
+	if (!parsed.success) return { error: validateTransaction(input) ?? 'invalid-transaction' }
+	const transaction = parsed.data
 	const result = await db.transaction((tx) => {
 		const row = tx.insert(app.transactions, {
 			organizationId: transaction.organizationId,

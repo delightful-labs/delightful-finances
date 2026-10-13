@@ -1,15 +1,17 @@
 import { schema as s } from 'jazz-tools'
-import { currencyText } from '../validation/transaction-input.js'
+import { appAccountSchema } from '../validation/accounts.js'
 import { validatedTextColumn } from './text-column.js'
 
-const currencyColumn = validatedTextColumn(currencyText)
+const nameColumn = validatedTextColumn(appAccountSchema.shape.name)
+const currencyColumn = validatedTextColumn(appAccountSchema.shape.currency)
+const accountTypes = appAccountSchema.shape.kind.enum
 
 export const accountsSchema = {
 	accounts: s.table(
 		{
 			organizationId: s.uuid(),
-			name: s.string(),
-			kind: s.enum('cash', 'bank', 'card'),
+			name: nameColumn.column,
+			kind: s.enum(accountTypes.cash, accountTypes.bank, accountTypes.card),
 			currency: currencyColumn.column,
 			archivedAt: s.timestamp().optional()
 		},

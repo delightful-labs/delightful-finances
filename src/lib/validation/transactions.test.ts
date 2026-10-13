@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Account, Category } from '../schema.js'
-import { transactionFormSchema } from './transaction-form-input.js'
+import {
+	appTransactionSchema,
+	defaultTransactionCategory,
+	transactionFormSchema
+} from './transactions.js'
 
 type Options = ReturnType<Parameters<typeof transactionFormSchema>[0]>
 const account: Account = {
@@ -35,6 +39,101 @@ function options(kind: Options['kind'] = 'expense'): Options {
 		categories: [{ ...category, kind }]
 	}
 }
+
+describe('canonical transaction normalization', () => {
+	const base = {
+		accountId: account.id,
+		organizationId: account.organizationId,
+		categoryId: category.id,
+		bookedOn: fields.bookedOn,
+		money: { amountMinor: 100, currency: 'USD' }
+	}
+	it('normalizes memos outside the form adapter', () => {
+		expect(
+			appTransactionSchema.parse({
+				...base,
+				kind: 'expense',
+				source: { source: 'manual' },
+				memo: '  Market  '
+			}).memo
+		).toBe('Market')
+		expect(
+			appTransactionSchema.parse({
+				...base,
+				kind: 'expense',
+				source: { source: 'manual' },
+				memo: ' '
+			}).memo
+		).toBeUndefined()
+	})
+	it('defaults manual income to cash', () => {
+		expect(
+			appTransactionSchema.parse({ ...base, kind: 'income', source: { source: 'manual' } })
+		).toMatchObject({ paymentMethod: 'cash' })
+	})
+	it('normalizes empty optional check dates and trims check numbers', () => {
+		const result = appTransactionSchema.parse({
+			...base,
+			kind: 'income',
+			source: { source: 'manual' },
+			paymentMethod: 'check',
+			checkDetails: { checkNumber: ' 123 ', checkDate: '' }
+		})
+		expect(result).toMatchObject({ checkDetails: { checkNumber: '123' } })
+		if ('checkDetails' in result) expect(result.checkDetails).not.toHaveProperty('checkDate')
+	})
+	it('does not give imported income a manual payment method', () => {
+		expect(
+			appTransactionSchema.parse({
+				...base,
+				kind: 'income',
+				source: { source: 'simplefin', externalId: ' external ' }
+			})
+		).not.toHaveProperty('paymentMethod')
+	})
+})
+
+describe('default category', () => {
+	const system = { ...category, id: 'system', name: 'Renamed default', isSystem: true }
+	it.each(['expense', 'income'] satisfies Options['kind'][])(
+		'defaults missing or empty %s categories by system identity',
+		(kind) => {
+			const current = {
+				...options(kind),
+				categories: [
+					{ ...category, kind },
+					{ ...system, kind }
+				]
+			}
+			const schema = transactionFormSchema(() => current)
+			const { categoryId, ...withoutCategory } = fields
+			expect(schema.parse(withoutCategory).categoryId).toBe(system.id)
+			expect(schema.parse({ ...fields, categoryId: '' }).categoryId).toBe(system.id)
+			expect(schema.parse(fields).categoryId).toBe(categoryId)
+		}
+	)
+	it.each([
+		{ organizationId: 'other' },
+		{ kind: 'income' },
+		{ archivedAt: new Date() },
+		{ isSystem: false }
+	] satisfies Partial<Category>[])(
+		'does not select an unavailable system category %j',
+		(values) => {
+			const current = { ...options(), categories: [{ ...system, ...values }] }
+			expect(defaultTransactionCategory(current)).toBeUndefined()
+			expect(
+				transactionFormSchema(() => current).safeParse({ ...fields, categoryId: '' }).success
+			).toBe(false)
+		}
+	)
+	it('rejects an invalid explicit category rather than substituting the default', () => {
+		const current = { ...options(), categories: [category, system] }
+		expect(
+			transactionFormSchema(() => current).safeParse({ ...fields, categoryId: 'missing' }).success
+		).toBe(false)
+	})
+})
 
 describe('transaction form schema', () => {
 	it('derives domain fields from current rows and ignores injected domain values', () => {

@@ -6,7 +6,10 @@
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { AppTransaction } from '#lib/domain/transaction.js'
 	import type { FormSave } from '#lib/machines/form.js'
-	import { transactionFormSchema } from '#lib/validation/transaction-form-input.js'
+	import {
+		defaultTransactionCategory,
+		transactionFormSchema
+	} from '#lib/validation/transactions.js'
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -36,6 +39,13 @@
 	)
 	const accounts = $derived(accountQuery.current ?? [])
 	const availableCategories = $derived(categoryQuery.current ?? [])
+	const defaultCategory = $derived(
+		defaultTransactionCategory({
+			organizationId: filters.activeOrganizationId,
+			kind,
+			categories: availableCategories
+		})
+	)
 
 	const schema = transactionFormSchema(() => ({
 		organizationId: filters.activeOrganizationId,
@@ -97,9 +107,13 @@
 
 						<label for="transaction-category">{m['labels.category']()}</label>
 						<select id="transaction-category" name="categoryId" required>
-							<option value="" selected disabled>{m['transactions.select_category']()}</option>
+							<option value="" selected={!defaultCategory} disabled>
+								{m['transactions.select_category']()}
+							</option>
 							{#each availableCategories as category (category.id)}
-								<option value={category.id}>{category.name}</option>
+								<option value={category.id} selected={category.id === defaultCategory?.id}>
+									{category.name}
+								</option>
 							{/each}
 						</select>
 
@@ -119,7 +133,7 @@
 							id="transaction-date"
 							name="bookedOn"
 							type="date"
-							value={todayDateOnly()}
+							defaultValue={todayDateOnly()}
 							required
 						/>
 

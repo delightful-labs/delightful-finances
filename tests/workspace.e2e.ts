@@ -607,6 +607,150 @@ for (const scenario of formScenarios) {
 	})
 }
 
+for (const scenario of formScenarios) {
+	test(`default category ${scenario.kind} survives overrides, reset, and workspace switching`, async ({
+		page
+	}) => {
+		await start(page)
+		const firstWorkspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const fixture = await page.evaluate(
+			async ({ organizationId, kind }) => {
+				const { app, db, userId } = window.workspaceSettingsTest
+				const system = await db.one(
+					app.categories.where({ organizationId, kind, isSystem: true }),
+					{ tier: 'remote' }
+				)
+				if (!system) throw new Error('System category is missing.')
+				const account = await db
+					.insert(app.accounts, {
+						organizationId,
+						name: 'Default checking',
+						kind: 'bank',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				const custom = await db
+					.insert(app.categories, {
+						organizationId,
+						name: 'Custom category',
+						kind,
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				const second = await db
+					.insert(app.organizations, {
+						name: 'Defaults workspace',
+						kind: 'business',
+						ownerId: userId,
+						defaultCurrency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.organizationMembers, {
+						organizationId: second.id,
+						userId,
+						role: 'owner',
+						accountAccessMode: 'all'
+					})
+					.wait({ tier: 'global' })
+				const secondAccount = await db
+					.insert(app.accounts, {
+						organizationId: second.id,
+						name: 'Second checking',
+						kind: 'bank',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				const secondSystem = await db
+					.insert(app.categories, {
+						organizationId: second.id,
+						name: 'Renamed default',
+						kind,
+						isSystem: true
+					})
+					.wait({ tier: 'global' })
+				return {
+					systemId: system.id,
+					accountId: account.id,
+					customId: custom.id,
+					secondWorkspaceId: second.id,
+					secondAccountId: secondAccount.id,
+					secondSystemId: secondSystem.id
+				}
+			},
+			{ organizationId: firstWorkspaceId, kind: scenario.kind }
+		)
+		await page
+			.getByRole('navigation')
+			.getByRole('link', { name: scenario.link, exact: true })
+			.click()
+		await page
+			.getByRole('main')
+			.getByRole('link', {
+				name: scenario.kind === 'expense' ? 'Add expense' : 'Add income',
+				exact: true
+			})
+			.click()
+		const category = page.getByLabel('Category', { exact: true })
+		await expect(category).toHaveValue(fixture.systemId)
+		async function save(
+			accountId: string,
+			memo: string,
+			organizationId: string,
+			categoryId: string
+		) {
+			await page.getByLabel('Account', { exact: true }).selectOption(accountId)
+			await page.getByLabel(/Amount/).fill('5.00')
+			await page.getByLabel('Memo', { exact: true }).fill(memo)
+			await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await expect(page.getByRole('main').getByRole('status')).toHaveText('Transaction saved.')
+			await expect
+				.poll(() =>
+					page.evaluate(
+						async ({ organizationId, memo }) => {
+							const { app, db } = window.workspaceSettingsTest
+							const rows = await db.all(app.transactions.where({ organizationId, memo }), {
+								tier: 'remote'
+							})
+							return rows.map((row) => ({ categoryId: row.categoryId, kind: row.kind }))
+						},
+						{ organizationId, memo }
+					)
+				)
+				.toEqual([{ categoryId, kind: scenario.kind }])
+			await page.getByRole('button', { name: 'Add another transaction' }).click()
+		}
+		await save(fixture.accountId, 'Default transaction', firstWorkspaceId, fixture.systemId)
+		await expect(category).toHaveValue(fixture.systemId)
+		await category.selectOption(fixture.customId)
+		await page.evaluate(
+			async ({ organizationId, kind }) => {
+				const { app, db } = window.workspaceSettingsTest
+				await db
+					.insert(app.categories, { organizationId, name: 'Live category', kind, isSystem: false })
+					.wait({ tier: 'global' })
+			},
+			{ organizationId: firstWorkspaceId, kind: scenario.kind }
+		)
+		await expect(category.getByRole('option', { name: 'Live category' })).toHaveCount(1)
+		await expect(category).toHaveValue(fixture.customId)
+		await save(fixture.accountId, 'Custom transaction', firstWorkspaceId, fixture.customId)
+		await expect(category).toHaveValue(fixture.systemId)
+		const selector = page.getByLabel('Workspace', { exact: true })
+		await selector.selectOption(fixture.secondWorkspaceId)
+		await expect(category).toHaveValue(fixture.secondSystemId)
+		await save(
+			fixture.secondAccountId,
+			'Second default transaction',
+			fixture.secondWorkspaceId,
+			fixture.secondSystemId
+		)
+		await expect(category).toHaveValue(fixture.secondSystemId)
+		await selector.selectOption(firstWorkspaceId)
+		await expect(category).toHaveValue(fixture.systemId)
+	})
+}
+
 for (const role of ['admin', 'member', 'viewer']) {
 	test(`${role} has the correct rename access in a shared workspace`, async ({ page, browser }) => {
 		await start(page)

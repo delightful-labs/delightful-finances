@@ -5,7 +5,7 @@
 	import { createAccount } from '#lib/data.js'
 	import type { Account } from '#lib/schema.js'
 	import type { FormSave } from '#lib/machines/form.js'
-	import { accountFormSchema } from '#lib/validation/account-form-input.js'
+	import { accountFormSchema } from '#lib/validation/accounts.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import Form from './Form.svelte'

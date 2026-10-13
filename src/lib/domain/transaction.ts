@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 import type { TransactionRow } from '../schema.js'
-import { appTransactionSchema, transactionSchemaFor } from '../validation/transaction-input.js'
+import { appTransactionSchema, transactionSchemaFor } from '../validation/transactions.js'
 
 export type IncomePaymentMethod = NonNullable<TransactionRow['paymentMethod']>
 

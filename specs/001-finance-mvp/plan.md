@@ -92,7 +92,7 @@ src/lib/schema.ts
 src/lib/permissions.ts
 src/lib/domain/money.ts
 src/lib/machines/form.ts
-src/lib/validation/transaction-form-input.ts
+src/lib/validation/transactions.ts
 src/lib/schema/
 src/lib/components/
 src/service-worker/

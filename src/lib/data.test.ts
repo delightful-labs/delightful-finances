@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReadTier, Transaction } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
-import { createAccount, ensurePersonalWorkspace } from './data.js'
+import { createAccount, createTransaction, ensurePersonalWorkspace } from './data.js'
+import type { AppTransaction } from './domain/transaction.js'
 import { app, type Account, type Organization } from './schema.js'
 
 type Db = ReturnType<typeof getDb>
@@ -43,12 +44,15 @@ describe('createAccount', () => {
 	it('writes the selected workspace and USD currency, then waits for local persistence', async () => {
 		const wait = vi.fn().mockResolvedValue(account)
 		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
-		await expect(createAccount(db, organization.id, 'Checking', 'bank')).resolves.toEqual(account)
+		await expect(createAccount(db, organization.id, '  Checking  ', 'bank')).resolves.toEqual(
+			account
+		)
 		expect(db.insert).toHaveBeenCalledExactlyOnceWith(app.accounts, {
 			organizationId: organization.id,
 			name: 'Checking',
 			kind: 'bank',
-			currency: 'USD'
+			currency: 'USD',
+			archivedAt: null
 		})
 		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
 	})
@@ -66,6 +70,51 @@ describe('createAccount', () => {
 		const wait = vi.fn().mockRejectedValue(failure)
 		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
 		await expect(createAccount(db, organization.id, 'Checking', 'bank')).rejects.toBe(failure)
+	})
+	it('rejects blank names before opening a write', () => {
+		const db = { insert: vi.fn() } satisfies Pick<Db, 'insert'>
+		expect(() => createAccount(db, organization.id, ' ', 'cash')).toThrow()
+		expect(db.insert).not.toHaveBeenCalled()
+	})
+})
+
+describe('createTransaction normalization', () => {
+	const input: AppTransaction = {
+		kind: 'income',
+		source: { source: 'manual' },
+		paymentMethod: 'check',
+		accountId: 'account',
+		organizationId: organization.id,
+		categoryId: 'category',
+		bookedOn: '2026-10-13',
+		money: { amountMinor: 100, currency: 'USD' },
+		memo: '  Payment  ',
+		checkDetails: { checkNumber: ' 123 ', checkDate: '' }
+	}
+	it('persists normalized memo and check details', async () => {
+		const { db, insert } = setup()
+		await createTransaction(db, input)
+		expect(insert).toHaveBeenCalledWith(
+			app.transactions,
+			expect.objectContaining({ memo: 'Payment' })
+		)
+		expect(insert).toHaveBeenCalledWith(app.checkDetails, {
+			transactionId: organization.id,
+			checkNumber: '123'
+		})
+	})
+	it('omits whitespace-only memos from writes', async () => {
+		const { db, insert } = setup()
+		await createTransaction(db, { ...input, memo: ' ' })
+		const values = insert.mock.calls.find(([table]) => table === app.transactions)?.[1]
+		expect(values).not.toHaveProperty('memo')
+	})
+	it('rejects invalid transactions without opening a write', async () => {
+		const { db } = setup()
+		await expect(createTransaction(db, { ...input, bookedOn: 'invalid' })).resolves.toEqual({
+			error: 'booked-on'
+		})
+		expect(db.transaction).not.toHaveBeenCalled()
 	})
 })
 

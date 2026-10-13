@@ -5,7 +5,7 @@ import {
 	currencyText,
 	dateOnlyText,
 	externalIdText
-} from '../validation/transaction-input.js'
+} from '../validation/transactions.js'
 import { validatedTextColumn } from './text-column.js'
 
 const currencyColumn = validatedTextColumn(currencyText)
