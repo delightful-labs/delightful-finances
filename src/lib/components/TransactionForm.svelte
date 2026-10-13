@@ -87,8 +87,8 @@
 
 <QueryContent
 	queries={[accountQuery, categoryQuery]}
-	loadingMessage={m['transactions.loading_form_data']()}
-	errorMessage={m['transactions.data_load_error']()}
+	loadingMessage={m['status.loading']({ subject: m['labels.accounts_and_categories']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.accounts_and_categories']() })}
 >
 	{#if accounts.length === 0}
 		<p>{m['transactions.no_accounts']()}</p>
@@ -175,7 +175,9 @@
 						<button type="reset">{m['transactions.add_another']()}</button>
 					{:else}
 						<button type="submit" disabled={form.disabled}>
-							{form.busy ? m['transactions.saving']() : m['transactions.save']()}
+							{form.busy
+								? m['status.saving']({ subject: m['labels.transaction']() })
+								: m['transactions.save']()}
 						</button>
 					{/if}
 				{/snippet}
@@ -185,7 +187,7 @@
 					{:else if form.state.matches('invalid')}
 						<p role="alert">{m['transactions.validation_error']()}</p>
 					{:else if form.state.matches('error')}
-						<p role="alert">{m['transactions.save_error']()}</p>
+						<p role="alert">{m['errors.save']({ subject: m['labels.transaction']() })}</p>
 					{/if}
 				{/snippet}
 			</Form>

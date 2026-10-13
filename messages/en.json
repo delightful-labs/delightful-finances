@@ -8,15 +8,9 @@
 		"loading_description": "Setting up your profile and starter categories.",
 		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
 		"label": "Workspace",
-		"list_loading": "Loading workspaces…",
-		"list_load_error": "Workspaces could not be loaded.",
-		"load_error": "Workspace settings could not be loaded.",
-		"loading_settings": "Loading workspace settings…",
 		"select_workspace": "Select a workspace.",
-		"saving": "Saving…",
 		"name_saved": "Workspace name saved on this device.",
 		"name_required": "Enter a workspace name.",
-		"save_error": "The workspace name could not be saved. Please try again.",
 		"rename_restricted": "Only workspace owners and admins can change the name."
 	},
 	"navigation": {
@@ -38,7 +32,14 @@
 		"account": "Account",
 		"category": "Category",
 		"income": "Income",
-		"expenses": "Expenses"
+		"expenses": "Expenses",
+		"category_name": "Category name",
+		"transaction_type": "Transaction type",
+		"workspaces": "Workspaces",
+		"workspace_settings": "Workspace settings",
+		"transactions": "Transactions",
+		"transaction": "Transaction",
+		"accounts_and_categories": "Accounts and categories"
 	},
 	"actions": {
 		"add_account": "Add an account",
@@ -46,7 +47,8 @@
 		"archive_account": "Archive {name}",
 		"add_expense": "Add expense",
 		"add_income": "Add income",
-		"save": "Save"
+		"save": "Save",
+		"add_category": "Add category"
 	},
 	"accounts": {
 		"type": {
@@ -60,22 +62,14 @@
 			"toggle": "Show {name}"
 		},
 		"sidebar_empty": "No accounts yet.",
-		"load_error": "Accounts could not be loaded.",
-		"loading": "Loading accounts…",
 		"saved": "Account {name} saved.",
-		"save_error": "The account could not be saved. Please try again.",
 		"validation_error": "Enter an account name and select an account type.",
-		"saving": "Saving account…",
-		"archiving": "Archiving account…",
 		"archived": "Account {name} archived.",
-		"archive_error": "The account could not be archived. Please try again.",
 		"empty": {
 			"title": "Start with one place you keep money."
 		}
 	},
 	"transactions": {
-		"loading": "Loading transactions…",
-		"load_error": "Transactions could not be loaded.",
 		"empty": {
 			"title": "Your recent activity will appear here."
 		},
@@ -94,13 +88,9 @@
 			"date": "Check date"
 		},
 		"no_accounts": "Add an account before recording a transaction.",
-		"data_load_error": "Account and category data could not be loaded.",
-		"loading_form_data": "Loading accounts and categories…",
 		"validation_error": "Check the transaction details and try again.",
-		"save_error": "The transaction could not be saved. Please try again.",
 		"saved": "Transaction saved.",
 		"add_another": "Add another transaction",
-		"saving": "Saving transaction…",
 		"save": "Save transaction"
 	},
 	"login": {
@@ -130,5 +120,19 @@
 			"heading": "Database could not start",
 			"description": "Refresh the page to try again."
 		}
+	},
+	"categories": {
+		"saved": "Category {name} saved.",
+		"validation_error": "Enter a category name and select income or expense."
+	},
+	"status": {
+		"loading": "Loading {subject}…",
+		"saving": "Saving {subject}…",
+		"archiving": "Archiving {subject}…"
+	},
+	"errors": {
+		"save": "Could not save {subject}. Please try again.",
+		"load": "Could not load {subject}. Please try again.",
+		"archive": "Could not archive {subject}. Please try again."
 	}
 }

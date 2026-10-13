@@ -35,7 +35,7 @@
 		{/snippet}
 		{#snippet controls(form)}
 			<button type="submit" disabled={form.disabled}>
-				{form.busy ? m['workspace.saving']() : m['actions.save']()}
+				{form.busy ? m['status.saving']({ subject: m['workspace.label']() }) : m['actions.save']()}
 			</button>
 		{/snippet}
 		{#snippet feedback(form)}
@@ -44,7 +44,7 @@
 			{:else if form.state.matches('invalid')}
 				<p role="alert">{m['workspace.name_required']()}</p>
 			{:else if form.state.matches('error')}
-				<p role="alert">{m['workspace.save_error']()}</p>
+				<p role="alert">{m['errors.save']({ subject: m['labels.workspace_name']() })}</p>
 			{/if}
 		{/snippet}
 	</Form>

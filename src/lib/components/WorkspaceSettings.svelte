@@ -30,8 +30,8 @@
 <h1>{m['workspace.label']()}</h1>
 <QueryContent
 	queries={[workspaceQuery, membershipQuery]}
-	loadingMessage={m['workspace.loading_settings']()}
-	errorMessage={m['workspace.load_error']()}
+	loadingMessage={m['status.loading']({ subject: m['labels.workspace_settings']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.workspace_settings']() })}
 >
 	{#if workspace}
 		<WorkspaceNameForm {workspace} {canRename} />

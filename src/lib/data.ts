@@ -4,6 +4,7 @@ import { app, type Account, type Category, type Organization } from './schema.js
 import { validateTransaction, type AppTransaction } from './domain/transaction.js'
 import { appTransactionSchema } from './validation/transactions.js'
 import { appAccountSchema } from './validation/accounts.js'
+import { appCategorySchema } from './validation/categories.js'
 
 type Db = ReturnType<typeof getDb>
 
@@ -163,4 +164,14 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 		return row
 	})
 	return { value: result.value }
+}
+
+export function createCategory(
+	db: Pick<Db, 'insert'>,
+	organizationId: string,
+	name: string,
+	kind: Category['kind']
+) {
+	const category = appCategorySchema.parse({ organizationId, name, kind })
+	return db.insert(app.categories, category).wait({ tier: 'local' })
 }

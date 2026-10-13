@@ -72,8 +72,8 @@
 		<section aria-labelledby="account-filters-heading">
 			<QueryContent
 				queries={[organizationQuery]}
-				loadingMessage={m['workspace.list_loading']()}
-				errorMessage={m['workspace.list_load_error']()}
+				loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
+				errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
 			>
 				<label for="active-organization">{m['workspace.label']()}</label>
 				<select
@@ -90,8 +90,8 @@
 			<h2 id="account-filters-heading">{m['labels.accounts']()}</h2>
 			<QueryContent
 				queries={[organizationQuery, accountQuery]}
-				loadingMessage={m['accounts.loading']()}
-				errorMessage={m['accounts.load_error']()}
+				loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
+				errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
 			>
 				{#if activeAccounts.length > 0}
 					<ul>

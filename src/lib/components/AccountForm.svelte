@@ -56,7 +56,9 @@
 		{#snippet controls(form)}
 			{#if !form.state.matches('success')}
 				<button type="submit" disabled={form.disabled}>
-					{form.busy ? m['accounts.saving']() : m['actions.add_account']()}
+					{form.busy
+						? m['status.saving']({ subject: m['labels.account']() })
+						: m['actions.add_account']()}
 				</button>
 			{/if}
 		{/snippet}
@@ -66,7 +68,7 @@
 			{:else if form.state.matches('invalid')}
 				<p role="alert">{m['accounts.validation_error']()}</p>
 			{:else if form.state.matches('error')}
-				<p role="alert">{m['accounts.save_error']()}</p>
+				<p role="alert">{m['errors.save']({ subject: m['labels.account']() })}</p>
 			{/if}
 		{/snippet}
 	</Form>

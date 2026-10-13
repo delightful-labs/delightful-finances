@@ -40,8 +40,8 @@
 
 <QueryContent
 	queries={[transactions]}
-	loadingMessage={m['transactions.loading']()}
-	errorMessage={m['transactions.load_error']()}
+	loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
 >
 	{#if filters.selectedAccountIds !== null && filters.selectedAccountIds.length === 0}
 		<p>{m['transactions.no_accounts_selected']()}</p>

@@ -79,13 +79,13 @@
 {#if $snapshot.matches('success') && $snapshot.context.result}
 	<p role="status">{m['accounts.archived']({ name: $snapshot.context.result })}</p>
 {:else if $snapshot.matches('error') || $snapshot.matches('invalid')}
-	<p role="alert">{m['accounts.archive_error']()}</p>
+	<p role="alert">{m['errors.archive']({ subject: m['labels.account']() })}</p>
 {/if}
 
 <QueryContent
 	queries={[accounts, membership, grants]}
-	loadingMessage={m['accounts.loading']()}
-	errorMessage={m['accounts.load_error']()}
+	loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
 >
 	{#if visibleAccounts.length === 0}
 		<p>{m['accounts.empty.title']()}</p>
@@ -124,7 +124,7 @@
 										})}
 								>
 									{archiving && $snapshot.context.validated?.value.accountId === account.id
-										? m['accounts.archiving']()
+										? m['status.archiving']({ subject: m['labels.account']() })
 										: m['actions.archive']()}
 								</button>
 							{/if}
