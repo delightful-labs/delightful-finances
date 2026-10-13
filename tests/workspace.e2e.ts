@@ -1,5 +1,25 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test as base, type ConsoleMessage, type Page } from '@playwright/test'
 import type { OrganizationMember } from '../src/lib/schema.js'
+
+const test = base.extend<{ ownershipWarnings: string[] }>({
+	ownershipWarnings: [
+		async ({ page }, use) => {
+			const warnings: string[] = []
+			const capture = (message: ConsoleMessage) => {
+				if (/ownership_invalid_(mutation|binding)/.test(message.text()))
+					warnings.push(message.text())
+			}
+			page.on('console', capture)
+			try {
+				await use(warnings)
+			} finally {
+				page.off('console', capture)
+				expect(warnings, 'Svelte ownership warnings').toEqual([])
+			}
+		},
+		{ auto: true }
+	]
+})
 
 declare global {
 	interface Window {

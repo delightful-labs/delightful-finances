@@ -25,6 +25,8 @@ Submission invokes Zod validation, then invokes the save actor only on successfu
 
 Consumers call `getDb()` during component initialization to read the database from Jazz's shared provider. The provider renders consumers after the database is ready, so they do not need nullable database state or a mount callback just to obtain it. Keep subscription setup and disposal in lifecycle callbacks. Shared write operations live in `data.ts`.
 
+Finance filters are shared through Svelte context from the root layout. AppShell reads and updates that context directly; WorkspaceBootstrap and the layout do not forward filter props. The workspace browser suite captures Svelte ownership mutation/binding warnings and fails if they appear. Three focused navigation/filter tests pass after this cleanup.
+
 Bind the record ID through context:
 
 ```svelte

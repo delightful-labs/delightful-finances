@@ -6,7 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import QueryContent from './QueryContent.svelte'
 
-	let { children }: { children: Snippet; filters?: FinanceFilters } = $props()
+	let { children }: { children: Snippet } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const organizationQuery = new QuerySubscription(app.organizations.orderBy('name'))
 	const accountQuery = new QuerySubscription(() =>

@@ -1,13 +1,11 @@
 <script lang="ts">
-	import { type Snippet } from 'svelte'
+	import type { Snippet } from 'svelte'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { ensurePersonalWorkspace } from '#lib/data.js'
-	import { m } from '#lib/paraglide/messages.js'
 	import AppShell from './AppShell.svelte'
 	import JazzStartup from './JazzStartup.svelte'
-	import type { FinanceFilters } from '#lib/finance-filters.js'
 
-	let { children, filters }: { children: Snippet; filters: FinanceFilters } = $props()
+	let { children }: { children: Snippet } = $props()
 	const session = getJazzSession()
 	const db = getDb()
 	let ready = $state(false)
@@ -37,7 +35,7 @@
 </script>
 
 {#if ready}
-	<AppShell {filters}>{@render children()}</AppShell>
+	<AppShell>{@render children()}</AppShell>
 {:else if setupError}
 	<JazzStartup error workspace />
 {:else}

@@ -41,7 +41,7 @@
 
 {#if jazzSession}
 	<JazzSessionProvider session={jazzSession} fallback={startup}>
-		<WorkspaceBootstrap filters={financeFilters}>{@render children()}</WorkspaceBootstrap>
+		<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
 	</JazzSessionProvider>
 {:else}
 	<JazzStartup error={sessionError} />
