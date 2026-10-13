@@ -121,6 +121,80 @@ test('account list shows an empty result and newly created accounts', async ({ p
 	await expect(main.getByRole('cell', { name: 'Everyday checking', exact: true })).toBeVisible()
 })
 
+test('account form rejects whitespace and allows corrected cash, bank, and card submissions', async ({
+	page
+}) => {
+	for (const kind of ['cash', 'bank', 'card']) {
+		await page.goto('/accounts/new')
+		await page.getByLabel('Account name').fill('   ')
+		await page.getByLabel('Account type').selectOption(kind)
+		await page.getByRole('button', { name: 'Add an account' }).click()
+		await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+			'Enter an account name and select an account type.'
+		)
+		await expect(page.getByLabel('Account type')).toHaveValue(kind)
+		await page.getByLabel('Account name').fill(`  Test ${kind}  `)
+		await page.getByRole('button', { name: 'Add an account' }).click()
+		await expect(page.getByRole('main').getByRole('status')).toHaveText(
+			`Account Test ${kind} saved.`
+		)
+		await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
+		await expect(
+			page.getByRole('main').getByRole('cell', { name: `Test ${kind}`, exact: true })
+		).toHaveCount(1)
+	}
+})
+
+test('account form resets its draft and saves to the selected workspace', async ({ page }) => {
+	await start(page)
+	const firstWorkspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const secondWorkspaceId = await page.evaluate(async () => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const workspace = await db
+			.insert(app.organizations, {
+				name: 'Account form workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: workspace.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		return workspace.id
+	})
+	await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
+	await page.getByRole('main').getByRole('link', { name: 'Add an account' }).click()
+	await page.getByLabel('Account name').fill('Previous workspace draft')
+	await page.getByLabel('Account type').selectOption('cash')
+	const selector = page.getByLabel('Workspace', { exact: true })
+	await selector.selectOption(secondWorkspaceId)
+	await expect(page.getByLabel('Account name')).toHaveValue('')
+	await expect(page.getByLabel('Account type')).toHaveValue('')
+	await page.getByLabel('Account name').fill('Business checking')
+	await page.getByLabel('Account type').selectOption('bank')
+	await page.getByRole('button', { name: 'Add an account' }).click()
+	await expect(page.getByRole('main').getByRole('status')).toHaveText(
+		'Account Business checking saved.'
+	)
+	await selector.selectOption(firstWorkspaceId)
+	await expect(page.getByLabel('Account name')).toHaveValue('')
+	await expect(page.getByRole('main').getByRole('status')).toHaveCount(0)
+	await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
+	await expect(
+		page.getByRole('main').getByText('Start with one place you keep money.')
+	).toBeVisible()
+	await selector.selectOption(secondWorkspaceId)
+	await expect(
+		page.getByRole('main').getByRole('cell', { name: 'Business checking', exact: true })
+	).toBeVisible()
+})
+
 test('account list sorts active accounts, updates live, and follows workspace selection', async ({
 	page
 }) => {

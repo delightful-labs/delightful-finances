@@ -119,7 +119,9 @@ export function createAccount(
 	name: string,
 	kind: Account['kind']
 ) {
-	return db.insert(app.accounts, { organizationId, name, kind, currency: 'USD' }).value
+	return db
+		.insert(app.accounts, { organizationId, name, kind, currency: 'USD' })
+		.wait({ tier: 'local' })
 }
 
 export async function createTransaction(db: Pick<Db, 'transaction'>, transaction: AppTransaction) {

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReadTier, Transaction } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
-import { ensurePersonalWorkspace } from './data.js'
-import { app, type Organization } from './schema.js'
+import { createAccount, ensurePersonalWorkspace } from './data.js'
+import { app, type Account, type Organization } from './schema.js'
 
 type Db = ReturnType<typeof getDb>
 const userId = '11111111-1111-4111-8111-111111111111'
@@ -30,6 +30,44 @@ function setup() {
 }
 
 beforeEach(() => vi.restoreAllMocks())
+
+describe('createAccount', () => {
+	const account: Account = {
+		id: 'account',
+		organizationId: organization.id,
+		name: 'Checking',
+		kind: 'bank',
+		currency: 'USD',
+		archivedAt: null
+	}
+	it('writes the selected workspace and USD currency, then waits for local persistence', async () => {
+		const wait = vi.fn().mockResolvedValue(account)
+		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
+		await expect(createAccount(db, organization.id, 'Checking', 'bank')).resolves.toEqual(account)
+		expect(db.insert).toHaveBeenCalledExactlyOnceWith(app.accounts, {
+			organizationId: organization.id,
+			name: 'Checking',
+			kind: 'bank',
+			currency: 'USD'
+		})
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it('returns the persistence promise rather than reporting success immediately', async () => {
+		const pending = Promise.withResolvers<Account>()
+		const wait = vi.fn(() => pending.promise)
+		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
+		const result = createAccount(db, organization.id, 'Checking', 'bank')
+		expect(result).toBe(pending.promise)
+		pending.resolve(account)
+		await expect(result).resolves.toEqual(account)
+	})
+	it('propagates local persistence failures', async () => {
+		const failure = new Error('Local write failed')
+		const wait = vi.fn().mockRejectedValue(failure)
+		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
+		await expect(createAccount(db, organization.id, 'Checking', 'bank')).rejects.toBe(failure)
+	})
+})
 
 describe('ensurePersonalWorkspace', () => {
 	it('creates a profile, owner membership and eight categories for a new workspace', async () => {

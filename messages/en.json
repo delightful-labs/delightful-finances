@@ -61,6 +61,7 @@
 		"loading": "Loading accounts…",
 		"saved": "Account {name} saved.",
 		"save_error": "The account could not be saved. Please try again.",
+		"validation_error": "Enter an account name and select an account type.",
 		"saving": "Saving account…",
 		"empty": {
 			"title": "Start with one place you keep money."
