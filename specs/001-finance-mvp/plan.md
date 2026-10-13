@@ -129,3 +129,9 @@ Use a shared XState form machine for validation/save lifecycles, with invoked pr
 - The chosen SimpleFIN credential storage model is not end-to-end secret against users able to read the record or operate the worker; limit readers and document operational access.
 - PWA caching must avoid stale app code conflicting with synchronized local data.
 - Confirm exact check-specific fields and any Jazz file-table requirements when implementing those stubs.
+
+## Transaction Attribution and Login Profiles
+
+Use Jazz's built-in `$createdBy`, `$createdAt`, `$updatedBy`, and `$updatedAt` query metadata for creator and latest-editor attribution; do not duplicate these fields in the transaction schema. Resolve author account identities to login profiles. This scope does not require a complete edit-history UI.
+
+Extend the existing identity profile with an optional avatar and provide owner-editable display name and avatar controls. Reuse Jazz storage primitives supported by the installed v2 SDK; confirm the avatar API before implementation rather than assuming classic Jazz profile/image APIs apply. Author display profiles must be readable by authorized workspace members while profile writes remain owner-only. Provide fallbacks for absent profile details. Profile avatar uploads are separate from deferred transaction attachments.

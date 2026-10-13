@@ -44,6 +44,17 @@ As a user, I can create and review income and expense transactions for an accoun
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
 
+### User Story 6 — Maintain a login profile (P2)
+
+As a user, I can set a display name and add, replace, or remove an avatar for my login account, so workspace members can identify me.
+
+**Acceptance Scenarios**
+
+1. **Given** my login account, **When** I save a name or avatar, **Then** the profile belongs to my login identity and is reused across workspaces and devices.
+2. **Given** another user's profile, **When** I attempt to change it, **Then** permissions reject the change.
+3. **Given** transaction attribution, **When** an author has no name or avatar, **Then** a stable identity fallback is shown.
+4. **Given** authorized workspace members, **When** they review attribution, **Then** they can resolve authors to display profiles without access to private credentials or unrelated workspace data.
+
 ### User Story 4 — Organize transactions with categories and tags (P2)
 
 As a user, I can manage categories and tags and attach multiple tags to a transaction.
@@ -86,6 +97,9 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-013**: The application MUST expose a lightweight organization switcher shell and sync/pending status affordance; creating/joining another organization may be deferred.
 - **FR-022**: Workspace settings MUST let owners/admins rename the active workspace without changing its identity or associated accounts. The form MUST trim the submitted name, reject blank names, use local persistence, and remain read-only for members/viewers. Jazz permissions remain the authorization boundary.
 
+- **FR-023**: Transaction attribution MUST expose its creator, most recent editor, and corresponding timestamps using Jazz's built-in `$createdBy`, `$createdAt`, `$updatedBy`, and `$updatedAt` metadata, without redundant application-owned audit columns. Edits MUST preserve creator attribution and update latest-editor attribution. A complete edit-history UI is not required.
+- **FR-024**: Users MUST be able to set a display name and add, replace, or remove an optional avatar for their login account. Profiles MUST belong to login identities, be reused across workspaces, and be editable only by their owners. Authorized workspace members MUST be able to resolve transaction authors to display profiles, with usable fallbacks for missing profile details.
+
 ### Schema and authorization readiness
 
 - **FR-014**: The schema MUST include profiles, organizations, organizationMembers, accounts, categories, tags, transactions, transactionTags, checkDetails, and accountMemberships.
@@ -101,7 +115,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 - SimpleFIN periodic import/sync worker, account linking, and transaction import UI. A minimal connection setup stub may be implemented if feasible, but connection claiming is server-side only.
 - Foreign exchange conversion or non-USD entry UI.
-- Image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
+- Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
 - Transfers as a transaction kind; the model may add a third kind or linked pair later.
 
 ## Data Model Invariants
@@ -116,7 +130,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 ## Key Entities
 
-- **Profile**: Jazz user display profile.
+- **Profile**: login-identity display profile with a display name and optional avatar, reused across workspaces. Profile avatar upload is included in MVP scope.
 - **Organization**: personal or business workspace with a default currency.
 - **Organization Member**: organization/user association with owner, admin, member, or viewer role.
 - **Account**: USD cash/bank/card ledger belonging to an organization; archivable.

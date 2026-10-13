@@ -95,3 +95,9 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
 - [ ] T046 Implement transaction batch/template flows; include unit and Playwright coverage.
 - [ ] T047 Add business-org creation, invite UX, and fine-grained account grant management; include unit and Playwright coverage.
 - [ ] T048 Evaluate multi-currency entry/FX and native wrappers as separate specifications.
+
+## Transaction Attribution and Login Profiles
+
+- [ ] T049 Select and display Jazz creator/latest-editor metadata for transactions, resolving author identities to profiles with fallbacks.
+- [ ] T050 Add owner-editable login profile name and avatar upload/replace/remove, with permissions for authorized workspace members to read author display profiles.
+- [ ] T051 After implementation review, add unit and Playwright coverage for attribution, profile permissions, avatar lifecycle, missing-profile fallbacks, and persistence across workspace switches/recovery.
