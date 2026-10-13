@@ -184,6 +184,181 @@ test('account list sorts active accounts, updates live, and follows workspace se
 	await expect(names).toHaveText(['Alpha cash'])
 })
 
+test('transaction list shows empty income and expense views', async ({ page }) => {
+	await page.goto('/expenses')
+	const main = page.getByRole('main')
+	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
+	await expect(main.getByRole('table')).toHaveCount(0)
+	await expect(main.getByRole('link', { name: 'Add expense' })).toHaveAttribute(
+		'href',
+		'/expenses/new'
+	)
+	await page.getByRole('navigation').getByRole('link', { name: 'Income', exact: true }).click()
+	await expect(page).toHaveURL('/incomes')
+	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
+	await expect(main.getByRole('link', { name: 'Add income' })).toHaveAttribute(
+		'href',
+		'/incomes/new'
+	)
+})
+
+test('transaction list follows kind, date order, account filters, and workspace selection', async ({
+	page
+}) => {
+	await start(page)
+	const firstWorkspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const second = await db
+			.insert(app.organizations, {
+				name: 'Other transactions',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: second.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		const checking = await db
+			.insert(app.accounts, { organizationId, name: 'Checking', kind: 'bank', currency: 'USD' })
+			.wait({ tier: 'global' })
+		const cash = await db
+			.insert(app.accounts, { organizationId, name: 'Cash', kind: 'cash', currency: 'USD' })
+			.wait({ tier: 'global' })
+		const business = await db
+			.insert(app.accounts, {
+				organizationId: second.id,
+				name: 'Business',
+				kind: 'bank',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const expense = await db
+			.insert(app.categories, {
+				organizationId,
+				name: 'Test expenses',
+				kind: 'expense',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		const income = await db
+			.insert(app.categories, {
+				organizationId,
+				name: 'Test income',
+				kind: 'income',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		const businessExpense = await db
+			.insert(app.categories, {
+				organizationId: second.id,
+				name: 'Business expenses',
+				kind: 'expense',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		const rows = [
+			{
+				organizationId,
+				accountId: checking.id,
+				categoryId: expense.id,
+				kind: 'expense',
+				bookedOn: '2026-10-01',
+				memo: 'Older expense'
+			},
+			{
+				organizationId,
+				accountId: cash.id,
+				categoryId: expense.id,
+				kind: 'expense',
+				bookedOn: '2026-10-12',
+				memo: 'Recent expense'
+			},
+			{
+				organizationId,
+				accountId: checking.id,
+				categoryId: income.id,
+				kind: 'income',
+				bookedOn: '2026-10-05',
+				memo: 'Salary'
+			},
+			{
+				organizationId: second.id,
+				accountId: business.id,
+				categoryId: businessExpense.id,
+				kind: 'expense',
+				bookedOn: '2026-10-13',
+				memo: 'Business expense'
+			}
+		] satisfies Pick<
+			import('../src/lib/schema.js').TransactionRow,
+			'organizationId' | 'accountId' | 'categoryId' | 'kind' | 'bookedOn' | 'memo'
+		>[]
+		for (const row of rows)
+			await db
+				.insert(app.transactions, {
+					...row,
+					amountMinor: 1234,
+					currency: 'USD',
+					source: 'manual',
+					...(row.kind === 'income' ? { paymentMethod: 'cash' } : {})
+				})
+				.wait({ tier: 'global' })
+		return { secondWorkspaceId: second.id, accountId: checking.id, categoryId: expense.id }
+	}, firstWorkspaceId)
+	const navigation = page.getByRole('navigation')
+	await navigation.getByRole('link', { name: 'Expenses', exact: true }).click()
+	const main = page.getByRole('main')
+	const memos = main.getByRole('table').locator('tbody tr td:last-child')
+	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
+	await expect(main.getByRole('cell', { name: '$12.34', exact: true })).toHaveCount(2)
+	await page.getByRole('checkbox', { name: 'Show Cash', exact: true }).uncheck()
+	await expect(memos).toHaveText(['Older expense'])
+	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
+	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
+	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).uncheck()
+	await expect(main.getByText('Turn on an account to see its transactions.')).toBeVisible()
+	await expect(main.getByRole('table')).toHaveCount(0)
+	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
+	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
+	await navigation.getByRole('link', { name: 'Income', exact: true }).click()
+	await expect(memos).toHaveText(['Salary'])
+	await navigation.getByRole('link', { name: 'Expenses', exact: true }).click()
+	const selector = page.getByLabel('Workspace', { exact: true })
+	await selector.selectOption(fixture.secondWorkspaceId)
+	await expect(memos).toHaveText(['Business expense'])
+	await selector.selectOption(firstWorkspaceId)
+	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
+	await page.evaluate(
+		async ({ organizationId, accountId, categoryId }) => {
+			const { app, db } = window.workspaceSettingsTest
+			await db
+				.insert(app.transactions, {
+					organizationId,
+					accountId,
+					categoryId,
+					kind: 'expense',
+					bookedOn: '2026-10-13',
+					memo: 'Live expense',
+					amountMinor: 100,
+					currency: 'USD',
+					source: 'manual'
+				})
+				.wait({ tier: 'global' })
+		},
+		{ organizationId: firstWorkspaceId, ...fixture }
+	)
+	await expect(memos).toHaveText(['Live expense', 'Recent expense', 'Older expense'])
+	await page.reload()
+	await expect(memos).toHaveText(['Live expense', 'Recent expense', 'Older expense'])
+})
+
 for (const role of ['admin', 'member', 'viewer']) {
 	test(`${role} has the correct rename access in a shared workspace`, async ({ page, browser }) => {
 		await start(page)

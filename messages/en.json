@@ -65,6 +65,7 @@
 		}
 	},
 	"transactions": {
+		"loading": "Loading transactions…",
 		"load_error": "Transactions could not be loaded.",
 		"empty": {
 			"title": "Your recent activity will appear here."
