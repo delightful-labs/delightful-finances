@@ -102,6 +102,88 @@ test('sidebar navigation preserves the selected workspace and database session',
 	).toBe(true)
 })
 
+test('account list shows an empty result and newly created accounts', async ({ page }) => {
+	await page.goto('/accounts')
+	const main = page.getByRole('main')
+	await expect(main.getByText('Start with one place you keep money.')).toBeVisible()
+	await expect(main.getByRole('table')).toHaveCount(0)
+	await main.getByRole('link', { name: 'Add an account' }).click()
+	await page.getByLabel('Account name').fill('Everyday checking')
+	await page.getByLabel('Account type').selectOption('bank')
+	await page.getByRole('button', { name: 'Add an account' }).click()
+	await expect(page.getByRole('status')).toContainText('Everyday checking')
+	await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
+	await expect(main.getByRole('cell', { name: 'Everyday checking', exact: true })).toBeVisible()
+	await expect(main.getByRole('cell', { name: 'Bank', exact: true })).toBeVisible()
+	await expect(main.getByRole('cell', { name: 'USD', exact: true })).toBeVisible()
+	await expect(main.getByText('Start with one place you keep money.')).toHaveCount(0)
+	await page.reload()
+	await expect(main.getByRole('cell', { name: 'Everyday checking', exact: true })).toBeVisible()
+})
+
+test('account list sorts active accounts, updates live, and follows workspace selection', async ({
+	page
+}) => {
+	await start(page)
+	const firstWorkspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const second = await db
+			.insert(app.organizations, {
+				name: 'Other ledger',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: second.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		const accounts = [
+			{ organizationId, name: 'Zebra checking', kind: 'bank', archivedAt: null },
+			{ organizationId, name: 'Alpha cash', kind: 'cash', archivedAt: null },
+			{ organizationId, name: 'Archived card', kind: 'card', archivedAt: new Date() },
+			{ organizationId: second.id, name: 'Business card', kind: 'card', archivedAt: null }
+		] satisfies Pick<
+			import('../src/lib/schema.js').Account,
+			'organizationId' | 'name' | 'kind' | 'archivedAt'
+		>[]
+		const ids: string[] = []
+		for (const account of accounts) {
+			const row = await db
+				.insert(app.accounts, { ...account, archivedAt: null, currency: 'USD' })
+				.wait({ tier: 'global' })
+			if (account.archivedAt)
+				await db
+					.update(app.accounts, row.id, { archivedAt: account.archivedAt })
+					.wait({ tier: 'global' })
+			ids.push(row.id)
+		}
+		return { secondWorkspaceId: second.id, firstAccountId: ids[0] }
+	}, firstWorkspaceId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
+	const main = page.getByRole('main')
+	const names = main.getByRole('table').locator('tbody tr td:first-child')
+	await expect(names).toHaveText(['Alpha cash', 'Zebra checking'])
+	await expect(main.getByRole('cell', { name: 'Archived card', exact: true })).toHaveCount(0)
+	const selector = page.getByLabel('Workspace', { exact: true })
+	await selector.selectOption(fixture.secondWorkspaceId)
+	await expect(names).toHaveText(['Business card'])
+	await selector.selectOption(firstWorkspaceId)
+	await expect(names).toHaveText(['Alpha cash', 'Zebra checking'])
+	await page.evaluate(async (id) => {
+		if (!id) throw new Error('Test account is missing.')
+		const { app, db } = window.workspaceSettingsTest
+		await db.update(app.accounts, id, { archivedAt: new Date() }).wait({ tier: 'global' })
+	}, fixture.firstAccountId)
+	await expect(names).toHaveText(['Alpha cash'])
+})
+
 for (const role of ['admin', 'member', 'viewer']) {
 	test(`${role} has the correct rename access in a shared workspace`, async ({ page, browser }) => {
 		await start(page)
