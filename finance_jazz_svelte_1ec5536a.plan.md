@@ -272,7 +272,7 @@ messages/en.json           # Paraglide
 static/                    # PWA icons/manifest inputs
 ```
 
-Current routes: `/` overview, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, and `/account` (account recovery). Account detail and category/tag/organization settings remain planned work.
+Current routes: `/` overview, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, and `/account` (account recovery). Category/tag/organization settings remain planned work. Account management uses the shared sidebar and existing list/create forms; history stays in the income/expense views.
 
 ## XState usage
 

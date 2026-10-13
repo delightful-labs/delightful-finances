@@ -25,10 +25,12 @@ As a user, I can sign in and land in a personal organization that is created aut
 
 As a user, I can create, list, and archive USD cash, bank, or card accounts within my organization.
 
+Account management uses the shared sidebar and existing account list/create forms. Account transaction history is reviewed in the income/expense views using account filters.
+
 **Acceptance Scenarios**
 
 1. **Given** an active organization, **When** I create an account with a name, **Then** it is associated with that organization and appears in its account list.
-2. **Given** an account with transactions, **When** I archive it, **Then** it is hidden from new-entry choices while its historical transactions remain available.
+2. **Given** an account with transactions, **When** I archive it, **Then** it is hidden from new-entry choices while its historical transactions remain available in the income/expense views.
 3. **Given** an offline session, **When** I create or archive an account, **Then** the local state updates immediately and synchronizes when online.
 
 ### User Story 3 — Record and review transactions (P1)
@@ -70,7 +72,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 ### MVP
 
 - **FR-001**: The application MUST provide Jazz-backed sign-in and automatically create/reuse a personal organization for each first-time user.
-- **FR-002**: The application MUST provide create, list, and archive flows for USD financial accounts scoped to the active organization.
+- **FR-002**: The application MUST provide create, list, and archive flows for USD financial accounts scoped to the active organization, using the shared sidebar and existing account list/create forms. Account history is reviewed through the income/expense views.
 - **FR-003**: The application MUST provide create/list flows for income and expense transactions on an account.
 - **FR-004**: Every transaction MUST have `amountMinor >= 0`, an ISO 4217 currency, `kind`, `accountId`, `organizationId`, `bookedOn` as an ISO 8601 `YYYY-MM-DD` calendar-date string, and a category matching its kind.
 - **FR-005**: Manually entered income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details with a nonblank check number and a valid check date. The form MUST show those fields only when Check is selected. Imported SimpleFIN income may omit the payment method.
