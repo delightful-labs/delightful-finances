@@ -1,12 +1,13 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte'
+	import { getContext, type Snippet } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
-	import type { FinanceFilters } from '#lib/finance-filters.js'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import QueryContent from './QueryContent.svelte'
 
-	let { children, filters }: { children: Snippet; filters: FinanceFilters } = $props()
+	let { children }: { children: Snippet; filters?: FinanceFilters } = $props()
+	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const organizationQuery = new QuerySubscription(app.organizations.orderBy('name'))
 	const accountQuery = new QuerySubscription(() =>
 		filters.activeOrganizationId
