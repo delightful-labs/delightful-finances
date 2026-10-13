@@ -359,6 +359,173 @@ test('transaction list follows kind, date order, account filters, and workspace 
 	await expect(memos).toHaveText(['Live expense', 'Recent expense', 'Older expense'])
 })
 
+test('transaction form shows the no-account message after its data loads', async ({ page }) => {
+	await page.goto('/expenses/new')
+	const main = page.getByRole('main')
+	await expect(main.getByText('Add an account before recording a transaction.')).toBeVisible()
+	await expect(main.getByRole('button', { name: 'Save transaction' })).toHaveCount(0)
+})
+
+const formScenarios = [
+	{ kind: 'expense', path: '/expenses/new', link: 'Expenses', memo: 'Form expense' },
+	{ kind: 'income', path: '/incomes/new', link: 'Income', memo: 'Form check income' }
+] satisfies { kind: 'expense' | 'income'; path: string; link: string; memo: string }[]
+
+for (const scenario of formScenarios) {
+	test(`transaction form ${scenario.kind} follows workspace options and saves`, async ({
+		page
+	}) => {
+		await start(page)
+		const firstWorkspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const secondWorkspaceId = await page.evaluate(
+			async ({ organizationId, kind }) => {
+				const { app, db, userId } = window.workspaceSettingsTest
+				const second = await db
+					.insert(app.organizations, {
+						name: 'Form workspace',
+						kind: 'business',
+						defaultCurrency: 'USD',
+						ownerId: userId
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.organizationMembers, {
+						organizationId: second.id,
+						userId,
+						role: 'owner',
+						accountAccessMode: 'all'
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.accounts, {
+						organizationId,
+						name: 'Personal checking',
+						kind: 'bank',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.categories, {
+						organizationId,
+						name: 'Personal category',
+						kind,
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.accounts, {
+						organizationId: second.id,
+						name: 'Business checking',
+						kind: 'bank',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				const archivedAccount = await db
+					.insert(app.accounts, {
+						organizationId: second.id,
+						name: 'Archived checking',
+						kind: 'bank',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				await db
+					.update(app.accounts, archivedAccount.id, { archivedAt: new Date() })
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.categories, {
+						organizationId: second.id,
+						name: 'Business category',
+						kind,
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.categories, {
+						organizationId: second.id,
+						name: 'Wrong kind category',
+						kind: kind === 'expense' ? 'income' : 'expense',
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.categories, {
+						organizationId: second.id,
+						name: 'Archived category',
+						kind,
+						isSystem: false,
+						archivedAt: new Date()
+					})
+					.wait({ tier: 'global' })
+				return second.id
+			},
+			{ organizationId: firstWorkspaceId, kind: scenario.kind }
+		)
+		await page
+			.getByRole('navigation')
+			.getByRole('link', { name: scenario.link, exact: true })
+			.click()
+		await page
+			.getByRole('main')
+			.getByRole('link', {
+				name: scenario.kind === 'expense' ? 'Add expense' : 'Add income',
+				exact: true
+			})
+			.click()
+		await expect(page).toHaveURL(scenario.path)
+		const account = page.getByLabel('Account', { exact: true })
+		const category = page.getByLabel('Category', { exact: true })
+		await expect(account.locator('option')).toHaveText(['Select an account', 'Personal checking'])
+		await expect(
+			category.getByRole('option', { name: 'Personal category', exact: true })
+		).toHaveCount(1)
+		await page.getByLabel('Workspace', { exact: true }).selectOption(secondWorkspaceId)
+		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
+		await expect(category.locator('option')).toHaveText(['Select a category', 'Business category'])
+		await account.selectOption({ label: 'Business checking' })
+		await category.selectOption({ label: 'Business category' })
+		await page.getByLabel(/Amount/).fill('42.50')
+		await page.getByLabel('Date', { exact: true }).fill('2026-10-13')
+		await page.getByLabel('Memo', { exact: true }).fill(scenario.memo)
+		if (scenario.kind === 'income') {
+			await page.getByLabel('Payment method').selectOption('check')
+			await page.getByLabel('Check number').fill('12345')
+			await page.getByLabel('Check date').fill('2026-10-12')
+		}
+		await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await expect(page.getByRole('main').getByRole('status')).toHaveText('Transaction saved.')
+		const saved = await page.evaluate(
+			async ({ organizationId, memo }) => {
+				const { app, db } = window.workspaceSettingsTest
+				const rows = await db.all(app.transactions.where({ organizationId, memo }), {
+					tier: 'remote'
+				})
+				const row = rows[0]
+				return {
+					rows,
+					checks: row
+						? await db.all(app.checkDetails.where({ transactionId: row.id }), { tier: 'remote' })
+						: []
+				}
+			},
+			{ organizationId: secondWorkspaceId, memo: scenario.memo }
+		)
+		expect(saved.rows).toHaveLength(1)
+		expect(saved.rows[0]).toMatchObject({
+			kind: scenario.kind,
+			amountMinor: 4250,
+			bookedOn: '2026-10-13'
+		})
+		if (scenario.kind === 'income') {
+			expect(saved.rows[0]?.paymentMethod).toBe('check')
+			expect(saved.checks).toHaveLength(1)
+			expect(saved.checks[0]).toMatchObject({ checkNumber: '12345', checkDate: '2026-10-12' })
+		} else expect(saved.checks).toHaveLength(0)
+		await page.getByRole('button', { name: 'Add another transaction' }).click()
+		await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('')
+		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
+	})
+}
+
 for (const role of ['admin', 'member', 'viewer']) {
 	test(`${role} has the correct rename access in a shared workspace`, async ({ page, browser }) => {
 		await start(page)

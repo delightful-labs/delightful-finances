@@ -88,6 +88,7 @@
 		},
 		"no_accounts": "Add an account before recording a transaction.",
 		"data_load_error": "Account and category data could not be loaded.",
+		"loading_form_data": "Loading accounts and categories…",
 		"validation_error": "Check the transaction details and try again.",
 		"save_error": "The transaction could not be saved. Please try again.",
 		"saved": "Transaction saved.",
