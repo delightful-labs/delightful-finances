@@ -116,7 +116,7 @@ describe('createTransaction normalization', () => {
 		bookedOn: '2026-10-13',
 		money: { amountMinor: 100, currency: 'USD' },
 		memo: '  Payment  ',
-		checkDetails: { checkNumber: ' 123 ', checkDate: '' }
+		checkDetails: { checkNumber: ' 123 ', checkDate: '2026-10-12' }
 	}
 	it('persists normalized memo and check details', async () => {
 		const { db, insert } = setup()
@@ -127,7 +127,8 @@ describe('createTransaction normalization', () => {
 		)
 		expect(insert).toHaveBeenCalledWith(app.checkDetails, {
 			transactionId: organization.id,
-			checkNumber: '123'
+			checkNumber: '123',
+			checkDate: '2026-10-12'
 		})
 	})
 	it('omits whitespace-only memos from writes', async () => {

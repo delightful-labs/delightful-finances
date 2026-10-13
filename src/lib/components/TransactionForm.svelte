@@ -18,6 +18,11 @@
 
 	const db = getDb()
 	let { kind }: { kind: 'expense' | 'income' } = $props()
+	let showCheckFields = $state(false)
+
+	function syncPaymentMethod(element: HTMLSelectElement) {
+		showCheckFields = element.value === 'check'
+	}
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accountQuery = new QuerySubscription(() =>
 		filters.activeOrganizationId
@@ -139,18 +144,26 @@
 
 						{#if kind === 'income'}
 							<label for="transaction-payment-method">{m['transactions.payment.method']()}</label>
-							<select id="transaction-payment-method" name="paymentMethod" required>
+							<select
+								id="transaction-payment-method"
+								name="paymentMethod"
+								required
+								{@attach syncPaymentMethod}
+								onchange={(event) => syncPaymentMethod(event.currentTarget)}
+							>
 								<option value="cash">{m['transactions.payment.cash']()}</option>
 								<option value="check">{m['transactions.payment.check']()}</option>
 								<option value="transfer">{m['transactions.payment.transfer']()}</option>
 								<option value="electronic">{m['transactions.payment.electronic']()}</option>
 							</select>
 
-							<label for="check-number">{m['transactions.check.number']()}</label>
-							<input id="check-number" name="checkNumber" />
+							{#if showCheckFields}
+								<label for="check-number">{m['transactions.check.number']()}</label>
+								<input id="check-number" name="checkNumber" required />
 
-							<label for="check-date">{m['transactions.check.date']()}</label>
-							<input id="check-date" name="checkDate" type="date" />
+								<label for="check-date">{m['transactions.check.date']()}</label>
+								<input id="check-date" name="checkDate" type="date" required />
+							{/if}
 						{/if}
 
 						<label for="transaction-memo">{m['labels.memo']()}</label>

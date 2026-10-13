@@ -554,6 +554,13 @@ for (const scenario of formScenarios) {
 			category.getByRole('option', { name: 'Personal category', exact: true })
 		).toHaveCount(1)
 		await page.getByLabel('Memo', { exact: true }).fill('Draft from previous workspace')
+		await expect(page.getByLabel('Check number')).toHaveCount(0)
+		await expect(page.getByLabel('Check date')).toHaveCount(0)
+		if (scenario.kind === 'income') {
+			await page.getByLabel('Payment method').selectOption('check')
+			await page.getByLabel('Check number').fill('Previous workspace check')
+			await page.getByLabel('Check date').fill('2026-10-12')
+		}
 		await page.getByLabel('Workspace', { exact: true }).selectOption(secondWorkspaceId)
 		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
 		await expect(category.locator('option')).toHaveText(['Select a category', 'Business category'])
@@ -564,7 +571,34 @@ for (const scenario of formScenarios) {
 		await page.getByLabel('Date', { exact: true }).fill('2026-10-13')
 		await page.getByLabel('Memo', { exact: true }).fill(scenario.memo)
 		if (scenario.kind === 'income') {
+			await expect(page.getByLabel('Payment method')).toHaveValue('cash')
+			await expect(page.getByLabel('Check number')).toHaveCount(0)
 			await page.getByLabel('Payment method').selectOption('check')
+			await expect(page.getByLabel('Check number')).toHaveValue('')
+			await expect(page.getByLabel('Check date')).toHaveValue('')
+			await expect(page.getByLabel('Check number')).toHaveAttribute('required', '')
+			await expect(page.getByLabel('Check date')).toHaveAttribute('required', '')
+			for (const method of ['cash', 'transfer', 'electronic']) {
+				await page.getByLabel('Payment method').selectOption(method)
+				await expect(page.getByLabel('Check number')).toHaveCount(0)
+				await expect(page.getByLabel('Check date')).toHaveCount(0)
+			}
+			await page.getByLabel('Payment method').selectOption('check')
+			await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			expect(
+				await page
+					.getByLabel('Check number')
+					.evaluate((element: HTMLInputElement) => element.validity.valueMissing)
+			).toBe(true)
+			await page.getByLabel('Check number').fill('12345')
+			await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			expect(
+				await page
+					.getByLabel('Check date')
+					.evaluate((element: HTMLInputElement) => element.validity.valueMissing)
+			).toBe(true)
+			await page.getByLabel('Check date').fill('2026-10-12')
+			await page.getByLabel('Check number').fill(' ')
 			await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
 			await expect(page.getByRole('main').getByRole('alert')).toHaveText(
 				'Check the transaction details and try again.'
@@ -605,6 +639,14 @@ for (const scenario of formScenarios) {
 		await page.getByRole('button', { name: 'Add another transaction' }).click()
 		await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('')
 		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
+		if (scenario.kind === 'income') {
+			await expect(page.getByLabel('Payment method')).toHaveValue('cash')
+			await expect(page.getByLabel('Check number')).toHaveCount(0)
+			await expect(page.getByLabel('Check date')).toHaveCount(0)
+			await page.getByLabel('Payment method').selectOption('check')
+			await expect(page.getByLabel('Check number')).toHaveValue('')
+			await expect(page.getByLabel('Check date')).toHaveValue('')
+		}
 	})
 }
 

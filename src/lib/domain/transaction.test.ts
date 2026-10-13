@@ -10,7 +10,7 @@ const checkIncome: AppTransaction = {
 	organizationId: 'organization-1',
 	categoryId: 'category-1',
 	bookedOn: '2026-10-11',
-	checkDetails: { checkNumber: '101' }
+	checkDetails: { checkNumber: '101', checkDate: '2026-10-11' }
 }
 
 describe('validateTransaction', () => {
@@ -19,9 +19,12 @@ describe('validateTransaction', () => {
 	})
 
 	it('requires check details and a valid check date for check income', () => {
-		expect(validateTransaction({ ...checkIncome, checkDetails: { checkNumber: ' ' } })).toBe(
-			'check-number'
-		)
+		expect(
+			validateTransaction({
+				...checkIncome,
+				checkDetails: { checkNumber: ' ', checkDate: '2026-10-11' }
+			})
+		).toBe('check-number')
 		expect(
 			validateTransaction({
 				...checkIncome,

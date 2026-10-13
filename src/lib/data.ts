@@ -154,7 +154,7 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 			tx.insert(app.checkDetails, {
 				transactionId: row.id,
 				checkNumber: details.checkNumber,
-				...(details.checkDate === undefined ? {} : { checkDate: details.checkDate }),
+				checkDate: details.checkDate,
 				...(details.payerName === undefined ? {} : { payerName: details.payerName }),
 				...(details.bankName === undefined ? {} : { bankName: details.bankName }),
 				...(details.memoOnCheck === undefined ? {} : { memoOnCheck: details.memoOnCheck })

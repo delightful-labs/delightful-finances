@@ -25,21 +25,13 @@ const transactionBaseShape = {
 		.optional()
 }
 
-const checkDetails = z
-	.strictObject({
-		checkNumber: checkNumberText,
-		checkDate: dateOnlyText
-			.or(z.literal(''))
-			.transform((value) => value || undefined)
-			.optional(),
-		payerName: z.string().optional(),
-		bankName: z.string().optional(),
-		memoOnCheck: z.string().optional()
-	})
-	.transform(({ checkDate, ...details }) => ({
-		...details,
-		...(checkDate === undefined ? {} : { checkDate })
-	}))
+const checkDetails = z.strictObject({
+	checkNumber: checkNumberText,
+	checkDate: dateOnlyText,
+	payerName: z.string().optional(),
+	bankName: z.string().optional(),
+	memoOnCheck: z.string().optional()
+})
 
 const expenseTransaction = z.strictObject({
 	...transactionBaseShape,

@@ -38,7 +38,7 @@ As a user, I can create and review income and expense transactions for an accoun
 **Acceptance Scenarios**
 
 1. **Given** an active account, **When** I save an expense or income, **Then** the transaction stores a non-negative integer amount in minor units, currency copied from the account, organization and account references, a `bookedOn` calendar date stored as an ISO 8601 `YYYY-MM-DD` string, and a category matching its kind.
-2. **Given** I record income paid by check, **When** I save it, **Then** check-specific details are required and stored in a related check-details record; other income methods do not require those fields.
+2. **Given** I record income paid by check, **When** I save it, **Then** check number and a valid check date are required and stored in a related check-details record; other income methods do not require those fields.
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
 
@@ -73,7 +73,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-002**: The application MUST provide create, list, and archive flows for USD financial accounts scoped to the active organization.
 - **FR-003**: The application MUST provide create/list flows for income and expense transactions on an account.
 - **FR-004**: Every transaction MUST have `amountMinor >= 0`, an ISO 4217 currency, `kind`, `accountId`, `organizationId`, `bookedOn` as an ISO 8601 `YYYY-MM-DD` calendar-date string, and a category matching its kind.
-- **FR-005**: Manually entered income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details. Imported SimpleFIN income may omit the payment method.
+- **FR-005**: Manually entered income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details with a nonblank check number and a valid check date. The form MUST show those fields only when Check is selected. Imported SimpleFIN income may omit the payment method.
 - **FR-006**: Each organization MUST have non-deletable system Uncategorized categories for both expense and income.
 - **FR-007**: Users MUST be able to create and archive org-scoped categories and tags; tags MUST support optional category association and many-to-many transaction assignment.
 - **FR-008**: Archived accounts MUST be excluded from new transaction selection while historical data remains accessible. Archived tags MUST be excluded from new selection while retained on historical transactions.

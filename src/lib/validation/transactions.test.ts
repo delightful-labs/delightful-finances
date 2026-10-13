@@ -71,17 +71,30 @@ describe('canonical transaction normalization', () => {
 			appTransactionSchema.parse({ ...base, kind: 'income', source: { source: 'manual' } })
 		).toMatchObject({ paymentMethod: 'cash' })
 	})
-	it('normalizes empty optional check dates and trims check numbers', () => {
+	it('requires a valid check date and trims check numbers', () => {
 		const result = appTransactionSchema.parse({
 			...base,
 			kind: 'income',
 			source: { source: 'manual' },
 			paymentMethod: 'check',
-			checkDetails: { checkNumber: ' 123 ', checkDate: '' }
+			checkDetails: { checkNumber: ' 123 ', checkDate: '2026-10-12' }
 		})
-		expect(result).toMatchObject({ checkDetails: { checkNumber: '123' } })
-		if ('checkDetails' in result) expect(result.checkDetails).not.toHaveProperty('checkDate')
+		expect(result).toMatchObject({ checkDetails: { checkNumber: '123', checkDate: '2026-10-12' } })
 	})
+	it.each([undefined, '', '2026-02-29'])(
+		'rejects missing or invalid check date %j',
+		(checkDate) => {
+			expect(
+				appTransactionSchema.safeParse({
+					...base,
+					kind: 'income',
+					source: { source: 'manual' },
+					paymentMethod: 'check',
+					checkDetails: { checkNumber: '123', checkDate }
+				}).success
+			).toBe(false)
+		}
+	)
 	it('does not give imported income a manual payment method', () => {
 		expect(
 			appTransactionSchema.parse({
@@ -210,24 +223,25 @@ describe('transaction form schema', () => {
 		})
 	})
 
-	it('trims check numbers and omits an empty optional check date', () => {
+	it('trims check numbers and retains the required check date', () => {
 		const result = transactionFormSchema(() => options('income')).parse({
 			...fields,
 			paymentMethod: 'check',
 			checkNumber: '  123  ',
-			checkDate: ''
+			checkDate: '2026-10-12'
 		})
 		expect(result).toMatchObject({
 			kind: 'income',
 			paymentMethod: 'check',
-			checkDetails: { checkNumber: '123' }
+			checkDetails: { checkNumber: '123', checkDate: '2026-10-12' }
 		})
-		if ('checkDetails' in result) expect(result.checkDetails).not.toHaveProperty('checkDate')
 	})
 
 	it.each([
-		{ checkNumber: '' },
-		{ checkNumber: ' ' },
+		{ checkNumber: '', checkDate: '2026-10-12' },
+		{ checkNumber: ' ', checkDate: '2026-10-12' },
+		{ checkNumber: '123' },
+		{ checkNumber: '123', checkDate: '' },
 		{ checkNumber: '123', checkDate: '2026-02-29' }
 	])('rejects invalid check details %j', (details) => {
 		expect(
