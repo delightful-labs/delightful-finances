@@ -69,7 +69,8 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
 - [x] T029 Add income payment methods; require and save check details only for check income.
   - Verified: check-number/date inputs only render for Check and both are required. Canonical check-income validation requires a valid date and nonblank number; its writer always persists the date. Inputs remain uncontrolled, with a small visibility state synchronized by the native select and Svelte attachment. After review, 68 focused unit tests and five browser regressions pass, including missing/empty/invalid check dates, persisted required dates, conditional visibility, native required validation, Zod validation retry, and workspace/form resets. Application/browser-test type checks pass.
 - [ ] T030 Build transaction list/detail views with date, account, amount, category, memo, and tags.
-- [ ] T031 Build category settings with org-scoped create/archive and protected system categories.
+- [x] T031 Build category settings with org-scoped create/archive and protected system categories.
+  - Verified after review: category creation, trimmed-name validation/retry, both kinds, workspace switching/draft reset, reload persistence, connected transaction/tag counts, offline archiving/sync, retained history, archived-category exclusion from new entry, and system-category protection. Admin/member creation and archiving pass; viewers have disabled controls and server-denied writes. Selected-account count coverage confirms unreadable transactions are excluded. 43 focused unit tests and six browser tests pass; browser-test type checks pass. Run `pnpm test:workspace --grep "category page"`.
 - [ ] T032 Build tag settings with optional category assignment and archive behavior.
 - [ ] T033 Build XState tag picker with search, create, multi-select, and archived-tag exclusion.
 - [x] T034 Add organization switcher state and settings shell; second-org creation/join flow may remain deferred.

@@ -64,6 +64,7 @@ As a user, I can manage categories and tags and attach multiple tags to a transa
 1. **Given** an expense or income form, **When** I choose a category, **Then** only categories of the matching kind are offered.
 2. **Given** a tag is archived, **When** I search/select tags for a new transaction, **Then** the archived tag is omitted while remaining visible on historical transactions.
 3. **Given** the tag picker supports creating a tag, **When** I create and select one, **Then** the tag is scoped to the current organization and can optionally be assigned a category.
+4. **Given** category settings, **When** I review a category, **Then** I can see counts of its connected transactions and directly associated tags within my read permissions. Counts include retained history and archived tags and do not change with sidebar account filters.
 
 ### User Story 5 — Prepare for shared workspaces and imports (P3)
 
