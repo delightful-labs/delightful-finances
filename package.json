@@ -23,6 +23,7 @@
 		"test:pwa": "playwright test --config playwright.pwa.config.ts",
 		"test:auth": "playwright test --config playwright.auth.config.ts",
 		"test:permissions": "playwright test --config playwright.permissions.config.ts",
+		"test:workspace": "playwright test --config playwright.workspace.config.ts",
 		"check:tests": "tsc --project tests/tsconfig.json --noEmit"
 	},
 	"devDependencies": {

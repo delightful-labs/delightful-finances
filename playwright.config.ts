@@ -11,6 +11,7 @@ export default defineConfig({
 	testIgnore: [
 		'**/tests/pwa.e2e.ts',
 		'**/tests/authentication.e2e.ts',
-		'**/tests/permissions.e2e.ts'
+		'**/tests/permissions.e2e.ts',
+		'**/tests/workspace.e2e.ts'
 	]
 })

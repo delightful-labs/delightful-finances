@@ -1,6 +1,6 @@
 # Reusable forms
 
-`Form.svelte` collects native form fields on submission and connects them to an XState machine. `WorkspaceNameForm` now uses this API; that integration is awaiting review before automated coverage.
+`Form.svelte` collects native form fields on submission and connects them to an XState machine. `WorkspaceNameForm` uses this API. The machine has unit coverage for validation, transformed values, save failures and retries, busy-state event handling, and reset. Five browser tests cover sidebar navigation preserving the workspace and database session, workspace renaming, whitespace validation and retry, reload persistence, owner/admin access, member/viewer read-only controls and server-denied writes, and workspace switching. Run `pnpm test:workspace` against the shared development server.
 
 ## Inputs
 
