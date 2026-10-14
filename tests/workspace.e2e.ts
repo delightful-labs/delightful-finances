@@ -2533,3 +2533,202 @@ test('overview page exposes income and expense links and preserves the workspace
 	await page.reload()
 	await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
 })
+
+test('profile name saves offline, follows workspace selection, and supplies transaction attribution', async ({
+	page
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const second = await db
+			.insert(app.organizations, {
+				name: 'Profile second workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: second.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		const account = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Profile checking',
+				kind: 'bank',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const category = await db.one(
+			app.categories.where({ organizationId, kind: 'expense', isSystem: true })
+		)
+		if (!category) throw new Error('No category')
+		const transaction = await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 100,
+				currency: 'USD',
+				bookedOn: '2026-10-14',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		return { secondId: second.id, transactionId: transaction.id, userId }
+	}, organizationId)
+	await page
+		.getByRole('navigation')
+		.getByRole('link', { name: 'Account recovery', exact: true })
+		.click()
+	await expect(page).toHaveURL('/account')
+	const main = page.getByRole('main')
+	await expect(main.getByLabel('Display name', { exact: true })).toBeEnabled()
+	await page.context().setOffline(true)
+	try {
+		await main.getByLabel('Display name', { exact: true }).fill('Offline profile owner')
+		await main.getByRole('button', { name: 'Save', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Display name saved on this device.')
+		await expect
+			.poll(() =>
+				page.evaluate(async () => {
+					const { app, db, userId } = window.workspaceSettingsTest
+					return (await db.one(app.profiles.where({ userId })))?.displayName
+				})
+			)
+			.toBe('Offline profile owner')
+	} finally {
+		await page.context().setOffline(false)
+	}
+	await expect
+		.poll(() =>
+			page.evaluate(async () => {
+				const { app, db, userId } = window.workspaceSettingsTest
+				return (await db.one(app.profiles.where({ userId }), { tier: 'remote' }))?.displayName
+			})
+		)
+		.toBe('Offline profile owner')
+	const selector = page.getByLabel('Workspace', { exact: true })
+	await expect(selector.locator(`option[value="${fixture.secondId}"]`)).toHaveCount(1)
+	await selector.selectOption(fixture.secondId)
+	await expect(main.getByLabel('Display name', { exact: true })).toHaveValue(
+		'Offline profile owner'
+	)
+	await selector.selectOption(organizationId)
+	await page.goto(`/transactions/${fixture.transactionId}`)
+	await expect(main.getByText('Offline profile owner', { exact: true })).toHaveCount(2)
+	await page
+		.getByRole('navigation')
+		.getByRole('link', { name: 'Account recovery', exact: true })
+		.click()
+	await main.getByLabel('Display name', { exact: true }).fill('')
+	await main.getByRole('button', { name: 'Save', exact: true }).click()
+	await expect(main.getByRole('status')).toHaveText('Display name saved on this device.')
+	await page.goto(`/transactions/${fixture.transactionId}`)
+	await expect(main.getByText(fixture.userId, { exact: true })).toHaveCount(2)
+	await expect(main.getByText('Offline profile owner', { exact: true })).toHaveCount(0)
+})
+
+test('profile name edits are owner-only even for members of a shared workspace', async ({
+	page,
+	browser
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const owner = await page.evaluate(async () => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const profile = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+		if (!profile) throw new Error('Missing profile')
+		await db
+			.update(app.profiles, profile.id, { displayName: 'Protected profile owner' })
+			.wait({ tier: 'global' })
+		return { profileId: profile.id, userId }
+	})
+	const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+	try {
+		const subject = await context.newPage()
+		await start(subject)
+		const subjectId = await subject.evaluate(() => window.workspaceSettingsTest.userId)
+		await page.evaluate(
+			async ({ organizationId, subjectId }) => {
+				const { app, db } = window.workspaceSettingsTest
+				await db
+					.insert(app.organizationMembers, {
+						organizationId,
+						userId: subjectId,
+						role: 'member',
+						accountAccessMode: 'all'
+					})
+					.wait({ tier: 'global' })
+			},
+			{ organizationId, subjectId }
+		)
+		const selector = subject.getByLabel('Workspace', { exact: true })
+		await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
+		await selector.selectOption(organizationId)
+		await subject
+			.getByRole('navigation')
+			.getByRole('link', { name: 'Account recovery', exact: true })
+			.click()
+		await expect(subject).toHaveURL('/account')
+		await subject.getByLabel('Display name', { exact: true }).fill('Shared workspace member')
+		await subject.getByRole('button', { name: 'Save', exact: true }).click()
+		await expect(subject.getByRole('main').getByRole('status')).toHaveText(
+			'Display name saved on this device.'
+		)
+		const outcome = await subject.evaluate(async (owner) => {
+			const { app, db, userId } = window.workspaceSettingsTest
+			const own = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+			if (!own) throw new Error('Missing member profile')
+			const visibleOwner = await db.one(app.profiles.where({ id: owner.profileId }), {
+				tier: 'remote'
+			})
+			let edit = 'accepted'
+			let transfer = 'accepted'
+			try {
+				await db
+					.upsert(app.profiles, owner.profileId, {
+						userId: owner.userId,
+						displayName: 'Hijacked name'
+					})
+					.wait({ tier: 'global' })
+			} catch (error) {
+				edit = error instanceof Error ? error.message : 'unknown-error'
+			}
+			try {
+				await db.update(app.profiles, own.id, { userId: owner.userId }).wait({ tier: 'global' })
+			} catch (error) {
+				transfer = error instanceof Error ? error.message : 'unknown-error'
+			}
+			const retained = await db.one(app.profiles.where({ id: own.id }), { tier: 'remote' })
+			return {
+				edit,
+				transfer,
+				ownerVisible: Boolean(visibleOwner),
+				ownName: retained?.displayName,
+				ownUserId: retained?.userId
+			}
+		}, owner)
+		expect(outcome.ownerVisible).toBe(false)
+		expect(outcome.edit).toMatch(/AuthorizationDenied|permission_denied/)
+		expect(outcome.transfer).toMatch(/AuthorizationDenied|permission_denied/)
+		expect(outcome.ownName).toBe('Shared workspace member')
+		expect(outcome.ownUserId).toBe(subjectId)
+		await expect
+			.poll(() =>
+				page.evaluate(async (id) => {
+					const { app, db } = window.workspaceSettingsTest
+					return (await db.one(app.profiles.where({ id }), { tier: 'remote' }))?.displayName
+				}, owner.profileId)
+			)
+			.toBe('Protected profile owner')
+	} finally {
+		await context.close()
+	}
+})

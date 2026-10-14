@@ -133,3 +133,68 @@ test('recovery modal clears its content and confirmation on every dismissal', as
 		await expect(show).toBeFocused()
 	}
 })
+
+async function saveDisplayName(page: Page, name: string) {
+	await page.goto('/account')
+	await expect(page.getByLabel('Display name', { exact: true })).toBeEnabled()
+	await page.getByLabel('Display name', { exact: true }).fill(name)
+	await page.getByRole('button', { name: 'Save', exact: true }).click()
+	await expect(page.getByRole('status')).toHaveText('Display name saved on this device.')
+}
+
+test('profile name trims, survives reload, and can be cleared', async ({ page }) => {
+	await saveDisplayName(page, '  Profile owner  ')
+	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
+	await page.reload()
+	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
+	await page.getByLabel('Display name', { exact: true }).fill('  ')
+	await page.getByRole('button', { name: 'Save', exact: true }).click()
+	await expect(page.getByRole('status')).toHaveText('Display name saved on this device.')
+	await page.reload()
+	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
+})
+
+test('profile name follows the recovered identity across devices', async ({
+	page,
+	browser,
+	baseURL
+}) => {
+	await saveDisplayName(page, 'Recovered owner')
+	// Confirm synchronization without including recovery secrets in output.
+	await expect
+		.poll(() =>
+			page.evaluate(async () => {
+				const schemaPath = '/src/lib/schema.ts'
+				const sessionPath = '/src/lib/jazz-session.ts'
+				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+					sessionPath
+				)
+				const snapshot = getCurrentJazzSession()?.getSnapshot()
+				if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
+				return (
+					await snapshot.client.db.one(app.profiles.where({ userId: snapshot.account.id }), {
+						tier: 'remote'
+					})
+				)?.displayName
+			})
+		)
+		.toBe('Recovered owner')
+	await page.getByRole('button', { name: 'Show recovery phrase' }).click()
+	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
+	await page.getByRole('button', { name: 'Close', exact: true }).click()
+	const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
+	try {
+		const other = await context.newPage()
+		await saveDisplayName(other, 'Previous identity')
+		await restoreAccount(other, phrase)
+		await other.goto('/account')
+		await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+		await other.reload()
+		await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+		await page.reload()
+		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+	} finally {
+		await context.close()
+	}
+})

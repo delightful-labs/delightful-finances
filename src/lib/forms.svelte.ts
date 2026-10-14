@@ -15,6 +15,7 @@ export function createFormController<Values, Result, Context>(options: {
 		createActor(createFormMachine(options.schema, options.save, options.context()))
 	let actor = untrack(makeActor)
 	let state = $state.raw(actor.getSnapshot())
+	const key = $derived(options.key?.())
 	const disabled = $derived(options.disabled?.() ?? false)
 	const busy = $derived(state.hasTag('busy'))
 	const view: FormView<Values, Result, Context> = $derived({
@@ -27,7 +28,7 @@ export function createFormController<Values, Result, Context>(options: {
 	// Recreate only when the record/workspace key changes. Stop invokes and
 	// unsubscribe on key changes and when the owning page unmounts.
 	$effect(() => {
-		options.key?.()
+		void key
 		const next = untrack(makeActor)
 		actor = next
 		state = next.getSnapshot()

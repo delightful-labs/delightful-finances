@@ -9,7 +9,8 @@ import {
 	createCategory,
 	createAccount,
 	createTransaction,
-	ensurePersonalWorkspace
+	ensurePersonalWorkspace,
+	saveProfileName
 } from './data.js'
 import type { AppTransaction } from './domain/transaction.js'
 import { app, type Account, type Organization } from './schema.js'
@@ -439,5 +440,41 @@ describe('transaction tag persistence', () => {
 		const failure = new Error('Persistence failed')
 		wait.mockRejectedValueOnce(failure)
 		await expect(createTransaction(db, input)).rejects.toBe(failure)
+	})
+})
+
+describe('saveProfileName', () => {
+	it('normalizes the name, updates only the display field, and waits for local persistence', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await saveProfileName(db, 'profile', userId, '  Matthew  ')
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.profiles, 'profile', {
+			displayName: 'Matthew'
+		})
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it.each([null, undefined])('clears the name with %j', async (displayName) => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await saveProfileName(db, 'profile', userId, displayName)
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.profiles, 'profile', {
+			displayName: null
+		})
+	})
+	it('rejects invalid canonical names or identities before writing', () => {
+		const db = { update: vi.fn() } satisfies Pick<Db, 'update'>
+		expect(() => saveProfileName(db, 'profile', userId, ' ')).toThrow()
+		expect(() => saveProfileName(db, 'profile', 'invalid', 'Matthew')).toThrow()
+		expect(db.update).not.toHaveBeenCalled()
+	})
+	it('returns the local persistence promise and propagates its failure', async () => {
+		const pending = Promise.withResolvers<void>()
+		const wait = vi.fn(() => pending.promise)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		const result = saveProfileName(db, 'profile', userId, 'Matthew')
+		expect(result).toBe(pending.promise)
+		const rejection = expect(result).rejects.toThrow('Profile write failed')
+		pending.reject(new Error('Profile write failed'))
+		await rejection
 	})
 })

@@ -6,6 +6,7 @@ import { appTransactionSchema } from './validation/transactions.js'
 import { appAccountSchema } from './validation/accounts.js'
 import { appCategorySchema } from './validation/categories.js'
 import { appTagSchema } from './validation/tags.js'
+import { appProfileSchema } from './validation/identity.js'
 
 type Db = ReturnType<typeof getDb>
 
@@ -107,6 +108,18 @@ async function stableUuid(namespaceId: string, name: string) {
 	digest[8] = ((digest[8] ?? 0) & 0x3f) | 0x80
 	const hex = Array.from(digest.slice(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join('')
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function saveProfileName(
+	db: Pick<Db, 'update'>,
+	profileId: string,
+	userId: string,
+	displayName: string | null | undefined
+) {
+	const profile = appProfileSchema.parse({ userId, displayName })
+	return db
+		.update(app.profiles, profileId, { displayName: profile.displayName ?? null })
+		.wait({ tier: 'local' })
 }
 
 export function renameWorkspace(

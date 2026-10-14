@@ -105,7 +105,9 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
 - [x] T049 Select and display Jazz creator/latest-editor metadata for transactions, resolving author identities to profiles with fallbacks.
   - Verified in detail browser coverage: own display names resolve; other profiles use stable account-ID fallbacks under current owner-only profile-read permissions. A member edit preserves creator identity/timestamp and updates latest editor identity/timestamp. Shared profile visibility remains T050.
 - [ ] T050 Add owner-editable login profile name and avatar upload/replace/remove, with permissions for authorized workspace members to read author display profiles.
+  - Verified after review: /account includes a props-only profile name form, canonical profile/form validation, and an identity-scoped save workflow that waits for local persistence. Blank names clear the display name for the existing account-ID fallback. All 62 focused validation/persistence/shared-machine unit tests and 23 browser scenarios pass across authentication and affected form workflows, covering trim/clear/reload, recovery on another device, workspace reuse, offline saving, attribution, owner-only writes, and ownership-transfer rejection. A shared form lifecycle fix uses a derived identity key so reactive profile updates do not reset save feedback. Application/service-worker and browser-test type checks pass. Avatars and shared-profile read permissions remain pending.
 - [ ] T051 After implementation review, add unit and Playwright coverage for attribution, profile permissions, avatar lifecycle, missing-profile fallbacks, and persistence across workspace switches/recovery.
+  - Profile-name coverage is implemented and passing; avatar lifecycle and shared-profile visibility await their implementation reviews.
 
 ## Delightful UI Integration Trial
 

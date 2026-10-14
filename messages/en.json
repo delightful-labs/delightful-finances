@@ -43,7 +43,9 @@
 		"categories": "Categories",
 		"tags": "Tags",
 		"tag": "Tag",
-		"tag_name": "Tag name"
+		"tag_name": "Tag name",
+		"profile": "Profile",
+		"display_name": "Display name"
 	},
 	"actions": {
 		"add_account": "Add an account",
@@ -171,5 +173,10 @@
 			"duplicate": "Tag {name} is already selected.",
 			"instructions": "Choose an existing tag or enter a new name. New tags will be created when you save the transaction."
 		}
+	},
+	"profile": {
+		"name_saved": "Display name saved on this device.",
+		"name_invalid": "Enter a valid display name.",
+		"name_description": "Leave the name blank to use your account ID."
 	}
 }
