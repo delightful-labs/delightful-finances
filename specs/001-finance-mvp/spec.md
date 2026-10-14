@@ -43,6 +43,7 @@ As a user, I can create and review income and expense transactions for an accoun
 2. **Given** I record income paid by check, **When** I save it, **Then** check number and a valid check date are required and stored in a related check-details record; other income methods do not require those fields.
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
+5. **Given** an income or expense view, **When** I review transactions, **Then** entries are grouped by calendar date newest first, with daily totals reflecting selected account filters and kept separate by currency. Each entry shows category, tags, account, amount, and its memo when present.
 
 ### User Story 6 — Maintain a login profile (P2)
 

@@ -283,7 +283,7 @@ test('transaction list shows empty income and expense views', async ({ page }) =
 	await page.goto('/expenses')
 	const main = page.getByRole('main')
 	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
-	await expect(main.getByRole('table')).toHaveCount(0)
+	await expect(main.getByRole('listitem')).toHaveCount(0)
 	await expect(main.getByRole('link', { name: 'Add expense' })).toHaveAttribute(
 		'href',
 		'/expenses/new'
@@ -410,16 +410,16 @@ test('transaction list follows kind, date order, account filters, and workspace 
 	const navigation = page.getByRole('navigation')
 	await navigation.getByRole('link', { name: 'Expenses', exact: true }).click()
 	const main = page.getByRole('main')
-	const memos = main.getByRole('table').locator('tbody tr td:last-child')
+	const memos = main.getByRole('listitem').locator('p')
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
-	await expect(main.getByRole('cell', { name: '$12.34', exact: true })).toHaveCount(2)
+	await expect(main.getByRole('listitem').getByText('$12.34', { exact: true })).toHaveCount(2)
 	await page.getByRole('checkbox', { name: 'Show Cash', exact: true }).uncheck()
 	await expect(memos).toHaveText(['Older expense'])
 	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
 	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).uncheck()
 	await expect(main.getByText('Turn on an account to see its transactions.')).toBeVisible()
-	await expect(main.getByRole('table')).toHaveCount(0)
+	await expect(main.getByRole('listitem')).toHaveCount(0)
 	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
 	await navigation.getByRole('link', { name: 'Income', exact: true }).click()
@@ -884,9 +884,7 @@ test('account archive works offline, retains history, and excludes new-entry opt
 		)
 		.toEqual({ archived: true, retained: true })
 	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
-	await expect(
-		main.getByRole('cell', { name: 'Retained archived history', exact: true })
-	).toBeVisible()
+	await expect(main.getByText('Retained archived history', { exact: true })).toBeVisible()
 	await main.getByRole('link', { name: 'Add expense', exact: true }).click()
 	await expect(main.getByText('Add an account before recording a transaction.')).toBeVisible()
 	await page.goto('/accounts')
@@ -1265,9 +1263,7 @@ test('category page counts connections, archives offline, protects system catego
 		.toEqual({ archived: true, retained: true, tags: 2 })
 	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
 	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
-	await expect(
-		main.getByRole('cell', { name: 'Category retained history', exact: true })
-	).toBeVisible()
+	await expect(main.getByText('Category retained history', { exact: true })).toBeVisible()
 	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
 	await expect(
 		main.getByLabel('Category', { exact: true }).locator(`option[value="${fixture.categoryId}"]`)
@@ -2033,4 +2029,138 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 			}, fixture)
 		)
 		.toEqual({ categoryId: fixture.categoryId, tags: [expect.any(String)] })
+})
+
+test('transaction list groups days, separates currency totals, and displays archived category/tag/account names', async ({
+	page
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db } = window.workspaceSettingsTest
+		const account = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Daily checking',
+				kind: 'bank',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const euro = await db
+			.insert(app.accounts, { organizationId, name: 'Euro account', kind: 'bank', currency: 'EUR' })
+			.wait({ tier: 'global' })
+		const category = await db
+			.insert(app.categories, {
+				organizationId,
+				name: 'Daily category',
+				kind: 'expense',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		const tag = await db
+			.insert(app.tags, { organizationId, name: 'Historical tag', categoryId: category.id })
+			.wait({ tier: 'global' })
+		const first = await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 1000,
+				currency: 'USD',
+				bookedOn: '2026-03-10',
+				memo: 'First daily entry',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.transactionTags, { organizationId, transactionId: first.id, tagId: tag.id })
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 250,
+				currency: 'USD',
+				bookedOn: '2026-03-10',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: euro.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 300,
+				currency: 'EUR',
+				bookedOn: '2026-03-10',
+				memo: 'Euro daily entry',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 50,
+				currency: 'USD',
+				bookedOn: '2026-03-09',
+				memo: 'Previous day',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		await db.update(app.tags, tag.id, { archivedAt: new Date() }).wait({ tier: 'global' })
+		await db
+			.update(app.categories, category.id, { archivedAt: new Date() })
+			.wait({ tier: 'global' })
+		return { accountId: account.id, categoryId: category.id, tagId: tag.id }
+	}, organizationId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
+	const main = page.getByRole('main')
+	await expect(main.locator('time')).toHaveText(['Tue, March 10, 2026', 'Mon, March 9, 2026'])
+	const day = main.getByRole('region', { name: 'Tue, March 10, 2026', exact: true })
+	await expect(day.getByLabel('Daily total: $12.50', { exact: true })).toBeVisible()
+	await expect(day.getByLabel('Daily total: €3.00', { exact: true })).toBeVisible()
+	await expect(day.getByRole('listitem')).toHaveCount(3)
+	const first = day
+		.getByRole('listitem')
+		.filter({ has: page.getByText('First daily entry', { exact: true }) })
+	await expect(first.getByText('Daily category', { exact: true })).toBeVisible()
+	await expect(first.getByText('Historical tag', { exact: true })).toBeVisible()
+	await expect(first.getByText('Daily checking', { exact: true })).toBeVisible()
+	await expect(day.getByRole('listitem').filter({ hasNot: page.locator('p') })).toHaveCount(1)
+	await page.getByRole('checkbox', { name: 'Show Euro account', exact: true }).uncheck()
+	await expect(day.getByLabel('Daily total: €3.00', { exact: true })).toHaveCount(0)
+	await expect(day.getByLabel('Daily total: $12.50', { exact: true })).toBeVisible()
+	await expect(day.getByRole('listitem')).toHaveCount(2)
+	await page.evaluate(async (fixture) => {
+		const { app, db } = window.workspaceSettingsTest
+		await db
+			.update(app.accounts, fixture.accountId, {
+				name: 'Renamed daily account',
+				archivedAt: new Date()
+			})
+			.wait({ tier: 'global' })
+		// System categories are protected; this is an ordinary category already archived.
+		await db
+			.update(app.categories, fixture.categoryId, { name: 'Renamed daily category' })
+			.wait({ tier: 'global' })
+		await db
+			.update(app.tags, fixture.tagId, { name: 'Renamed historical tag' })
+			.wait({ tier: 'global' })
+	}, fixture)
+	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
+	await expect(first.getByText('Renamed daily account', { exact: true })).toBeVisible()
+	await expect(first.getByText('Renamed daily category', { exact: true })).toBeVisible()
+	await expect(first.getByText('Renamed historical tag', { exact: true })).toBeVisible()
+	await page.reload()
+	await expect(
+		main.getByRole('region', { name: 'Tue, March 10, 2026', exact: true }).getByRole('listitem')
+	).toHaveCount(3)
+	await expect(main.getByText('Renamed historical tag', { exact: true })).toBeVisible()
 })

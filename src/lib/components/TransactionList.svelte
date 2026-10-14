@@ -1,71 +1,98 @@
 <script lang="ts">
-	import { getContext } from 'svelte'
-	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { formatMoney } from '#lib/domain/money.js'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import type { TransactionDay } from '#lib/domain/transaction-groups.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import { app } from '#lib/schema.js'
-	import QueryContent from './QueryContent.svelte'
+	import TransactionListItem from './TransactionListItem.svelte'
 
-	let { kind }: { kind: 'expense' | 'income' } = $props()
-	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const transactions = new QuerySubscription(() =>
-		filters.activeOrganizationId
-			? app.transactions
-					.where({ organizationId: filters.activeOrganizationId, kind })
-					.orderBy('bookedOn', 'desc')
-			: undefined
-	)
-	const visibleTransactions = $derived(
-		(transactions.current ?? []).filter(
-			(transaction) =>
-				filters.selectedAccountIds === null ||
-				filters.selectedAccountIds.includes(transaction.accountId)
-		)
+	let {
+		groups,
+		accountNames,
+		categoryNames,
+		tagNamesByTransaction,
+		noAccountsSelected
+	}: {
+		groups: readonly TransactionDay[]
+		accountNames: ReadonlyMap<string, string>
+		categoryNames: ReadonlyMap<string, string>
+		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
+		noAccountsSelected: boolean
+	} = $props()
+	const listId = $props.id()
+	const dateFormatter = $derived(
+		new Intl.DateTimeFormat(getLocale(), {
+			weekday: 'short',
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric',
+			timeZone: 'UTC'
+		})
 	)
 </script>
 
-<svelte:head>
-	<title
-		>{kind === 'expense' ? m['labels.expenses']() : m['labels.income']()} · {m['app.name']()}</title
-	>
-</svelte:head>
-
-<h1>{kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}</h1>
-<p>
-	<a href={kind === 'expense' ? '/expenses/new' : '/incomes/new'}>
-		{kind === 'expense' ? m['actions.add_expense']() : m['actions.add_income']()}
-	</a>
-</p>
-
-<QueryContent
-	queries={[transactions]}
-	loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
->
-	{#if filters.selectedAccountIds !== null && filters.selectedAccountIds.length === 0}
-		<p>{m['transactions.no_accounts_selected']()}</p>
-	{:else if visibleTransactions.length === 0}
-		<p>{m['transactions.empty.title']()}</p>
-	{:else}
-		<!-- Future DataTable: docs/delightful-ui-integration.md#tables -->
-		<table>
-			<thead>
-				<tr>
-					<th scope="col">{m['labels.date']()}</th>
-					<th scope="col">{m['labels.amount']()}</th>
-					<th scope="col">{m['labels.memo']()}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each visibleTransactions as transaction (transaction.id)}
-					<tr>
-						<td>{transaction.bookedOn}</td>
-						<td>{formatMoney(transaction.amountMinor, transaction.currency)}</td>
-						<td>{transaction.memo ?? ''}</td>
-					</tr>
+{#if noAccountsSelected}
+	<p>{m['transactions.no_accounts_selected']()}</p>
+{:else if groups.length === 0}
+	<p>{m['transactions.empty.title']()}</p>
+{:else}
+	{#each groups as group (group.bookedOn)}
+		<section aria-labelledby={`${listId}-${group.bookedOn}`}>
+			<header>
+				<h2 id={`${listId}-${group.bookedOn}`}>
+					<time datetime={group.bookedOn}
+						>{dateFormatter.format(new Date(`${group.bookedOn}T00:00:00Z`))}</time
+					>
+				</h2>
+				<div class="totals">
+					{#each [...group.totals] as [currency, amount] (currency)}
+						<span
+							aria-label={m['transactions.daily_total']({
+								amount: formatMoney(amount, currency, getLocale())
+							})}
+						>
+							{formatMoney(amount, currency, getLocale())}
+						</span>
+					{/each}
+				</div>
+			</header>
+			<ul class="entries">
+				{#each group.transactions as transaction (transaction.id)}
+					<TransactionListItem
+						{transaction}
+						categoryName={categoryNames.get(transaction.categoryId)}
+						accountName={accountNames.get(transaction.accountId)}
+						tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
+					/>
 				{/each}
-			</tbody>
-		</table>
-	{/if}
-</QueryContent>
+			</ul>
+		</section>
+	{/each}
+{/if}
+
+<style>
+	header {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+	h2 {
+		margin: 0;
+	}
+	section {
+		margin-block: 1.5rem;
+	}
+	.entries {
+		list-style: none;
+		padding: 0;
+	}
+	p {
+		margin-block: 0.25rem;
+	}
+	.totals {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+</style>

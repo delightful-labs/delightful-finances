@@ -98,7 +98,17 @@
 		"validation_error": "Check the transaction details and try again.",
 		"saved": "Transaction saved.",
 		"add_another": "Add another transaction",
-		"save": "Save transaction"
+		"save": "Save transaction",
+		"daily_total": "Daily total: {amount}",
+		"category_unavailable": "Category unavailable",
+		"account_unavailable": "Account unavailable",
+		"details": "Transaction details",
+		"tag_unavailable": "Tag unavailable",
+		"unavailable": "This transaction is unavailable in the selected workspace.",
+		"created_by": "Created by",
+		"created_at": "Created at",
+		"updated_by": "Last edited by",
+		"updated_at": "Last edited at"
 	},
 	"login": {
 		"heading": "Restore an account",

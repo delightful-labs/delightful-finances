@@ -1,3 +1,10 @@
+<!-- Sync Impact Report
+Version: 1.4.0 -> 2.0.0
+Modified principles: V. Accessible, Internationalized UI (props-based presentation boundary).
+Modified workflow: replace one-route/component limit with focused batches.
+Added/removed sections: none. Deferred placeholders: none.
+-->
+
 # Delightful Finance Constitution
 
 ## Core Principles
@@ -20,7 +27,7 @@ An organization is the tenancy boundary; a financial account is a ledger, not an
 
 ### V. Accessible, Internationalized UI
 
-Use SvelteKit with Svelte 5, semantic HTML controls, and Paraglide JS for every user-visible string from the beginning. Keep the interface unstyled and wireframe-like unless the user approves a visual direction; do not invent colors, decoration, or custom visual treatments. Prefer native semantic HTML controls over bespoke controls. Components must stay small and reusable. Do not use Tailwind. Use XState for multi-step workflows; use Svelte runes/stores for simple UI state. Preserve accessible interaction semantics.
+Use SvelteKit with Svelte 5, semantic HTML controls, and Paraglide JS for every user-visible string from the beginning. Keep the interface unstyled and wireframe-like unless the user approves a visual direction; do not invent colors, decoration, or custom visual treatments. Prefer native semantic HTML controls over bespoke controls. Presentation components must stay small and reusable, receive data and callbacks through props, and render independently of Jazz sessions, database queries, or XState actors. Pages orchestrate integrations through reusable script modules and compose pure presentation components. Do not put rendered HTML in files that initialize Jazz queries or XState workflows; third-party UI controls and localization are allowed in presentation components. Do not create component files merely to relocate page templates. Do not use Tailwind. Use XState for multi-step workflows; use Svelte runes/stores for simple UI state. Preserve accessible interaction semantics.
 
 ### VI. Provider Secrets and Imports
 
@@ -50,11 +57,11 @@ Every application feature and production code path must have appropriate automat
 - Before implementation, keep requirements, technical plan, and task checklist aligned. Resolve consequential ambiguity in the spec before building dependent features.
 - Every application feature and production code path needs appropriate unit and Playwright end-to-end coverage. Do not run tests until the user has reviewed and approved the exact implementation being tested.
 - Use Prettier for formatting. Keep formatting configuration in the repository and do not reformat unrelated files.
-- Work incrementally: implement one task at a time. Add or change at most one route or component in a review cycle, then stop and wait for the user's review before continuing.
+- Work incrementally: complete one focused task per review cycle, using a small related set of files (typically 3–6 implementation files). Multiple routes/components may change together when the task requires it. Discuss larger batches before proceeding; do not spread a change across dozens of files without explicit authorization. Present the change and wait for review before starting another task.
 - Do not add timestamps such as `createdOn`/`updatedOn` where Jazz system audit fields already provide them.
 
 ## Governance
 
 This constitution governs implementation and supersedes conflicting project conventions. Amend it when a deliberate architectural decision changes, and update dependent specs/plans in the same change. Each feature plan must state how it complies with the principles above.
 
-**Version**: 1.4.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-12
+**Version**: 2.0.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-14
