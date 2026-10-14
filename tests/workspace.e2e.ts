@@ -2164,3 +2164,342 @@ test('transaction list groups days, separates currency totals, and displays arch
 	).toHaveCount(3)
 	await expect(main.getByText('Renamed historical tag', { exact: true })).toBeVisible()
 })
+
+for (const kind of ['expense', 'income']) {
+	test(`transaction details ${kind} show related records, authorship, live updates, and reload`, async ({
+		page
+	}) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const fixture = await page.evaluate(
+			async ({ organizationId, kind }) => {
+				const { app, db, userId } = window.workspaceSettingsTest
+				if (kind !== 'expense' && kind !== 'income') throw new Error('Invalid kind')
+				const profile = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+				if (!profile) throw new Error('Missing profile')
+				await db
+					.update(app.profiles, profile.id, { displayName: 'Detail author' })
+					.wait({ tier: 'global' })
+				const account = await db
+					.insert(app.accounts, {
+						organizationId,
+						name: 'Detail account',
+						kind: 'bank',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				const category = await db
+					.insert(app.categories, {
+						organizationId,
+						name: 'Detail category',
+						kind,
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				const tag = await db
+					.insert(app.tags, { organizationId, name: 'Detail tag', categoryId: category.id })
+					.wait({ tier: 'global' })
+				const transaction = await db
+					.insert(app.transactions, {
+						organizationId,
+						accountId: account.id,
+						categoryId: category.id,
+						kind,
+						amountMinor: 1234,
+						currency: 'USD',
+						bookedOn: '2026-10-14',
+						memo: 'Original detail memo',
+						source: 'manual',
+						...(kind === 'income' ? { paymentMethod: 'check' } : {})
+					})
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.transactionTags, {
+						organizationId,
+						transactionId: transaction.id,
+						tagId: tag.id
+					})
+					.wait({ tier: 'global' })
+				if (kind === 'income')
+					await db
+						.insert(app.checkDetails, {
+							transactionId: transaction.id,
+							checkNumber: '12345',
+							checkDate: '2026-10-13'
+						})
+						.wait({ tier: 'global' })
+				const metadata = await db.one(
+					app.transactions.where({ id: transaction.id }).select('$createdAt', '$createdBy'),
+					{ tier: 'remote' }
+				)
+				if (!metadata) throw new Error('Missing metadata')
+				return {
+					id: transaction.id,
+					createdAt: metadata.$createdAt.toISOString(),
+					author: metadata.$createdBy.account
+				}
+			},
+			{ organizationId, kind }
+		)
+		await page
+			.getByRole('navigation')
+			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
+			.click()
+		const main = page.getByRole('main')
+		const link = main.getByRole('link').filter({ hasText: 'Original detail memo' })
+		await expect(link).toHaveAttribute('href', `/transactions/${fixture.id}`)
+		await link.focus()
+		await page.keyboard.press('Enter')
+		await expect(page).toHaveURL(`/transactions/${fixture.id}`)
+		await expect(
+			main.getByRole('heading', { name: 'Transaction details', exact: true })
+		).toBeVisible()
+		for (const text of [
+			'Detail account',
+			'Detail category',
+			'Detail tag',
+			'$12.34',
+			'Original detail memo'
+		])
+			await expect(main.getByText(text, { exact: true })).toBeVisible()
+		await expect(main.getByText('Detail author', { exact: true })).toHaveCount(2)
+		await expect(main.locator(`time[datetime="${fixture.createdAt}"]`)).toHaveCount(2)
+		await expect(main.locator('time[datetime="2026-10-14"]')).toHaveText('Oct 14, 2026')
+		if (kind === 'income') {
+			await expect(main.getByText('Check', { exact: true })).toBeVisible()
+			await expect(main.getByText('12345', { exact: true })).toBeVisible()
+			await expect(main.locator('time[datetime="2026-10-13"]')).toHaveText('Oct 13, 2026')
+		} else await expect(main.getByText('Check number', { exact: true })).toHaveCount(0)
+		await page.evaluate(async (id) => {
+			const { app, db } = window.workspaceSettingsTest
+			await db
+				.update(app.transactions, id, { memo: 'Updated detail memo' })
+				.wait({ tier: 'global' })
+		}, fixture.id)
+		await expect(main.getByText('Updated detail memo', { exact: true })).toBeVisible()
+		await expect(main.locator(`time[datetime="${fixture.createdAt}"]`)).toHaveCount(1)
+		await page.reload()
+		await expect(main.getByText('Updated detail memo', { exact: true })).toBeVisible()
+		await expect(main.getByText('Detail author', { exact: true })).toHaveCount(2)
+		await main
+			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
+			.click()
+		await expect(page).toHaveURL(kind === 'expense' ? '/expenses' : '/incomes')
+		await expect(main.getByRole('link').filter({ hasText: 'Updated detail memo' })).toBeVisible()
+	})
+}
+
+test('transaction details hide rows from another active workspace and handle missing IDs', async ({
+	page
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const account = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Scope account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const category = await db.one(
+			app.categories.where({ organizationId, kind: 'expense', isSystem: true })
+		)
+		if (!category) throw new Error('Missing category')
+		const transaction = await db
+			.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 100,
+				currency: 'USD',
+				bookedOn: '2026-10-14',
+				memo: 'Scoped detail',
+				source: 'manual'
+			})
+			.wait({ tier: 'global' })
+		const org = await db
+			.insert(app.organizations, {
+				name: 'Other detail workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: org.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		return { id: transaction.id, otherId: org.id }
+	}, organizationId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
+	await page.getByRole('main').getByRole('link').filter({ hasText: 'Scoped detail' }).click()
+	const main = page.getByRole('main')
+	await expect(main.getByText('Scoped detail', { exact: true })).toBeVisible()
+	const selector = page.getByLabel('Workspace', { exact: true })
+	await selector.selectOption(fixture.otherId)
+	await expect(
+		main.getByText('This transaction is unavailable in the selected workspace.', { exact: true })
+	).toBeVisible()
+	await expect(main.getByText('Scoped detail', { exact: true })).toHaveCount(0)
+	await selector.selectOption(organizationId)
+	await expect(main.getByText('Scoped detail', { exact: true })).toBeVisible()
+	await page.goto(`/transactions/${crypto.randomUUID()}`)
+	await expect(
+		main.getByText('This transaction is unavailable in the selected workspace.', { exact: true })
+	).toBeVisible()
+})
+
+for (const scenario of [
+	{
+		name: 'viewer with account read access',
+		role: 'viewer',
+		mode: 'selected',
+		grant: true,
+		read: true,
+		edit: false
+	},
+	{
+		name: 'viewer without account grants',
+		role: 'viewer',
+		mode: 'selected',
+		grant: false,
+		read: false,
+		edit: false
+	},
+	{ name: 'member editor', role: 'member', mode: 'all', grant: false, read: true, edit: true }
+]) {
+	test(`transaction details permissions: ${scenario.name}`, async ({ page, browser }) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const ownerId = await page.evaluate(() => window.workspaceSettingsTest.userId)
+		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		try {
+			const subject = await subjectContext.newPage()
+			await start(subject)
+			const subjectId = await subject.evaluate(() => window.workspaceSettingsTest.userId)
+			const fixture = await page.evaluate(
+				async ({ organizationId, subjectId, scenario }) => {
+					const { app, db } = window.workspaceSettingsTest
+					if (scenario.role !== 'viewer' && scenario.role !== 'member')
+						throw new Error('Invalid role')
+					if (scenario.mode !== 'all' && scenario.mode !== 'selected')
+						throw new Error('Invalid mode')
+					await db
+						.insert(app.organizationMembers, {
+							organizationId,
+							userId: subjectId,
+							role: scenario.role,
+							accountAccessMode: scenario.mode
+						})
+						.wait({ tier: 'global' })
+					const account = await db
+						.insert(app.accounts, {
+							organizationId,
+							name: 'Shared detail account',
+							kind: 'cash',
+							currency: 'USD'
+						})
+						.wait({ tier: 'global' })
+					if (scenario.grant)
+						await db
+							.insert(app.accountMemberships, {
+								organizationId,
+								userId: subjectId,
+								accountId: account.id,
+								access: 'read'
+							})
+							.wait({ tier: 'global' })
+					const category = await db.one(
+						app.categories.where({ organizationId, kind: 'expense', isSystem: true })
+					)
+					if (!category) throw new Error('No category')
+					const tag = await db
+						.insert(app.tags, { organizationId, name: 'Shared detail tag' })
+						.wait({ tier: 'global' })
+					const transaction = await db
+						.insert(app.transactions, {
+							organizationId,
+							accountId: account.id,
+							categoryId: category.id,
+							kind: 'expense',
+							amountMinor: 100,
+							currency: 'USD',
+							bookedOn: '2026-10-14',
+							memo: 'Shared detail memo',
+							source: 'manual'
+						})
+						.wait({ tier: 'global' })
+					await db
+						.insert(app.transactionTags, {
+							organizationId,
+							transactionId: transaction.id,
+							tagId: tag.id
+						})
+						.wait({ tier: 'global' })
+					const metadata = await db.one(
+						app.transactions.where({ id: transaction.id }).select('$createdAt'),
+						{ tier: 'remote' }
+					)
+					return { id: transaction.id, createdAt: metadata?.$createdAt.toISOString() }
+				},
+				{ organizationId, subjectId, scenario }
+			)
+			await start(subject)
+			const selector = subject.getByLabel('Workspace', { exact: true })
+			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
+			await selector.selectOption(organizationId)
+			if (scenario.edit) {
+				await subject.evaluate(async (id) => {
+					const { app, db, userId } = window.workspaceSettingsTest
+					const profile = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+					if (!profile) throw new Error('No editor profile')
+					await db
+						.update(app.profiles, profile.id, { displayName: 'Detail editor' })
+						.wait({ tier: 'global' })
+					await db.one(app.transactions.where({ id }), { tier: 'remote' })
+					await db
+						.update(app.transactions, id, { memo: 'Edited by member' })
+						.wait({ tier: 'global' })
+				}, fixture.id)
+			}
+			// Direct navigation exercises permission enforcement independently of visible list links.
+			await subject.goto(`/transactions/${fixture.id}`)
+			await expect(
+				subject
+					.getByLabel('Workspace', { exact: true })
+					.locator(`option[value="${organizationId}"]`)
+			).toHaveCount(1)
+			await subject.getByLabel('Workspace', { exact: true }).selectOption(organizationId)
+			const main = subject.getByRole('main')
+			if (scenario.read) {
+				await expect(main.getByText('Shared detail account', { exact: true })).toBeVisible()
+				await expect(main.getByText('Shared detail tag', { exact: true })).toBeVisible()
+				await expect(main.getByText(ownerId, { exact: true })).toHaveCount(scenario.edit ? 1 : 2)
+				if (scenario.edit) {
+					await expect(main.getByText('Detail editor', { exact: true })).toBeVisible()
+					await expect(main.getByText('Edited by member', { exact: true })).toBeVisible()
+					await expect(main.locator(`time[datetime="${fixture.createdAt}"]`)).toHaveCount(1)
+				}
+			} else {
+				await expect(
+					main.getByText('This transaction is unavailable in the selected workspace.', {
+						exact: true
+					})
+				).toBeVisible()
+				await expect(main.getByText('Shared detail account', { exact: true })).toHaveCount(0)
+				await expect(main.getByText('Shared detail tag', { exact: true })).toHaveCount(0)
+				await expect(main.getByText(ownerId, { exact: true })).toHaveCount(0)
+			}
+		} finally {
+			await subjectContext.close()
+		}
+	})
+}

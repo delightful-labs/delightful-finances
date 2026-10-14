@@ -6,10 +6,12 @@
 
 	let {
 		transaction,
+		href,
 		categoryName,
 		accountName,
 		tagNames = []
 	}: {
+		href: string
 		transaction: TransactionRow
 		categoryName: string | undefined
 		accountName: string | undefined
@@ -18,18 +20,23 @@
 </script>
 
 <li>
-	<div class="entry-heading">
-		<div class="classification">
-			<strong>{categoryName ?? m['transactions.category_unavailable']()}</strong>
-			{#if tagNames.length}<span>{tagNames.join(', ')}</span>{/if}
+	<a {href}>
+		<div class="entry-heading">
+			<div class="classification">
+				<strong>{categoryName ?? m['transactions.category_unavailable']()}</strong>
+				{#if tagNames.length}<span>{tagNames.join(', ')}</span>{/if}
+			</div>
+			<span>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span>
 		</div>
-		<span>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span>
-	</div>
-	{#if transaction.memo}<p>{transaction.memo}</p>{/if}
-	<small>{accountName ?? m['transactions.account_unavailable']()}</small>
+		{#if transaction.memo}<p>{transaction.memo}</p>{/if}
+		<small>{accountName ?? m['transactions.account_unavailable']()}</small>
+	</a>
 </li>
 
 <style>
+	a {
+		display: block;
+	}
 	.entry-heading {
 		display: flex;
 		justify-content: space-between;

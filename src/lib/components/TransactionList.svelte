@@ -58,6 +58,7 @@
 			<ul class="entries">
 				{#each group.transactions as transaction (transaction.id)}
 					<TransactionListItem
+						href={`/transactions/${transaction.id}`}
 						{transaction}
 						categoryName={categoryNames.get(transaction.categoryId)}
 						accountName={accountNames.get(transaction.accountId)}

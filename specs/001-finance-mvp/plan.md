@@ -101,7 +101,7 @@ messages/en.json
 static/
 ```
 
-Current routes: `/`, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, `/account` (account recovery), and `/settings/workspace`. Category/tag settings remain planned work. Account management uses the shared sidebar and existing account list/create forms; history stays in the income/expense views.
+Current routes: `/`, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, `/account` (account recovery), `/settings/workspace`, `/settings/categories`, `/settings/tags`, and `/transactions/[id]`. Account management uses the shared sidebar and existing account list/create forms; history stays in the income/expense views.
 
 Workspace settings use `/settings/workspace` and a reusable `WorkspaceNameForm` component. Read the submitted form with `FormData`, validate a trimmed non-empty name with Zod, and save through Jazz at the local durability tier. Owners/admins may edit; members/viewers get read-only controls. The component, page wiring, and sidebar navigation are implemented; the navigation test confirms the selected workspace and database session survive client navigation. Five shared form-machine unit tests and five workspace browser tests pass after implementation approval. Reactive reads use Jazz’s `QuerySubscriptionOne`; `QueryContent` shares loading/error feedback.
 
@@ -147,3 +147,5 @@ Document observed reusable component gaps in `docs/delightful-ui-integration.md`
 Presentation components take data and callbacks through props and do not initialize Jazz queries or XState actors. Pages initialize integrations through reusable script modules and compose pure components. Do not create wrapper components solely to move page templates out of routes. Work in focused batches, typically 3–6 related implementation files per review; discuss larger batches first.
 
 Applied first to transaction lists: `/expenses` and `/incomes` initialize `createTransactionListState` from `queries/transaction-list.svelte.ts`. That module owns subscriptions, account filters, name resolution, and date grouping. `TransactionList` renders prepared groups and `TransactionListItem` renders each entry from props. Other existing page-wrapper components remain for separate review cycles.
+
+Transaction details use the same boundary: `/transactions/[id]` initializes `queries/transaction-details.svelte.ts`, scopes the row to the active workspace, and selects Jazz author/timestamp metadata and related account/category/tag/check records. `TransactionDetails` receives the loaded record and author names through props. Current profile permissions allow only the user's own display name; other author identities use the stable account-ID fallback until shared-profile access is implemented. After review, six detail browser cases pass for navigation, related/check records, metadata, live updates/reloads, workspace scope, and account grants.
