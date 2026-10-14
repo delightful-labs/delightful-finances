@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { appTagSchema } from './tags.js'
 import { parseAmountMinor } from '../domain/money.js'
 import type { Account, Category, TransactionRow } from '../schema.js'
 
@@ -12,7 +13,16 @@ export const dateOnlyText = z.iso.date()
 export const checkNumberText = z.string().trim().min(1)
 export const externalIdText = z.string().trim().min(1)
 
+const tagNames = z
+	.array(appTagSchema.shape.name)
+	.transform((names) => {
+		const unique = new Map(names.map((name) => [name.toLowerCase(), name]))
+		return [...unique.values()]
+	})
+	.optional()
+
 const transactionBaseShape = {
+	tags: tagNames,
 	accountId: z.string(),
 	organizationId: z.string(),
 	categoryId: z.string(),
@@ -119,7 +129,7 @@ export function transactionFormSchema(getOptions: () => TransactionFormOptions) 
 	)
 	const fields = expense
 		.pick({ accountId: true, categoryId: true, bookedOn: true, memo: true })
-		.extend({ categoryId, amount: amountText, paymentMethod })
+		.extend({ categoryId, amount: amountText, paymentMethod, tags: expense.shape.tags })
 		// Preserve raw check fields until the canonical check-income branch validates them.
 		.loose()
 
@@ -147,7 +157,8 @@ export function transactionFormSchema(getOptions: () => TransactionFormOptions) 
 				bookedOn: fields.bookedOn,
 				money: { amountMinor: fields.amount, currency: account.currency },
 				...(fields.memo === undefined ? {} : { memo: fields.memo }),
-				source: { source: 'manual' }
+				source: { source: 'manual' },
+				...(fields.tags === undefined ? {} : { tags: fields.tags })
 			}
 			if (options.kind === 'expense') return { ...base, kind: options.kind }
 			return fields.paymentMethod === 'check'

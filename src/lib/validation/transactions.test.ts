@@ -284,3 +284,22 @@ describe('transaction form schema', () => {
 		expect(schema.safeParse(fields).success).toBe(false)
 	})
 })
+
+describe('transaction tag names', () => {
+	it('preserves all repeated form values while trimming and deduplicating case-insensitively', () => {
+		expect(
+			transactionFormSchema(() => options()).parse({
+				...fields,
+				tags: [' Garden ', 'Work', 'garden']
+			}).tags
+		).toEqual(['garden', 'Work'])
+	})
+	it('accepts an empty tag list', () => {
+		expect(transactionFormSchema(() => options()).parse({ ...fields, tags: [] }).tags).toEqual([])
+	})
+	it.each([[' '], [123], 'Garden'])('rejects invalid tag values %j', (tags) => {
+		expect(transactionFormSchema(() => options()).safeParse({ ...fields, tags }).success).toBe(
+			false
+		)
+	})
+})

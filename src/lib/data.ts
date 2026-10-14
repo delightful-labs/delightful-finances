@@ -135,7 +135,7 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 	const parsed = appTransactionSchema.safeParse(input)
 	if (!parsed.success) return { error: validateTransaction(input) ?? 'invalid-transaction' }
 	const transaction = parsed.data
-	const result = await db.transaction((tx) => {
+	const result = await db.transaction(async (tx) => {
 		const row = tx.insert(app.transactions, {
 			organizationId: transaction.organizationId,
 			accountId: transaction.accountId,
@@ -162,9 +162,37 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 				...(details.memoOnCheck === undefined ? {} : { memoOnCheck: details.memoOnCheck })
 			})
 		}
+		if (transaction.tags?.length) {
+			const existingTags = await tx.all(
+				app.tags.where({ organizationId: transaction.organizationId })
+			)
+			for (const name of transaction.tags) {
+				const matches = existingTags.filter(
+					(tag) => tag.name.trim().toLowerCase() === name.toLowerCase()
+				)
+				const active = matches.filter((tag) => !tag.archivedAt)
+				if (active.length > 1) throw new Error('The selected tag name is ambiguous.')
+				if (matches.length && !active.length) throw new Error('The selected tag has been archived.')
+				const tag =
+					active[0] ??
+					tx.insert(
+						app.tags,
+						appTagSchema.parse({
+							organizationId: transaction.organizationId,
+							name,
+							categoryId: transaction.categoryId
+						})
+					)
+				tx.insert(app.transactionTags, {
+					organizationId: transaction.organizationId,
+					transactionId: row.id,
+					tagId: tag.id
+				})
+			}
+		}
 		return row
 	})
-	return { value: result.value }
+	return { value: await result.wait({ tier: 'local' }) }
 }
 
 export function createCategory(

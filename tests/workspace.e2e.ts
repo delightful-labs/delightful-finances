@@ -1725,3 +1725,312 @@ for (const role of ['admin', 'member', 'viewer']) {
 		}
 	})
 }
+
+for (const kind of ['expense', 'income']) {
+	test(`transaction tags ${kind} reuse existing tags, create categorized tags, remove selections, and reset`, async ({
+		page
+	}) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const fixture = await page.evaluate(
+			async ({ organizationId, kind }) => {
+				const { app, db } = window.workspaceSettingsTest
+				if (kind !== 'expense' && kind !== 'income') throw new Error('Invalid kind')
+				const account = await db
+					.insert(app.accounts, {
+						organizationId,
+						name: 'Tag entry account',
+						kind: 'cash',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				const category = await db
+					.insert(app.categories, {
+						organizationId,
+						name: 'Selected tag category',
+						kind,
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				const previous = await db
+					.insert(app.categories, {
+						organizationId,
+						name: 'Existing tag category',
+						kind,
+						isSystem: false
+					})
+					.wait({ tier: 'global' })
+				const tag = await db
+					.insert(app.tags, { organizationId, name: 'Existing tag', categoryId: previous.id })
+					.wait({ tier: 'global' })
+				await db
+					.insert(app.tags, { organizationId, name: 'Archived entry tag', archivedAt: new Date() })
+					.wait({ tier: 'global' })
+				return {
+					accountId: account.id,
+					categoryId: category.id,
+					previousId: previous.id,
+					tagId: tag.id
+				}
+			},
+			{ organizationId, kind }
+		)
+		const navigation = page.getByRole('navigation')
+		await navigation
+			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
+			.click()
+		await page
+			.getByRole('link', { name: kind === 'expense' ? 'Add expense' : 'Add income', exact: true })
+			.click()
+		const main = page.getByRole('main')
+		await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
+		await main.getByLabel('Category', { exact: true }).selectOption(fixture.categoryId)
+		await main.getByLabel('Amount (USD)', { exact: true }).fill('12.34')
+		const tags = main
+			.getByRole('combobox', { name: 'Tags', exact: true })
+			.or(main.getByRole('textbox', { name: 'Tags', exact: true }))
+		await tags.fill('Archived')
+		await expect(page.getByRole('option', { name: 'Archived entry tag', exact: true })).toHaveCount(
+			0
+		)
+		await tags.fill('Existing')
+		await page.getByRole('option', { name: 'Existing tag', exact: true }).click()
+		await tags.fill(' New tag ')
+		await tags.press('Enter')
+		await tags.fill('Removed tag')
+		await tags.press('Enter')
+		await main.getByRole('button', { name: 'Remove Removed tag', exact: true }).click()
+		await tags.fill('existing tag')
+		await tags.press('Enter')
+		await expect(
+			main.getByText('Tag existing tag is already selected.', { exact: true })
+		).toBeVisible()
+		await main.getByLabel('Memo', { exact: true }).fill('Tagged entry')
+		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+		await expect
+			.poll(() =>
+				page.evaluate(
+					async ({ organizationId, fixture }) => {
+						const { app, db } = window.workspaceSettingsTest
+						const transactions = await db.all(
+							app.transactions.where({ organizationId, memo: 'Tagged entry' }),
+							{ tier: 'remote' }
+						)
+						const transaction = transactions[0]
+						if (!transaction) return null
+						const links = await db.all(
+							app.transactionTags.where({ transactionId: transaction.id }),
+							{ tier: 'remote' }
+						)
+						const tags = await db.all(app.tags.where({ organizationId }), { tier: 'remote' })
+						return {
+							transactions: transactions.length,
+							links: links.length,
+							existingCategory: tags.find((tag) => tag.id === fixture.tagId)?.categoryId,
+							newCategory: tags.find((tag) => tag.name === 'New tag')?.categoryId,
+							removed: tags.some((tag) => tag.name === 'Removed tag'),
+							linkedNames: links
+								.map((link) => tags.find((tag) => tag.id === link.tagId)?.name)
+								.sort()
+						}
+					},
+					{ organizationId, fixture }
+				)
+			)
+			.toEqual({
+				transactions: 1,
+				links: 2,
+				existingCategory: fixture.previousId,
+				newCategory: fixture.categoryId,
+				removed: false,
+				linkedNames: ['Existing tag', 'New tag']
+			})
+		await main.getByRole('button', { name: 'Add another transaction', exact: true }).click()
+		await expect(main.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+		await expect(tags).toHaveValue('')
+		await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
+		await main.getByLabel('Amount (USD)', { exact: true }).fill('2')
+		await main.getByLabel('Memo', { exact: true }).fill('No tags entry')
+		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+		await expect
+			.poll(() =>
+				page.evaluate(async (organizationId) => {
+					const { app, db } = window.workspaceSettingsTest
+					const transaction = await db.one(
+						app.transactions.where({ organizationId, memo: 'No tags entry' }),
+						{ tier: 'remote' }
+					)
+					if (!transaction) return -1
+					return (
+						await db.all(app.transactionTags.where({ transactionId: transaction.id }), {
+							tier: 'remote'
+						})
+					).length
+				}, organizationId)
+			)
+			.toBe(0)
+	})
+}
+
+test('transaction tags reject a tag archived after selection without saving partial data and allow retry', async ({
+	page
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const tagId = await page.evaluate(async (organizationId) => {
+		const { app, db } = window.workspaceSettingsTest
+		await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Retry tag account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		return (
+			await db
+				.insert(app.tags, { organizationId, name: 'Archive while selected' })
+				.wait({ tier: 'global' })
+		).id
+	}, organizationId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
+	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
+	const main = page.getByRole('main')
+	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Retry tag account' })
+	await main.getByLabel('Amount (USD)', { exact: true }).fill('5')
+	await main.getByLabel('Memo', { exact: true }).fill('Retry tagged entry')
+	const tags = main
+		.getByRole('combobox', { name: 'Tags', exact: true })
+		.or(main.getByRole('textbox', { name: 'Tags', exact: true }))
+	await tags.fill('Archive while')
+	await page.getByRole('option', { name: 'Archive while selected', exact: true }).click()
+	await page.evaluate(async (id) => {
+		const { app, db } = window.workspaceSettingsTest
+		await db.update(app.tags, id, { archivedAt: new Date() }).wait({ tier: 'global' })
+	}, tagId)
+	await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+	await expect(main.getByRole('alert')).toHaveText('Could not save Transaction. Please try again.')
+	const partial = await page.evaluate(async (organizationId) => {
+		const { app, db } = window.workspaceSettingsTest
+		return (
+			await db.all(app.transactions.where({ organizationId, memo: 'Retry tagged entry' }), {
+				tier: 'remote'
+			})
+		).length
+	}, organizationId)
+	expect(partial).toBe(0)
+	await expect(main.getByLabel('Amount (USD)', { exact: true })).toHaveValue('5')
+	await main.getByRole('button', { name: 'Remove Archive while selected', exact: true }).click()
+	await tags.fill('Replacement tag')
+	await tags.press('Enter')
+	await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+	await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+})
+
+test('transaction tags reset on workspace changes and save new categorized tags offline', async ({
+	page,
+	context
+}) => {
+	await start(page)
+	const firstId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'First tag account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.tags, { organizationId, name: 'First workspace tag' })
+			.wait({ tier: 'global' })
+		const org = await db
+			.insert(app.organizations, {
+				name: 'Offline tag workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: org.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		const account = await db
+			.insert(app.accounts, {
+				organizationId: org.id,
+				name: 'Offline tag account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const category = await db
+			.insert(app.categories, {
+				organizationId: org.id,
+				name: 'Offline tag category',
+				kind: 'expense',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		return { organizationId: org.id, accountId: account.id, categoryId: category.id }
+	}, firstId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Expenses', exact: true }).click()
+	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
+	const main = page.getByRole('main')
+	const tags = main
+		.getByRole('combobox', { name: 'Tags', exact: true })
+		.or(main.getByRole('textbox', { name: 'Tags', exact: true }))
+	await tags.fill('First workspace')
+	await page.getByRole('option', { name: 'First workspace tag', exact: true }).click()
+	await page.getByLabel('Workspace', { exact: true }).selectOption(fixture.organizationId)
+	await expect(tags).toHaveValue('')
+	await expect(main.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+	await tags.fill('First workspace')
+	await expect(page.getByRole('option', { name: 'First workspace tag', exact: true })).toHaveCount(
+		0
+	)
+	await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
+	await main.getByLabel('Category', { exact: true }).selectOption(fixture.categoryId)
+	await main.getByLabel('Amount (USD)', { exact: true }).fill('3')
+	await main.getByLabel('Memo', { exact: true }).fill('Offline tag entry')
+	await tags.fill('Offline new tag')
+	await tags.press('Enter')
+	await context.setOffline(true)
+	try {
+		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+	} finally {
+		await context.setOffline(false)
+	}
+	await expect
+		.poll(() =>
+			page.evaluate(async (fixture) => {
+				const { app, db } = window.workspaceSettingsTest
+				const transaction = await db.one(
+					app.transactions.where({
+						organizationId: fixture.organizationId,
+						memo: 'Offline tag entry'
+					}),
+					{ tier: 'remote' }
+				)
+				const tag = await db.one(
+					app.tags.where({ organizationId: fixture.organizationId, name: 'Offline new tag' }),
+					{ tier: 'remote' }
+				)
+				if (!transaction || !tag) return null
+				const links = await db.all(app.transactionTags.where({ transactionId: transaction.id }), {
+					tier: 'remote'
+				})
+				return { categoryId: tag.categoryId, tags: links.map((link) => link.tagId) }
+			}, fixture)
+		)
+		.toEqual({ categoryId: fixture.categoryId, tags: [expect.any(String)] })
+})

@@ -8,6 +8,7 @@
 		schema,
 		save,
 		context,
+		arrayFields = [],
 		disabled = false,
 		fields,
 		controls,
@@ -16,6 +17,7 @@
 		schema: z.ZodType<Values>
 		save: FormSave<Values, Result, Context>
 		context: Context
+		arrayFields?: readonly string[]
 		disabled?: boolean
 		fields: Snippet<[FormView<Values, Result, Context>]>
 		controls?: Snippet<[FormView<Values, Result, Context>]>
@@ -36,7 +38,10 @@
 	function submit(event: SubmitEvent) {
 		event.preventDefault()
 		if (disabled || !(event.currentTarget instanceof HTMLFormElement)) return
-		send({ type: 'SUBMIT', values: Object.fromEntries(new FormData(event.currentTarget)) })
+		const data = new FormData(event.currentTarget)
+		const values = Object.fromEntries(data)
+		const arrays = Object.fromEntries(arrayFields.map((name) => [name, data.getAll(name)]))
+		send({ type: 'SUBMIT', values: { ...values, ...arrays } })
 	}
 
 	function reset(event: Event) {

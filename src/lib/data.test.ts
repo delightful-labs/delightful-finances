@@ -36,7 +36,7 @@ function setup() {
 		wait.mockResolvedValue(value)
 		return { wait }
 	})
-	return { db, insert, wait }
+	return { db, insert, wait, transaction }
 }
 
 beforeEach(() => vi.restoreAllMocks())
@@ -360,5 +360,84 @@ describe('tag persistence', () => {
 			update: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
 		} satisfies Pick<Db, 'update'>
 		await expect(archiveTag(db, 'tag')).rejects.toBe(failure)
+	})
+})
+
+describe('transaction tag persistence', () => {
+	const input: AppTransaction = {
+		kind: 'expense',
+		source: { source: 'manual' },
+		organizationId: organization.id,
+		accountId: 'account',
+		categoryId: '33333333-3333-4333-8333-333333333333',
+		bookedOn: '2026-10-14',
+		money: { amountMinor: 100, currency: 'USD' }
+	}
+	it('creates new tags with the transaction category and links all selected tags atomically', async () => {
+		const { db, transaction, insert, wait } = setup()
+		vi.spyOn(transaction, 'all').mockResolvedValue([])
+		await createTransaction(db, { ...input, tags: [' Garden ', 'Work', 'garden'] })
+		expect(db.transaction).toHaveBeenCalledTimes(1)
+		expect(insert.mock.calls.filter(([table]) => table === app.tags)).toHaveLength(2)
+		expect(insert).toHaveBeenCalledWith(app.tags, {
+			organizationId: organization.id,
+			name: 'garden',
+			categoryId: input.categoryId,
+			archivedAt: null
+		})
+		expect(insert.mock.calls.filter(([table]) => table === app.transactionTags)).toHaveLength(2)
+		expect(insert).toHaveBeenCalledWith(app.transactionTags, {
+			organizationId: organization.id,
+			transactionId: organization.id,
+			tagId: organization.id
+		})
+		expect(wait).toHaveBeenCalledWith({ tier: 'local' })
+	})
+	it('reuses existing tags without changing their category', async () => {
+		const { db, transaction, insert } = setup()
+		vi.spyOn(transaction, 'all').mockResolvedValue([
+			{
+				id: 'existing',
+				organizationId: organization.id,
+				name: 'Garden',
+				categoryId: 'original',
+				archivedAt: null
+			}
+		])
+		await createTransaction(db, { ...input, tags: ['garden'] })
+		expect(insert.mock.calls.filter(([table]) => table === app.tags)).toHaveLength(0)
+		expect(insert).toHaveBeenCalledWith(app.transactionTags, {
+			organizationId: organization.id,
+			transactionId: organization.id,
+			tagId: 'existing'
+		})
+	})
+	it('does not read or create tags when none are selected', async () => {
+		const { db, transaction, insert } = setup()
+		const read = vi.spyOn(transaction, 'all')
+		await createTransaction(db, { ...input, tags: [] })
+		expect(read).not.toHaveBeenCalled()
+		expect(insert).toHaveBeenCalledTimes(1)
+	})
+	it('rejects tags archived since selection', async () => {
+		const { db, transaction } = setup()
+		vi.spyOn(transaction, 'all').mockResolvedValue([
+			{ id: 'archived', name: 'Garden', archivedAt: new Date() }
+		])
+		await expect(createTransaction(db, { ...input, tags: ['Garden'] })).rejects.toThrow('archived')
+	})
+	it('rejects ambiguous active tag names', async () => {
+		const { db, transaction } = setup()
+		vi.spyOn(transaction, 'all').mockResolvedValue([
+			{ id: 'one', name: 'Garden', archivedAt: null },
+			{ id: 'two', name: 'garden', archivedAt: null }
+		])
+		await expect(createTransaction(db, { ...input, tags: ['Garden'] })).rejects.toThrow('ambiguous')
+	})
+	it('propagates failures persisting the complete transaction locally', async () => {
+		const { db, wait } = setup()
+		const failure = new Error('Persistence failed')
+		wait.mockRejectedValueOnce(failure)
+		await expect(createTransaction(db, input)).rejects.toBe(failure)
 	})
 })

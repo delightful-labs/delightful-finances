@@ -198,12 +198,41 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	)
 
 	policy.transactionTags.allowRead.where((link) =>
-		policy.transactions.exists.where({ id: link.transactionId })
+		allOf([
+			allowedTo.read('transaction'),
+			policy.transactions.exists.where({
+				id: link.transactionId,
+				organizationId: link.organizationId
+			}),
+			policy.tags.exists.where({ id: link.tagId, organizationId: link.organizationId })
+		])
 	)
-	// The current server cannot enforce the transaction/tag workspace join.
-	// Keep inserts denied until that guard is supported; tag linking has no UI yet.
-	policy.transactionTags.allowInsert.never()
-	policy.transactionTags.allowDelete.where(allowedTo.update('transaction'))
+	policy.transactionTags.allowInsert.where((link) =>
+		allOf([
+			allowedTo.update('transaction'),
+			policy.transactions.exists.where({
+				id: link.transactionId,
+				organizationId: link.organizationId
+			}),
+			policy.tags.exists.where({
+				id: link.tagId,
+				organizationId: link.organizationId,
+				archivedAt: { isNull: true }
+			})
+		])
+	)
+	// Links are immutable; replace an assignment through delete/insert.
+	// Archived tags remain readable and removable from historical transactions.
+	policy.transactionTags.allowDelete.where((link) =>
+		allOf([
+			allowedTo.update('transaction'),
+			policy.transactions.exists.where({
+				id: link.transactionId,
+				organizationId: link.organizationId
+			}),
+			policy.tags.exists.where({ id: link.tagId, organizationId: link.organizationId })
+		])
+	)
 
 	policy.checkDetails.allowRead.where((details) =>
 		policy.transactions.exists.where({ id: details.transactionId })

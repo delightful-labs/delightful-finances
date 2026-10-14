@@ -63,7 +63,7 @@ As a user, I can manage categories and tags and attach multiple tags to a transa
 
 1. **Given** an expense or income form, **When** I choose a category, **Then** only categories of the matching kind are offered.
 2. **Given** a tag is archived, **When** I search/select tags for a new transaction, **Then** the archived tag is omitted while remaining visible on historical transactions.
-3. **Given** the tag picker supports creating a tag, **When** I create and select one, **Then** the tag is scoped to the current organization and can optionally be assigned a category.
+3. **Given** the transaction tag picker supports creating a tag, **When** I save a transaction with a new tag, **Then** the tag is scoped to the current organization and inherits the transaction's selected category. Selecting an existing tag does not change that tag's category. Tags created separately in tag settings may omit a category.
 4. **Given** category settings, **When** I review a category, **Then** I can see counts of its connected transactions and directly associated tags within my read permissions. Counts include retained history and archived tags and do not change with sidebar account filters.
 
 ### User Story 5 — Prepare for shared workspaces and imports (P3)
@@ -94,7 +94,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-009**: The application MUST be usable offline for previously available data and local writes, with synchronization handled by Jazz when connectivity returns.
 - **FR-010**: User-visible strings MUST use Paraglide message functions; initial supported locale is English.
 - **FR-011**: The UI MUST use accessible native HTML controls, SvelteKit/Svelte 5, native CSS and CSS variables, and responsive layouts.
-- **FR-012**: Multi-step transaction compose and tag selection flows MUST be modeled with XState; simple UI state may use Svelte runes/stores.
+- **FR-012**: Multi-step transaction compose and tag validation/save flows MUST be modeled with XState. Delightful UI TagInput provides tag search, selection, and removal interactions; simple UI state may use Svelte runes/stores.
 - **FR-013**: The application MUST expose a lightweight organization switcher shell and sync/pending status affordance; creating/joining another organization may be deferred.
 - **FR-022**: Workspace settings MUST let owners/admins rename the active workspace without changing its identity or associated accounts. The form MUST trim the submitted name, reject blank names, use local persistence, and remain read-only for members/viewers. Jazz permissions remain the authorization boundary.
 

@@ -10,3 +10,4 @@
 - Use the repository Prettier configuration. Do not format unrelated files.
 - Whenever starting a development server, tell the user and provide its URL so they can open the same server.
 - Never commit unless the user explicitly authorizes the commit.
+- Delightful Labs operates through open source and open learning. Create its GitHub repositories as public unless the user explicitly requests otherwise.

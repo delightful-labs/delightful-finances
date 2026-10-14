@@ -46,10 +46,12 @@ export const transactionsSchema = {
 	),
 	transactionTags: s.table(
 		{
+			organizationId: s.uuid(),
 			transactionId: s.uuid(),
 			tagId: s.uuid()
 		},
 		{
+			organization: s.rel('organizations', 'organizationId'),
 			transaction: s.rel('transactions', 'transactionId'),
 			tag: s.rel('tags', 'tagId')
 		}

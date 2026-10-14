@@ -16,6 +16,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import Form from './Form.svelte'
 	import QueryContent from './QueryContent.svelte'
+	import TransactionTagInput from './TransactionTagInput.svelte'
 
 	const db = getDb()
 	let { kind }: { kind: 'expense' | 'income' } = $props()
@@ -97,6 +98,7 @@
 		{#key `${filters.activeOrganizationId}:${kind}`}
 			<Form
 				{schema}
+				arrayFields={['tags']}
 				{save}
 				context={{ organizationId: filters.activeOrganizationId, kind }}
 				disabled={availableCategories.length === 0}
@@ -187,6 +189,12 @@
 							{/if}
 						{/if}
 
+						{#if filters.activeOrganizationId}
+							<TransactionTagInput
+								organizationId={filters.activeOrganizationId}
+								disabled={form.busy}
+							/>
+						{/if}
 						<Textarea label={m['labels.memo']()} id="transaction-memo" name="memo"></Textarea>
 					{/if}
 				{/snippet}

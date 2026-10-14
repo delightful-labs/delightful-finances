@@ -311,3 +311,228 @@ for (const scenario of scenarios) {
 		}
 	})
 }
+
+test('transaction tags enforce workspace consistency, active assignment, immutable links, and archived history', async ({
+	page
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const result = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspacePermissionTest
+		const category = await db.one(
+			app.categories.where({ organizationId, kind: 'expense', isSystem: true }),
+			{ tier: 'remote' }
+		)
+		if (!category) throw new Error('No expense category')
+		const account = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Tag permission account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const tag = await db
+			.insert(app.tags, { organizationId, name: 'Active permission tag' })
+			.wait({ tier: 'global' })
+		const other = await db
+			.insert(app.organizations, {
+				name: 'Other tag workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: other.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		const foreignTag = await db
+			.insert(app.tags, { organizationId: other.id, name: 'Foreign tag' })
+			.wait({ tier: 'global' })
+		// The transaction and assignment must be accepted together, in either write order.
+		const tx = await db.transaction((tx) => {
+			const transaction = tx.insert(app.transactions, {
+				organizationId,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				amountMinor: 100,
+				currency: 'USD',
+				bookedOn: '2026-10-13',
+				source: 'manual'
+			})
+			const link = tx.insert(app.transactionTags, {
+				organizationId,
+				transactionId: transaction.id,
+				tagId: tag.id
+			})
+			return { transactionId: transaction.id, linkId: link.id }
+		})
+		const fixture = await tx.wait({ tier: 'global' })
+		const outcomes: string[] = []
+		async function insertLink(workspaceId: string, transactionId: string, tagId: string) {
+			try {
+				await db
+					.insert(app.transactionTags, { organizationId: workspaceId, transactionId, tagId })
+					.wait({ tier: 'global' })
+				return 'accepted'
+			} catch (error) {
+				return error instanceof Error ? error.message : 'unknown-error'
+			}
+		}
+		outcomes.push(await insertLink(organizationId, fixture.transactionId, foreignTag.id))
+		outcomes.push(await insertLink(other.id, fixture.transactionId, foreignTag.id))
+		outcomes.push(await insertLink(organizationId, crypto.randomUUID(), tag.id))
+		outcomes.push(await insertLink(organizationId, fixture.transactionId, crypto.randomUUID()))
+		try {
+			await db
+				.update(app.transactionTags, fixture.linkId, { tagId: foreignTag.id })
+				.wait({ tier: 'global' })
+			outcomes.push('accepted')
+		} catch (error) {
+			outcomes.push(error instanceof Error ? error.message : 'unknown-error')
+		}
+		await db.update(app.tags, tag.id, { archivedAt: new Date() }).wait({ tier: 'global' })
+		outcomes.push(await insertLink(organizationId, fixture.transactionId, tag.id))
+		const historical = await db.one(app.transactionTags.where({ id: fixture.linkId }), {
+			tier: 'remote'
+		})
+		await db.delete(app.transactionTags, fixture.linkId).wait({ tier: 'global' })
+		const removed = await db.one(app.transactionTags.where({ id: fixture.linkId }), {
+			tier: 'remote'
+		})
+		return { outcomes, retained: historical?.tagId === tag.id, removed: !removed }
+	}, organizationId)
+	expect(result.outcomes).toHaveLength(6)
+	for (const outcome of result.outcomes)
+		expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
+	expect(result.retained).toBe(true)
+	expect(result.removed).toBe(true)
+})
+
+for (const scenario of scenarios) {
+	test(`transaction tag permissions: ${scenario.name}`, async ({ page, browser }) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		try {
+			const subject = await subjectContext.newPage()
+			await start(subject)
+			const subjectId = await subject.evaluate(() => window.workspacePermissionTest.userId)
+			const fixture = await page.evaluate(
+				async ({ organizationId, subjectId, role, mode, grant }) => {
+					const { app, db } = window.workspacePermissionTest
+					if (role)
+						await db
+							.insert(app.organizationMembers, {
+								organizationId,
+								userId: subjectId,
+								role,
+								accountAccessMode: mode
+							})
+							.wait({ tier: 'global' })
+					const account = await db
+						.insert(app.accounts, {
+							organizationId,
+							name: 'Tag shared account',
+							kind: 'cash',
+							currency: 'USD'
+						})
+						.wait({ tier: 'global' })
+					if (grant)
+						await db
+							.insert(app.accountMemberships, {
+								organizationId,
+								userId: subjectId,
+								accountId: account.id,
+								access: grant
+							})
+							.wait({ tier: 'global' })
+					const category = await db.one(
+						app.categories.where({ organizationId, kind: 'expense', isSystem: true }),
+						{ tier: 'remote' }
+					)
+					if (!category) throw new Error('No expense category')
+					const transaction = await db
+						.insert(app.transactions, {
+							organizationId,
+							accountId: account.id,
+							categoryId: category.id,
+							kind: 'expense',
+							amountMinor: 100,
+							currency: 'USD',
+							bookedOn: '2026-10-13',
+							source: 'manual'
+						})
+						.wait({ tier: 'global' })
+					const tag = await db
+						.insert(app.tags, { organizationId, name: 'Tag shared assignment' })
+						.wait({ tier: 'global' })
+					const link = await db
+						.insert(app.transactionTags, {
+							organizationId,
+							transactionId: transaction.id,
+							tagId: tag.id
+						})
+						.wait({ tier: 'global' })
+					return { transactionId: transaction.id, tagId: tag.id, linkId: link.id }
+				},
+				{
+					organizationId,
+					subjectId,
+					role: scenario.role,
+					mode: scenario.mode,
+					grant: scenario.grant
+				}
+			)
+			const access = await subject.evaluate(
+				async ({ organizationId, fixture }) => {
+					const { app, db } = window.workspacePermissionTest
+					const read = Boolean(
+						await db.one(app.transactionTags.where({ id: fixture.linkId }), { tier: 'remote' })
+					)
+					let insert = 'accepted'
+					try {
+						await db
+							.insert(app.transactionTags, {
+								organizationId,
+								transactionId: fixture.transactionId,
+								tagId: fixture.tagId
+							})
+							.wait({ tier: 'global' })
+					} catch (error) {
+						insert = error instanceof Error ? error.message : 'unknown-error'
+					}
+					let remove = 'accepted'
+					try {
+						await db.delete(app.transactionTags, fixture.linkId).wait({ tier: 'global' })
+					} catch (error) {
+						remove = error instanceof Error ? error.message : 'unknown-error'
+					}
+					return { read, insert, remove }
+				},
+				{ organizationId, fixture }
+			)
+			expect(access.read).toBe(scenario.read)
+			if (scenario.write) {
+				expect(access.insert).toBe('accepted')
+				expect(access.remove).toBe('accepted')
+			} else {
+				expect(access.insert).toMatch(/AuthorizationDenied|permission_denied/)
+				expect(access.remove).toMatch(/AuthorizationDenied|permission_denied/)
+			}
+			const retained = await page.evaluate(async (id) => {
+				const { app, db } = window.workspacePermissionTest
+				return Boolean(await db.one(app.transactionTags.where({ id }), { tier: 'remote' }))
+			}, fixture.linkId)
+			expect(retained).toBe(!scenario.write)
+		} finally {
+			await subjectContext.close()
+		}
+	})
+}

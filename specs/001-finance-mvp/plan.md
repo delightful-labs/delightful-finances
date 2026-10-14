@@ -66,7 +66,7 @@ flowchart TB
 - `categories`: org-scoped expense/income categories, including protected system Uncategorized per kind.
 - `tags`: org-scoped name, optional category, archive state.
 - `transactions`: account and org references; integer `amountMinor`; kind expense/income; ISO currency; category; date `bookedOn`; source; optional memo/externalId/batchId; income payment method.
-- `transactionTags`: many-to-many transaction/tag relation.
+- `transactionTags`: many-to-many transaction/tag relation with an explicit `organizationId`. Insert permissions require transaction edit access and verify that both referenced rows match that workspace; newly assigned tags must be active. Read/delete checks retain archived-tag history while enforcing transaction access. Link updates are denied; reassignment uses delete/insert. Ten real-server permission checks pass, including same-transaction assignment, archived history, cross-workspace rejection, and role/grant access. The user authorized resetting pre-alpha development data and migration history. Keep a fresh schema baseline; future schema changes must either provide migrations or receive explicit authorization for another data reset.
 - `checkDetails`: one-to-one transaction relation for check number/date/payer/bank/memo-on-check fields.
 - `simplefinConnections`: org connection status and Access URL, readable only by owner/admin.
 - `simplefinAccountLinks`: org/account to provider account mapping.

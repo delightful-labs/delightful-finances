@@ -151,6 +151,15 @@
 		"validation_error": "Enter a tag name and select an available category or no category.",
 		"archived": "Tag {name} archived.",
 		"empty": "No tags yet.",
-		"category_unavailable": "Category unavailable"
+		"category_unavailable": "Category unavailable",
+		"input": {
+			"add": "Add tag",
+			"remove": "Remove {name}",
+			"selected": "Selected tags",
+			"added": "Tag {name} selected.",
+			"removed": "Tag {name} removed.",
+			"duplicate": "Tag {name} is already selected.",
+			"instructions": "Choose an existing tag or enter a new name. New tags will be created when you save the transaction."
+		}
 	}
 }
