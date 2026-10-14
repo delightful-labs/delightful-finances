@@ -5,6 +5,7 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import TagForm from '#lib/components/TagForm.svelte'
+	import TagList from '#lib/components/TagList.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
 	const session = getJazzSession()
@@ -33,6 +34,9 @@
 	errorMessage={m['errors.load']({ subject: m['workspace.label']() })}
 >
 	{#if filters.activeOrganizationId && membershipQuery.current}
+		{#key filters.activeOrganizationId}
+			<TagList />
+		{/key}
 		<TagForm organizationId={filters.activeOrganizationId} {canCreate} />
 	{/if}
 </QueryContent>

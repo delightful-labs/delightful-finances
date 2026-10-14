@@ -1,6 +1,6 @@
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
-import { app, type Account, type Category, type Organization } from './schema.js'
+import { app, type Account, type Category, type Organization, type Tag } from './schema.js'
 import { validateTransaction, type AppTransaction } from './domain/transaction.js'
 import { appTransactionSchema } from './validation/transactions.js'
 import { appAccountSchema } from './validation/accounts.js'
@@ -189,4 +189,8 @@ export function createTag(
 ) {
 	const tag = appTagSchema.parse({ organizationId, name, categoryId })
 	return db.insert(app.tags, tag).wait({ tier: 'local' })
+}
+
+export function archiveTag(db: Pick<Db, 'update'>, tagId: Tag['id']) {
+	return db.update(app.tags, tagId, { archivedAt: new Date() }).wait({ tier: 'local' })
 }

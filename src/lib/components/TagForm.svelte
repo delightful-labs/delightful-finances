@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button, InputText, Select } from 'delightful-ui'
 	import { getDb, QuerySubscription } from 'jazz-tools/svelte'
 	import type { z } from 'zod'
 	import { app, type Tag } from '#lib/schema.js'
@@ -45,10 +46,20 @@
 		<Form {schema} {save} context={{ organizationId }} disabled={!canCreate}>
 			{#snippet fields(form)}
 				{#if !form.state.matches('success')}
-					<label for="tag-name">{m['labels.tag_name']()}</label>
-					<input id="tag-name" name="name" required disabled={form.busy || !canCreate} />
-					<label for="tag-category">{m['labels.category']()}</label>
-					<select id="tag-category" name="categoryId" disabled={form.busy || !canCreate}>
+					<InputText
+						label={m['labels.tag_name']()}
+						id="tag-name"
+						name="name"
+						required
+						disabled={form.busy || !canCreate}
+					/>
+					<Select
+						label={m['labels.category']()}
+						id="tag-category"
+						name="categoryId"
+						defaultValue=""
+						disabled={form.busy || !canCreate}
+					>
 						<option value="">{m['tags.no_category']()}</option>
 						{#each categories.current ?? [] as category (category.id)}
 							<option value={category.id}
@@ -57,17 +68,17 @@
 									: m['labels.income']()})</option
 							>
 						{/each}
-					</select>
+					</Select>
 				{/if}
 			{/snippet}
 			{#snippet controls(form)}
 				{#if form.state.matches('success')}
-					<button type="reset" disabled={!canCreate}>{m['actions.add_tag']()}</button>
+					<Button type="reset" disabled={!canCreate}>{m['actions.add_tag']()}</Button>
 				{:else}
-					<button type="submit" disabled={form.disabled}
+					<Button type="submit" disabled={form.disabled}
 						>{form.busy
 							? m['status.saving']({ subject: m['labels.tag']() })
-							: m['actions.add_tag']()}</button
+							: m['actions.add_tag']()}</Button
 					>
 				{/if}
 			{/snippet}

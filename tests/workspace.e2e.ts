@@ -1468,3 +1468,260 @@ test('category page counts only readable transactions for selected account acces
 		await otherContext.close()
 	}
 })
+
+test('tag page creates optional categories, rejects blank names, filters archived categories, and persists', async ({
+	page
+}) => {
+	await start(page)
+	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const categoryId = await page.evaluate(async (organizationId) => {
+		const { app, db } = window.workspaceSettingsTest
+		await db
+			.insert(app.categories, {
+				organizationId,
+				name: 'Archived choice',
+				kind: 'expense',
+				isSystem: false,
+				archivedAt: new Date()
+			})
+			.wait({ tier: 'global' })
+		return (
+			await db
+				.insert(app.categories, {
+					organizationId,
+					name: 'Tag category',
+					kind: 'expense',
+					isSystem: false
+				})
+				.wait({ tier: 'global' })
+		).id
+	}, organizationId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Tags', exact: true }).click()
+	await expect(page).toHaveURL('/settings/tags')
+	const main = page.getByRole('main')
+	const name = main.getByLabel('Tag name', { exact: true })
+	const category = main.getByLabel('Category', { exact: true })
+	const add = main.getByRole('button', { name: 'Add tag', exact: true })
+	await expect(
+		category.getByRole('option', { name: 'Archived choice (Expenses)', exact: true })
+	).toHaveCount(0)
+	await expect(category).toHaveValue('')
+	await name.fill('   ')
+	await add.click()
+	await expect(main.getByRole('alert')).toHaveText(
+		'Enter a tag name and select an available category or no category.'
+	)
+	await name.fill('  Unassigned tag  ')
+	await add.click()
+	await expect(main.getByRole('status')).toHaveText('Tag Unassigned tag saved.')
+	await expect(main.getByRole('row', { name: /Unassigned tag No category/ })).toBeVisible()
+	await add.click()
+	await name.fill('  Categorized tag  ')
+	await category.selectOption(categoryId)
+	await add.click()
+	await expect(main.getByRole('status')).toHaveText('Tag Categorized tag saved.')
+	await expect(main.getByRole('row', { name: /Categorized tag Tag category/ })).toBeVisible()
+	await page.evaluate(async (id) => {
+		const { app, db } = window.workspaceSettingsTest
+		await db.update(app.categories, id, { archivedAt: new Date() }).wait({ tier: 'global' })
+	}, categoryId)
+	await expect(main.getByRole('row', { name: /Categorized tag Tag category/ })).toBeVisible()
+	await add.click()
+	await expect(category.locator(`option[value="${categoryId}"]`)).toHaveCount(0)
+	await expect(category).toHaveValue('')
+	await page.reload()
+	await expect(main.getByRole('row', { name: /Unassigned tag No category/ })).toBeVisible()
+	await expect(main.getByRole('row', { name: /Categorized tag Tag category/ })).toBeVisible()
+})
+
+test('tag page switches workspace drafts and archives offline without removing category connections', async ({
+	page,
+	context
+}) => {
+	await start(page)
+	const firstId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const fixture = await page.evaluate(async (organizationId) => {
+		const { app, db, userId } = window.workspaceSettingsTest
+		const category = await db
+			.insert(app.categories, {
+				organizationId,
+				name: 'Retained tag category',
+				kind: 'expense',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		const tag = await db
+			.insert(app.tags, { organizationId, name: 'Archive tag', categoryId: category.id })
+			.wait({ tier: 'global' })
+		const org = await db
+			.insert(app.organizations, {
+				name: 'Second tag workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: userId
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: org.id,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		await db
+			.insert(app.categories, {
+				organizationId: org.id,
+				name: 'Second category',
+				kind: 'income',
+				isSystem: false
+			})
+			.wait({ tier: 'global' })
+		return { secondId: org.id, tagId: tag.id, categoryId: category.id }
+	}, firstId)
+	await page.getByRole('navigation').getByRole('link', { name: 'Tags', exact: true }).click()
+	const main = page.getByRole('main')
+	const name = main.getByLabel('Tag name', { exact: true })
+	const selector = page.getByLabel('Workspace', { exact: true })
+	await name.fill('Unsaved draft')
+	await selector.selectOption(fixture.secondId)
+	await expect(name).toHaveValue('')
+	await expect(main.getByText('No tags yet.', { exact: true })).toBeVisible()
+	const category = main.getByLabel('Category', { exact: true })
+	await expect(
+		category.getByRole('option', { name: 'Retained tag category (Expenses)', exact: true })
+	).toHaveCount(0)
+	await name.fill('Second tag')
+	await main.getByRole('button', { name: 'Add tag', exact: true }).click()
+	await expect(main.getByRole('status')).toHaveText('Tag Second tag saved.')
+	await selector.selectOption(firstId)
+	await expect(main.getByRole('row', { name: /Second tag/ })).toHaveCount(0)
+	const row = main
+		.getByRole('row')
+		.filter({ has: page.getByRole('rowheader', { name: 'Archive tag', exact: true }) })
+	await expect(row).toBeVisible()
+	await context.setOffline(true)
+	try {
+		await row.getByRole('button', { name: 'Archive Archive tag', exact: true }).click()
+		await expect(main.getByRole('status')).toHaveText('Tag Archive tag archived.')
+		await expect(row).toHaveCount(0)
+	} finally {
+		await context.setOffline(false)
+	}
+	await expect
+		.poll(() =>
+			page.evaluate(async ({ tagId, categoryId }) => {
+				const { app, db } = window.workspaceSettingsTest
+				const tag = await db.one(app.tags.where({ id: tagId }), { tier: 'remote' })
+				return {
+					archived: Boolean(tag?.archivedAt),
+					categoryRetained: tag?.categoryId === categoryId
+				}
+			}, fixture)
+		)
+		.toEqual({ archived: true, categoryRetained: true })
+	await page.getByRole('navigation').getByRole('link', { name: 'Categories', exact: true }).click()
+	const categoryRow = main
+		.getByRole('row')
+		.filter({ has: page.getByRole('rowheader', { name: 'Retained tag category', exact: true }) })
+	await expect(categoryRow.getByRole('cell').nth(2)).toHaveText('1')
+})
+
+for (const role of ['admin', 'member', 'viewer']) {
+	test(`tag page permissions: ${role}`, async ({ page, browser }) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		try {
+			const subject = await otherContext.newPage()
+			await start(subject)
+			const subjectId = await subject.evaluate(() => window.workspaceSettingsTest.userId)
+			const tagId = await page.evaluate(
+				async ({ organizationId, subjectId, role }) => {
+					const { app, db } = window.workspaceSettingsTest
+					if (role !== 'admin' && role !== 'member' && role !== 'viewer')
+						throw new Error('Invalid role')
+					await db
+						.insert(app.organizationMembers, {
+							organizationId,
+							userId: subjectId,
+							role,
+							accountAccessMode: 'all'
+						})
+						.wait({ tier: 'global' })
+					return (
+						await db
+							.insert(app.tags, {
+								organizationId,
+								name: 'Permission tag'
+							})
+							.wait({ tier: 'global' })
+					).id
+				},
+				{ organizationId, subjectId, role }
+			)
+			await start(subject)
+			const selector = subject.getByLabel('Workspace', { exact: true })
+			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
+			await selector.selectOption(organizationId)
+			await subject.getByRole('navigation').getByRole('link', { name: 'Tags', exact: true }).click()
+			const main = subject.getByRole('main')
+			const row = main.getByRole('row').filter({
+				has: subject.getByRole('rowheader', { name: 'Permission tag', exact: true })
+			})
+			await expect(row).toBeVisible()
+			const add = main.getByRole('button', { name: 'Add tag', exact: true })
+			if (role === 'viewer') {
+				await expect(add).toBeDisabled()
+				await expect(main.getByLabel('Tag name', { exact: true })).toBeDisabled()
+				await expect(row.getByRole('button')).toHaveCount(0)
+				const outcomes = await subject.evaluate(
+					async ({ organizationId, tagId }) => {
+						const { app, db } = window.workspaceSettingsTest
+						const results: string[] = []
+						try {
+							await db
+								.insert(app.tags, {
+									organizationId,
+									name: 'Forbidden tag'
+								})
+								.wait({ tier: 'global' })
+							results.push('accepted')
+						} catch (error) {
+							results.push(error instanceof Error ? error.message : 'unknown-error')
+						}
+						try {
+							await db.update(app.tags, tagId, { archivedAt: new Date() }).wait({ tier: 'global' })
+							results.push('accepted')
+						} catch (error) {
+							results.push(error instanceof Error ? error.message : 'unknown-error')
+						}
+						return results
+					},
+					{ organizationId, tagId }
+				)
+				for (const outcome of outcomes)
+					expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
+			} else {
+				await main.getByLabel('Tag name', { exact: true }).fill(`${role} tag`)
+				await add.click()
+				await expect(main.getByRole('status')).toHaveText(`Tag ${role} tag saved.`)
+				await row.getByRole('button', { name: 'Archive Permission tag', exact: true }).click()
+				await expect(
+					main.getByRole('status').filter({ hasText: 'Permission tag archived.' })
+				).toBeVisible()
+				await expect(row).toHaveCount(0)
+			}
+			await expect
+				.poll(() =>
+					page.evaluate(async (id) => {
+						const { app, db } = window.workspaceSettingsTest
+						return Boolean((await db.one(app.tags.where({ id }), { tier: 'remote' }))?.archivedAt)
+					}, tagId)
+				)
+				.toBe(role !== 'viewer')
+		} finally {
+			await otherContext.close()
+		}
+	})
+}

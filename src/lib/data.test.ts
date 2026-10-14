@@ -4,6 +4,8 @@ import type { getDb } from 'jazz-tools/svelte'
 import {
 	archiveAccount,
 	archiveCategory,
+	archiveTag,
+	createTag,
 	createCategory,
 	createAccount,
 	createTransaction,
@@ -310,5 +312,53 @@ describe('category persistence', () => {
 			update: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
 		} satisfies Pick<Db, 'update'>
 		await expect(archiveCategory(db, 'category')).rejects.toBe(failure)
+	})
+})
+
+describe('tag persistence', () => {
+	it.each([null, organization.id])(
+		'creates normalized tags with category %s and waits locally',
+		async (categoryId) => {
+			const wait = vi.fn().mockResolvedValue({ id: 'tag' })
+			const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
+			await expect(createTag(db, organization.id, '  Garden  ', categoryId)).resolves.toEqual({
+				id: 'tag'
+			})
+			expect(db.insert).toHaveBeenCalledExactlyOnceWith(app.tags, {
+				organizationId: organization.id,
+				name: 'Garden',
+				categoryId,
+				archivedAt: null
+			})
+			expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+		}
+	)
+	it('rejects invalid names before inserting', () => {
+		const db = { insert: vi.fn() } satisfies Pick<Db, 'insert'>
+		expect(() => createTag(db, organization.id, ' ', null)).toThrow()
+		expect(db.insert).not.toHaveBeenCalled()
+	})
+	it('propagates tag creation failures', async () => {
+		const failure = new Error('Persistence failed')
+		const db = {
+			insert: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
+		} satisfies Pick<Db, 'insert'>
+		await expect(createTag(db, organization.id, 'Garden', null)).rejects.toBe(failure)
+	})
+	it('archives without deleting or rewriting links and waits locally', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await archiveTag(db, 'tag')
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.tags, 'tag', {
+			archivedAt: expect.any(Date)
+		})
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it('propagates tag archive failures', async () => {
+		const failure = new Error('Persistence failed')
+		const db = {
+			update: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
+		} satisfies Pick<Db, 'update'>
+		await expect(archiveTag(db, 'tag')).rejects.toBe(failure)
 	})
 })

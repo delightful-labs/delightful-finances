@@ -13,3 +13,7 @@ export const tagFormSchema = appTagSchema
 		categoryId: z.union([z.literal('').transform(() => null), appTagSchema.shape.categoryId])
 	})
 	.strip()
+
+export const tagArchiveSchema = appTagSchema
+	.pick({ organizationId: true })
+	.extend({ tagId: z.uuid() })
