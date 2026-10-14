@@ -1,27 +1,14 @@
 <script lang="ts">
 	import { getContext } from 'svelte'
-	import { getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
-	import { app } from '#lib/schema.js'
+	import { createTagSettingsState } from '#lib/controllers/tag-settings.svelte.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import TagForm from '#lib/components/TagForm.svelte'
 	import TagList from '#lib/components/TagList.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
-	const session = getJazzSession()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const membershipQuery = new QuerySubscriptionOne(() => {
-		const userId = $session.account?.id
-		const organizationId = filters.activeOrganizationId
-		return organizationId && userId
-			? app.organizationMembers.where({ organizationId, userId })
-			: undefined
-	})
-	const canCreate = $derived(
-		membershipQuery.current?.role === 'owner' ||
-			membershipQuery.current?.role === 'admin' ||
-			membershipQuery.current?.role === 'member'
-	)
+	const content = createTagSettingsState(filters)
 </script>
 
 <svelte:head>
@@ -29,14 +16,14 @@
 </svelte:head>
 
 <QueryContent
-	queries={[membershipQuery]}
+	queries={content.queries}
 	loadingMessage={m['status.loading']({ subject: m['workspace.label']() })}
 	errorMessage={m['errors.load']({ subject: m['workspace.label']() })}
 >
-	{#if filters.activeOrganizationId && membershipQuery.current}
-		{#key filters.activeOrganizationId}
+	{#if content.organizationId && content.hasMembership}
+		{#key content.organizationId}
 			<TagList />
 		{/key}
-		<TagForm organizationId={filters.activeOrganizationId} {canCreate} />
+		<TagForm organizationId={content.organizationId} canCreate={content.canCreate} />
 	{/if}
 </QueryContent>
