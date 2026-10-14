@@ -2503,3 +2503,33 @@ for (const scenario of [
 		}
 	})
 }
+
+test('overview page exposes income and expense links and preserves the workspace during navigation', async ({
+	page
+}) => {
+	await start(page)
+	const workspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	await page.getByRole('complementary').getByRole('link', { name: 'Overview', exact: true }).click()
+	await expect(page).toHaveTitle('Overview · Delightful Finance')
+	const main = page.getByRole('main')
+	await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+	await expect(main.getByRole('link', { name: 'Expenses', exact: true })).toHaveAttribute(
+		'href',
+		'/expenses'
+	)
+	await expect(main.getByRole('link', { name: 'Income', exact: true })).toHaveAttribute(
+		'href',
+		'/incomes'
+	)
+	await main.getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(page).toHaveURL('/expenses')
+	await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
+	await page.getByRole('complementary').getByRole('link', { name: 'Overview', exact: true }).click()
+	await main.getByRole('link', { name: 'Income', exact: true }).click()
+	await expect(page).toHaveURL('/incomes')
+	await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
+	await page.getByRole('complementary').getByRole('link', { name: 'Overview', exact: true }).click()
+	await expect(page).toHaveURL('/')
+	await page.reload()
+	await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+})

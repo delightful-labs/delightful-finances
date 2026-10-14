@@ -114,3 +114,10 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
 - [x] T054 Record evidence-based future component suggestions in code, integration documentation and the active spec/plan.
 - [x] T055 Prepare implementation review: packaging/publint, production build, application/service-worker static checks and changed-file formatting pass; isolated preview runs at http://127.0.0.1:5180. Implementation approved by the user.
 - [x] T056 After approval, verify 89 focused unit tests and 27 browser scenarios for form defaults/resets, conditional check fields, workspace/filter state, recovery/restore, modal dismissal, archiving and permissions. Browser-test type checks pass.
+
+## Page Composition Boundary Refactor
+
+- [ ] T052 Apply the props-only presentation boundary across all pages in focused review batches.
+  - Verified earlier: transaction lists/details use page-initialized query modules and props-only presentation components.
+  - Verified after review: overview content moved back to its page and the redundant HomePage wrapper removed; login session/restore state moved to `controllers/login.svelte.ts`, with the page composing a pure LoginForm and PageHeader. Five authentication tests and two overview/navigation checks pass, with browser-test type checks passing. Fixtures now wait for workspace readiness before account entry and navigation completion before reload.
+  - Remaining: account list/archive and creation; transaction entry/tag input; workspace rename/settings; category settings/list/form; tag settings/list/form; recovery page; shared Form actor integration; app-shell/session/bootstrap integration. Preserve existing permissions, localization, native form behavior, and shared session lifecycle.

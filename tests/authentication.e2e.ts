@@ -3,6 +3,8 @@ import { RecoveryPhrase } from 'jazz-tools/passphrase'
 
 async function createAccount(page: Page, name: string) {
 	await page.goto('/accounts/new')
+	await expect(page.getByLabel('Workspace', { exact: true })).not.toHaveValue('')
+	await expect(page.getByRole('button', { name: 'Add an account', exact: true })).toBeEnabled()
 	await page.getByLabel('Account name').fill(name)
 	await page.getByLabel('Account type').selectOption('bank')
 	await page.getByRole('button', { name: 'Add an account' }).click()
