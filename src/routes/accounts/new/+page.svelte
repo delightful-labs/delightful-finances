@@ -12,4 +12,4 @@
 
 <svelte:head><title>{m['actions.add_account']()} · {m['app.name']()}</title></svelte:head>
 <PageHeader title={m['actions.add_account']()} />
-<AccountForm organizationId={content.organizationId} save={content.save} />
+<AccountForm organizationId={content.organizationId} form={content.form} />

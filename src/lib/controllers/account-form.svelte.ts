@@ -3,7 +3,8 @@ import type { z } from 'zod'
 import { createAccount } from '#lib/data.js'
 import type { Account } from '#lib/schema.js'
 import type { FormSave } from '#lib/machines/form.js'
-import type { accountFormSchema } from '#lib/validation/accounts.js'
+import { createFormController } from './form.svelte.js'
+import { accountFormSchema } from '#lib/validation/accounts.js'
 import type { FinanceFilters } from '#lib/finance-filters.js'
 
 export function createAccountFormState(filters: FinanceFilters) {
@@ -18,8 +19,15 @@ export function createAccountFormState(filters: FinanceFilters) {
 			throw new Error('No matching workspace is selected.')
 		return createAccount(db, context.organizationId, values.name, values.kind)
 	}
-	return {
+	const form = createFormController({
+		schema: accountFormSchema,
 		save,
+		context: () => ({ organizationId: filters.activeOrganizationId }),
+		key: () => filters.activeOrganizationId,
+		disabled: () => !filters.activeOrganizationId
+	})
+	return {
+		form,
 		get organizationId() {
 			return filters.activeOrganizationId
 		}

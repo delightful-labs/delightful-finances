@@ -2,27 +2,26 @@
 	import { Button, InputText, Select } from 'delightful-ui'
 	import type { z } from 'zod'
 	import type { Account } from '#lib/schema.js'
-	import type { FormSave } from '#lib/machines/form.js'
-	import { accountFormSchema } from '#lib/validation/accounts.js'
+	import type { FormController } from '#lib/controllers/form.svelte.js'
+	import type { accountFormSchema } from '#lib/validation/accounts.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import Form from './Form.svelte'
+	import FormContent from './FormContent.svelte'
 
 	let {
 		organizationId,
-		save
+		form
 	}: {
 		organizationId: string | null
-		save: FormSave<z.output<typeof accountFormSchema>, Account, { organizationId: string | null }>
+		form: FormController<
+			z.output<typeof accountFormSchema>,
+			Account,
+			{ organizationId: string | null }
+		>
 	} = $props()
 </script>
 
 {#key organizationId}
-	<Form
-		schema={accountFormSchema}
-		{save}
-		context={{ organizationId: organizationId }}
-		disabled={!organizationId}
-	>
+	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
 		{#snippet fields(form)}
 			{#if !form.state.matches('success')}
 				<InputText
@@ -68,5 +67,5 @@
 				<p role="alert">{m['errors.save']({ subject: m['labels.account']() })}</p>
 			{/if}
 		{/snippet}
-	</Form>
+	</FormContent>
 {/key}
