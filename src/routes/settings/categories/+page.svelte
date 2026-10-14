@@ -1,42 +1,39 @@
 <script lang="ts">
 	import { getContext } from 'svelte'
-	import { getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
-	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { createCategorySettingsState } from '#lib/controllers/category-settings.svelte.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import CategoryForm from '#lib/components/CategoryForm.svelte'
 	import CategoryList from '#lib/components/CategoryList.svelte'
+	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
-	const session = getJazzSession()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const membershipQuery = new QuerySubscriptionOne(() => {
-		const userId = $session.account?.id
-		const organizationId = filters.activeOrganizationId
-		return organizationId && userId
-			? app.organizationMembers.where({ organizationId, userId })
-			: undefined
-	})
-	const canCreate = $derived(
-		membershipQuery.current?.role === 'owner' ||
-			membershipQuery.current?.role === 'admin' ||
-			membershipQuery.current?.role === 'member'
-	)
+	const content = createCategorySettingsState(filters)
 </script>
 
-<svelte:head>
-	<title>{m['labels.categories']()} · {m['app.name']()}</title>
-</svelte:head>
-
+<svelte:head><title>{m['labels.categories']()} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['labels.categories']()} />
 <QueryContent
-	queries={[membershipQuery]}
-	loadingMessage={m['status.loading']({ subject: m['workspace.label']() })}
-	errorMessage={m['errors.load']({ subject: m['workspace.label']() })}
+	queries={content.queries}
+	loadingMessage={m['status.loading']({ subject: m['labels.categories']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.categories']() })}
 >
-	{#if filters.activeOrganizationId && membershipQuery.current}
-		{#key filters.activeOrganizationId}
-			<CategoryList />
-		{/key}
-		<CategoryForm organizationId={filters.activeOrganizationId} {canCreate} />
+	{#if content.organizationId && content.hasMembership}
+		<CategoryList
+			categories={content.categories}
+			counts={content.counts}
+			archivableCategoryIds={content.archivableCategoryIds}
+			archiving={content.archiving}
+			archivingCategoryId={content.archivingCategoryId}
+			archivedName={content.archivedName}
+			archiveFailed={content.archiveFailed}
+			onArchive={content.archive}
+		/>
+		<CategoryForm
+			organizationId={content.organizationId}
+			canCreate={content.canCreate}
+			form={content.form}
+		/>
 	{/if}
 </QueryContent>

@@ -41,6 +41,10 @@ export function createFormController<Values, Result, Context>(options: {
 		}
 	})
 
+	function submitValues(values: unknown) {
+		if (disabled || busy) return
+		actor.send({ type: 'SUBMIT', values })
+	}
 	function submit(event: SubmitEvent) {
 		event.preventDefault()
 		if (disabled || busy || !(event.currentTarget instanceof HTMLFormElement)) return
@@ -49,7 +53,7 @@ export function createFormController<Values, Result, Context>(options: {
 		const arrays = Object.fromEntries(
 			(options.arrayFields?.() ?? []).map((name) => [name, data.getAll(name)])
 		)
-		actor.send({ type: 'SUBMIT', values: { ...values, ...arrays } })
+		submitValues({ ...values, ...arrays })
 	}
 	function reset(event: Event) {
 		if (disabled || busy) {
@@ -59,6 +63,7 @@ export function createFormController<Values, Result, Context>(options: {
 		actor.send({ type: 'RESET' })
 	}
 	return {
+		submitValues,
 		submit,
 		reset,
 		get view() {

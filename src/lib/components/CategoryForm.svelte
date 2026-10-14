@@ -1,30 +1,29 @@
 <script lang="ts">
 	import { Button, InputText, Select } from 'delightful-ui'
-	import { getDb } from 'jazz-tools/svelte'
 	import type { z } from 'zod'
-	import { createCategory } from '#lib/data.js'
 	import type { Category } from '#lib/schema.js'
-	import type { FormSave } from '#lib/machines/form.js'
-	import { categoryFormSchema } from '#lib/validation/categories.js'
+	import type { FormController } from '#lib/controllers/form.svelte.js'
+	import type { categoryFormSchema } from '#lib/validation/categories.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import Form from './Form.svelte'
+	import FormContent from './FormContent.svelte'
 
-	let { organizationId, canCreate }: { organizationId: string; canCreate: boolean } = $props()
-	const db = getDb()
-	const save: FormSave<
-		z.output<typeof categoryFormSchema>,
-		Category,
-		{ organizationId: string }
-	> = async (values, { context, signal }) => {
-		signal.throwIfAborted()
-		if (!canCreate || context.organizationId !== organizationId)
-			throw new Error('The workspace is not editable.')
-		return createCategory(db, context.organizationId, values.name, values.kind)
-	}
+	let {
+		organizationId,
+		canCreate,
+		form
+	}: {
+		organizationId: string
+		canCreate: boolean
+		form: FormController<
+			z.output<typeof categoryFormSchema>,
+			Category,
+			{ organizationId: string | null }
+		>
+	} = $props()
 </script>
 
 {#key organizationId}
-	<Form schema={categoryFormSchema} {save} context={{ organizationId }} disabled={!canCreate}>
+	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
 		{#snippet fields(form)}
 			{#if !form.state.matches('success')}
 				<InputText
@@ -67,5 +66,5 @@
 				<p role="alert">{m['errors.save']({ subject: m['labels.category']() })}</p>
 			{/if}
 		{/snippet}
-	</Form>
+	</FormContent>
 {/key}
