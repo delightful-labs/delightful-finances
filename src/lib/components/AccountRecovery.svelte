@@ -1,55 +1,37 @@
 <script lang="ts">
 	import { Button, Textarea, Checkbox, Dialog } from 'delightful-ui'
-	import { exportLocalFirstSecret } from 'jazz-tools'
-	import { getJazzSession } from 'jazz-tools/svelte'
-	import { RecoveryPhrase } from 'jazz-tools/passphrase'
 	import { m } from '#lib/paraglide/messages.js'
 
-	const session = getJazzSession()
-	let phrase = $state('')
-	let revealed = $state(false)
-	let savedConfirmed = $state(false)
-	let loadError = $state(false)
-
-	function revealPhrase() {
-		const account = $session.account
-		if (!account) {
-			loadError = true
-			return
-		}
-
-		try {
-			phrase = RecoveryPhrase.fromSecret(exportLocalFirstSecret(account))
-			revealed = true
-			loadError = false
-		} catch {
-			loadError = true
-		}
-	}
-
-	function hidePhrase() {
-		phrase = ''
-		revealed = false
-		savedConfirmed = false
-	}
+	let {
+		phrase,
+		revealed,
+		savedConfirmed,
+		loadError,
+		onReveal,
+		onHide,
+		onConfirm
+	}: {
+		phrase: string
+		revealed: boolean
+		savedConfirmed: boolean
+		loadError: boolean
+		onReveal: () => void
+		onHide: () => void
+		onConfirm: (value: boolean) => void
+	} = $props()
 </script>
 
-<svelte:head>
-	<title>{m['recovery.heading']()} · {m['app.name']()}</title>
-</svelte:head>
-
-<h1>{m['recovery.heading']()}</h1>
 <p>{m['recovery.description']()}</p>
 
-<Button type="button" onclick={revealPhrase}>{m['recovery.show']()}</Button>
+<Button type="button" onclick={onReveal}>{m['recovery.show']()}</Button>
 
 <Dialog
 	heading={m['recovery.heading']()}
 	aria-describedby="recovery-warning"
-	bind:open={revealed}
+	open={revealed}
 	closedby="any"
-	oncancel={hidePhrase}
-	onclose={hidePhrase}
+	oncancel={onHide}
+	onclose={onHide}
 >
 	{#if revealed}
 		<div class="recovery-content">
@@ -61,12 +43,16 @@
 				readonly
 				value={phrase}
 			></Textarea>
-			<Checkbox label={m['recovery.confirm']()} bind:checked={savedConfirmed} />
+			<Checkbox
+				label={m['recovery.confirm']()}
+				checked={savedConfirmed}
+				onchange={(event) => onConfirm(event.currentTarget.checked)}
+			/>
 			<div class="recovery-controls">
-				<Button type="button" disabled={!savedConfirmed} onclick={hidePhrase}>
+				<Button type="button" disabled={!savedConfirmed} onclick={onHide}>
 					{m['recovery.hide']()}
 				</Button>
-				<Button type="button" onclick={hidePhrase}>{m['recovery.close']()}</Button>
+				<Button type="button" onclick={onHide}>{m['recovery.close']()}</Button>
 			</div>
 		</div>
 	{/if}
