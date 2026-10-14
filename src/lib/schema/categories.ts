@@ -14,18 +14,5 @@ export const categoriesSchema = {
 			transactions: s.reverse('transactions', 'category'),
 			tags: s.reverse('tags', 'category')
 		}
-	),
-	tags: s.table(
-		{
-			organizationId: s.uuid(),
-			name: s.string(),
-			categoryId: s.uuid().optional(),
-			archivedAt: s.timestamp().optional()
-		},
-		{
-			organization: s.rel('organizations', 'organizationId'),
-			category: s.rel('categories', 'categoryId'),
-			transactionTags: s.reverse('transactionTags', 'tag')
-		}
 	)
 }

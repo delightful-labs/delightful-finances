@@ -41,7 +41,9 @@
 		"transaction": "Transaction",
 		"accounts_and_categories": "Accounts and categories",
 		"categories": "Categories",
-		"tags": "Tags"
+		"tags": "Tags",
+		"tag": "Tag",
+		"tag_name": "Tag name"
 	},
 	"actions": {
 		"add_account": "Add an account",
@@ -51,7 +53,8 @@
 		"add_income": "Add income",
 		"save": "Save",
 		"add_category": "Add category",
-		"archive_category": "Archive {name}"
+		"archive_category": "Archive {name}",
+		"add_tag": "Add tag"
 	},
 	"accounts": {
 		"type": {
@@ -140,5 +143,10 @@
 		"save": "Could not save {subject}. Please try again.",
 		"load": "Could not load {subject}. Please try again.",
 		"archive": "Could not archive {subject}. Please try again."
+	},
+	"tags": {
+		"no_category": "No category",
+		"saved": "Tag {name} saved.",
+		"validation_error": "Enter a tag name and select an available category or no category."
 	}
 }

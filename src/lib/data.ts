@@ -5,6 +5,7 @@ import { validateTransaction, type AppTransaction } from './domain/transaction.j
 import { appTransactionSchema } from './validation/transactions.js'
 import { appAccountSchema } from './validation/accounts.js'
 import { appCategorySchema } from './validation/categories.js'
+import { appTagSchema } from './validation/tags.js'
 
 type Db = ReturnType<typeof getDb>
 
@@ -178,4 +179,14 @@ export function createCategory(
 
 export function archiveCategory(db: Pick<Db, 'update'>, categoryId: Category['id']) {
 	return db.update(app.categories, categoryId, { archivedAt: new Date() }).wait({ tier: 'local' })
+}
+
+export function createTag(
+	db: Pick<Db, 'insert'>,
+	organizationId: string,
+	name: string,
+	categoryId: string | null
+) {
+	const tag = appTagSchema.parse({ organizationId, name, categoryId })
+	return db.insert(app.tags, tag).wait({ tier: 'local' })
 }
