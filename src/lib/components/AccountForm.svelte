@@ -1,42 +1,27 @@
 <script lang="ts">
 	import { Button, InputText, Select } from 'delightful-ui'
-	import { getContext } from 'svelte'
-	import { getDb } from 'jazz-tools/svelte'
 	import type { z } from 'zod'
-	import { createAccount } from '#lib/data.js'
 	import type { Account } from '#lib/schema.js'
 	import type { FormSave } from '#lib/machines/form.js'
 	import { accountFormSchema } from '#lib/validation/accounts.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import Form from './Form.svelte'
 
-	const db = getDb()
-	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const save: FormSave<
-		z.output<typeof accountFormSchema>,
-		Account,
-		{ organizationId: string | null }
-	> = async (values, { context, signal }) => {
-		signal.throwIfAborted()
-		if (!context.organizationId || context.organizationId !== filters.activeOrganizationId)
-			throw new Error('No matching workspace is selected.')
-		return createAccount(db, context.organizationId, values.name, values.kind)
-	}
+	let {
+		organizationId,
+		save
+	}: {
+		organizationId: string | null
+		save: FormSave<z.output<typeof accountFormSchema>, Account, { organizationId: string | null }>
+	} = $props()
 </script>
 
-<svelte:head>
-	<title>{m['actions.add_account']()} · {m['app.name']()}</title>
-</svelte:head>
-
-<h1>{m['actions.add_account']()}</h1>
-
-{#key filters.activeOrganizationId}
+{#key organizationId}
 	<Form
 		schema={accountFormSchema}
 		{save}
-		context={{ organizationId: filters.activeOrganizationId }}
-		disabled={!filters.activeOrganizationId}
+		context={{ organizationId: organizationId }}
+		disabled={!organizationId}
 	>
 		{#snippet fields(form)}
 			{#if !form.state.matches('success')}
