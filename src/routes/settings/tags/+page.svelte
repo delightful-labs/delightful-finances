@@ -5,6 +5,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import TagForm from '#lib/components/TagForm.svelte'
 	import TagList from '#lib/components/TagList.svelte'
+	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -15,15 +16,28 @@
 	<title>{m['labels.tags']()} · {m['app.name']()}</title>
 </svelte:head>
 
+<PageHeader title={m['labels.tags']()} />
 <QueryContent
 	queries={content.queries}
-	loadingMessage={m['status.loading']({ subject: m['workspace.label']() })}
-	errorMessage={m['errors.load']({ subject: m['workspace.label']() })}
+	loadingMessage={m['status.loading']({ subject: m['labels.tags']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.tags']() })}
 >
 	{#if content.organizationId && content.hasMembership}
-		{#key content.organizationId}
-			<TagList />
-		{/key}
-		<TagForm organizationId={content.organizationId} canCreate={content.canCreate} />
+		<TagList
+			tags={content.tags}
+			categoryNames={content.categoryNames}
+			canArchive={content.canCreate}
+			archiving={content.archiving}
+			archivingTagId={content.archivingTagId}
+			archivedName={content.archivedName}
+			archiveFailed={content.archiveFailed}
+			onArchive={content.archive}
+		/>
+		<TagForm
+			organizationId={content.organizationId}
+			canCreate={content.canCreate}
+			categories={content.availableCategories}
+			form={content.form}
+		/>
 	{/if}
 </QueryContent>
