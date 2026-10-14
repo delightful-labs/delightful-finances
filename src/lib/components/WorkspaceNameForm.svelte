@@ -1,28 +1,25 @@
 <script lang="ts">
 	import { Button, InputText } from 'delightful-ui'
-	import { getDb } from 'jazz-tools/svelte'
-	import { z } from 'zod'
-	import Form from './Form.svelte'
+	import type { z } from 'zod'
 	import type { Organization } from '#lib/schema.js'
-	import { renameWorkspace } from '#lib/data.js'
+	import type { FormController } from '#lib/controllers/form.svelte.js'
+	import type { workspaceNameFormSchema } from '#lib/validation/identity.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import type { FormSave } from '#lib/machines/form.js'
+	import FormContent from './FormContent.svelte'
 
-	let { workspace, canRename }: { workspace: Organization; canRename: boolean } = $props()
-	const db = getDb()
-	const schema = z.object({ name: z.string().trim().min(1) })
-	const save: FormSave<z.output<typeof schema>, void, Pick<Organization, 'id'>> = async (
-		values,
-		{ context, signal }
-	) => {
-		if (!canRename) throw new Error('The workspace is not editable.')
-		signal.throwIfAborted()
-		await renameWorkspace(db, context.id, values.name)
-	}
+	let {
+		workspace,
+		canRename,
+		form
+	}: {
+		workspace: Organization
+		canRename: boolean
+		form: FormController<z.output<typeof workspaceNameFormSchema>, void, Pick<Organization, 'id'>>
+	} = $props()
 </script>
 
 {#key workspace.id}
-	<Form {schema} {save} context={{ id: workspace.id }} disabled={!canRename}>
+	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
 		{#snippet fields(form)}
 			<InputText
 				label={m['labels.workspace_name']()}
@@ -48,7 +45,7 @@
 				<p role="alert">{m['errors.save']({ subject: m['labels.workspace_name']() })}</p>
 			{/if}
 		{/snippet}
-	</Form>
+	</FormContent>
 {/key}
 
 {#if !canRename}
