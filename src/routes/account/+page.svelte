@@ -6,10 +6,11 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import type { z } from 'zod'
 	import { app } from '#lib/schema.js'
-	import { saveProfileName } from '#lib/data.js'
-	import { profileNameFormSchema } from '#lib/validation/identity.js'
+	import { saveProfileName, saveProfileAvatar } from '#lib/data.js'
+	import { profileNameFormSchema, profileAvatarFormSchema } from '#lib/validation/identity.js'
 	import { createFormController } from '#lib/forms.svelte.js'
 	import type { FormSave } from '#lib/machines/form.js'
+	import ProfileAvatarForm from '#lib/components/ProfileAvatarForm.svelte'
 	import ProfileNameForm from '#lib/components/ProfileNameForm.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import AccountRecovery from '#lib/components/AccountRecovery.svelte'
@@ -23,12 +24,7 @@
 		userId ? app.profiles.where({ userId }) : undefined
 	)
 	const profile = $derived(profileQuery.current)
-	const saveName: FormSave<
-		z.output<typeof profileNameFormSchema>,
-		void,
-		{ profileId: string | null; userId: string | null }
-	> = async (values, { context, signal }) => {
-		signal.throwIfAborted()
+	function requireOwnProfile(context: { profileId: string | null; userId: string | null }) {
 		if (
 			!context.userId ||
 			!context.profileId ||
@@ -37,7 +33,16 @@
 			profile.userId !== context.userId
 		)
 			throw new Error('The profile identity changed before saving.')
-		await saveProfileName(db, context.profileId, context.userId, values.displayName)
+		return { profileId: context.profileId, userId: context.userId }
+	}
+	const saveName: FormSave<
+		z.output<typeof profileNameFormSchema>,
+		void,
+		{ profileId: string | null; userId: string | null }
+	> = async (values, { context, signal }) => {
+		signal.throwIfAborted()
+		const owner = requireOwnProfile(context)
+		await saveProfileName(db, owner.profileId, owner.userId, values.displayName)
 	}
 	const form = createFormController({
 		schema: profileNameFormSchema,
@@ -46,6 +51,26 @@
 		key: () => `${userId}:${profile?.id ?? ''}`,
 		disabled: () => !profile || profile.userId !== userId
 	})
+	const saveAvatar: FormSave<
+		z.output<typeof profileAvatarFormSchema>,
+		void,
+		{ profileId: string | null; userId: string | null }
+	> = async (values, { context, signal }) => {
+		signal.throwIfAborted()
+		const owner = requireOwnProfile(context)
+		await saveProfileAvatar(db, owner.profileId, owner.userId, values)
+	}
+	const avatarForm = createFormController({
+		schema: profileAvatarFormSchema,
+		save: saveAvatar,
+		context: () => ({ profileId: profile?.id ?? null, userId }),
+		key: () => `${userId}:${profile?.id ?? ''}`,
+		disabled: () => !profile || profile.userId !== userId
+	})
+	function removeAvatar() {
+		avatarForm.submitValues({ action: 'remove' })
+	}
+
 	let phrase = $state('')
 	let revealed = $state(false)
 	let savedConfirmed = $state(false)
@@ -96,5 +121,12 @@
 >
 	{#if profile}
 		<ProfileNameForm profileId={profile.id} displayName={profile.displayName} {form} />
+		<ProfileAvatarForm
+			profileId={profile.id}
+			avatarData={profile.avatarData}
+			mimeType={profile.avatarMimeType}
+			form={avatarForm}
+			onRemove={removeAvatar}
+		/>
 	{/if}
 </QueryContent>

@@ -6,7 +6,8 @@ import { appTransactionSchema } from './validation/transactions.js'
 import { appAccountSchema } from './validation/accounts.js'
 import { appCategorySchema } from './validation/categories.js'
 import { appTagSchema } from './validation/tags.js'
-import { appProfileSchema } from './validation/identity.js'
+import type { z } from 'zod'
+import { appProfileSchema, profileAvatarValuesSchema } from './validation/identity.js'
 
 type Db = ReturnType<typeof getDb>
 
@@ -120,6 +121,17 @@ export function saveProfileName(
 	return db
 		.update(app.profiles, profileId, { displayName: profile.displayName ?? null })
 		.wait({ tier: 'local' })
+}
+
+export function saveProfileAvatar(
+	db: Pick<Db, 'update'>,
+	profileId: string,
+	userId: string,
+	values: z.output<typeof profileAvatarValuesSchema>
+) {
+	const avatar = profileAvatarValuesSchema.parse(values)
+	appProfileSchema.shape.userId.parse(userId)
+	return db.update(app.profiles, profileId, avatar).wait({ tier: 'local' })
 }
 
 export function renameWorkspace(

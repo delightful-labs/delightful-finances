@@ -1,10 +1,21 @@
 import { z } from 'zod'
+import { resizeAvatar } from '../domain/avatar.js'
 
 export const workspaceNameFormSchema = z.object({ name: z.string().trim().min(1) })
 
+export const MAX_AVATAR_UPLOAD_BYTES = 10 * 1024 * 1024
+export const MAX_AVATAR_BYTES = 256 * 1024
+export const avatarMimeType = z.enum(['image/png', 'image/jpeg', 'image/webp'])
+
 export const appProfileSchema = z.strictObject({
 	userId: z.uuid(),
-	displayName: z.string().trim().min(1).nullable().optional()
+	displayName: z.string().trim().min(1).nullable().optional(),
+	avatarData: z
+		.instanceof(Uint8Array)
+		.check(z.property('byteLength', z.number().int().min(1).max(MAX_AVATAR_BYTES)))
+		.nullable()
+		.optional(),
+	avatarMimeType: avatarMimeType.nullable().optional()
 })
 
 export const profileNameFormSchema = appProfileSchema
@@ -17,3 +28,34 @@ export const profileNameFormSchema = appProfileSchema
 			.pipe(appProfileSchema.shape.displayName.unwrap())
 	})
 	.strip()
+
+const avatarFields = appProfileSchema.pick({
+	avatarData: true,
+	avatarMimeType: true
+})
+
+export const profileAvatarValuesSchema = z.union([
+	avatarFields.extend({
+		avatarData: avatarFields.shape.avatarData.unwrap().unwrap(),
+		avatarMimeType
+	}),
+	avatarFields.extend({ avatarData: z.null(), avatarMimeType: z.null() })
+])
+
+export const profileAvatarFormSchema = z
+	.discriminatedUnion('action', [
+		z.object({
+			action: z.literal('upload'),
+			file: z.file().min(1).max(MAX_AVATAR_UPLOAD_BYTES).mime(avatarMimeType.options)
+		}),
+		z.object({ action: z.literal('remove') })
+	])
+	.transform<unknown>(async (values) => {
+		if (values.action === 'remove') return { avatarData: null, avatarMimeType: null }
+		const avatar = await resizeAvatar(values.file)
+		return {
+			avatarData: new Uint8Array(await avatar.arrayBuffer()),
+			avatarMimeType: avatar.type
+		}
+	})
+	.pipe(profileAvatarValuesSchema)

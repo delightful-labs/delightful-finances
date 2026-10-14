@@ -1,10 +1,17 @@
 import { schema as s } from 'jazz-tools'
+import { avatarMimeType } from '../validation/identity.js'
+
+const avatarTypes = avatarMimeType.enum
 
 export const identitySchema = {
 	profiles: s.table(
 		{
 			userId: s.uuid(),
-			displayName: s.string().optional()
+			displayName: s.string().optional(),
+			avatarData: s.bytes().optional(),
+			avatarMimeType: s
+				.enum(avatarTypes['image/png'], avatarTypes['image/jpeg'], avatarTypes['image/webp'])
+				.optional()
 		},
 		{}
 	),

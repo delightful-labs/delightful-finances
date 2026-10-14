@@ -45,7 +45,8 @@
 		"tag": "Tag",
 		"tag_name": "Tag name",
 		"profile": "Profile",
-		"display_name": "Display name"
+		"display_name": "Display name",
+		"avatar": "Avatar"
 	},
 	"actions": {
 		"add_account": "Add an account",
@@ -57,7 +58,10 @@
 		"add_category": "Add category",
 		"archive_category": "Archive {name}",
 		"add_tag": "Add tag",
-		"archive_tag": "Archive {name}"
+		"archive_tag": "Archive {name}",
+		"upload_avatar": "Upload avatar",
+		"replace_avatar": "Replace avatar",
+		"remove_avatar": "Remove avatar"
 	},
 	"accounts": {
 		"type": {
@@ -177,6 +181,10 @@
 	"profile": {
 		"name_saved": "Display name saved on this device.",
 		"name_invalid": "Enter a valid display name.",
-		"name_description": "Leave the name blank to use your account ID."
+		"name_description": "Leave the name blank to use your account ID.",
+		"avatar_alt": "Your avatar",
+		"avatar_saved": "Avatar saved on this device.",
+		"avatar_invalid": "Choose a valid PNG, JPEG, or WebP image up to 10 MB.",
+		"avatar_description": "PNG, JPEG, or WebP, up to 10 MB. Images are resized for your avatar."
 	}
 }
