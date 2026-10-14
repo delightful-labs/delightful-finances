@@ -31,6 +31,8 @@ Build a local-first personal finance MVP using SvelteKit/Svelte 5 and Jazz v2. E
 
 ## Architecture
 
+Keep Jazz queries, XState setup, and workflow logic in their pages or shared integration components. These compose imported props-only presentation components rather than declaring native HTML. Shared helpers exist for genuinely reused behavior, such as the form actor lifecycle; page-specific controller files are not required. Income/expense routes share TransactionEntry and TransactionView integration components to avoid duplicated workflows.
+
 ```mermaid
 flowchart TB
   subgraph client [SvelteKit PWA]
@@ -144,8 +146,8 @@ Document observed reusable component gaps in `docs/delightful-ui-integration.md`
 
 ## Presentation and Integration Boundaries
 
-Presentation components take data and callbacks through props and do not initialize Jazz queries or XState actors. Pages initialize integrations through reusable script modules and compose pure components. Do not create wrapper components solely to move page templates out of routes. Work in focused batches, typically 3–6 related implementation files per review; discuss larger batches first.
+Keep Jazz queries, XState setup, permissions, and workflow logic in the page or integration component using them. These compose imported pure presentation components rather than declaring native HTML. Pure components receive props/callbacks and may own simple presentation state. Extract shared helpers for genuinely reused behavior, not simply to relocate page scripts into controller files. Default review batches remain small; the user authorized the full boundary correction and its tests together.
 
-Applied first to transaction lists: `/expenses` and `/incomes` initialize `createTransactionListState` from `queries/transaction-list.svelte.ts`. That module owns subscriptions, account filters, name resolution, and date grouping. `TransactionList` renders prepared groups and `TransactionListItem` renders each entry from props. Other existing page-wrapper components remain for separate review cycles.
+Income and expense routes share TransactionView and TransactionEntry integration components. They keep subscription and form workflows in their Svelte scripts, then compose TransactionList/TransactionListItem and TransactionForm/TransactionTagInput respectively. The generic form actor lifecycle remains in forms.svelte.ts. Account, workspace, category, tag, login, recovery, and transaction-detail integrations live directly in their owning routes. WorkspaceBootstrap keeps startup/session and shell queries together and composes pure AppShell/JazzStartup components.
 
-Transaction details use the same boundary: `/transactions/[id]` initializes `queries/transaction-details.svelte.ts`, scopes the row to the active workspace, and selects Jazz author/timestamp metadata and related account/category/tag/check records. `TransactionDetails` receives the loaded record and author names through props. Current profile permissions allow only the user's own display name; other author identities use the stable account-ID fallback until shared-profile access is implemented. After review, six detail browser cases pass for navigation, related/check records, metadata, live updates/reloads, workspace scope, and account grants.
+Transaction details scope rows to the active workspace and select Jazz author/timestamp metadata plus related account/category/tag/check records. The query result type is inferred from the shared schema query shape. TransactionDetails receives the loaded record and author names through props. Current profile permissions allow only the user's own display name; other author identities use the stable account-ID fallback until shared-profile access is implemented.

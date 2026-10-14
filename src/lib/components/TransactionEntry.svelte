@@ -1,13 +1,24 @@
-import { getDb, QuerySubscription } from 'jazz-tools/svelte'
-import { createTransaction } from '#lib/data.js'
-import type { AppTransaction } from '#lib/domain/transaction.js'
-import type { FormSave } from '#lib/machines/form.js'
-import { defaultTransactionCategory, transactionFormSchema } from '#lib/validation/transactions.js'
-import { app } from '#lib/schema.js'
-import type { FinanceFilters } from '#lib/finance-filters.js'
-import { createFormController } from './form.svelte.js'
+<script lang="ts">
+	import { createFormController } from '#lib/forms.svelte.js'
+	import { app } from '#lib/schema.js'
+	import {
+		defaultTransactionCategory,
+		transactionFormSchema
+	} from '#lib/validation/transactions.js'
+	import type { FormSave } from '#lib/machines/form.js'
+	import type { AppTransaction } from '#lib/domain/transaction.js'
+	import { createTransaction } from '#lib/data.js'
+	import { getDb, QuerySubscription } from 'jazz-tools/svelte'
+	import { getContext } from 'svelte'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { m } from '#lib/paraglide/messages.js'
+	import TransactionForm from '#lib/components/TransactionForm.svelte'
+	import PageHeader from '#lib/components/PageHeader.svelte'
+	import QueryContent from '#lib/components/QueryContent.svelte'
+	import Message from '#lib/components/Message.svelte'
+	let { kind }: { kind: 'income' | 'expense' } = $props()
+	const filters = getContext<FinanceFilters>(financeFiltersKey)
 
-export function createTransactionFormState(filters: FinanceFilters, kind: 'expense' | 'income') {
 	const db = getDb()
 	const tagQuery = new QuerySubscription(() =>
 		filters.activeOrganizationId
@@ -74,23 +85,32 @@ export function createTransactionFormState(filters: FinanceFilters, kind: 'expen
 		disabled: () => accounts.length === 0 || availableCategories.length === 0,
 		arrayFields: () => ['tags']
 	})
-	return {
-		queries: [accountQuery, categoryQuery, tagQuery],
-		form,
-		get organizationId() {
-			return filters.activeOrganizationId
-		},
-		get accounts() {
-			return accounts
-		},
-		get categories() {
-			return availableCategories
-		},
-		get defaultCategoryId() {
-			return defaultCategory?.id
-		},
-		get tagSuggestions() {
-			return tagSuggestions
-		}
-	}
-}
+</script>
+
+<svelte:head
+	><title
+		>{kind === 'income' ? m['actions.add_income']() : m['actions.add_expense']()} · {m[
+			'app.name'
+		]()}</title
+	></svelte:head
+>
+<PageHeader title={kind === 'income' ? m['actions.add_income']() : m['actions.add_expense']()} />
+<QueryContent
+	queries={[accountQuery, categoryQuery, tagQuery]}
+	loadingMessage={m['status.loading']({ subject: m['labels.accounts_and_categories']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.accounts_and_categories']() })}
+>
+	{#if accounts.length === 0}
+		<Message message={m['transactions.no_accounts']()} />
+	{:else}
+		<TransactionForm
+			{kind}
+			organizationId={filters.activeOrganizationId}
+			{accounts}
+			categories={availableCategories}
+			defaultCategoryId={defaultCategory?.id}
+			{tagSuggestions}
+			{form}
+		/>
+	{/if}
+</QueryContent>

@@ -1,7 +1,14 @@
 <script lang="ts">
+	import { createFormController } from '#lib/forms.svelte.js'
+	import type { FormSave } from '#lib/machines/form.js'
+	import { categoryArchiveSchema, categoryFormSchema } from '#lib/validation/categories.js'
+	import { archiveCategory, createCategory } from '#lib/data.js'
+	import { app, type Category } from '#lib/schema.js'
+	import type { z } from 'zod'
+	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
-	import { createCategorySettingsState } from '#lib/controllers/category-settings.svelte.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import CategoryForm from '#lib/components/CategoryForm.svelte'
 	import CategoryList from '#lib/components/CategoryList.svelte'
@@ -9,31 +16,130 @@
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const content = createCategorySettingsState(filters)
+
+	const db = getDb()
+	const session = fromStore(getJazzSession())
+	const categories = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.categories
+					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
+					.orderBy('name')
+			: undefined
+	)
+	// Count all readable history, regardless of sidebar account selection or tag archive state.
+	const transactions = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+	const tags = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.tags.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+	const membership = new QuerySubscriptionOne(() => {
+		const organizationId = filters.activeOrganizationId
+		const userId = session.current.account?.id
+		return organizationId && userId
+			? app.organizationMembers.where({ organizationId, userId })
+			: undefined
+	})
+	const counts = $derived.by(() => {
+		const result = new Map<string, { transactions: number; tags: number }>()
+		for (const category of categories.current ?? [])
+			result.set(category.id, { transactions: 0, tags: 0 })
+		for (const transaction of transactions.current ?? []) {
+			const count = result.get(transaction.categoryId)
+			if (count) count.transactions += 1
+		}
+		for (const tag of tags.current ?? []) {
+			const count = tag.categoryId ? result.get(tag.categoryId) : undefined
+			if (count) count.tags += 1
+		}
+		return result
+	})
+	function canArchive(category: Category) {
+		const member = membership.current
+		return (
+			!category.isSystem &&
+			member?.organizationId === filters.activeOrganizationId &&
+			(member.role === 'owner' || member.role === 'admin' || member.role === 'member')
+		)
+	}
+
+	const canCreate = $derived(
+		membership.current?.organizationId === filters.activeOrganizationId &&
+			(membership.current?.role === 'owner' ||
+				membership.current?.role === 'admin' ||
+				membership.current?.role === 'member')
+	)
+	const save: FormSave<
+		z.output<typeof categoryFormSchema>,
+		Category,
+		{ organizationId: string | null }
+	> = async (values, { context, signal }) => {
+		signal.throwIfAborted()
+		if (
+			!canCreate ||
+			!context.organizationId ||
+			context.organizationId !== filters.activeOrganizationId
+		)
+			throw new Error('The workspace is not editable.')
+		return createCategory(db, context.organizationId, values.name, values.kind)
+	}
+	const form = createFormController({
+		schema: categoryFormSchema,
+		save,
+		context: () => ({ organizationId: filters.activeOrganizationId }),
+		key: () => filters.activeOrganizationId,
+		disabled: () => !canCreate
+	})
+	const archive = createFormController({
+		schema: categoryArchiveSchema,
+		save: async (values, { signal }) => {
+			signal.throwIfAborted()
+			const category = categories.current?.find((row) => row.id === values.categoryId)
+			if (
+				values.organizationId !== filters.activeOrganizationId ||
+				!category ||
+				!canArchive(category)
+			)
+				throw new Error('The category is not editable in the active workspace.')
+			await archiveCategory(db, category.id)
+			return category.name
+		},
+		context: () => undefined,
+		key: () => filters.activeOrganizationId,
+		disabled: () => !canCreate
+	})
+	const archivableCategoryIds = $derived(
+		(categories.current ?? []).filter(canArchive).map((category) => category.id)
+	)
+	function onArchive(categoryId: string) {
+		archive.submitValues({ categoryId, organizationId: filters.activeOrganizationId })
+	}
 </script>
 
 <svelte:head><title>{m['labels.categories']()} · {m['app.name']()}</title></svelte:head>
 <PageHeader title={m['labels.categories']()} />
 <QueryContent
-	queries={content.queries}
+	queries={[categories, transactions, tags, membership]}
 	loadingMessage={m['status.loading']({ subject: m['labels.categories']() })}
 	errorMessage={m['errors.load']({ subject: m['labels.categories']() })}
 >
-	{#if content.organizationId && content.hasMembership}
+	{#if filters.activeOrganizationId && Boolean(membership.current)}
 		<CategoryList
-			categories={content.categories}
-			counts={content.counts}
-			archivableCategoryIds={content.archivableCategoryIds}
-			archiving={content.archiving}
-			archivingCategoryId={content.archivingCategoryId}
-			archivedName={content.archivedName}
-			archiveFailed={content.archiveFailed}
-			onArchive={content.archive}
+			categories={categories.current ?? []}
+			{counts}
+			{archivableCategoryIds}
+			archiving={archive.view.busy}
+			archivingCategoryId={archive.view.state.context.validated?.value.categoryId}
+			archivedName={archive.view.state.matches('success')
+				? archive.view.state.context.result
+				: undefined}
+			archiveFailed={archive.view.state.matches('error') || archive.view.state.matches('invalid')}
+			{onArchive}
 		/>
-		<CategoryForm
-			organizationId={content.organizationId}
-			canCreate={content.canCreate}
-			form={content.form}
-		/>
+		<CategoryForm organizationId={filters.activeOrganizationId} {canCreate} {form} />
 	{/if}
 </QueryContent>

@@ -1,59 +1,33 @@
 <script lang="ts">
 	import { Select, Checkbox } from 'delightful-ui'
-	import { getContext, type Snippet } from 'svelte'
-	import { QuerySubscription } from 'jazz-tools/svelte'
-	import { app } from '#lib/schema.js'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import type { ComponentProps, Snippet } from 'svelte'
+	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import QueryContent from './QueryContent.svelte'
 
-	let { children }: { children: Snippet } = $props()
-	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const organizationQuery = new QuerySubscription(app.organizations.orderBy('name'))
-	const accountQuery = new QuerySubscription(() =>
-		filters.activeOrganizationId
-			? app.accounts
-					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
-					.orderBy('name')
-			: undefined
-	)
-	const organizations = $derived(organizationQuery.current ?? [])
-	const activeAccounts = $derived(accountQuery.current ?? [])
-
-	$effect(() => {
-		if (organizationQuery.isLoading || organizationQuery.error || !organizationQuery.current) return
-		if (organizations.some((organization) => organization.id === filters.activeOrganizationId))
-			return
-		filters.activeOrganizationId =
-			organizations.find((organization) => organization.kind === 'personal')?.id ??
-			organizations[0]?.id ??
-			null
-		filters.selectedAccountIds = null
-	})
-
-	function setActiveOrganization(value: string) {
-		filters.activeOrganizationId = value || null
-		filters.selectedAccountIds = null
-	}
-
-	function isAccountSelected(accountId: string) {
-		return filters.selectedAccountIds === null || filters.selectedAccountIds.includes(accountId)
-	}
-
-	function setAccountSelected(accountId: string, checked: boolean) {
-		if (checked && filters.selectedAccountIds === null) return
-
-		const selected = new Set(
-			filters.selectedAccountIds ?? activeAccounts.map((account) => account.id)
-		)
-		if (checked) selected.add(accountId)
-		else selected.delete(accountId)
-		filters.selectedAccountIds = [...selected]
-	}
-
-	function setAllAccountsSelected(checked: boolean) {
-		filters.selectedAccountIds = checked ? null : []
-	}
+	let {
+		children,
+		organizations,
+		accounts,
+		organizationId,
+		selectedAccountIds,
+		organizationQueries,
+		accountQueries,
+		onOrganizationChange,
+		onAccountChange,
+		onAllAccountsChange
+	}: {
+		children: Snippet
+		organizations: readonly Organization[]
+		accounts: readonly Account[]
+		organizationId: string | null
+		selectedAccountIds: readonly string[] | null
+		organizationQueries: ComponentProps<typeof QueryContent>['queries']
+		accountQueries: ComponentProps<typeof QueryContent>['queries']
+		onOrganizationChange: (value: string) => void
+		onAccountChange: (accountId: string, checked: boolean) => void
+		onAllAccountsChange: (checked: boolean) => void
+	} = $props()
 </script>
 
 <div class="app-shell">
@@ -75,15 +49,15 @@
 
 		<section aria-labelledby="account-filters-heading">
 			<QueryContent
-				queries={[organizationQuery]}
+				queries={organizationQueries}
 				loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
 				errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
 			>
 				<Select
 					label={m['workspace.label']()}
 					id="active-organization"
-					value={filters.activeOrganizationId ?? ''}
-					onchange={(event) => setActiveOrganization(event.currentTarget.value)}
+					value={organizationId ?? ''}
+					onchange={(event) => onOrganizationChange(event.currentTarget.value)}
 				>
 					{#each organizations as organization (organization.id)}
 						<option value={organization.id}>{organization.name}</option>
@@ -93,29 +67,27 @@
 
 			<h2 id="account-filters-heading">{m['labels.accounts']()}</h2>
 			<QueryContent
-				queries={[organizationQuery, accountQuery]}
+				queries={accountQueries}
 				loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
 				errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
 			>
-				{#if activeAccounts.length > 0}
+				{#if accounts.length > 0}
 					<ul>
 						<li class="account-filter">
 							<Checkbox
-								checked={filters.selectedAccountIds === null ||
-									activeAccounts.every((account) =>
-										filters.selectedAccountIds?.includes(account.id)
-									)}
+								checked={selectedAccountIds === null ||
+									accounts.every((account) => selectedAccountIds?.includes(account.id))}
 								label={m['accounts.filters.all']()}
-								onchange={(event) => setAllAccountsSelected(event.currentTarget.checked)}
+								onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 							/>
 						</li>
-						{#each activeAccounts as account (account.id)}
+						{#each accounts as account (account.id)}
 							<li class="account-filter">
 								<Checkbox
-									checked={isAccountSelected(account.id)}
+									checked={selectedAccountIds === null || selectedAccountIds.includes(account.id)}
 									label={account.name}
 									aria-label={m['accounts.filters.toggle']({ name: account.name })}
-									onchange={(event) => setAccountSelected(account.id, event.currentTarget.checked)}
+									onchange={(event) => onAccountChange(account.id, event.currentTarget.checked)}
 								/>
 							</li>
 						{/each}

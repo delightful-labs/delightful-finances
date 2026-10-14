@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TransactionDetail } from '#lib/queries/transaction-details.svelte.js'
+	import type { TransactionDetail } from '#lib/schema.js'
 	import { formatMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { m } from '#lib/paraglide/messages.js'

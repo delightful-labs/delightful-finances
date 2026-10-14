@@ -1,10 +1,10 @@
 # Reusable forms
 
-Pages initialize form workflows through controller modules. Presentation components receive the controller's view and callbacks through props and render with `FormContent.svelte`. They do not initialize Jazz queries or XState actors.
+Pages and integration components keep queries, permissions, and save workflows in their own scripts and compose imported pure presentation components. Forms use the shared form lifecycle helper and render through `FormContent.svelte`; presentation components do not initialize Jazz queries or XState actors.
 
-## Controller API
+## Shared form API
 
-`createFormController` lives in `controllers/form.svelte.ts`. Initialize it from a page controller during Svelte component initialization.
+`createFormController` lives in `forms.svelte.ts`. Initialize it in a page or integration component during Svelte component initialization. This is genuinely shared behavior, not a separate controller file for each page.
 
 - `schema`: a Zod schema for submitted values. Derive field validation from the canonical entity schema; use its transforms and defaults for normalization.
 - `save`: an async function receiving validated values and `{ context, signal }`. Check workspace identity and applicable permissions before writing through shared data helpers.
@@ -21,7 +21,7 @@ The reactive view contains the XState `state`, `busy`, `disabled`, and Zod `issu
 
 `FormContent` accepts `view`, `onsubmit`, `onreset`, a required `fields` snippet, and optional `controls` and `feedback` snippets. Each snippet receives the form view. FormContent owns native form markup and layout, with no actor or database lifecycle.
 
-A presentation component uses its controller prop like this:
+A presentation component uses its form API prop like this:
 
 ```svelte
 <FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
@@ -52,21 +52,22 @@ Key the native form markup by the same workspace/record identity to reset uncont
 
 ## Current integrations
 
-| Page                 | Controller                                 | Presentation                             |
-| -------------------- | ------------------------------------------ | ---------------------------------------- |
-| Add account          | `controllers/account-form.svelte.ts`       | `AccountForm`                            |
-| Workspace settings   | `controllers/workspace-settings.svelte.ts` | `WorkspaceNameForm`                      |
-| Category settings    | `controllers/category-settings.svelte.ts`  | `CategoryForm`, `CategoryList`           |
-| Tag settings         | `controllers/tag-settings.svelte.ts`       | `TagForm`, `TagList`                     |
-| Add income / expense | `controllers/transaction-form.svelte.ts`   | `TransactionForm`, `TransactionTagInput` |
+| Page                   | Integration logic                   | Presentation                             |
+| ---------------------- | ----------------------------------- | ---------------------------------------- |
+| Add account            | `/accounts/new/+page.svelte`        | `AccountForm`                            |
+| Workspace settings     | `/settings/workspace/+page.svelte`  | `WorkspaceNameForm`                      |
+| Category settings      | `/settings/categories/+page.svelte` | `CategoryForm`, `CategoryList`           |
+| Tag settings           | `/settings/tags/+page.svelte`       | `TagForm`, `TagList`                     |
+| Add income / expense   | shared `TransactionEntry.svelte`    | `TransactionForm`, `TransactionTagInput` |
+| Income / expense lists | shared `TransactionView.svelte`     | `TransactionList`, `TransactionListItem` |
 
-Controllers obtain the database from the shared Jazz provider during initialization. Query loading/error presentation is composed by pages through `QueryContent`. Shared writes live in `data.ts` and wait for local persistence where required; ordinary offline writes do not require a network round trip.
+Pages and integration components obtain the database from the shared Jazz provider during initialization and compose query loading/error presentation through `QueryContent`. Shared writes live in `data.ts` and wait for local persistence where required; ordinary offline writes do not require a network round trip.
 
 ## Entity validation
 
 Validation modules match schema filenames, such as `validation/accounts.ts`, `validation/categories.ts`, `validation/tags.ts`, and `validation/transactions.ts`. Each owns canonical validation and its derived form adapters.
 
-Transactions use current account/category rows to resolve workspace and currency, reject unavailable or archived selections, and convert amounts to integer minor units. Check income requires a nonblank number and valid date; presentation shows those fields only for Check. The system category supplies the default unless overridden. The date input defaults to today. Tag suggestions come from the page controller; repeated tag names are validated and persisted with the transaction.
+Transactions use current account/category rows to resolve workspace and currency, reject unavailable or archived selections, and convert amounts to integer minor units. Check income requires a nonblank number and valid date; presentation shows those fields only for Check. The system category supplies the default unless overridden. The date input defaults to today. Tag suggestions come from TransactionEntry; repeated tag names are validated and persisted with the transaction.
 
 Tag settings shares one category query for historical labels and active form options. Form validation rejects category selections that are unavailable in the active workspace. Archived categories remain available as historical labels.
 

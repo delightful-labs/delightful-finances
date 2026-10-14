@@ -4,7 +4,7 @@
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category } from '#lib/schema.js'
 	import type { AppTransaction } from '#lib/domain/transaction.js'
-	import type { FormController } from '#lib/controllers/form.svelte.js'
+	import type { FormController } from '#lib/forms.svelte.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'

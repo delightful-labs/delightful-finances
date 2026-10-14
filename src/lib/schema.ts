@@ -28,3 +28,8 @@ export type Account = s.RowOf<typeof app.accounts>
 export type Category = s.RowOf<typeof app.categories>
 export type Tag = s.RowOf<typeof app.tags>
 export type TransactionRow = s.RowOf<typeof app.transactions>
+
+export const transactionDetailQuery = app.transactions
+	.select('*', '$createdBy', '$createdAt', '$updatedBy', '$updatedAt')
+	.include({ account: true, category: true, tags: { tag: true }, checkDetails: true })
+export type TransactionDetail = s.RowOf<typeof transactionDetailQuery>

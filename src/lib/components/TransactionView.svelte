@@ -1,9 +1,17 @@
-import { QuerySubscription } from 'jazz-tools/svelte'
-import { app } from '#lib/schema.js'
-import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
-import type { FinanceFilters } from '#lib/finance-filters.js'
+<script lang="ts">
+	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
+	import { app } from '#lib/schema.js'
+	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { getContext } from 'svelte'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { m } from '#lib/paraglide/messages.js'
+	import TransactionList from '#lib/components/TransactionList.svelte'
+	import QueryContent from '#lib/components/QueryContent.svelte'
+	import PageHeader from '#lib/components/PageHeader.svelte'
 
-export function createTransactionListState(kind: 'expense' | 'income', filters: FinanceFilters) {
+	let { kind }: { kind: 'income' | 'expense' } = $props()
+	const filters = getContext<FinanceFilters>(financeFiltersKey)
+
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
@@ -55,23 +63,33 @@ export function createTransactionListState(kind: 'expense' | 'income', filters: 
 		return result
 	})
 	const groups = $derived(groupTransactionsByDate(visibleTransactions))
+</script>
 
-	return {
-		queries: [transactions, accounts, categories, tags, links],
-		get groups() {
-			return groups
-		},
-		get accountNames() {
-			return accountNames
-		},
-		get categoryNames() {
-			return categoryNames
-		},
-		get tagNamesByTransaction() {
-			return tagNamesByTransaction
-		},
-		get noAccountsSelected() {
-			return filters.selectedAccountIds !== null && filters.selectedAccountIds.length === 0
-		}
-	}
-}
+<svelte:head>
+	<title
+		>{kind === 'income' ? m['labels.income']() : m['labels.expenses']()} · {m['app.name']()}</title
+	>
+</svelte:head>
+
+<PageHeader
+	title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
+	action={{
+		href: kind === 'income' ? '/incomes/new' : '/expenses/new',
+		label: kind === 'income' ? m['actions.add_income']() : m['actions.add_expense']()
+	}}
+/>
+
+<QueryContent
+	queries={[transactions, accounts, categories, tags, links]}
+	loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
+>
+	<TransactionList
+		{groups}
+		{accountNames}
+		{categoryNames}
+		{tagNamesByTransaction}
+		noAccountsSelected={filters.selectedAccountIds !== null &&
+			filters.selectedAccountIds.length === 0}
+	/>
+</QueryContent>

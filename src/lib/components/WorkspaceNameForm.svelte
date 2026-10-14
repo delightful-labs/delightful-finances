@@ -2,7 +2,7 @@
 	import { Button, InputText } from 'delightful-ui'
 	import type { z } from 'zod'
 	import type { Organization } from '#lib/schema.js'
-	import type { FormController } from '#lib/controllers/form.svelte.js'
+	import type { FormController } from '#lib/forms.svelte.js'
 	import type { workspaceNameFormSchema } from '#lib/validation/identity.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
