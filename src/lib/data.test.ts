@@ -19,8 +19,9 @@ import { app, type Account, type Organization } from './schema.js'
 type Db = ReturnType<typeof getDb>
 const userId = '11111111-1111-4111-8111-111111111111'
 const profileId = '33333333-3333-4333-8333-333333333333'
+const organizationId = '22222222-2222-4222-8222-222222222222'
 const organization = {
-	id: '22222222-2222-4222-8222-222222222222',
+	id: organizationId,
 	name: 'Existing workspace',
 	kind: 'personal',
 	defaultCurrency: 'USD',
@@ -28,6 +29,7 @@ const organization = {
 } satisfies Organization
 
 function setup() {
+	vi.spyOn(crypto, 'randomUUID').mockReturnValue(organizationId)
 	const transaction = new Transaction('mergeable', () => {
 		throw new Error('Unit tests must not open a database runtime.')
 	})
@@ -130,14 +132,24 @@ describe('createTransaction normalization', () => {
 		await createTransaction(db, input)
 		expect(insert).toHaveBeenCalledWith(
 			app.transactions,
-			expect.objectContaining({ memo: 'Payment' })
+			expect.objectContaining({ memo: 'Payment', checkDetailsId: organization.id }),
+			{ id: organization.id }
 		)
-		expect(insert).toHaveBeenCalledWith(app.checkDetails, {
-			transactionId: organization.id,
-			checkNumber: '123',
-			checkDate: '2026-10-12'
-		})
+		expect(insert).toHaveBeenCalledWith(
+			app.checkDetails,
+			{
+				transactionId: organization.id,
+				organizationId: organization.id,
+				accountId: input.accountId,
+				checkNumber: '123',
+				checkDate: '2026-10-12'
+			},
+			{ id: organization.id }
+		)
+		const tables = insert.mock.calls.map(([table]) => table)
+		expect(tables.indexOf(app.checkDetails)).toBeLessThan(tables.indexOf(app.transactions))
 	})
+
 	it('omits whitespace-only memos from writes', async () => {
 		const { db, insert } = setup()
 		await createTransaction(db, { ...input, memo: ' ' })

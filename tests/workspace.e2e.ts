@@ -1781,7 +1781,7 @@ for (const kind of ['expense', 'income']) {
 		const main = page.getByRole('main')
 		await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
 		await main.getByLabel('Category', { exact: true }).selectOption(fixture.categoryId)
-		await main.getByLabel('Amount (USD)', { exact: true }).fill('12.34')
+		await main.getByLabel('Amount', { exact: true }).fill('12.34')
 		const tags = main
 			.getByRole('combobox', { name: 'Tags', exact: true })
 			.or(main.getByRole('textbox', { name: 'Tags', exact: true }))
@@ -1846,7 +1846,7 @@ for (const kind of ['expense', 'income']) {
 		await expect(main.getByRole('button', { name: /^Remove / })).toHaveCount(0)
 		await expect(tags).toHaveValue('')
 		await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
-		await main.getByLabel('Amount (USD)', { exact: true }).fill('2')
+		await main.getByLabel('Amount', { exact: true }).fill('2')
 		await main.getByLabel('Memo', { exact: true }).fill('No tags entry')
 		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
 		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
@@ -1895,7 +1895,7 @@ test('transaction tags reject a tag archived after selection without saving part
 	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
 	const main = page.getByRole('main')
 	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Retry tag account' })
-	await main.getByLabel('Amount (USD)', { exact: true }).fill('5')
+	await main.getByLabel('Amount', { exact: true }).fill('5')
 	await main.getByLabel('Memo', { exact: true }).fill('Retry tagged entry')
 	const tags = main
 		.getByRole('combobox', { name: 'Tags', exact: true })
@@ -1917,7 +1917,7 @@ test('transaction tags reject a tag archived after selection without saving part
 		).length
 	}, organizationId)
 	expect(partial).toBe(0)
-	await expect(main.getByLabel('Amount (USD)', { exact: true })).toHaveValue('5')
+	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('5')
 	await main.getByRole('button', { name: 'Remove Archive while selected', exact: true }).click()
 	await tags.fill('Replacement tag')
 	await tags.press('Enter')
@@ -1995,7 +1995,7 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 	)
 	await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
 	await main.getByLabel('Category', { exact: true }).selectOption(fixture.categoryId)
-	await main.getByLabel('Amount (USD)', { exact: true }).fill('3')
+	await main.getByLabel('Amount', { exact: true }).fill('3')
 	await main.getByLabel('Memo', { exact: true }).fill('Offline tag entry')
 	await tags.fill('Offline new tag')
 	await tags.press('Enter')
@@ -2199,35 +2199,41 @@ for (const kind of ['expense', 'income']) {
 				const tag = await db
 					.insert(app.tags, { organizationId, name: 'Detail tag', categoryId: category.id })
 					.wait({ tier: 'global' })
-				const transaction = await db
-					.insert(app.transactions, {
-						organizationId,
-						accountId: account.id,
-						categoryId: category.id,
-						kind,
-						amountMinor: 1234,
-						currency: 'USD',
-						bookedOn: '2026-10-14',
-						memo: 'Original detail memo',
-						source: 'manual',
-						...(kind === 'income' ? { paymentMethod: 'check' } : {})
-					})
-					.wait({ tier: 'global' })
-				await db
-					.insert(app.transactionTags, {
-						organizationId,
-						transactionId: transaction.id,
-						tagId: tag.id
-					})
-					.wait({ tier: 'global' })
-				if (kind === 'income')
-					await db
-						.insert(app.checkDetails, {
-							transactionId: transaction.id,
-							checkNumber: '12345',
-							checkDate: '2026-10-13'
-						})
-						.wait({ tier: 'global' })
+				const id = crypto.randomUUID()
+				const write = await db.transaction((tx) => {
+					if (kind === 'income')
+						tx.insert(
+							app.checkDetails,
+							{
+								transactionId: id,
+								organizationId,
+								accountId: account.id,
+								checkNumber: '12345',
+								checkDate: '2026-10-13'
+							},
+							{ id }
+						)
+					const transaction = tx.insert(
+						app.transactions,
+						{
+							organizationId,
+							accountId: account.id,
+							categoryId: category.id,
+							kind,
+							amountMinor: 1234,
+							currency: 'USD',
+							bookedOn: '2026-10-14',
+							memo: 'Original detail memo',
+							source: 'manual',
+							...(kind === 'income' ? { paymentMethod: 'check', checkDetailsId: id } : {})
+						},
+						{ id }
+					)
+					tx.insert(app.transactionTags, { organizationId, transactionId: id, tagId: tag.id })
+
+					return transaction
+				})
+				const transaction = await write.wait({ tier: 'global' })
 				const metadata = await db.one(
 					app.transactions.where({ id: transaction.id }).select('$createdAt', '$createdBy'),
 					{ tier: 'remote' }

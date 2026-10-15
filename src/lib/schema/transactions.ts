@@ -30,6 +30,7 @@ export const transactionsSchema = {
 			bookedOn: bookedOnColumn.column,
 			memo: s.string().optional(),
 			paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
+			checkDetailsId: s.uuid().optional(),
 			source: s.enum('manual', 'simplefin'),
 			externalId: externalIdColumn.column.optional(),
 			batchId: s.uuid().optional()
@@ -40,7 +41,7 @@ export const transactionsSchema = {
 			organization: s.rel('organizations', 'organizationId'),
 			batch: s.rel('transactionBatches', 'batchId'),
 			tags: s.reverse('transactionTags', 'transaction'),
-			checkDetails: s.reverse('checkDetails', 'transaction'),
+			checkDetails: s.rel('checkDetails', 'checkDetailsId'),
 			attachments: s.reverse('transactionAttachments', 'transaction')
 		}
 	),
@@ -59,12 +60,18 @@ export const transactionsSchema = {
 	checkDetails: s.table(
 		{
 			transactionId: s.uuid(),
+			organizationId: s.uuid(),
+			accountId: s.uuid(),
 			checkNumber: checkNumberColumn.column,
-			checkDate: checkDateColumn.column.optional(),
+			checkDate: checkDateColumn.column,
 			payerName: s.string().optional(),
 			bankName: s.string().optional(),
 			memoOnCheck: s.string().optional()
 		},
-		{ transaction: s.rel('transactions', 'transactionId') }
+		{
+			transaction: s.rel('transactions', 'transactionId'),
+			organization: s.rel('organizations', 'organizationId'),
+			account: s.rel('accounts', 'accountId')
+		}
 	)
 }

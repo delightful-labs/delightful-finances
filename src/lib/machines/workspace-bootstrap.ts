@@ -7,25 +7,21 @@ export function createWorkspaceBootstrapMachine(db: Parameters<typeof ensurePers
 		{ db: typeof db; userId: string }
 	>(({ input }) => ensurePersonalWorkspace(input.db, input.userId))
 
-	return setup({
-		actors: { ensureWorkspace },
-		types: {
-			context: {} as { db: typeof db; userId: string | null },
-			events: {} as { type: 'SESSION_READY'; userId: string } | { type: 'SESSION_UNAVAILABLE' }
-		},
-		actions: {
-			setUser: ({ event }) => {
-				if (event.type === 'SESSION_READY') return { userId: event.userId }
-				return {}
-			}
-		}
-	}).createMachine({
+	const bootstrap = setup<
+		{ db: typeof db; userId: string | null },
+		{ type: 'SESSION_READY'; userId: string } | { type: 'SESSION_UNAVAILABLE' },
+		{ ensureWorkspace: typeof ensureWorkspace }
+	>({ actors: { ensureWorkspace } })
+	const setUser = bootstrap.assign(({ event }) =>
+		event.type === 'SESSION_READY' ? { userId: event.userId } : {}
+	)
+	return bootstrap.createMachine({
 		id: 'workspace-bootstrap',
 		initial: 'waitingForSession',
 		context: { db, userId: null },
 		states: {
 			waitingForSession: {
-				on: { SESSION_READY: { target: 'ensuringWorkspace', actions: 'setUser' } }
+				on: { SESSION_READY: { target: 'ensuringWorkspace', actions: setUser } }
 			},
 			ensuringWorkspace: {
 				invoke: {
@@ -38,19 +34,19 @@ export function createWorkspaceBootstrapMachine(db: Parameters<typeof ensurePers
 					onError: 'error'
 				},
 				on: {
-					SESSION_READY: { target: 'ensuringWorkspace', reenter: true, actions: 'setUser' },
+					SESSION_READY: { target: 'ensuringWorkspace', reenter: true, actions: setUser },
 					SESSION_UNAVAILABLE: 'waitingForSession'
 				}
 			},
 			ready: {
 				on: {
-					SESSION_READY: { target: 'ensuringWorkspace', actions: 'setUser' },
+					SESSION_READY: { target: 'ensuringWorkspace', actions: setUser },
 					SESSION_UNAVAILABLE: 'waitingForSession'
 				}
 			},
 			error: {
 				on: {
-					SESSION_READY: { target: 'ensuringWorkspace', actions: 'setUser' },
+					SESSION_READY: { target: 'ensuringWorkspace', actions: setUser },
 					SESSION_UNAVAILABLE: 'waitingForSession'
 				}
 			}

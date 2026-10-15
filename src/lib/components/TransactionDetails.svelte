@@ -64,8 +64,8 @@
 			<dt>{m['transactions.payment.method']()}</dt>
 			<dd>{paymentLabels[transaction.paymentMethod]}</dd>
 		{/if}
-		{#if transaction.paymentMethod === 'check' && transaction.checkDetails?.[0]}
-			{@const check = transaction.checkDetails[0]}
+		{#if transaction.paymentMethod === 'check' && transaction.checkDetails}
+			{@const check = transaction.checkDetails}
 			<dt>{m['transactions.check.number']()}</dt>
 			<dd>{check.checkNumber}</dd>
 			{#if check.checkDate}

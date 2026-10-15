@@ -174,32 +174,47 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 	if (!parsed.success) return { error: validateTransaction(input) ?? 'invalid-transaction' }
 	const transaction = parsed.data
 	const result = await db.transaction(async (tx) => {
-		const row = tx.insert(app.transactions, {
-			organizationId: transaction.organizationId,
-			accountId: transaction.accountId,
-			categoryId: transaction.categoryId,
-			amountMinor: transaction.money.amountMinor,
-			currency: transaction.money.currency,
-			kind: transaction.kind,
-			bookedOn: transaction.bookedOn,
-			...(transaction.memo ? { memo: transaction.memo } : {}),
-			source: transaction.source.source,
-			...(transaction.source.source === 'simplefin'
-				? { externalId: transaction.source.externalId }
-				: {}),
-			...('paymentMethod' in transaction ? { paymentMethod: transaction.paymentMethod } : {})
-		})
+		const transactionId = crypto.randomUUID()
 		if ('paymentMethod' in transaction && transaction.paymentMethod === 'check') {
 			const details = transaction.checkDetails
-			tx.insert(app.checkDetails, {
-				transactionId: row.id,
-				checkNumber: details.checkNumber,
-				checkDate: details.checkDate,
-				...(details.payerName === undefined ? {} : { payerName: details.payerName }),
-				...(details.bankName === undefined ? {} : { bankName: details.bankName }),
-				...(details.memoOnCheck === undefined ? {} : { memoOnCheck: details.memoOnCheck })
-			})
+			tx.insert(
+				app.checkDetails,
+				{
+					transactionId,
+					organizationId: transaction.organizationId,
+					accountId: transaction.accountId,
+					checkNumber: details.checkNumber,
+					checkDate: details.checkDate,
+					...(details.payerName === undefined ? {} : { payerName: details.payerName }),
+					...(details.bankName === undefined ? {} : { bankName: details.bankName }),
+					...(details.memoOnCheck === undefined ? {} : { memoOnCheck: details.memoOnCheck })
+				},
+				{ id: transactionId }
+			)
 		}
+		const row = tx.insert(
+			app.transactions,
+			{
+				organizationId: transaction.organizationId,
+				accountId: transaction.accountId,
+				categoryId: transaction.categoryId,
+				amountMinor: transaction.money.amountMinor,
+				currency: transaction.money.currency,
+				kind: transaction.kind,
+				bookedOn: transaction.bookedOn,
+				...(transaction.memo ? { memo: transaction.memo } : {}),
+				source: transaction.source.source,
+				...(transaction.source.source === 'simplefin'
+					? { externalId: transaction.source.externalId }
+					: {}),
+				...('paymentMethod' in transaction ? { paymentMethod: transaction.paymentMethod } : {}),
+				...('paymentMethod' in transaction && transaction.paymentMethod === 'check'
+					? { checkDetailsId: transactionId }
+					: {})
+			},
+			{ id: transactionId }
+		)
+
 		if (transaction.tags?.length) {
 			const existingTags = await tx.all(
 				app.tags.where({ organizationId: transaction.organizationId })

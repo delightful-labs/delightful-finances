@@ -6,7 +6,14 @@ type Role = NonNullable<OrganizationMember['role']>
 type IdExpression = string | RowRefValue
 type TransactionContext = Pick<
 	RowContext<TransactionRow>,
-	'accountId' | 'categoryId' | 'organizationId' | 'currency' | 'kind'
+	| 'id'
+	| 'accountId'
+	| 'categoryId'
+	| 'organizationId'
+	| 'currency'
+	| 'kind'
+	| 'paymentMethod'
+	| 'checkDetailsId'
 >
 
 export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowedTo }) => {
@@ -99,7 +106,28 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	const canWriteTransaction = (transaction: TransactionContext) =>
 		allOf([
 			canWriteAccount(transaction.accountId, transaction.organizationId),
-			transactionReferencesAreValid(transaction)
+			transactionReferencesAreValid(transaction),
+			anyOf([
+				{ kind: 'expense', checkDetailsId: { isNull: true } },
+				allOf([
+					{ kind: 'income', checkDetailsId: { isNull: true } },
+					anyOf([
+						{ paymentMethod: { isNull: true } },
+						{ paymentMethod: 'cash' },
+						{ paymentMethod: 'transfer' },
+						{ paymentMethod: 'electronic' }
+					])
+				]),
+				allOf([
+					{ kind: 'income', paymentMethod: 'check' },
+					policy.checkDetails.exists.where({
+						id: transaction.checkDetailsId,
+						transactionId: transaction.id,
+						organizationId: transaction.organizationId,
+						accountId: transaction.accountId
+					})
+				])
+			])
 		])
 
 	policy.organizations.allowRead.where((organization) => isMember(organization.id))
@@ -205,7 +233,25 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	policy.transactions.allowInsert.where((transaction) => canWriteTransaction(transaction))
 	policy.transactions.allowUpdate
 		.whereOld((transaction) => canWriteAccount(transaction.accountId, transaction.organizationId))
-		.whereNew((transaction) => canWriteTransaction(transaction))
+		.whereNew((transaction) =>
+			allOf([
+				canWriteTransaction(transaction),
+				// A check's selected detail cannot be replaced or shared with another transaction.
+				anyOf([
+					allOf([
+						{ checkDetailsId: { isNull: true } },
+						policy.transactions.exists.where({
+							id: transaction.id,
+							checkDetailsId: { isNull: true }
+						})
+					]),
+					policy.transactions.exists.where({
+						id: transaction.id,
+						checkDetailsId: transaction.checkDetailsId
+					})
+				])
+			])
+		)
 	policy.transactions.allowDelete.where((transaction) =>
 		canWriteAccount(transaction.accountId, transaction.organizationId)
 	)
@@ -248,29 +294,41 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	)
 
 	policy.checkDetails.allowRead.where((details) =>
-		policy.transactions.exists.where({ id: details.transactionId })
+		canReadAccount(details.accountId, details.organizationId)
 	)
 	policy.checkDetails.allowInsert.where((details) =>
 		allOf([
-			allowedTo.update('transaction'),
-			policy.transactions.exists.where({
-				id: details.transactionId,
-				kind: 'income',
-				paymentMethod: 'check'
+			// The detail is written before its transaction, using the ledger's authority.
+			canWriteAccount(details.accountId, details.organizationId),
+			policy.accounts.exists.where({
+				id: details.accountId,
+				organizationId: details.organizationId,
+				archivedAt: { isNull: true }
 			})
 		])
 	)
 	policy.checkDetails.allowUpdate.whereOld(allowedTo.update('transaction')).whereNew((details) =>
 		allOf([
 			allowedTo.update('transaction'),
+			// The existing row must already belong to this transaction.
+			policy.checkDetails.exists.where({
+				id: details.id,
+				transactionId: details.transactionId,
+				organizationId: details.organizationId,
+				accountId: details.accountId
+			}),
 			policy.transactions.exists.where({
 				id: details.transactionId,
+				checkDetailsId: details.id,
+				organizationId: details.organizationId,
+				accountId: details.accountId,
 				kind: 'income',
 				paymentMethod: 'check'
 			})
 		])
 	)
-	policy.checkDetails.allowDelete.where(allowedTo.update('transaction'))
+	// Removing a referenced detail would leave a check transaction incomplete.
+	policy.checkDetails.allowDelete.never()
 
 	policy.simplefinConnections.allowRead.where((connection) => isAdmin(connection.organizationId))
 	policy.simplefinConnections.allowInsert.where((connection) => isAdmin(connection.organizationId))
