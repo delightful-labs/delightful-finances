@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from 'delightful-ui'
 	import type { Category } from '#lib/schema.js'
+	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
@@ -22,6 +23,7 @@
 		archiveFailed: boolean
 		onArchive: (categoryId: string) => void
 	} = $props()
+	const numbers = $derived(new Intl.NumberFormat(getLocale()))
 </script>
 
 {#if archivedName}
@@ -46,8 +48,8 @@
 				<tr>
 					<th scope="row">{category.name}</th>
 					<td>{category.kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}</td>
-					<td>{counts.get(category.id)?.transactions ?? 0}</td>
-					<td>{counts.get(category.id)?.tags ?? 0}</td>
+					<td>{numbers.format(counts.get(category.id)?.transactions ?? 0)}</td>
+					<td>{numbers.format(counts.get(category.id)?.tags ?? 0)}</td>
 					<td
 						>{#if archivableCategoryIds.includes(category.id)}
 							<Button

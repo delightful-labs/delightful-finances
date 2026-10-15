@@ -1,4 +1,5 @@
 import { ReadTier } from 'jazz-tools'
+import { m } from './paraglide/messages.js'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization, type Tag } from './schema.js'
 import { validateTransaction, type AppTransaction } from './domain/transaction.js'
@@ -15,15 +16,50 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 	const organizationId = await stableUuid(userId, 'personal-organization')
 	const profileId = await stableUuid(userId, 'profile')
 	const membershipId = await stableUuid(userId, 'personal-membership')
-	const defaultCategories: { name: string; kind: Category['kind']; isSystem: boolean }[] = [
-		{ name: 'Uncategorized', kind: 'expense', isSystem: true },
-		{ name: 'Uncategorized', kind: 'income', isSystem: true },
-		{ name: 'Groceries', kind: 'expense', isSystem: false },
-		{ name: 'Housing', kind: 'expense', isSystem: false },
-		{ name: 'Transport', kind: 'expense', isSystem: false },
-		{ name: 'Other expense', kind: 'expense', isSystem: false },
-		{ name: 'Salary', kind: 'income', isSystem: false },
-		{ name: 'Other income', kind: 'income', isSystem: false }
+	const defaultCategories: {
+		key: string
+		name: string
+		kind: Category['kind']
+		isSystem: boolean
+	}[] = [
+		{
+			key: 'uncategorized',
+			name: m['defaults.categories.uncategorized'](),
+			kind: 'expense',
+			isSystem: true
+		},
+		{
+			key: 'uncategorized',
+			name: m['defaults.categories.uncategorized'](),
+			kind: 'income',
+			isSystem: true
+		},
+		{
+			key: 'groceries',
+			name: m['defaults.categories.groceries'](),
+			kind: 'expense',
+			isSystem: false
+		},
+		{ key: 'housing', name: m['defaults.categories.housing'](), kind: 'expense', isSystem: false },
+		{
+			key: 'transport',
+			name: m['defaults.categories.transport'](),
+			kind: 'expense',
+			isSystem: false
+		},
+		{
+			key: 'other expense',
+			name: m['defaults.categories.other_expense'](),
+			kind: 'expense',
+			isSystem: false
+		},
+		{ key: 'salary', name: m['defaults.categories.salary'](), kind: 'income', isSystem: false },
+		{
+			key: 'other income',
+			name: m['defaults.categories.other_income'](),
+			kind: 'income',
+			isSystem: false
+		}
 	]
 	// Hydrate existing rows before opening a transaction: a cold transaction's
 	// read snapshot can miss records arriving from sync and recreate protected rows.
@@ -43,12 +79,10 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 		db.all(app.categories.where({ organizationId: activeOrganizationId }), readOptions)
 	])
 	const categoriesWithIds = await Promise.all(
-		defaultCategories.map(async (category) => ({
+		// Keep identity independent of translated names and preserve existing seed IDs.
+		defaultCategories.map(async ({ key, ...category }) => ({
 			category,
-			id: await stableUuid(
-				activeOrganizationId,
-				`category:${category.kind}:${category.name.toLowerCase()}`
-			)
+			id: await stableUuid(activeOrganizationId, `category:${category.kind}:${key}`)
 		}))
 	)
 	const missingCategories = categoriesWithIds.filter(
@@ -78,7 +112,12 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 			existingOrganization ??
 			tx.insert(
 				app.organizations,
-				{ name: 'Personal workspace', kind: 'personal', defaultCurrency: 'USD', ownerId: userId },
+				{
+					name: m['defaults.workspace'](),
+					kind: 'personal',
+					defaultCurrency: 'USD',
+					ownerId: userId
+				},
 				{ id: organizationId }
 			)
 		if (memberships.length === 0) {

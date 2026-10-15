@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { m } from './paraglide/messages.js'
 import { ReadTier, Transaction } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import {
@@ -166,6 +167,76 @@ describe('createTransaction normalization', () => {
 })
 
 describe('ensurePersonalWorkspace', () => {
+	it('uses translated starter labels without changing category IDs or persisting seed keys', async () => {
+		const baseline = await starterCategories()
+		// Golden UUIDs from the pre-localization category seed names.
+		expect(baseline.map(({ id }) => id)).toEqual([
+			'9fd2bcfc-cdb4-5276-9fcb-b999077a3109',
+			'192c1d03-fa80-53bd-a950-91db19bfebbe',
+			'd5ea5f9c-6f10-56e9-a544-617ff479d553',
+			'13bc316a-627a-518a-81a8-756454fae082',
+			'65dcd338-f3cb-5e39-a4d1-5d0700b09f3c',
+			'558276d3-f47e-58dc-b3c0-d2a4d09cb2dd',
+			'2ba045d6-cd27-55db-8962-a5b9d1ed2af0',
+			'be552916-de7d-5238-b7f9-1819cd54102c'
+		])
+		vi.spyOn(m, 'defaults.workspace').mockReturnValue(m['labels.workspace_name']())
+		vi.spyOn(m, 'defaults.categories.uncategorized').mockReturnValue(m['labels.category']())
+		vi.spyOn(m, 'defaults.categories.groceries').mockReturnValue(m['labels.tags']())
+		const { db, insert } = setup()
+		db.all.mockResolvedValue([])
+		await ensurePersonalWorkspace(db, userId)
+		expect(insert).toHaveBeenCalledWith(
+			app.organizations,
+			expect.objectContaining({ name: 'Workspace name' }),
+			{ id: expect.any(String) }
+		)
+		const created = insert.mock.calls.filter(([table]) => table === app.categories)
+		expect(created).toHaveLength(8)
+		for (const [, values] of created) expect(values).not.toHaveProperty('key')
+		expect(
+			created.filter(
+				([, values]) =>
+					typeof values === 'object' &&
+					values !== null &&
+					'name' in values &&
+					values.name === 'Category'
+			)
+		).toHaveLength(2)
+		expect(
+			created.some(
+				([, values]) =>
+					typeof values === 'object' &&
+					values !== null &&
+					'name' in values &&
+					values.name === 'Tags'
+			)
+		).toBe(true)
+		// Compare against the same organization namespace, not the new-workspace namespace.
+		const translated = await starterCategories()
+		expect(translated.map(({ id }) => id)).toEqual(baseline.map(({ id }) => id))
+	})
+
+	it('does not recreate or rename stored starters when translated defaults change', async () => {
+		const categories = await starterCategories()
+		vi.spyOn(m, 'defaults.workspace').mockReturnValue(m['labels.workspace_name']())
+		vi.spyOn(m, 'defaults.categories.uncategorized').mockReturnValue(m['labels.category']())
+		vi.spyOn(m, 'defaults.categories.groceries').mockReturnValue(m['labels.tags']())
+		const { db, insert, transaction } = setup()
+		const update = vi.spyOn(transaction, 'update')
+		db.all
+			.mockResolvedValueOnce([{ id: profileId, userId }])
+			.mockResolvedValueOnce([organization])
+			.mockResolvedValueOnce([
+				{ id: 'membership', userId, organizationId: organization.id, profileId }
+			])
+			.mockResolvedValueOnce(categories)
+		await expect(ensurePersonalWorkspace(db, userId)).resolves.toEqual(organization)
+		expect(db.transaction).not.toHaveBeenCalled()
+		expect(insert).not.toHaveBeenCalled()
+		expect(update).not.toHaveBeenCalled()
+	})
+
 	it('creates a profile, owner membership and eight categories for a new workspace', async () => {
 		const { db, insert, wait } = setup()
 		db.all.mockResolvedValue([])

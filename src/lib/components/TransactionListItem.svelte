@@ -17,6 +17,7 @@
 		accountName: string | undefined
 		tagNames?: readonly string[]
 	} = $props()
+	const tags = $derived(new Intl.ListFormat(getLocale(), { style: 'short', type: 'unit' }))
 </script>
 
 <li>
@@ -24,7 +25,7 @@
 		<div class="entry-heading">
 			<div class="classification">
 				<strong>{categoryName ?? m['transactions.category_unavailable']()}</strong>
-				{#if tagNames.length}<span>{tagNames.join(', ')}</span>{/if}
+				{#if tagNames.length}<span>{tags.format(tagNames)}</span>{/if}
 			</div>
 			<span>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span>
 		</div>

@@ -141,3 +141,104 @@ test('mobile sidebar status stays inside the Drawer and is hidden when it closes
 	await open.click()
 	await expect(status).toHaveText('Sync enabled')
 })
+
+test('localized manifest keeps the install URL and declares its language', async ({
+	page,
+	request
+}) => {
+	await page.goto('/')
+	await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+	await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+		'href',
+		'/manifest.webmanifest'
+	)
+	const response = await request.get('/manifest.webmanifest')
+	expect(response.ok()).toBe(true)
+	expect(response.headers()['content-type']).toContain('application/manifest+json')
+	expect(await response.json()).toMatchObject({
+		name: 'Delightful Finance',
+		short_name: 'Delightful',
+		description: 'A local-first personal finance tracker.',
+		lang: 'en',
+		dir: 'ltr',
+		id: '/',
+		start_url: '/',
+		scope: '/'
+	})
+})
+
+test.describe('active application locale', () => {
+	test.use({ locale: 'de-DE', timezoneId: 'America/Los_Angeles' })
+	test('formats category counts, tag summaries and money with the app locale', async ({ page }) => {
+		await page.goto('/accounts/new')
+		await expect(page.getByLabel('Account name', { exact: true })).toBeVisible()
+		await page.evaluate(async () => {
+			const sveltePath = '/node_modules/svelte/src/index-client.js'
+			const categoryPath = '/src/lib/components/CategoryList.svelte'
+			const transactionPath = '/src/lib/components/TransactionListItem.svelte'
+			const { mount }: typeof import('svelte') = await import(sveltePath)
+			const { default: CategoryList }: typeof import('../src/lib/components/CategoryList.svelte') =
+				await import(categoryPath)
+			const {
+				default: TransactionListItem
+			}: typeof import('../src/lib/components/TransactionListItem.svelte') = await import(
+				transactionPath
+			)
+			const target = document.createElement('section')
+			target.id = 'locale-presentation-fixture'
+			document.body.append(target)
+			mount(CategoryList, {
+				target,
+				props: {
+					categories: [
+						{
+							id: 'category',
+							organizationId: 'workspace',
+							name: 'User-owned category',
+							kind: 'expense',
+							isSystem: false
+						}
+					],
+					counts: new Map([['category', { transactions: 1234, tags: 0 }]]),
+					archivableCategoryIds: [],
+					archiving: false,
+					archivingCategoryId: undefined,
+					archivedName: undefined,
+					archiveFailed: false,
+					onArchive: () => {}
+				}
+			})
+			const list = document.createElement('ul')
+			target.append(list)
+			mount(TransactionListItem, {
+				target: list,
+				props: {
+					transaction: {
+						id: 'transaction',
+						organizationId: 'workspace',
+						accountId: 'account',
+						categoryId: 'category',
+						kind: 'expense',
+						amountMinor: 123456,
+						currency: 'USD',
+						bookedOn: '2026-03-10',
+						source: 'manual',
+						memo: 'User-owned memo'
+					},
+					href: '/transactions/transaction',
+					categoryName: 'User-owned category',
+					accountName: 'User-owned account',
+					tagNames: ['Travel', 'Client', 'Project']
+				}
+			})
+		})
+		const fixture = page.locator('#locale-presentation-fixture')
+		const cells = fixture.getByRole('row').nth(1).getByRole('cell')
+		await expect(cells.nth(1)).toHaveText('1,234')
+		await expect(cells.nth(2)).toHaveText('0')
+		await expect(fixture.getByRole('listitem')).toContainText('Travel, Client, Project')
+		await expect(fixture.getByRole('link')).toContainText('$1,234.56')
+		await expect(fixture.getByText('User-owned memo', { exact: true })).toBeVisible()
+		await expect(fixture.getByText('User-owned account', { exact: true })).toBeVisible()
+	})
+})

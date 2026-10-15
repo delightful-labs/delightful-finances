@@ -13,7 +13,6 @@ Reconciled against the implementation, existing tests, and recorded verification
 - **T037 — Sync status:** the compact StatusMessage is adopted in the Drawer footer with translated local/connectivity labels and focused browser coverage. Actual pending/sync completion reporting still needs supported Jazz observability.
 - **T039 — Responsive/accessibility review:** the approved Delightful UI theme and native controls are integrated; complete responsive, keyboard, focus, and interaction-state review.
 - **T040 / T058 — Remaining browser verification:** sync-status coverage depends on T037. Existing org/grant/credential and offline write tests are recorded as passing; authentication network/session failures and remaining offline/PWA review still need verification.
-- **T041 — Localization audit:** Paraglide and locale-aware formatters exist; audit all visible strings and money/date call sites.
 
 ### Verified foundations
 
@@ -119,8 +118,10 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [ ] T039 Apply a coherent responsive visual system with keyboard-accessible interaction states.
 - [ ] T040 Add Playwright coverage for org access boundaries, credential visibility, sync/pending state, and supported offline writes/sync.
   - Partial: role/grant/credential visibility and offline account/category/tag/profile write/sync cases have recorded passing coverage. Remaining: T037 sync-status states, install-prompt/multiple-tab PWA review, and review of the combined offline/access matrix. Authentication failures are T058.
-- [ ] T041 Confirm all user-visible strings use Paraglide and all currency/date display uses locale-aware APIs.
+- [x] T041 Confirm all user-visible strings use Paraglide and all currency/date display uses locale-aware APIs.
+  - Audited on 2026-10-15: page/component labels, titles, feedback, accessibility labels, bootstrap defaults, manifest metadata, and every money/date display. Localized bootstrap names while preserving deterministic seed IDs and existing saved names; moved install metadata to a prerendered Paraglide manifest endpoint at the existing URL; localized category counts and transaction tag-list punctuation with Intl. Existing money/date displays already pass the active locale, with UTC for calendar dates. Static application/service-worker checks pass without warnings. Full build generated the manifest but fails on the unchanged dynamic transaction route inheriting prerender=true without entries. Implementation reviewed and focused tests verified: 88 unit tests and four browser scenarios pass, including translation-driven seed names with original UUIDs/reuse, locale-aware count/tag formatting, manifest metadata/language/install URLs, and existing category/history/currency display regressions. Browser-test TypeScript checks pass. Production manifest cache behavior remains T040/T042 because of the recorded prerender build failure. Details are in plan.md under T041 Localization and Formatting Audit.
 - [ ] T042 Run relevant unit and Playwright suites in CI and confirm all shipped code paths have appropriate coverage.
+  - Build configuration follow-up (2026-10-15): the transaction-detail route now overrides inherited prerendering with prerender=false. Production build passes, generates the localized manifest and service worker, and retains the dynamic detail route. Production direct-detail and offline-manifest browser checks await review of this configuration change.
   - Remaining: add CI execution (with T002), rerun current unit, permission, workspace, auth and PWA suites using their required dev/preview setup, and review shipped-path coverage. Historical focused runs do not constitute final release verification.
 
 ## Deferred Follow-up

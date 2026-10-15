@@ -1,7 +1,9 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"app": {
-		"name": "Delightful Finance"
+		"name": "Delightful Finance",
+		"short_name": "Delightful",
+		"description": "A local-first personal finance tracker."
 	},
 	"workspace": {
 		"loading": "Getting your private workspace ready…",
@@ -11,6 +13,18 @@
 		"name_saved": "Workspace name saved on this device.",
 		"name_required": "Enter a workspace name.",
 		"rename_restricted": "Only workspace owners and admins can change the name."
+	},
+	"defaults": {
+		"workspace": "Personal workspace",
+		"categories": {
+			"uncategorized": "Uncategorized",
+			"groceries": "Groceries",
+			"housing": "Housing",
+			"transport": "Transport",
+			"other_expense": "Other expense",
+			"salary": "Salary",
+			"other_income": "Other income"
+		}
 	},
 	"navigation": {
 		"label": "Main navigation",
