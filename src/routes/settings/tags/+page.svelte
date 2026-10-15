@@ -10,6 +10,7 @@
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
 	import TagForm from '#lib/components/TagForm.svelte'
 	import TagList from '#lib/components/TagList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
@@ -43,10 +44,7 @@
 			: undefined
 	})
 	const canCreate = $derived(
-		membership.current?.organizationId === filters.activeOrganizationId &&
-			(membership.current?.role === 'owner' ||
-				membership.current?.role === 'admin' ||
-				membership.current?.role === 'member')
+		canEditCategoriesAndTags(membership.current, filters.activeOrganizationId)
 	)
 	const availableCategories = $derived(
 		(categories.current ?? [])
@@ -97,6 +95,12 @@
 		key: () => filters.activeOrganizationId,
 		disabled: () => !canCreate
 	})
+	const archiveState = $derived(archive.view.state)
+	const archivedName = $derived(
+		archiveState.matches('success') ? archiveState.context.result : undefined
+	)
+	const archiveFailed = $derived(archiveState.matches('error') || archiveState.matches('invalid'))
+	const archivingTagId = $derived(archiveState.context.validated?.value.tagId)
 	function onArchive(tagId: string) {
 		archive.submitValues({ tagId, organizationId: filters.activeOrganizationId })
 	}
@@ -112,17 +116,15 @@
 	loadingMessage={m['status.loading']({ subject: m['labels.tags']() })}
 	errorMessage={m['errors.load']({ subject: m['labels.tags']() })}
 >
-	{#if filters.activeOrganizationId && Boolean(membership.current)}
+	{#if filters.activeOrganizationId && membership.current}
 		<TagList
 			tags={tags.current ?? []}
 			{categoryNames}
 			canArchive={canCreate}
 			archiving={archive.view.busy}
-			archivingTagId={archive.view.state.context.validated?.value.tagId}
-			archivedName={archive.view.state.matches('success')
-				? archive.view.state.context.result
-				: undefined}
-			archiveFailed={archive.view.state.matches('error') || archive.view.state.matches('invalid')}
+			{archivingTagId}
+			{archivedName}
+			{archiveFailed}
 			{onArchive}
 		/>
 		<TagForm

@@ -50,18 +50,16 @@
 	const categoryNames = $derived(
 		new Map((categories.current ?? []).map((row) => [row.id, row.name]))
 	)
-	const tagNamesByTransaction = $derived.by(() => {
-		const names = new Map((tags.current ?? []).map((tag) => [tag.id, tag.name]))
-		const result = new Map<string, string[]>()
-		for (const link of links.current ?? []) {
-			const name = names.get(link.tagId)
-			if (!name) continue
-			const selected = result.get(link.transactionId) ?? []
-			if (!selected.includes(name)) selected.push(name)
-			result.set(link.transactionId, selected)
-		}
-		return result
-	})
+	const tagNamesByTransaction = $derived(
+		(links.current ?? []).reduce((result, link) => {
+			const name = (tags.current ?? []).find((tag) => tag.id === link.tagId)?.name
+			if (name) {
+				const names = result.get(link.transactionId) ?? []
+				result.set(link.transactionId, [...new Set([...names, name])])
+			}
+			return result
+		}, new Map<string, string[]>())
+	)
 	const groups = $derived(groupTransactionsByDate(visibleTransactions))
 </script>
 

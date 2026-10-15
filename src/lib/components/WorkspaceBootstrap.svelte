@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { useMachine } from '@xstate/svelte'
+	import { createWorkspaceBootstrapMachine } from '#lib/machines/workspace-bootstrap.js'
 	import { app } from '#lib/schema.js'
 	import { QuerySubscription } from 'jazz-tools/svelte'
-	import { ensurePersonalWorkspace } from '#lib/data.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext, type Snippet } from 'svelte'
@@ -13,27 +14,22 @@
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const session = fromStore(getJazzSession())
 	const db = getDb()
-	let ready = $state(false)
-	let setupError = $state(false)
-	let attempt = 0
+	const { snapshot, send } = useMachine(createWorkspaceBootstrapMachine(db))
+	const workspaceState = fromStore(snapshot)
+	const ready = $derived(workspaceState.current.matches('ready'))
+	const setupError = $derived(workspaceState.current.matches('error'))
+	let previousUserId: string | null = null
+	let sessionWasReady = false
+
 	$effect(() => {
-		if (session.current.status !== 'ready' || !session.current.account) {
-			attempt += 1
-			ready = false
-			setupError = false
-			return
-		}
-		const currentAttempt = ++attempt
-		const userId = session.current.account.id
-		ready = false
-		setupError = false
-		void ensurePersonalWorkspace(db, userId)
-			.then(() => {
-				if (currentAttempt === attempt) ready = true
-			})
-			.catch(() => {
-				if (currentAttempt === attempt) setupError = true
-			})
+		const account = session.current.account
+		const userId = session.current.status === 'ready' && account ? account.id : null
+		if (userId === previousUserId && (userId !== null || !sessionWasReady)) return
+
+		previousUserId = userId
+		sessionWasReady = userId !== null
+		if (userId) send({ type: 'SESSION_READY', userId })
+		else send({ type: 'SESSION_UNAVAILABLE' })
 	})
 
 	const organizationQuery = new QuerySubscription(() =>
