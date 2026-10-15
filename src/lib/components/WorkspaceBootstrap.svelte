@@ -5,7 +5,7 @@
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
-	import { getContext, type Snippet } from 'svelte'
+	import { getContext, onMount, type Snippet } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import AppShell from './AppShell.svelte'
 	import JazzStartup from './JazzStartup.svelte'
@@ -14,6 +14,22 @@
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const session = fromStore(getJazzSession())
 	const db = getDb()
+	const syncConfigured = Boolean(db.getConfig().serverUrl)
+	let browserOffline = $state(false)
+
+	// Browser connectivity is a hint, not confirmation of server delivery.
+	onMount(() => {
+		function updateConnectivity() {
+			browserOffline = !navigator.onLine
+		}
+		updateConnectivity()
+		window.addEventListener('online', updateConnectivity)
+		window.addEventListener('offline', updateConnectivity)
+		return () => {
+			window.removeEventListener('online', updateConnectivity)
+			window.removeEventListener('offline', updateConnectivity)
+		}
+	})
 	const { snapshot, send } = useMachine(createWorkspaceBootstrapMachine(db))
 	const workspaceState = fromStore(snapshot)
 	const ready = $derived(workspaceState.current.matches('ready'))
@@ -86,6 +102,8 @@
 {#if ready}
 	<AppShell
 		{organizations}
+		{syncConfigured}
+		{browserOffline}
 		accounts={activeAccounts}
 		organizationId={filters.activeOrganizationId}
 		selectedAccountIds={filters.selectedAccountIds}

@@ -63,7 +63,9 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await expect(page.getByRole('alert')).toHaveText('Enter a workspace name.')
 	await name.fill('  Household  ')
 	await save.click()
-	await expect(page.getByRole('status')).toHaveText('Workspace name saved on this device.')
+	await expect(page.getByRole('main').getByRole('status')).toHaveText(
+		'Workspace name saved on this device.'
+	)
 	await expect(page.getByLabel('Workspace', { exact: true }).locator('option:checked')).toHaveText(
 		'Household'
 	)
@@ -132,7 +134,7 @@ test('account list shows an empty result and newly created accounts', async ({ p
 	await page.getByLabel('Account name').fill('Everyday checking')
 	await page.getByLabel('Account type').selectOption('bank')
 	await page.getByRole('button', { name: 'Add an account' }).click()
-	await expect(page.getByRole('status')).toContainText('Everyday checking')
+	await expect(page.getByRole('main').getByRole('status')).toContainText('Everyday checking')
 	await page.getByRole('navigation').getByRole('link', { name: 'Accounts', exact: true }).click()
 	await expect(main.getByRole('cell', { name: 'Everyday checking', exact: true })).toBeVisible()
 	await expect(main.getByRole('cell', { name: 'Bank', exact: true })).toBeVisible()
@@ -1054,7 +1056,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await expect(name).toBeEditable()
 				await name.fill('Admin renamed workspace')
 				await save.click()
-				await expect(subject.getByRole('status')).toHaveText('Workspace name saved on this device.')
+				await expect(subject.getByRole('main').getByRole('status')).toHaveText(
+					'Workspace name saved on this device.'
+				)
 				await expect(page.getByLabel('Workspace name')).toHaveValue('Admin renamed workspace')
 			} else {
 				await expect(name).not.toBeEditable()

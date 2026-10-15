@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Drawer, Navigation, Select, Checkbox } from 'delightful-ui'
+	import { Button, Drawer, Navigation, Select, Checkbox, StatusMessage } from 'delightful-ui'
 	import { onMount, tick, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
 	import type { Account, Organization } from '#lib/schema.js'
@@ -8,6 +8,8 @@
 
 	let {
 		children,
+		syncConfigured,
+		browserOffline,
 		organizations,
 		accounts,
 		organizationId,
@@ -19,6 +21,8 @@
 		onAllAccountsChange
 	}: {
 		children: Snippet
+		syncConfigured: boolean
+		browserOffline: boolean
 		organizations: readonly Organization[]
 		accounts: readonly Account[]
 		organizationId: string | null
@@ -188,6 +192,16 @@
 					>{m['actions.add_account']()}</a
 				>
 			</section>
+			<div class="sidebar-status">
+				<StatusMessage
+					compact
+					text={!syncConfigured
+						? m['database.local']()
+						: browserOffline
+							? m['database.offline']()
+							: m['database.sync_enabled']()}
+				/>
+			</div>
 		</div>
 	</Drawer>
 	<main>
@@ -222,7 +236,17 @@
 		min-height: 100vh;
 	}
 
-	.sidebar-content,
+	.sidebar-content {
+		display: flex;
+		flex-direction: column;
+		min-block-size: 100%;
+		gap: var(--dui-space-sm, 1rem);
+	}
+
+	.sidebar-status {
+		margin-block-start: auto;
+	}
+
 	section,
 	section ul {
 		display: grid;

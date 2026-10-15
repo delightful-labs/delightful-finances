@@ -8,7 +8,7 @@ async function createAccount(page: Page, name: string) {
 	await page.getByLabel('Account name').fill(name)
 	await page.getByLabel('Account type').selectOption('bank')
 	await page.getByRole('button', { name: 'Add an account' }).click()
-	await expect(page.getByRole('status')).toContainText(name)
+	await expect(page.getByRole('main').getByRole('status')).toContainText(name)
 }
 
 async function restoreAccount(page: Page, phrase: string) {
@@ -139,7 +139,9 @@ async function saveDisplayName(page: Page, name: string) {
 	await expect(page.getByLabel('Display name', { exact: true })).toBeEnabled()
 	await page.getByLabel('Display name', { exact: true }).fill(name)
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('status')).toHaveText('Display name saved on this device.')
+	await expect(page.getByRole('main').getByRole('status')).toHaveText(
+		'Display name saved on this device.'
+	)
 }
 
 test('profile name trims, survives reload, and can be cleared', async ({ page }) => {
@@ -149,7 +151,9 @@ test('profile name trims, survives reload, and can be cleared', async ({ page })
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
 	await page.getByLabel('Display name', { exact: true }).fill('  ')
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('status')).toHaveText('Display name saved on this device.')
+	await expect(page.getByRole('main').getByRole('status')).toHaveText(
+		'Display name saved on this device.'
+	)
 	await page.reload()
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
 })
@@ -275,7 +279,7 @@ async function uploadAvatar(
 		.getByRole('button', { name: replace ? 'Replace avatar' : 'Upload avatar', exact: true })
 		.click()
 	await expect(
-		page.getByRole('status').filter({ hasText: 'Avatar saved on this device.' })
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved on this device.' })
 	).toHaveCount(1)
 }
 

@@ -20,7 +20,7 @@ test('loads an unvisited page and reloads its shell offline', async ({ page, con
 	await page.getByLabel('Account name').fill('Offline checking')
 	await page.getByLabel('Account type').selectOption('bank')
 	await page.getByRole('button', { name: 'Add an account' }).click()
-	await expect(page.getByRole('status')).toContainText('Offline checking')
+	await expect(page.getByRole('main').getByRole('status')).toContainText('Offline checking')
 	await context.setOffline(true)
 	const response = await page.goto('/expenses/new')
 	expect(response?.fromServiceWorker()).toBe(true)
