@@ -71,6 +71,7 @@
 		"add_expense": "Add expense",
 		"add_income": "Add income",
 		"save": "Save",
+		"retry": "Try again",
 		"add_category": "Add category",
 		"archive_category": "Archive {name}",
 		"add_tag": "Add tag",
@@ -145,6 +146,7 @@
 		"description": "Enter the recovery phrase for an existing local-first account.",
 		"recovery_phrase": "Recovery phrase",
 		"restore_error": "The account could not be restored. Check the recovery phrase and try again.",
+		"session_error": "The account could not be restored. Please try again.",
 		"restoring": "Restoring account…",
 		"restore_action": "Restore account"
 	},
@@ -164,7 +166,7 @@
 		"local": "Working locally",
 		"offline": "Offline — working locally",
 		"sync_enabled": "Sync enabled",
-		"start_error": "Your finances could not be opened. Refresh the page to try again."
+		"start_error": "Your finances could not be opened. Try again."
 	},
 	"categories": {
 		"saved": "Category {name} saved.",

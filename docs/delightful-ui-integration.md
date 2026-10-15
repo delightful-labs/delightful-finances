@@ -61,3 +61,11 @@ The Jazz startup fallback uses the new LoadingScreen composition for loading/err
 Sidebar presentation revision: the external Open navigation button is hidden while open; the Drawer has one compact × close button with a translated accessible label. Its navigation heading is visually hidden while retaining the accessible name. Drawer retains its inert visual panel through exit motion so closing reverses opening; reduced-motion preferences skip transitions. Inline focus restoration waits for the external trigger to be revealed. This revision was visually approved and covered by the focused sidebar browser scenarios.
 
 Sidebar height/layout revision: the Open navigation control now lives in a persistent main-content toolbar. While the drawer is open, the toolbar is invisible/inert but retains its geometry, eliminating vertical jumps. The drawer spans the viewport height (sticky inline, fixed overlay), with its body scrolling beneath a stationary close control. This refinement was visually approved; the focused sidebar browser scenarios pass.
+
+## Current local package (2026-10-15)
+
+Finance uses `vendor/delightful-ui-0.0.24-navigation-compact-status.tgz`, built from DUI’s `main` at `756bdbb`. That commit is pushed to GitHub and includes TopNavigation, the inline Drawer, and compact StatusMessage support.
+
+The archive was built with `pnpm package` and `pnpm pack`. Finance keeps using a local file dependency.
+
+Finance and DUI static checks pass with no errors or warnings. DUI packaging, 15 focused unit tests, and eight Drawer browser tests pass. The Drawer tests now match its current API; those test changes are still uncommitted and do not affect the package.

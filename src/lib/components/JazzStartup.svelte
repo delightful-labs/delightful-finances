@@ -1,12 +1,21 @@
 <script lang="ts">
-	import { LoadingScreen } from 'delightful-ui'
+	import { Button, LoadingScreen } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 
-	let { error = false, workspace = false }: { error?: boolean; workspace?: boolean } = $props()
+	let {
+		error = false,
+		workspace = false,
+		onRetry
+	}: {
+		error?: boolean
+		workspace?: boolean
+		onRetry?: () => void
+	} = $props()
 </script>
 
-<main>
+<main class:recoverable={error && Boolean(onRetry)}>
 	<LoadingScreen
+		style={error && onRetry ? '--dui-loading-screen-min-height: auto' : undefined}
 		variant={error ? 'error' : 'loading'}
 		text={workspace && error
 			? m['workspace.setup_error']()
@@ -16,4 +25,17 @@
 					? m['database.start_error']()
 					: m['database.starting']()}
 	/>
+	{#if error && onRetry}
+		<Button type="button" onclick={onRetry}>{m['actions.retry']()}</Button>
+	{/if}
 </main>
+
+<style>
+	.recoverable {
+		min-block-size: 100dvh;
+		display: grid;
+		align-content: center;
+		justify-items: center;
+		gap: var(--dui-space-sm, 1rem);
+	}
+</style>

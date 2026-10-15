@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
+import { generateAuthSecret } from 'jazz-tools'
 
 async function createAccount(page: Page, name: string) {
 	await page.goto('/accounts/new')
@@ -421,3 +422,223 @@ declare global {
 		avatarRevokedUrls: string[]
 	}
 }
+
+declare global {
+	interface Window {
+		authFailureTest: {
+			shutdownAttempts: number
+			storageFailures: number
+			releaseSharedClient?: () => Promise<void>
+		}
+	}
+}
+
+async function currentIdentity(page: Page) {
+	return page.evaluate(async () => {
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		return getCurrentJazzSession()?.getSnapshot().account?.id
+	})
+}
+
+test('startup network failures can retry repeatedly without replacing the saved identity', async ({
+	page,
+	context
+}) => {
+	await createAccount(page, 'Network retained checking')
+	const identity = await currentIdentity(page)
+	expect(identity).toBeTruthy()
+	let blocked = 0
+	let failing = true
+	await context.route(/\.wasm(?:\?|$)/, async (route) => {
+		if (failing) {
+			blocked += 1
+			await route.abort('internetdisconnected')
+		} else await route.continue()
+	})
+	await page.reload()
+	const retry = page.getByRole('button', { name: 'Try again', exact: true })
+	await expect(retry).toBeVisible()
+	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened. Try again.')
+	expect(blocked).toBeGreaterThan(0)
+	await retry.click()
+	await expect(retry).toBeVisible()
+	failing = false
+	await retry.click()
+	await expect(page.getByRole('button', { name: 'Toggle navigation', exact: true })).toBeVisible()
+	expect(await currentIdentity(page)).toBe(identity)
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('cell', { name: 'Network retained checking', exact: true })
+	).toBeVisible()
+})
+
+test('restore session failures retain identity and retry without exposing the recovery phrase', async ({
+	page
+}) => {
+	await createAccount(page, 'Session retained checking')
+	const identity = await currentIdentity(page)
+	await page.goto('/account')
+	await page.getByRole('button', { name: 'Show recovery phrase', exact: true }).click()
+	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+	await page.getByRole('button', { name: 'Close', exact: true }).click()
+	const messages: string[] = []
+	const urls: string[] = []
+	page.on('console', (message) => messages.push(message.text()))
+	page.on('pageerror', (error) => messages.push(error.message))
+	page.on('request', (request) => urls.push(request.url()))
+	await page.goto('/login')
+	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+	await page.evaluate(async () => {
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const client = getCurrentJazzSession()?.getSnapshot().client
+		if (!client) throw new Error('Test session is not ready.')
+		window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
+		const shutdown = client.shutdown.bind(client)
+		client.shutdown = async (options) => {
+			window.authFailureTest.shutdownAttempts += 1
+			if (window.authFailureTest.shutdownAttempts <= 2)
+				throw new Error('Private simulated shutdown failure')
+			return shutdown(options)
+		}
+	})
+	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	const retry = page.getByRole('button', { name: 'Try again', exact: true })
+	await expect(retry).toBeVisible()
+	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened. Try again.')
+	expect(await currentIdentity(page)).toBe(identity)
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
+	await retry.click()
+	await expect.poll(() => page.evaluate(() => window.authFailureTest.shutdownAttempts)).toBe(2)
+	await expect(retry).toBeVisible()
+	await retry.click()
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+	expect(await currentIdentity(page)).toBe(identity)
+	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+	await expect(page.getByRole('alert')).toHaveCount(0)
+	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await expect(page).toHaveURL('/')
+	expect(await currentIdentity(page)).toBe(identity)
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('cell', { name: 'Session retained checking', exact: true })
+	).toBeVisible()
+	for (const value of [...messages, ...urls]) {
+		expect(value.includes(phrase), 'Recovery phrase must not appear in diagnostics or URLs').toBe(
+			false
+		)
+		expect(
+			value.includes(encodeURIComponent(phrase)),
+			'Encoded phrase must not appear in URLs'
+		).toBe(false)
+		expect(
+			value.includes('Private simulated shutdown failure'),
+			'Raw SDK failures must not be rendered or logged'
+		).toBe(false)
+	}
+})
+
+test('session retry completes a selected identity after local selection storage fails', async ({
+	page
+}) => {
+	await createAccount(page, 'Previous selection checking')
+	const previous = await currentIdentity(page)
+	const phrase = RecoveryPhrase.fromSecret(generateAuthSecret())
+	await page.goto('/login')
+	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+	await page.evaluate(() => {
+		window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
+		const setItem = Storage.prototype.setItem
+		Storage.prototype.setItem = function (key, value) {
+			if (key.startsWith('jazz-account-selection-v1:')) {
+				Storage.prototype.setItem = setItem
+				window.authFailureTest.storageFailures += 1
+				throw new DOMException('Simulated local selection failure', 'QuotaExceededError')
+			}
+			return setItem.call(this, key, value)
+		}
+	})
+	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	const retry = page.getByRole('button', { name: 'Try again', exact: true })
+	await expect(retry).toBeVisible()
+	expect(await page.evaluate(() => window.authFailureTest.storageFailures)).toBe(1)
+	const selected = await currentIdentity(page)
+	expect(selected).toBeTruthy()
+	expect(selected).not.toBe(previous)
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
+	await retry.click()
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+	expect(await currentIdentity(page)).toBe(selected)
+	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+	await page.reload()
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+	expect(await currentIdentity(page)).toBe(selected)
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('cell', { name: 'Previous selection checking', exact: true })
+	).toHaveCount(0)
+})
+
+test('recoverable restore failure keeps the original client and generic feedback after remount', async ({
+	page
+}) => {
+	await createAccount(page, 'Recoverable checking')
+	const identity = await currentIdentity(page)
+	await page.goto('/account')
+	await page.getByRole('button', { name: 'Show recovery phrase', exact: true }).click()
+	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+	await page.getByRole('button', { name: 'Close', exact: true }).click()
+	await page.goto('/login')
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+	await page.evaluate(async () => {
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const snapshot = getCurrentJazzSession()?.getSnapshot()
+		if (!snapshot?.client || !snapshot.account) throw new Error('Test session is not ready.')
+		// Use the same public SDK module URL as the application to share its client registry.
+		const moduleSource = await (await fetch(sessionPath)).text()
+		const sdkPath = moduleSource.match(/from\s*['"]([^'"]*jazz-tools[^'"]*)['"]/)?.[1]
+		if (!sdkPath) throw new Error('Could not find the application SDK module.')
+		const { createJazzClient }: typeof import('jazz-tools/svelte') = await import(sdkPath)
+		const config = snapshot.client.db.getConfig()
+		if (!config.serverUrl) throw new Error('Test database URL is missing.')
+		const holder = await createJazzClient({
+			appId: config.appId,
+			serverUrl: config.serverUrl,
+			account: snapshot.account
+		})
+		window.authFailureTest = {
+			shutdownAttempts: 0,
+			storageFailures: 0,
+			releaseSharedClient: () => holder.shutdown()
+		}
+	})
+	try {
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+		await expect(page.getByRole('alert')).toHaveText(
+			'The account could not be restored. Please try again.'
+		)
+		expect(await currentIdentity(page)).toBe(identity)
+		expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+		await expect(page.getByRole('button', { name: 'Restore account', exact: true })).toBeEnabled()
+	} finally {
+		await page.evaluate(async () => {
+			await window.authFailureTest.releaseSharedClient?.()
+		})
+	}
+	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await expect(page).toHaveURL('/')
+	expect(await currentIdentity(page)).toBe(identity)
+	await page.goto('/accounts')
+	await expect(page.getByRole('cell', { name: 'Recoverable checking', exact: true })).toBeVisible()
+})

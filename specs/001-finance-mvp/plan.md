@@ -197,3 +197,24 @@ Local preview setup matters: FINANCE_PREVIEW disables the Jazz development plugi
 ### Multi-tab service-worker verification (2026-10-15)
 
 All six current production-preview PWA scenarios pass. The additional update test opens two tabs with separate unsaved account drafts, installs a worker update, and checks unchanged controllers, no main-frame navigations, and retained drafts in both tabs. Closing the first tab leaves the update installed/waiting and the second draft/controller intact. After the second tab closes, the new worker activates; a reopened tab is controlled by the active worker with no waiting update. No production implementation change was needed. As in the existing update test, the fixture changes only generated worker bytes and restores them in finally; it verifies lifecycle behavior rather than a full asset-version deployment or cache-generation replacement. Browser-test TypeScript and diff checks pass. Native installation prompts remain unverified.
+
+## T058 Authentication failure handling (2026-10-15)
+
+Startup and session errors now show a translated retry action. Initial startup and session recovery share an XState machine with waiting, starting, ready, and error states. It ignores duplicate retries while starting and reuses the existing session. Jazz still owns account selection and recovery.
+
+The restore form keeps error feedback when the SDK remounts it and prevents duplicate submissions. Recovery phrases stay within the form and restore operation. Raw SDK errors are not shown to users or stored in the machine.
+
+Retry opens the account selected by the SDK. Failures before selection changes preserve the original account; failures after selection changes recover the selected account.
+
+After implementation review, all 14 focused unit tests and 15 authentication browser tests pass. Coverage includes startup failure and retry, repeated failures, session reuse, malformed phrases, successful restoration, profile/avatar behavior, and offline avatars. Four browser failure cases verify:
+
+- Blocked startup resources can be retried without losing the saved identity or data.
+- Repeated shutdown failures show generic feedback and preserve the original identity.
+- A storage failure after account selection recovers the selected identity.
+- A shared-client shutdown error keeps the existing session usable; restoration succeeds after the extra client is released.
+
+Browser-test TypeScript checks pass. Failure tests also check that recovery phrases are absent from captured diagnostics and request URLs.
+
+### DUI package update (2026-10-15)
+
+The compact StatusMessage type error is resolved. Finance uses a local archive built from DUI’s pushed `main` commit `756bdbb`. Finance and DUI static checks pass with no errors or warnings. DUI’s updated Drawer tests also pass. Package details are in `docs/delightful-ui-integration.md`. T042 CI and release verification remains open.

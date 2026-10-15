@@ -2,20 +2,17 @@
 	import 'delightful-ui/theme.css'
 	import { PUBLIC_JAZZ_APP_ID, PUBLIC_JAZZ_SERVER_URL } from '$app/env/public'
 	import { onMount, setContext, type Snippet } from 'svelte'
-	import {
-		JazzSessionProvider,
-		type JazzClient,
-		type JazzSession,
-		type JazzSessionConfig
-	} from 'jazz-tools/svelte'
+	import { useMachine } from '@xstate/svelte'
+	import { fromStore } from 'svelte/store'
+	import { createSessionStartupMachine } from '#lib/machines/session-startup.js'
+	import { JazzSessionProvider, type JazzSessionConfig } from 'jazz-tools/svelte'
 	import JazzStartup from '#lib/components/JazzStartup.svelte'
+	import SessionStartup from '#lib/components/SessionStartup.svelte'
 	import WorkspaceBootstrap from '#lib/components/WorkspaceBootstrap.svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { getCurrentJazzSession, getOrCreateJazzSession } from '#lib/jazz-session.js'
 
 	let { children }: { children: Snippet } = $props()
-	let jazzSession = $state.raw<JazzSession<JazzClient> | undefined>(getCurrentJazzSession())
-	let sessionError = $state(false)
 	const financeFilters = $state<FinanceFilters>({
 		activeOrganizationId: null,
 		selectedAccountIds: null
@@ -29,15 +26,17 @@
 		initial: 'local-first'
 	} satisfies JazzSessionConfig
 
-	onMount(() => {
-		void getOrCreateJazzSession(jazzConfig)
-			.then((session) => (jazzSession = session))
-			.catch(() => (sessionError = true))
-	})
+	const { snapshot, send } = useMachine(
+		createSessionStartupMachine(() => getOrCreateJazzSession(jazzConfig), getCurrentJazzSession())
+	)
+	const startupState = fromStore(snapshot)
+	const jazzSession = $derived(startupState.current.context.result)
+
+	onMount(() => send({ type: 'START' }))
 </script>
 
 {#snippet startup()}
-	<JazzStartup error={sessionError} />
+	<SessionStartup />
 {/snippet}
 
 {#if jazzSession}
@@ -45,5 +44,8 @@
 		<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
 	</JazzSessionProvider>
 {:else}
-	<JazzStartup error={sessionError} />
+	<JazzStartup
+		error={startupState.current.matches('error')}
+		onRetry={() => send({ type: 'RETRY' })}
+	/>
 {/if}

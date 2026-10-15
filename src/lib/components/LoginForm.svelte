@@ -5,10 +5,12 @@
 	let {
 		restoring,
 		restoreError,
+		sessionError = false,
 		onsubmit
 	}: {
 		restoring: boolean
 		restoreError: boolean
+		sessionError?: boolean
 		onsubmit: (event: SubmitEvent) => Promise<void>
 	} = $props()
 </script>
@@ -21,10 +23,11 @@
 		id="recovery-phrase"
 		name="recoveryPhrase"
 		rows={4}
+		disabled={restoring}
 		required
 	></Textarea>
-	{#if restoreError}
-		<p role="alert">{m['login.restore_error']()}</p>
+	{#if sessionError || restoreError}
+		<p role="alert">{restoreError ? m['login.restore_error']() : m['login.session_error']()}</p>
 	{/if}
 	<Button type="submit" disabled={restoring}>
 		{restoring ? m['login.restoring']() : m['login.restore_action']()}

@@ -12,7 +12,7 @@ Reconciled against the implementation, existing tests, and recorded verification
 - **T002 / T042 — CI and release verification:** test tooling exists, but there is no GitHub Actions workflow. Configure CI, run the relevant suites against the same current revision, and close remaining coverage gaps.
 - **T037 — Sync status:** the compact StatusMessage is adopted in the Drawer footer with translated local/connectivity labels and focused browser coverage. Actual pending/sync completion reporting still needs supported Jazz observability.
 - **T039 — Responsive/accessibility review:** the approved Delightful UI theme and native controls are integrated; complete responsive, keyboard, focus, and interaction-state review.
-- **T040 / T058 — Remaining browser verification:** sync-status coverage depends on T037. Existing org/grant/credential and offline write tests are recorded as passing; authentication network/session failures and remaining offline/PWA review still need verification.
+- **T040 — Remaining browser verification:** sync-status coverage depends on T037. Authentication network/session failure and retry coverage is now verified under T058. Remaining: native installation-prompt review and the combined offline/access matrix.
 
 ### Verified foundations
 
@@ -64,7 +64,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 ## Phase 3: Authentication and Personal Organization
 
 - [x] T016 Wire Jazz authentication and app session state.
-  - Verified: shared local-first session, restore flow, malformed recovery phrases, and cross-device recovery have passing authentication coverage. Network/session failure coverage is tracked separately in T058.
+  - Verified: shared local-first session, restore flow, malformed recovery phrases, and cross-device recovery have passing authentication coverage. Network/session failure and retry coverage is verified separately in T058.
 - [x] T017 Create/reuse a profile, personal organization, and owner membership on first login.
   - Verified: bootstrap idempotency, reload/recovery reuse, profile linkage/repair, local persistence, and existing-workspace isolation have unit/browser coverage (T020/T050).
 - [x] T018 Seed protected Uncategorized expense and income categories for each new organization.
@@ -117,7 +117,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] T038 Complete PWA offline shell behavior and ensure cache rules do not conflict with Jazz data.
 - [ ] T039 Apply a coherent responsive visual system with keyboard-accessible interaction states.
 - [ ] T040 Add Playwright coverage for org access boundaries, credential visibility, sync/pending state, and supported offline writes/sync.
-  - Partial: role/grant/credential visibility and offline account/category/tag/profile write/sync cases have recorded passing coverage. All six current production-preview PWA browser checks pass, including a two-tab update lifecycle: drafts/controllers remain intact while waiting, closing one tab does not activate the update, closing the last controlled tab activates it, and a reopened tab uses the active worker. The generated worker fixture is restored after the test; production code is unchanged. Remaining: T037 sync-status states, install-prompt review, and review of the combined offline/access matrix. Authentication failures are T058.
+  - Partial: role/grant/credential visibility and offline account/category/tag/profile write/sync cases have recorded passing coverage. All six current production-preview PWA browser checks pass, including a two-tab update lifecycle: drafts/controllers remain intact while waiting, closing one tab does not activate the update, closing the last controlled tab activates it, and a reopened tab uses the active worker. The generated worker fixture is restored after the test; production code is unchanged. Remaining: T037 sync-status states, install-prompt review, and review of the combined offline/access matrix. Authentication failures are verified under T058.
 - [x] T041 Confirm all user-visible strings use Paraglide and all currency/date display uses locale-aware APIs.
   - Audited on 2026-10-15: page/component labels, titles, feedback, accessibility labels, bootstrap defaults, manifest metadata, and every money/date display. Localized bootstrap names while preserving deterministic seed IDs and existing saved names; moved install metadata to a prerendered Paraglide manifest endpoint at the existing URL; localized category counts and transaction tag-list punctuation with Intl. Existing money/date displays already pass the active locale, with UTC for calendar dates. Static application/service-worker checks pass without warnings. Full build generated the manifest but fails on the unchanged dynamic transaction route inheriting prerender=true without entries. Implementation reviewed and focused tests verified: 88 unit tests and four browser scenarios pass, including translation-driven seed names with original UUIDs/reuse, locale-aware count/tag formatting, manifest metadata/language/install URLs, and existing category/history/currency display regressions. Browser-test TypeScript checks pass. Follow-up production verification now passes for the manifest cache and transaction-detail route; see T042 notes. Details are in plan.md under T041 Localization and Formatting Audit.
 - [ ] T042 Run relevant unit and Playwright suites in CI and confirm all shipped code paths have appropriate coverage.
@@ -164,7 +164,8 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 ## Remaining Authentication Verification
 
-- [ ] T058 After reviewing the relevant implementation, add/run authentication network/session failure and retry coverage without replacing the active identity or exposing recovery phrases. Invalid phrase validation and successful recovery are already covered by T016/T050.
+- [x] T058 After reviewing the relevant implementation, add/run authentication network/session failure and retry coverage without replacing the active identity or exposing recovery phrases. Invalid phrase validation and successful recovery are already covered by T016/T050.
+  - Verified 2026-10-15: startup and session errors offer retry through a shared XState machine. Restore feedback survives remounts; duplicate submissions/retries are blocked. Jazz owns identity selection and recovery. All 14 focused unit tests and 15 authentication browser tests pass, covering startup/network failures, repeated shutdown failures, selection-storage failures, shared-client errors, and existing recovery/profile flows. Recovery phrases stay out of error output, diagnostics, and URLs. Browser-test TypeScript and Finance static checks pass. See plan.md for details.
 
 ## Delightful UI component adoption, second review batch
 
