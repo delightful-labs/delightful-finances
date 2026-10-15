@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from 'delightful-ui'
+	import { Button, InputImage, StatusMessage } from 'delightful-ui'
 	import type { z } from 'zod'
 	import { avatarMimeType, type profileAvatarFormSchema } from '#lib/validation/identity.js'
 	import type { FormController } from '#lib/forms.svelte.js'
@@ -48,16 +48,16 @@
 		onerror={() => (imageFailed = true)}
 	/>
 {:else if imageFailed}
-	<p role="alert">{m['profile.avatar_invalid']()}</p>
+	<StatusMessage variant="error" text={m['profile.avatar_invalid']()} />
 {/if}
 {#key profileId}
 	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
 		{#snippet fields(view)}
 			<input type="hidden" name="action" value="upload" />
-			<label for="profile-avatar">{m['labels.avatar']()}</label>
-			<input
+			<InputImage
+				label={m['labels.avatar']()}
+				removeLabel={m['actions.clear_selected_image']()}
 				id="profile-avatar"
-				type="file"
 				name="file"
 				accept={avatarMimeType.options.join(',')}
 				aria-describedby="avatar-help"
@@ -81,11 +81,11 @@
 		{/snippet}
 		{#snippet feedback(view)}
 			{#if view.state.matches('success')}
-				<p role="status">{m['profile.avatar_saved']()}</p>
+				<StatusMessage variant="success" text={m['profile.avatar_saved']()} />
 			{:else if view.state.matches('invalid')}
-				<p role="alert">{m['profile.avatar_invalid']()}</p>
+				<StatusMessage variant="error" text={m['profile.avatar_invalid']()} />
 			{:else if view.state.matches('error')}
-				<p role="alert">{m['errors.save']({ subject: m['labels.avatar']() })}</p>
+				<StatusMessage variant="error" text={m['errors.save']({ subject: m['labels.avatar']() })} />
 			{/if}
 		{/snippet}
 	</FormContent>

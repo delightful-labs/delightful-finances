@@ -5,7 +5,6 @@
 	},
 	"workspace": {
 		"loading": "Getting your private workspace ready…",
-		"loading_description": "Setting up your profile and starter categories.",
 		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
 		"label": "Workspace",
 		"select_workspace": "Select a workspace.",
@@ -17,7 +16,9 @@
 		"label": "Main navigation",
 		"overview": "Overview",
 		"account_recovery": "Account recovery",
-		"login": "Restore account"
+		"login": "Restore account",
+		"open": "Open navigation",
+		"close": "Close navigation"
 	},
 	"labels": {
 		"accounts": "Accounts",
@@ -61,7 +62,8 @@
 		"archive_tag": "Archive {name}",
 		"upload_avatar": "Upload avatar",
 		"replace_avatar": "Replace avatar",
-		"remove_avatar": "Remove avatar"
+		"remove_avatar": "Remove avatar",
+		"clear_selected_image": "Clear selected image"
 	},
 	"accounts": {
 		"type": {
@@ -114,7 +116,14 @@
 		"created_by": "Created by",
 		"created_at": "Created at",
 		"updated_by": "Last edited by",
-		"updated_at": "Last edited at"
+		"updated_at": "Last edited at",
+		"account_invalid": "Select an available account.",
+		"category_invalid": "Select a category for this transaction type.",
+		"amount_invalid": "Enter a non-negative USD amount with up to two decimal places.",
+		"date_invalid": "Enter a valid transaction date.",
+		"payment_invalid": "Select a payment method.",
+		"check_number_invalid": "Enter the check number.",
+		"check_date_invalid": "Enter a valid check date."
 	},
 	"login": {
 		"heading": "Restore an account",
@@ -136,14 +145,8 @@
 		"error": "Your recovery phrase could not be loaded. Try again."
 	},
 	"database": {
-		"starting": {
-			"heading": "Starting database",
-			"description": "Preparing your local database."
-		},
-		"start_error": {
-			"heading": "Database could not start",
-			"description": "Refresh the page to try again."
-		}
+		"starting": "Loading your finances…",
+		"start_error": "Your finances could not be opened. Refresh the page to try again."
 	},
 	"categories": {
 		"saved": "Category {name} saved.",

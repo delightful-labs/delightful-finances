@@ -1,5 +1,14 @@
 <script lang="ts">
-	import { Button, InputText, InputDate, Select, Textarea } from 'delightful-ui'
+	import {
+		Button,
+		InputText,
+		InputDate,
+		Select,
+		Textarea,
+		InputCurrency,
+		FieldFeedback,
+		StatusMessage
+	} from 'delightful-ui'
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category } from '#lib/schema.js'
@@ -34,6 +43,15 @@
 	function syncPaymentMethod(element: HTMLSelectElement) {
 		showCheckFields = element.value === 'check'
 	}
+	// Finance maps validation paths to translated messages; the UI stays independent of Zod.
+	function fieldInvalid(issues: readonly { path: readonly PropertyKey[] }[], field: string) {
+		return issues.some(
+			({ path }) =>
+				path[0] === field ||
+				(field === 'amount' && path[0] === 'money') ||
+				(path[0] === 'checkDetails' && path[1] === field)
+		)
+	}
 </script>
 
 {#key `${organizationId}:${kind}`}
@@ -43,6 +61,8 @@
 				<Select
 					label={m['labels.account']()}
 					id="transaction-account"
+					aria-describedby="transaction-account-feedback"
+					aria-invalid={fieldInvalid(form.issues, 'accountId') || undefined}
 					name="accountId"
 					required
 					defaultValue=""
@@ -52,11 +72,19 @@
 						<option value={account.id}>{account.name}</option>
 					{/each}
 				</Select>
+				<FieldFeedback
+					id="transaction-account-feedback"
+					errorMessage={fieldInvalid(form.issues, 'accountId')
+						? m['transactions.account_invalid']()
+						: ''}
+				/>
 
 				{#key defaultCategoryId}
 					<Select
 						label={m['labels.category']()}
 						id="transaction-category"
+						aria-describedby="transaction-category-feedback"
+						aria-invalid={fieldInvalid(form.issues, 'categoryId') || undefined}
 						name="categoryId"
 						required
 						defaultValue={defaultCategoryId ?? ''}
@@ -70,31 +98,55 @@
 							</option>
 						{/each}
 					</Select>
+					<FieldFeedback
+						id="transaction-category-feedback"
+						errorMessage={fieldInvalid(form.issues, 'categoryId')
+							? m['transactions.category_invalid']()
+							: ''}
+					/>
 				{/key}
 
-				<!-- Future currency entry: docs/delightful-ui-integration.md#currency-entry -->
-				<InputText
-					label={`${m['labels.amount']()} (USD)`}
+				<InputCurrency
+					label={m['labels.amount']()}
+					currencyLabel="USD"
 					id="transaction-amount"
+					aria-describedby="transaction-amount-feedback"
+					aria-invalid={fieldInvalid(form.issues, 'amount') || undefined}
 					name="amount"
 					inputmode="decimal"
 					autocomplete="off"
 					pattern={AMOUNT_INPUT_PATTERN}
 					required
 				/>
+				<FieldFeedback
+					id="transaction-amount-feedback"
+					errorMessage={fieldInvalid(form.issues, 'amount')
+						? m['transactions.amount_invalid']()
+						: ''}
+				/>
 
 				<InputDate
 					label={m['labels.date']()}
 					id="transaction-date"
+					aria-describedby="transaction-date-feedback"
+					aria-invalid={fieldInvalid(form.issues, 'bookedOn') || undefined}
 					name="bookedOn"
 					defaultValue={todayDateOnly()}
 					required
+				/>
+				<FieldFeedback
+					id="transaction-date-feedback"
+					errorMessage={fieldInvalid(form.issues, 'bookedOn')
+						? m['transactions.date_invalid']()
+						: ''}
 				/>
 
 				{#if kind === 'income'}
 					<Select
 						label={m['transactions.payment.method']()}
 						id="transaction-payment-method"
+						aria-describedby="transaction-payment-method-feedback"
+						aria-invalid={fieldInvalid(form.issues, 'paymentMethod') || undefined}
 						name="paymentMethod"
 						required
 						defaultValue="cash"
@@ -106,20 +158,42 @@
 						<option value="transfer">{m['transactions.payment.transfer']()}</option>
 						<option value="electronic">{m['transactions.payment.electronic']()}</option>
 					</Select>
+					<FieldFeedback
+						id="transaction-payment-method-feedback"
+						errorMessage={fieldInvalid(form.issues, 'paymentMethod')
+							? m['transactions.payment_invalid']()
+							: ''}
+					/>
 
 					{#if showCheckFields}
 						<InputText
 							label={m['transactions.check.number']()}
 							id="check-number"
+							aria-describedby="check-number-feedback"
+							aria-invalid={fieldInvalid(form.issues, 'checkNumber') || undefined}
 							name="checkNumber"
 							required
+						/>
+						<FieldFeedback
+							id="check-number-feedback"
+							errorMessage={fieldInvalid(form.issues, 'checkNumber')
+								? m['transactions.check_number_invalid']()
+								: ''}
 						/>
 
 						<InputDate
 							label={m['transactions.check.date']()}
 							id="check-date"
+							aria-describedby="check-date-feedback"
+							aria-invalid={fieldInvalid(form.issues, 'checkDate') || undefined}
 							name="checkDate"
 							required
+						/>
+						<FieldFeedback
+							id="check-date-feedback"
+							errorMessage={fieldInvalid(form.issues, 'checkDate')
+								? m['transactions.check_date_invalid']()
+								: ''}
 						/>
 					{/if}
 				{/if}
@@ -143,11 +217,14 @@
 		{/snippet}
 		{#snippet feedback(form)}
 			{#if form.state.matches('success')}
-				<p role="status">{m['transactions.saved']()}</p>
+				<StatusMessage variant="success" text={m['transactions.saved']()} />
 			{:else if form.state.matches('invalid')}
-				<p role="alert">{m['transactions.validation_error']()}</p>
+				<StatusMessage variant="error" text={m['transactions.validation_error']()} />
 			{:else if form.state.matches('error')}
-				<p role="alert">{m['errors.save']({ subject: m['labels.transaction']() })}</p>
+				<StatusMessage
+					variant="error"
+					text={m['errors.save']({ subject: m['labels.transaction']() })}
+				/>
 			{/if}
 		{/snippet}
 	</FormContent>

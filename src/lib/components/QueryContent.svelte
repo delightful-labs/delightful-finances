@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { LoadingSpinner } from 'delightful-ui'
+	import { StatusMessage } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
 	import type { QuerySubscription } from 'jazz-tools/svelte'
 
@@ -20,13 +20,9 @@
 </script>
 
 {#if failed}
-	<p role="alert">{errorMessage}</p>
+	<StatusMessage variant="error" text={errorMessage} />
 {:else if loading}
-	<!-- Future StatusMessage: docs/delightful-ui-integration.md#status-feedback -->
-	<div role="status">
-		<LoadingSpinner role="presentation" aria-hidden="true" text="" />
-		<p>{loadingMessage}</p>
-	</div>
+	<StatusMessage variant="loading" text={loadingMessage} />
 {:else}
 	{@render children()}
 {/if}
