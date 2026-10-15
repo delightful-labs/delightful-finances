@@ -94,7 +94,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-008**: Archived accounts MUST be excluded from new transaction selection while historical data remains accessible. Archived tags MUST be excluded from new selection while retained on historical transactions.
 - **FR-009**: The application MUST be usable offline for previously available data and local writes, with synchronization handled by Jazz when connectivity returns.
 - **FR-010**: User-visible strings MUST use Paraglide message functions; initial supported locale is English.
-- **FR-011**: The UI MUST use accessible native HTML controls, SvelteKit/Svelte 5, native CSS and CSS variables, and responsive layouts.
+- **FR-011**: The UI MUST use accessible native HTML controls, SvelteKit/Svelte 5, native CSS and CSS variables. Responsive-layout audit and comprehensive keyboard/focus review are deferred until after the post-MVP design revision.
 - **FR-012**: Multi-step transaction compose and tag validation/save flows MUST be modeled with XState. Delightful UI TagInput provides tag search, selection, and removal interactions; simple UI state may use Svelte runes/stores.
 - **FR-013**: The application MUST expose a lightweight organization switcher shell; creating/joining another organization may be deferred.
 - **FR-022**: Workspace settings MUST let owners/admins rename the active workspace without changing its identity or associated accounts. The form MUST trim the submitted name, reject blank names, use local persistence, and remain read-only for members/viewers. Jazz permissions remain the authorization boundary.

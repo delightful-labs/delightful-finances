@@ -9,7 +9,6 @@ Reconciled against the implementation, existing tests, and recorded verification
 
 ### Remaining MVP work
 
-- **T039 — Responsive/accessibility review:** the approved Delightful UI theme and native controls are integrated; complete responsive, keyboard, focus, and interaction-state review.
 - **T040 — Remaining browser verification:** Authentication network/session failure and retry coverage is now verified under T058. Remaining: native installation-prompt review and the combined offline/access matrix.
 
 ### Verified foundations
@@ -29,7 +28,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] T001 Create SvelteKit app using the Jazz Svelte starter and configure strict TypeScript.
 
 - [x] T003 Establish accessible native HTML controls and minimal layout CSS; add visual styling only after user approval.
-  - Verified foundation: native controls and the approved Delightful UI theme are integrated (T052–T056). Final responsive/accessibility review remains T039.
+  - Verified foundation: native controls and the approved Delightful UI theme are integrated (T052–T056). Broader responsive/keyboard review is deferred under T039 until after the post-MVP design revision.
 - [x] T004 Add XState and `@xstate/svelte` for stateful feature workflows.
 - [x] T005 Add Paraglide JS with an English message catalog and route all visible UI text through messages.
   - Verified integration: nested English catalog, Paraglide compiler and message calls are present. The complete visible-string/formatting audit remains T041.
@@ -110,7 +109,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 ## Phase 6: Offline Shell and Polish
 
 - [x] T038 Complete PWA offline shell behavior and ensure cache rules do not conflict with Jazz data.
-- [ ] T039 Apply a coherent responsive visual system with keyboard-accessible interaction states.
+
 - [ ] T040 Add Playwright coverage for org access boundaries, credential visibility, sync/pending state, and supported offline writes/sync.
   - Partial: role/grant/credential visibility and offline account/category/tag/profile write/sync cases have recorded passing coverage. All six current production-preview PWA browser checks pass, including a two-tab update lifecycle: drafts/controllers remain intact while waiting, closing one tab does not activate the update, closing the last controlled tab activates it, and a reopened tab uses the active worker. The generated worker fixture is restored after the test; production code is unchanged. Remaining: install-prompt review and review of the combined offline/access matrix. Authentication failures are verified under T058.
 - [x] T041 Confirm all user-visible strings use Paraglide and all currency/date display uses locale-aware APIs.
@@ -119,6 +118,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 ## Deferred Follow-up
 
+- [ ] T039 Revisit responsive layout, keyboard/focus behavior, and interaction states after the planned post-MVP design and layout revision. Existing shell behavior has focused responsive/keyboard coverage; perform the broader review against the revised design rather than polishing the current layout prematurely.
 - [ ] Revisit Jazz pending/sync-completion observability and the app-shell status indicator when the SDK exposes a supported whole-device signal. The current shell reports only local mode, browser offline state, or sync configuration; do not claim a completed sync. See the deferred sync-status observability investigation in plan.md.
 - [ ] Add GitHub Actions CI for application checks, unit tests, and Playwright suites. Existing package scripts and Playwright configurations are available; workflow setup and reliable execution are deferred beyond MVP. Latest attempted local run: app/service-worker checks, browser-test type checks, 264 unit tests, 15 authentication tests, production build, and six PWA tests passed. Base Playwright, permissions, and workspace runs did not pass; investigate stale test discovery/readiness selectors and Jazz dev-server startup/connection before adding required CI gates.
 - [ ] T043 Implement server-side SimpleFIN claim and scheduled/on-demand import worker with idempotent external IDs; include unit and Playwright coverage.
