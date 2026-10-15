@@ -10,6 +10,7 @@
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
 	import CategoryForm from '#lib/components/CategoryForm.svelte'
 	import CategoryList from '#lib/components/CategoryList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
@@ -58,20 +59,13 @@
 		}
 		return result
 	})
-	function canArchive(category: Category) {
-		const member = membership.current
-		return (
-			!category.isSystem &&
-			member?.organizationId === filters.activeOrganizationId &&
-			(member.role === 'owner' || member.role === 'admin' || member.role === 'member')
-		)
-	}
-
 	const canCreate = $derived(
-		membership.current?.organizationId === filters.activeOrganizationId &&
-			(membership.current?.role === 'owner' ||
-				membership.current?.role === 'admin' ||
-				membership.current?.role === 'member')
+		canEditCategoriesAndTags(membership.current, filters.activeOrganizationId)
+	)
+	const canArchive = $derived.by(
+		() => (category: Category) =>
+			canEditCategoriesAndTags(membership.current, filters.activeOrganizationId) &&
+			!category.isSystem
 	)
 	const save: FormSave<
 		z.output<typeof categoryFormSchema>,
@@ -115,6 +109,12 @@
 	const archivableCategoryIds = $derived(
 		(categories.current ?? []).filter(canArchive).map((category) => category.id)
 	)
+	const archiveState = $derived(archive.view.state)
+	const archivedName = $derived(
+		archiveState.matches('success') ? archiveState.context.result : undefined
+	)
+	const archiveFailed = $derived(archiveState.matches('error') || archiveState.matches('invalid'))
+	const archivingCategoryId = $derived(archiveState.context.validated?.value.categoryId)
 	function onArchive(categoryId: string) {
 		archive.submitValues({ categoryId, organizationId: filters.activeOrganizationId })
 	}
@@ -127,17 +127,15 @@
 	loadingMessage={m['status.loading']({ subject: m['labels.categories']() })}
 	errorMessage={m['errors.load']({ subject: m['labels.categories']() })}
 >
-	{#if filters.activeOrganizationId && Boolean(membership.current)}
+	{#if filters.activeOrganizationId && membership.current}
 		<CategoryList
 			categories={categories.current ?? []}
 			{counts}
 			{archivableCategoryIds}
 			archiving={archive.view.busy}
-			archivingCategoryId={archive.view.state.context.validated?.value.categoryId}
-			archivedName={archive.view.state.matches('success')
-				? archive.view.state.context.result
-				: undefined}
-			archiveFailed={archive.view.state.matches('error') || archive.view.state.matches('invalid')}
+			{archivingCategoryId}
+			{archivedName}
+			{archiveFailed}
 			{onArchive}
 		/>
 		<CategoryForm organizationId={filters.activeOrganizationId} {canCreate} {form} />
