@@ -10,7 +10,6 @@ Reconciled against the implementation, existing tests, and recorded verification
 ### Remaining MVP work
 
 - **T002 / T042 — CI and release verification:** test tooling exists, but there is no GitHub Actions workflow. Configure CI, run the relevant suites against the same current revision, and close remaining coverage gaps.
-- **T035 — Date-helper coverage:** money/domain/schema/form-machine tests are implemented and have passing evidence; direct coverage of `todayDateOnly` (including local-date boundaries) remains missing.
 - **T037 — Sync status:** add the user-visible pending/sync/error affordance.
 - **T039 — Responsive/accessibility review:** the approved Delightful UI theme and native controls are integrated; complete responsive, keyboard, focus, and interaction-state review.
 - **T040 / T058 — Remaining browser verification:** sync-status coverage depends on T037. Existing org/grant/credential and offline write tests are recorded as passing; authentication network/session failures and remaining offline/PWA review still need verification.
@@ -107,8 +106,8 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] T034 Add organization switcher state and settings shell; second-org creation/join flow may remain deferred.
   - Workspace naming: `WorkspaceNameForm`, active-workspace/role wiring, `/settings/workspace`, and unit/browser coverage are implemented. The sidebar link and navigation coverage are complete.
   - Shared form workflow: generic `Form` API reviewed; `WorkspaceNameForm` now supplies its schema, save operation, fixed workspace ID, and field/control/feedback snippets. The integration and settings page are reviewed; five form-machine unit tests and five workspace browser tests pass.
-- [ ] T035 Add unit tests for money/date/domain validation and transaction/tag state machines.
-  - Partial: money, transaction/domain/date validation, grouping, tags and shared form-machine units exist with recorded passing results. Add direct todayDateOnly tests for local calendar boundaries; no separate tag/transaction machine is needed.
+- [x] T035 Add unit tests for money/date/domain validation and transaction/tag state machines.
+  - Verified on 2026-10-15: 111 focused unit tests pass across date-only/money helpers, transaction domain/grouping, canonical transaction/tag validation and the shared form machine. New todayDateOnly coverage has 18 cases, each passing in separate UTC, America/New_York and Pacific/Auckland processes. Covers zero padding, month/year boundaries, leap/century dates, New York daylight-saving boundaries, years below 1000, input immutability, default current time and repeated calls across local midnight. Production code is unchanged; no browser tests needed for this test-only addition. The shared form machine covers transaction/tag workflow states; no separate machines were introduced.
 - [x] T036 Add Playwright coverage for expense/income entry (including check details), transaction history, category management, and tag selection/archive behavior.
   - Verified through recorded transaction/default-category/check/list/detail, category, and tag-selection/archive browser cases in tests/workspace.e2e.ts (T028–T033). Full-current-revision suite verification remains T042.
 
