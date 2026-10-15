@@ -13,7 +13,7 @@ export const identitySchema = {
 				.enum(avatarTypes['image/png'], avatarTypes['image/jpeg'], avatarTypes['image/webp'])
 				.optional()
 		},
-		{}
+		{ memberships: s.reverse('organizationMembers', 'profile') }
 	),
 	organizations: s.table(
 		{
@@ -37,9 +37,13 @@ export const identitySchema = {
 		{
 			organizationId: s.uuid(),
 			userId: s.uuid(),
+			profileId: s.uuid().optional(),
 			role: s.enum('owner', 'admin', 'member', 'viewer'),
 			accountAccessMode: s.enum('all', 'selected')
 		},
-		{ organization: s.rel('organizations', 'organizationId') }
+		{
+			organization: s.rel('organizations', 'organizationId'),
+			profile: s.rel('profiles', 'profileId')
+		}
 	)
 }

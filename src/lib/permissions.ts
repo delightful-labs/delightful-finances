@@ -131,7 +131,20 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		anyOf([{ userId: session.user.account }, isAdmin(member.organizationId)])
 	)
 
-	policy.profiles.allowRead.where({ userId: session.user.account })
+	policy.profiles.allowRead.where((profile) =>
+		anyOf([
+			{ userId: session.user.account },
+			policy.exists(
+				policy.organizationMembers
+					.where({ profileId: profile.id })
+					.join(policy.organizationMembers, {
+						left: 'organizationId',
+						right: 'organizationId'
+					})
+					.where({ userId: session.user.account })
+			)
+		])
+	)
 	policy.profiles.allowInsert.where({ userId: session.user.account })
 	policy.profiles.allowUpdate
 		.whereOld({ userId: session.user.account })

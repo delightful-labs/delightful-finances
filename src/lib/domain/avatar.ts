@@ -6,6 +6,7 @@ const AVATAR_MAX_DIMENSION = 256
 export async function resizeAvatar(file: File): Promise<Blob> {
 	const image = await createImageBitmap(file, { imageOrientation: 'from-image' })
 	try {
+		await resizer.init()
 		const scale = Math.min(1, AVATAR_MAX_DIMENSION / Math.max(image.width, image.height))
 		const canvas = resizer.createCanvas(
 			Math.max(1, Math.round(image.width * scale)),

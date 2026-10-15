@@ -33,6 +33,7 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 		db.all(app.organizations.where({ ownerId: userId, kind: 'personal' }), readOptions)
 	])
 	const existingOrganization = ownedOrganizations[0]
+	const activeProfileId = profiles[0]?.id ?? profileId
 	const activeOrganizationId = existingOrganization?.id ?? organizationId
 	const [memberships, categories] = await Promise.all([
 		db.all(
@@ -59,10 +60,13 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 					(category.isSystem && existing.kind === category.kind && existing.isSystem)
 			)
 	)
+	const membership = memberships[0]
+	const profileLinkNeedsRepair = membership && membership.profileId !== activeProfileId
 	if (
 		existingOrganization &&
 		profiles.length > 0 &&
 		memberships.length > 0 &&
+		!profileLinkNeedsRepair &&
 		missingCategories.length === 0
 	) {
 		return existingOrganization
@@ -80,9 +84,18 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 		if (memberships.length === 0) {
 			tx.insert(
 				app.organizationMembers,
-				{ organizationId: organization.id, userId, role: 'owner', accountAccessMode: 'all' },
+				{
+					organizationId: organization.id,
+					userId,
+					profileId: activeProfileId,
+					role: 'owner',
+					accountAccessMode: 'all'
+				},
 				{ id: membershipId }
 			)
+		}
+		if (profileLinkNeedsRepair) {
+			tx.update(app.organizationMembers, membership.id, { profileId: activeProfileId })
 		}
 		for (const { category, id } of missingCategories) {
 			tx.insert(app.categories, { organizationId: organization.id, ...category }, { id })

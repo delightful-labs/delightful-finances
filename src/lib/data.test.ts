@@ -10,13 +10,15 @@ import {
 	createAccount,
 	createTransaction,
 	ensurePersonalWorkspace,
-	saveProfileName
+	saveProfileName,
+	saveProfileAvatar
 } from './data.js'
 import type { AppTransaction } from './domain/transaction.js'
 import { app, type Account, type Organization } from './schema.js'
 
 type Db = ReturnType<typeof getDb>
 const userId = '11111111-1111-4111-8111-111111111111'
+const profileId = '33333333-3333-4333-8333-333333333333'
 const organization = {
 	id: '22222222-2222-4222-8222-222222222222',
 	name: 'Existing workspace',
@@ -158,6 +160,7 @@ describe('ensurePersonalWorkspace', () => {
 		await ensurePersonalWorkspace(db, userId)
 		expect(insert).toHaveBeenCalledTimes(11)
 		expect(insert).toHaveBeenCalledWith(app.profiles, { userId }, { id: expect.any(String) })
+		const createdProfileId = insert.mock.calls.find(([table]) => table === app.profiles)?.[2]?.id
 		expect(insert).toHaveBeenCalledWith(
 			app.organizations,
 			{ name: 'Personal workspace', kind: 'personal', defaultCurrency: 'USD', ownerId: userId },
@@ -165,7 +168,13 @@ describe('ensurePersonalWorkspace', () => {
 		)
 		expect(insert).toHaveBeenCalledWith(
 			app.organizationMembers,
-			{ organizationId: organization.id, userId, role: 'owner', accountAccessMode: 'all' },
+			expect.objectContaining({
+				organizationId: organization.id,
+				userId,
+				profileId: createdProfileId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			}),
 			{ id: expect.any(String) }
 		)
 		const categories = insert.mock.calls.filter(([table]) => table === app.categories)
@@ -190,9 +199,11 @@ describe('ensurePersonalWorkspace', () => {
 		const { db, insert } = setup()
 		const categories = await starterCategories()
 		db.all
-			.mockResolvedValueOnce([{ userId }])
+			.mockResolvedValueOnce([{ id: profileId, userId }])
 			.mockResolvedValueOnce([organization])
-			.mockResolvedValueOnce([{ userId, organizationId: organization.id }])
+			.mockResolvedValueOnce([
+				{ id: 'membership', userId, organizationId: organization.id, profileId }
+			])
 			.mockResolvedValueOnce(categories)
 		await expect(ensurePersonalWorkspace(db, userId)).resolves.toEqual(organization)
 		expect(db.transaction).not.toHaveBeenCalled()
@@ -206,9 +217,11 @@ describe('ensurePersonalWorkspace', () => {
 			name: `Renamed ${category.name}`
 		}))
 		db.all
-			.mockResolvedValueOnce([{ userId }])
+			.mockResolvedValueOnce([{ id: profileId, userId }])
 			.mockResolvedValueOnce([organization])
-			.mockResolvedValueOnce([{ userId, organizationId: organization.id }])
+			.mockResolvedValueOnce([
+				{ id: 'membership', userId, organizationId: organization.id, profileId }
+			])
 			.mockResolvedValueOnce(categories)
 		await ensurePersonalWorkspace(db, userId)
 		expect(insert).not.toHaveBeenCalled()
@@ -218,9 +231,11 @@ describe('ensurePersonalWorkspace', () => {
 		const { db, insert } = setup()
 		const categories = (await starterCategories()).filter((category) => category.name !== 'Salary')
 		db.all
-			.mockResolvedValueOnce([{ userId }])
+			.mockResolvedValueOnce([{ id: profileId, userId }])
 			.mockResolvedValueOnce([organization])
-			.mockResolvedValueOnce([{ userId, organizationId: organization.id }])
+			.mockResolvedValueOnce([
+				{ id: 'membership', userId, organizationId: organization.id, profileId }
+			])
 			.mockResolvedValueOnce(categories)
 		await ensurePersonalWorkspace(db, userId)
 		expect(insert).toHaveBeenCalledTimes(1)
@@ -230,6 +245,27 @@ describe('ensurePersonalWorkspace', () => {
 			{ id: expect.any(String) }
 		)
 	})
+
+	for (const storedProfileId of [null, 'another-profile']) {
+		it(`repairs a ${storedProfileId ?? 'missing'} owner profile link without recreating rows`, async () => {
+			const { db, insert, transaction, wait } = setup()
+			const update = vi.spyOn(transaction, 'update').mockReturnValue(undefined)
+			const categories = await starterCategories()
+			db.all
+				.mockResolvedValueOnce([{ id: profileId, userId }])
+				.mockResolvedValueOnce([organization])
+				.mockResolvedValueOnce([
+					{ id: 'membership', userId, organizationId: organization.id, profileId: storedProfileId }
+				])
+				.mockResolvedValueOnce(categories)
+			await ensurePersonalWorkspace(db, userId)
+			expect(update).toHaveBeenCalledExactlyOnceWith(app.organizationMembers, 'membership', {
+				profileId
+			})
+			expect(insert).not.toHaveBeenCalled()
+			expect(wait).toHaveBeenCalledWith({ tier: 'local' })
+		})
+	}
 
 	it('does not write when existing workspace records cannot be read', async () => {
 		const { db, insert } = setup()
@@ -253,9 +289,11 @@ describe('ensurePersonalWorkspace', () => {
 async function starterCategories() {
 	const { db, insert } = setup()
 	db.all
-		.mockResolvedValueOnce([{ userId }])
+		.mockResolvedValueOnce([{ id: profileId, userId }])
 		.mockResolvedValueOnce([organization])
-		.mockResolvedValueOnce([{ userId, organizationId: organization.id }])
+		.mockResolvedValueOnce([
+			{ id: 'membership', userId, organizationId: organization.id, profileId }
+		])
 		.mockResolvedValueOnce([])
 	await ensurePersonalWorkspace(db, userId)
 	return insert.mock.calls.flatMap(([table, values, options]) =>
@@ -475,6 +513,44 @@ describe('saveProfileName', () => {
 		expect(result).toBe(pending.promise)
 		const rejection = expect(result).rejects.toThrow('Profile write failed')
 		pending.reject(new Error('Profile write failed'))
+		await rejection
+	})
+})
+
+describe('saveProfileAvatar', () => {
+	const avatar = {
+		avatarData: new Uint8Array([1, 2, 3]),
+		avatarMimeType: 'image/png'
+	} satisfies Parameters<typeof saveProfileAvatar>[3]
+	it('writes bytes and MIME type together without changing identity or display name', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await saveProfileAvatar(db, 'profile', userId, avatar)
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.profiles, 'profile', avatar)
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+	it('removes both avatar fields atomically', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await saveProfileAvatar(db, 'profile', userId, { avatarData: null, avatarMimeType: null })
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.profiles, 'profile', {
+			avatarData: null,
+			avatarMimeType: null
+		})
+	})
+	it('rejects invalid identities before writing', () => {
+		const db = { update: vi.fn() } satisfies Pick<Db, 'update'>
+		expect(() => saveProfileAvatar(db, 'profile', 'invalid', avatar)).toThrow()
+		expect(db.update).not.toHaveBeenCalled()
+	})
+	it('returns local persistence and propagates write failures', async () => {
+		const pending = Promise.withResolvers<void>()
+		const wait = vi.fn(() => pending.promise)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		const result = saveProfileAvatar(db, 'profile', userId, avatar)
+		expect(result).toBe(pending.promise)
+		const rejection = expect(result).rejects.toThrow('Avatar write failed')
+		pending.reject(new Error('Avatar write failed'))
 		await rejection
 	})
 })

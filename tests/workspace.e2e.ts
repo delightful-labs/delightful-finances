@@ -2380,6 +2380,14 @@ for (const scenario of [
 		await start(page)
 		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
 		const ownerId = await page.evaluate(() => window.workspaceSettingsTest.userId)
+		await page.evaluate(async () => {
+			const { app, db, userId } = window.workspaceSettingsTest
+			const profile = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+			if (!profile) throw new Error('Missing author profile')
+			await db
+				.update(app.profiles, profile.id, { displayName: 'Shared author' })
+				.wait({ tier: 'global' })
+		})
 		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
 		try {
 			const subject = await subjectContext.newPage()
@@ -2482,7 +2490,10 @@ for (const scenario of [
 			if (scenario.read) {
 				await expect(main.getByText('Shared detail account', { exact: true })).toBeVisible()
 				await expect(main.getByText('Shared detail tag', { exact: true })).toBeVisible()
-				await expect(main.getByText(ownerId, { exact: true })).toHaveCount(scenario.edit ? 1 : 2)
+				await expect(main.getByText('Shared author', { exact: true })).toHaveCount(
+					scenario.edit ? 1 : 2
+				)
+				await expect(main.getByText(ownerId, { exact: true })).toHaveCount(0)
 				if (scenario.edit) {
 					await expect(main.getByText('Detail editor', { exact: true })).toBeVisible()
 					await expect(main.getByText('Edited by member', { exact: true })).toBeVisible()
@@ -2695,7 +2706,9 @@ test('profile name edits are owner-only even for members of a shared workspace',
 				await db
 					.upsert(app.profiles, owner.profileId, {
 						userId: owner.userId,
-						displayName: 'Hijacked name'
+						displayName: 'Hijacked name',
+						avatarData: new Uint8Array([1]),
+						avatarMimeType: 'image/png'
 					})
 					.wait({ tier: 'global' })
 			} catch (error) {
@@ -2715,7 +2728,7 @@ test('profile name edits are owner-only even for members of a shared workspace',
 				ownUserId: retained?.userId
 			}
 		}, owner)
-		expect(outcome.ownerVisible).toBe(false)
+		expect(outcome.ownerVisible).toBe(true)
 		expect(outcome.edit).toMatch(/AuthorizationDenied|permission_denied/)
 		expect(outcome.transfer).toMatch(/AuthorizationDenied|permission_denied/)
 		expect(outcome.ownName).toBe('Shared workspace member')
@@ -2724,11 +2737,154 @@ test('profile name edits are owner-only even for members of a shared workspace',
 			.poll(() =>
 				page.evaluate(async (id) => {
 					const { app, db } = window.workspaceSettingsTest
-					return (await db.one(app.profiles.where({ id }), { tier: 'remote' }))?.displayName
+					const profile = await db.one(app.profiles.where({ id }), { tier: 'remote' })
+					return {
+						name: profile?.displayName,
+						hasAvatar: Boolean(profile?.avatarData),
+						mimeType: profile?.avatarMimeType ?? null
+					}
 				}, owner.profileId)
 			)
-			.toBe('Protected profile owner')
+			.toEqual({ name: 'Protected profile owner', hasAvatar: false, mimeType: null })
 	} finally {
 		await context.close()
 	}
 })
+
+for (const role of ['admin', 'member', 'viewer']) {
+	test(`shared profile visibility: ${role}, isolation, and membership removal`, async ({
+		page,
+		browser
+	}) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const owner = await page.evaluate(async () => {
+			const { app, db, userId } = window.workspaceSettingsTest
+			const profile = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+			if (!profile) throw new Error('Missing owner profile')
+			await db
+				.update(app.profiles, profile.id, {
+					displayName: 'Shared display profile',
+					avatarData: new Uint8Array([1, 2, 3]),
+					avatarMimeType: 'image/png'
+				})
+				.wait({ tier: 'global' })
+			const privateWorkspace = await db
+				.insert(app.organizations, {
+					name: 'Private workspace',
+					kind: 'business',
+					defaultCurrency: 'USD',
+					ownerId: userId
+				})
+				.wait({ tier: 'global' })
+			await db
+				.insert(app.organizationMembers, {
+					organizationId: privateWorkspace.id,
+					userId,
+					profileId: profile.id,
+					role: 'owner',
+					accountAccessMode: 'all'
+				})
+				.wait({ tier: 'global' })
+			return { id: profile.id, userId }
+		})
+		const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		try {
+			const subject = await context.newPage()
+			await start(subject)
+			const subjectProfile = await subject.evaluate(async () => {
+				const { app, db, userId } = window.workspaceSettingsTest
+				const profile = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
+				if (!profile) throw new Error('Missing member profile')
+				await db
+					.update(app.profiles, profile.id, { displayName: 'Shared member' })
+					.wait({ tier: 'global' })
+				return { id: profile.id, userId }
+			})
+			const readOwner = () =>
+				subject.evaluate(async (id) => {
+					const { app, db } = window.workspaceSettingsTest
+					const profile = await db.one(app.profiles.where({ id }), { tier: 'remote' })
+					return profile
+						? {
+								name: profile.displayName,
+								bytes: Array.from(profile.avatarData ?? []),
+								mime: profile.avatarMimeType
+							}
+						: null
+				}, owner.id)
+			expect(await readOwner()).toBeNull()
+			const membershipId = await page.evaluate(
+				async ({ organizationId, subjectProfile, role }) => {
+					const { app, db } = window.workspaceSettingsTest
+					if (role !== 'admin' && role !== 'member' && role !== 'viewer')
+						throw new Error('Invalid role')
+					const membership = await db
+						.insert(app.organizationMembers, {
+							organizationId,
+							userId: subjectProfile.userId,
+							role,
+							accountAccessMode: 'selected'
+						})
+						.wait({ tier: 'global' })
+					return membership.id
+				},
+				{ organizationId, subjectProfile, role }
+			)
+			await expect
+				.poll(readOwner)
+				.toEqual({ name: 'Shared display profile', bytes: [1, 2, 3], mime: 'image/png' })
+			// A membership without a profile reference must not expose an unrelated profile.
+			expect(
+				await page.evaluate(async (id) => {
+					const { app, db } = window.workspaceSettingsTest
+					return Boolean(await db.one(app.profiles.where({ id }), { tier: 'remote' }))
+				}, subjectProfile.id)
+			).toBe(false)
+			await page.evaluate(
+				async ({ membershipId, profileId }) => {
+					const { app, db } = window.workspaceSettingsTest
+					await db
+						.update(app.organizationMembers, membershipId, { profileId })
+						.wait({ tier: 'global' })
+				},
+				{ membershipId, profileId: subjectProfile.id }
+			)
+			await expect
+				.poll(() =>
+					page.evaluate(async (id) => {
+						const { app, db } = window.workspaceSettingsTest
+						return (
+							(await db.one(app.profiles.where({ id }), { tier: 'remote' }))?.displayName ?? null
+						)
+					}, subjectProfile.id)
+				)
+				.toBe('Shared member')
+			expect(
+				await subject.evaluate(async (ownerId) => {
+					const { app, db } = window.workspaceSettingsTest
+					return (await db.all(app.organizations.where({ ownerId }), { tier: 'remote' })).map(
+						(organization) => organization.id
+					)
+				}, owner.userId)
+			).toEqual([organizationId])
+			await page.evaluate(async (id) => {
+				const { app, db } = window.workspaceSettingsTest
+				await db.delete(app.organizationMembers, id).wait({ tier: 'global' })
+			}, membershipId)
+			await expect.poll(readOwner).toBeNull()
+			await expect
+				.poll(() =>
+					page.evaluate(async (id) => {
+						const { app, db } = window.workspaceSettingsTest
+						return (
+							(await db.one(app.profiles.where({ id }), { tier: 'remote' }))?.displayName ?? null
+						)
+					}, subjectProfile.id)
+				)
+				.toBeNull()
+		} finally {
+			await context.close()
+		}
+	})
+}
