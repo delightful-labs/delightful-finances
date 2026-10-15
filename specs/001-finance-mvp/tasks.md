@@ -128,3 +128,10 @@ Checked tasks have completed their relevant verification. Unchecked tasks can in
   - Shared TransactionEntry and TransactionView integrations serve income/expense routes without duplicating workflows. Pure form/list/detail/shell components remain separate and receive props/callbacks. The genuinely shared form actor lifecycle remains in forms.svelte.ts.
   - AGENTS.md, constitution v2.1.0, plan, and form documentation reflect the clarified boundary. User explicitly authorized this full batch and immediate tests.
   - Verified: application/service-worker type checks report zero errors or warnings; browser-test type checks pass; all 175 unit tests, 45 workspace browser scenarios, and five authentication browser scenarios pass. Changed-file formatting and diff checks pass. A source audit confirms 12 integration files compose imported components without native body HTML, and no page-specific controller/query modules remain. No commit made.
+
+## Delightful UI component adoption, second review batch
+
+- [x] Create a separate worktree from committed main for the refreshed UI snapshot.
+- [x] Adopt the new components in query feedback, transaction entry, account list, app shell and avatar form; preserve business behavior.
+- [x] Prepare static/build/format verification and a separate preview for implementation review. Static/service-worker and formatting checks pass; build compiles but reports the existing dynamic transaction route prerender configuration as a blocker. Preview: http://127.0.0.1:5181.
+- [x] After user review, run 110 focused unit checks and eight browser scenarios for money/transaction/form/avatar behavior, table creation, sidebar layout/scrolling, mobile dismissal/focus, workspace navigation, recovery and avatar submission/removal. Browser-test type checks pass. Detailed invalid-field announcement coverage remains a follow-up.

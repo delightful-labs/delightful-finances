@@ -12,9 +12,9 @@ Native field names, IDs, validation, FormData collection and the shared Form/XSt
 
 The trial started from committed Finance HEAD, excluding uncommitted business-logic work. Before merging, retain the concurrently committed category settings route, navigation and business behavior from main; CategoryForm is already migrated. New components authored by the business-logic agent are outside this UI trial.
 
-## Suggested future components
+## Original component proposals
 
-These are proposals supported by current call sites, not new MVP requirements or implemented exports. Finance-specific parsing, permissions and translated text stay in the application.
+These proposals were recorded during the first trial. The second adoption batch below now implements the corresponding library primitives at selected call sites. Finance-specific parsing, permissions and translated text stay in the application.
 
 ### Currency entry
 
@@ -39,3 +39,25 @@ AppShell combines native links, workspace selection and account checkbox filters
 ## Review and validation
 
 Validation passed: library packaging/publint, Finance production build, Svelte/application/service-worker static checks (zero errors or warnings), changed-file Prettier checks and git diff whitespace checks. After user review, 89 focused unit tests and all 27 integration browser scenarios passed, including native FormData/reset defaults, reactive category choices, income check-field visibility, decimal/date preservation, workspace filters, recovery/restore, archive permissions and modal dismissal. The modal regression covers Close, Escape, backdrop and confirmed completion, content removal, checkbox reset, clicks inside and focus return. Use `pnpm exec playwright test --config playwright.integration.config.ts` with the isolated dev server on port 5180. The category Select is keyed by default category ID to handle workspace query updates; ordinary category-list updates preserve explicit selections. Run static/build checks before browser checks, because generated-manifest updates reload active pages.
+
+## Second component adoption — reviewed and verified
+
+This review batch starts from committed Finance main at 08e219b in the separate feat/ui-components-round-two worktree. Refresh the local package snapshot from Delightful UI c9423b0 without publishing a release. Adopt StatusMessage in query/form/list feedback; FieldFeedback and InputCurrency in transaction entry; Table in account listing; Navigation and Drawer in the shell; InputImage in avatar upload. Preserve Jazz, permissions, form actors, validation and persistence. The grouped transaction list remains a date-grouped list rather than being converted into a table.
+
+The shell uses inline space-reserving navigation on wide screens and modal overlay navigation at or below 48rem. Toggles expose expanded/control relationships; inline navigation remains open on link selection, while overlay selection dismisses it. Native dialog supplies modal focus/background behavior. Mode changes close the drawer; users can reopen it with the persistent toggle. Field errors use translated Finance messages with caller-owned issue mapping and aria-describedby/aria-invalid; raw Zod messages are not shown. Avatar selection preview/removal belongs to InputImage, while saved-avatar removal remains the existing application action.
+
+Implementation review uses package validation, application/service-worker checks, build and formatting. After user approval, 110 focused unit tests and eight browser scenarios pass. Library component test results do not establish Finance integration coverage.
+
+The updated archive is `vendor/delightful-ui-0.0.24-sidebar-height.tgz`, built from UI commit `c9423b0` plus the approved LoadingScreen and Drawer refinements; only this file dependency changes in the lockfile. The original archive is retained for the first trial's provenance. No registry release is needed for this local review.
+
+Verification: packaging/publint, application/service-worker checks (zero errors/warnings), changed-file formatting and whitespace checks pass. The production build compiles client/server code but fails at prerendering: `/transactions/[id]` is marked prerenderable by the existing root layout and has no crawlable entry. This branch leaves the routing/PWA configuration unchanged; resolve the dynamic-route build policy separately. The isolated review server is http://127.0.0.1:5181. After implementation review, 110 unit tests and eight Chromium browser cases pass for money/transaction/form/avatar behavior, recovery dismissal, avatar upload/replace/remove, account table creation, workspace navigation, expense/income submission, stable sidebar geometry, full-height internal scrolling, compact controls, mobile Escape/backdrop dismissal and focus return. Browser-test type checks pass. Use FINANCE_INTEGRATION_URL=http://127.0.0.1:5181 with the integration configuration for this worktree.
+
+### Remaining consumer opportunities
+
+StatusMessage can replace aggregate feedback in additional settings/authentication forms in later focused batches. FieldFeedback is adopted first in transaction entry; other forms still need caller-owned translated issue mapping before adopting it. A future field composition could group a control with its linked help/error without repeating IDs, but it should preserve uncontrolled FormData and native attributes. Responsive Drawer policy remains caller-owned; the repeated breakpoint/initial-open behavior may inform a later shell composition after this consumer trial. Popover and NumberKeypad are available but are not added without a corresponding interaction need. The date-grouped transaction list deliberately retains its current list semantics.
+
+The Jazz startup fallback uses the new LoadingScreen composition for loading/error feedback, centered vertically and horizontally with a single visible message. Its translated startup message is “Loading your finances…”. Workspace preparation retains its own single message; errors retain actionable retry text. Removed unused startup/workspace descriptions and the separate error heading, and simplified the database message keys. The decorative spinner adds no repeated hidden text.
+
+Sidebar presentation revision: the external Open navigation button is hidden while open; the Drawer has one compact × close button with a translated accessible label. Its navigation heading is visually hidden while retaining the accessible name. Drawer retains its inert visual panel through exit motion so closing reverses opening; reduced-motion preferences skip transitions. Inline focus restoration waits for the external trigger to be revealed. This revision was visually approved and covered by the focused sidebar browser scenarios.
+
+Sidebar height/layout revision: the Open navigation control now lives in a persistent main-content toolbar. While the drawer is open, the toolbar is invisible/inert but retains its geometry, eliminating vertical jumps. The drawer spans the viewport height (sticky inline, fixed overlay), with its body scrolling beneath a stationary close control. This refinement was visually approved; the focused sidebar browser scenarios pass.

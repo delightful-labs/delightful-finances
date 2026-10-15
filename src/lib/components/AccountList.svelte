@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from 'delightful-ui'
+	import { Button, Table, StatusMessage } from 'delightful-ui'
 	import type { Account } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -23,16 +23,15 @@
 </script>
 
 {#if archivedName}
-	<p role="status">{m['accounts.archived']({ name: archivedName })}</p>
+	<StatusMessage variant="success" text={m['accounts.archived']({ name: archivedName })} />
 {:else if archiveFailed}
-	<p role="alert">{m['errors.archive']({ subject: m['labels.account']() })}</p>
+	<StatusMessage variant="error" text={m['errors.archive']({ subject: m['labels.account']() })} />
 {/if}
 
 {#if accounts.length === 0}
 	<p>{m['accounts.empty.title']()}</p>
 {:else}
-	<!-- Future DataTable: docs/delightful-ui-integration.md#tables -->
-	<table>
+	<Table caption={m['labels.accounts']()}>
 		<thead>
 			<tr>
 				<th scope="col">{m['labels.account_name']()}</th>
@@ -70,5 +69,5 @@
 				</tr>
 			{/each}
 		</tbody>
-	</table>
+	</Table>
 {/if}
