@@ -32,7 +32,8 @@
 		"account_recovery": "Account recovery",
 		"login": "Restore account",
 		"open": "Open navigation",
-		"close": "Close navigation"
+		"close": "Close navigation",
+		"toggle": "Toggle navigation"
 	},
 	"labels": {
 		"accounts": "Accounts",

@@ -1,6 +1,15 @@
 <script lang="ts">
-	import { Button, Drawer, Navigation, Select, Checkbox, StatusMessage } from 'delightful-ui'
-	import { onMount, tick, type ComponentProps, type Snippet } from 'svelte'
+	import {
+		Button,
+		Drawer,
+		Navigation,
+		Select,
+		Checkbox,
+		StatusMessage,
+		TopNavigation,
+		ScreenReaderText
+	} from 'delightful-ui'
+	import { onMount, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
 	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -38,30 +47,18 @@
 	const toggleId = `${shellId}-toggle`
 	const filtersHeadingId = `${shellId}-filters`
 	let drawerOpen = $state(false)
-	let drawerMode = $state<'inline' | 'overlay'>('inline')
+	let topNavigationHeight = $state(56)
 
 	onMount(() => {
-		const narrow = window.matchMedia('(max-width: 48rem)')
-		drawerMode = narrow.matches ? 'overlay' : 'inline'
-		drawerOpen = !narrow.matches
-		function changeLayout() {
-			drawerMode = narrow.matches ? 'overlay' : 'inline'
-			// Keep mode transitions closed; the visible toggle can reopen either variant.
-			drawerOpen = false
-		}
-		narrow.addEventListener('change', changeLayout)
-		return () => narrow.removeEventListener('change', changeLayout)
+		const resizeObserver = new ResizeObserver(([entry]) => {
+			if (!entry) return
+			const borderBox = entry.borderBoxSize[0]
+			topNavigationHeight = borderBox?.blockSize ?? entry.contentRect.height
+		})
+		const siteHeader = document.querySelector<HTMLElement>('[data-top-navigation-root]')
+		if (siteHeader) resizeObserver.observe(siteHeader)
+		return () => resizeObserver.disconnect()
 	})
-
-	async function restoreNavigationFocus() {
-		await tick()
-		if (!drawerOpen) document.getElementById(toggleId)?.focus()
-	}
-
-	function dismissOverlay(event: MouseEvent) {
-		if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-		if (drawerMode === 'overlay') drawerOpen = false
-	}
 
 	function current(href: string) {
 		return (
@@ -74,166 +71,218 @@
 	}
 </script>
 
-<div class="app-shell">
-	<Drawer
-		id={drawerId}
-		triggerId={toggleId}
-		heading={m['navigation.label']()}
-		headingHidden
-		closeLabel={m['navigation.close']()}
-		mode={drawerMode}
-		bind:open={drawerOpen}
-		onclose={restoreNavigationFocus}
-		style="--dui-drawer-width: 20rem"
-	>
-		<div class="sidebar-content">
-			<Navigation label={m['navigation.label']()}>
-				<li>
-					<a href="/" aria-current={current('/')} onclick={dismissOverlay}
-						>{m['navigation.overview']()}</a
-					>
-				</li>
-				<li>
-					<a href="/expenses" aria-current={current('/expenses')} onclick={dismissOverlay}
-						>{m['labels.expenses']()}</a
-					>
-				</li>
-				<li>
-					<a href="/incomes" aria-current={current('/incomes')} onclick={dismissOverlay}
-						>{m['labels.income']()}</a
-					>
-				</li>
-				<li>
-					<a href="/accounts" aria-current={current('/accounts')} onclick={dismissOverlay}
-						>{m['labels.accounts']()}</a
-					>
-				</li>
-				<li>
-					<a
-						href="/settings/categories"
-						aria-current={current('/settings/categories')}
-						onclick={dismissOverlay}>{m['labels.categories']()}</a
-					>
-				</li>
-				<li>
-					<a href="/settings/tags" aria-current={current('/settings/tags')} onclick={dismissOverlay}
-						>{m['labels.tags']()}</a
-					>
-				</li>
-				<li>
-					<a
-						href="/settings/workspace"
-						aria-current={current('/settings/workspace')}
-						onclick={dismissOverlay}>{m['workspace.label']()}</a
-					>
-				</li>
-				<li>
-					<a href="/account" aria-current={current('/account')} onclick={dismissOverlay}
-						>{m['navigation.account_recovery']()}</a
-					>
-				</li>
-				<li>
-					<a href="/login" aria-current={current('/login')} onclick={dismissOverlay}
-						>{m['navigation.login']()}</a
-					>
-				</li>
-			</Navigation>
+<div class="app-shell" style="--dui-top-navigation-height: {topNavigationHeight}px">
+	<TopNavigation sticky class="site-header">
+		<Button
+			class="navigation-toggle"
+			id={toggleId}
+			type="button"
+			aria-controls={drawerId}
+			aria-expanded={drawerOpen}
+			onclick={() => (drawerOpen = !drawerOpen)}
+		>
+			<ScreenReaderText>{m['navigation.toggle']()}</ScreenReaderText>
+			<span aria-hidden="true">{drawerOpen ? '×' : '☰'}</span>
+		</Button>
+		<strong>{m['app.name']()}</strong>
+	</TopNavigation>
+	<div class="workspace" data-drawer-open={drawerOpen}>
+		<Drawer
+			class="site-drawer"
+			id={drawerId}
+			heading={m['navigation.label']()}
+			headingHidden
+			closeLabel={m['navigation.close']()}
+			showCloseButton={false}
+			style="--dui-drawer-width: 20rem; --dui-drawer-height: calc(100vh - var(--dui-top-navigation-height)); --dui-drawer-top: var(--dui-top-navigation-height)"
+			bind:open={drawerOpen}
+		>
+			<div class="sidebar-content">
+				<Navigation label={m['navigation.label']()}>
+					<li>
+						<a href="/" aria-current={current('/')} onclick={() => (drawerOpen = false)}
+							>{m['navigation.overview']()}</a
+						>
+					</li>
+					<li>
+						<a href="/expenses" aria-current={current('/expenses')} onclick={() => (drawerOpen = false)}
+							>{m['labels.expenses']()}</a
+						>
+					</li>
+					<li>
+						<a href="/incomes" aria-current={current('/incomes')} onclick={() => (drawerOpen = false)}
+							>{m['labels.income']()}</a
+						>
+					</li>
+					<li>
+						<a href="/accounts" aria-current={current('/accounts')} onclick={() => (drawerOpen = false)}
+							>{m['labels.accounts']()}</a
+						>
+					</li>
+					<li>
+						<a
+							href="/settings/categories"
+							aria-current={current('/settings/categories')}
+							onclick={() => (drawerOpen = false)}>{m['labels.categories']()}</a
+						>
+					</li>
+					<li>
+						<a href="/settings/tags" aria-current={current('/settings/tags')} onclick={() => (drawerOpen = false)}
+							>{m['labels.tags']()}</a
+						>
+					</li>
+					<li>
+						<a
+							href="/settings/workspace"
+							aria-current={current('/settings/workspace')}
+							onclick={() => (drawerOpen = false)}>{m['workspace.label']()}</a
+						>
+					</li>
+					<li>
+						<a href="/account" aria-current={current('/account')} onclick={() => (drawerOpen = false)}
+							>{m['navigation.account_recovery']()}</a
+						>
+					</li>
+					<li>
+						<a href="/login" aria-current={current('/login')} onclick={() => (drawerOpen = false)}
+							>{m['navigation.login']()}</a
+						>
+					</li>
+				</Navigation>
 
-			<section aria-labelledby={filtersHeadingId}>
-				<QueryContent
-					queries={organizationQueries}
-					loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
-					errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
-				>
-					<Select
-						label={m['workspace.label']()}
-						id="active-organization"
-						value={organizationId ?? ''}
-						onchange={(event) => onOrganizationChange(event.currentTarget.value)}
+				<section aria-labelledby={filtersHeadingId}>
+					<QueryContent
+						queries={organizationQueries}
+						loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
+						errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
 					>
-						{#each organizations as organization (organization.id)}
-							<option value={organization.id}>{organization.name}</option>
-						{/each}
-					</Select>
-				</QueryContent>
+						<Select
+							label={m['workspace.label']()}
+							id="active-organization"
+							value={organizationId ?? ''}
+							onchange={(event) => onOrganizationChange(event.currentTarget.value)}
+						>
+							{#each organizations as organization (organization.id)}
+								<option value={organization.id}>{organization.name}</option>
+							{/each}
+						</Select>
+					</QueryContent>
 
-				<h2 id={filtersHeadingId}>{m['labels.accounts']()}</h2>
-				<QueryContent
-					queries={accountQueries}
-					loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
-					errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
-				>
-					{#if accounts.length > 0}
-						<ul>
-							<li class="account-filter">
-								<Checkbox
-									checked={selectedAccountIds === null ||
-										accounts.every((account) => selectedAccountIds?.includes(account.id))}
-									label={m['accounts.filters.all']()}
-									onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
-								/>
-							</li>
-							{#each accounts as account (account.id)}
+					<h2 id={filtersHeadingId}>{m['labels.accounts']()}</h2>
+					<QueryContent
+						queries={accountQueries}
+						loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
+						errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
+					>
+						{#if accounts.length > 0}
+							<ul>
 								<li class="account-filter">
 									<Checkbox
-										checked={selectedAccountIds === null || selectedAccountIds.includes(account.id)}
-										label={account.name}
-										aria-label={m['accounts.filters.toggle']({ name: account.name })}
-										onchange={(event) => onAccountChange(account.id, event.currentTarget.checked)}
+										checked={selectedAccountIds === null ||
+											accounts.every((account) => selectedAccountIds?.includes(account.id))}
+										label={m['accounts.filters.all']()}
+										onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 									/>
 								</li>
-							{/each}
-						</ul>
-					{:else}
-						<p>{m['accounts.sidebar_empty']()}</p>
-					{/if}
-				</QueryContent>
-				<a href="/accounts/new" aria-current={current('/accounts/new')} onclick={dismissOverlay}
-					>{m['actions.add_account']()}</a
-				>
-			</section>
-			<div class="sidebar-status">
-				<StatusMessage
-					compact
-					text={!syncConfigured
-						? m['database.local']()
-						: browserOffline
-							? m['database.offline']()
-							: m['database.sync_enabled']()}
-				/>
+								{#each accounts as account (account.id)}
+									<li class="account-filter">
+										<Checkbox
+											checked={selectedAccountIds === null || selectedAccountIds.includes(account.id)}
+											label={account.name}
+											aria-label={m['accounts.filters.toggle']({ name: account.name })}
+											onchange={(event) => onAccountChange(account.id, event.currentTarget.checked)}
+										/>
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<p>{m['accounts.sidebar_empty']()}</p>
+						{/if}
+					</QueryContent>
+					<a href="/accounts/new" aria-current={current('/accounts/new')} onclick={() => (drawerOpen = false)}
+						>{m['actions.add_account']()}</a
+					>
+				</section>
+				<div class="sidebar-status">
+					<StatusMessage
+						compact
+						text={!syncConfigured
+							? m['database.local']()
+							: browserOffline
+								? m['database.offline']()
+								: m['database.sync_enabled']()}
+					/>
+				</div>
 			</div>
-		</div>
-	</Drawer>
-	<main>
-		<div class="shell-controls" data-open={drawerOpen} inert={drawerOpen} aria-hidden={drawerOpen}>
-			<Button
-				id={toggleId}
-				type="button"
-				aria-controls={drawerId}
-				aria-expanded={drawerOpen}
-				onclick={() => (drawerOpen = !drawerOpen)}>{m['navigation.open']()}</Button
-			>
-		</div>
-		<div class="page-content">{@render children()}</div>
-	</main>
+		</Drawer>
+		<main>
+			<div class="page-content">{@render children()}</div>
+		</main>
+	</div>
 </div>
 
 <style>
-	.shell-controls {
-		display: flex;
-		gap: var(--dui-space-xs, 0.5rem);
-		min-block-size: var(--dui-button-min-height, 44px);
-	}
-
-	.shell-controls[data-open='true'] {
-		visibility: hidden;
-	}
-
 	.app-shell {
+		display: flex;
+		flex-direction: column;
+		min-height: 100vh;
+	}
+
+	:global(header.site-header) {
+		inline-size: 100%;
+		min-block-size: 3.5rem;
+	}
+
+	:global(header.site-header .navigation-toggle) {
+		--dui-button-padding: 0;
+		--dui-button-min-height: 2.75rem;
+		inline-size: 2.75rem;
+		block-size: 2.75rem;
+		display: inline-grid;
+		place-items: center;
+	}
+
+	:global(header.site-header .navigation-toggle [aria-hidden='true']) {
+		inline-size: 1.5rem;
+		block-size: 1.5rem;
+		font-size: 1.5rem;
+		line-height: 1;
+		display: grid;
+		place-items: center;
+	}
+
+	:global(aside.site-drawer) {
+		flex: 0 0 var(--dui-drawer-width, 20rem);
+	}
+
+	:global(aside.site-drawer.inline-drawer) {
+		block-size: calc(100vh - var(--dui-top-navigation-height, 3.5rem));
+	}
+
+	.workspace[data-drawer-open='false'] :global(aside.site-drawer) {
+		flex-basis: 0;
+	}
+
+	.workspace[data-drawer-open='false'] :global(aside.site-drawer .inline-panel) {
+		transform: translateX(-100%);
+	}
+
+	.workspace[data-drawer-open='true'] :global(aside.site-drawer .inline-panel) {
+		transform: translateX(0);
+	}
+
+	:global(aside.site-drawer .inline-panel) {
+		border: 0;
+		border-inline-end: var(--dui-dialog-border-width, var(--dui-border-width, 2px)) solid
+			var(--dui-dialog-border-color, var(--dui-color-foreground, currentColor));
+	}
+
+	.workspace {
 		display: flex;
 		align-items: flex-start;
 		gap: var(--dui-space-sm, 1rem);
-		min-height: 100vh;
+		min-block-size: 0;
+		flex: 1;
 	}
 
 	.sidebar-content {
@@ -269,8 +318,7 @@
 	main {
 		display: grid;
 		align-content: start;
-		gap: var(--dui-space-sm, 1rem);
-		flex: 1;
+		flex: 1 1 0%;
 		min-width: 0;
 		padding: var(--dui-space-sm, 1rem);
 	}
