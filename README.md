@@ -33,6 +33,10 @@ Account restoration checks run with `pnpm test:auth`. The dedicated suite uses t
 - [Implementation plan](specs/001-finance-mvp/plan.md): technical design and phases.
 - [Task checklist](specs/001-finance-mvp/tasks.md): implementation backlog.
 - [Original planning notes](finance_jazz_svelte_1ec5536a.plan.md): source material for the formalized artifacts.
+- [Manual bank-sync specification](specs/002-manual-bank-sync/spec.md): manual SimpleFIN imports and passkey-protected credentials across the connecting user's devices.
+- [Bank-sync requirements checklist](specs/002-manual-bank-sync/checklists/requirements.md): specification quality review.
+
+The bank-sync specification reflects the approved passkey direction. Its [implementation plan](specs/002-manual-bank-sync/plan.md), research, data model, behavior contract, and quickstart still describe the earlier device-local credential design and must be aligned before bank-sync implementation. The plan contains an explicit warning; these documents are not implementation-ready.
 
 ## Spec Kit
 
@@ -41,3 +45,11 @@ This project uses GitHub [Spec Kit](https://github.com/github/spec-kit) with the
 ## Planned GitHub namespace
 
 `https://github.com/delightful-labs/`
+
+## Planned bank credential protection
+
+The approved bank-sync design encrypts the SimpleFIN Access URL locally using a PRF-capable passkey and replicates only ciphertext and non-secret unlock metadata through Jazz. The password manager, such as 1Password, separately syncs the passkey. The same signed-in user can unlock the connection on compatible devices with that original passkey; organization membership alone does not grant decryption access.
+
+Before consuming a SimpleFIN setup token, the app will verify encryption and subsequent decryption with a harmless sample. Each manual sync will require passkey verification, use the credential transiently, then lock again. Setup tokens, plaintext credentials, and usable decryption keys will not be persisted or replicated. There will be no automatic transaction fetching or retries. Lost-passkey recovery initially means reconnecting SimpleFIN; invalidating a previously copied Access URL requires provider-side revocation.
+
+This is planned behavior, not an implemented bank integration. Sharing credentials with other organization members and additional recovery mechanisms are out of scope. An initial passkey prototype demonstrated successful sample recovery in the reported browser trial and has been removed. Physical-device passkey synchronization and production Jazz credential replication remain unverified.

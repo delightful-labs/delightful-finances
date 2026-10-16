@@ -1,8 +1,10 @@
 <!-- Sync Impact Report
-Version: 2.0.0 -> 2.1.0
-Modified principles: V. Accessible, Internationalized UI (integration logic stays with composition).
-Modified workflow: clarify 4–6 file review batches; user authorized this full correction and immediate tests.
-Added/removed sections: none. Deferred placeholders: none.
+Version: 2.2.0 -> 2.3.0 (minor: expand provider-secret guidance to passkey-protected replication).
+Modified principles: IV. Organization-Based Access; VI. Provider Secrets and Imports.
+Added/removed sections: none. Ratification date unchanged.
+Dependent alignment: specs/002-manual-bank-sync/spec.md and its requirements checklist reflect the approved design; README.md distinguishes the prototype from planned production behavior.
+Follow-up: plan.md, research.md, data-model.md, contracts/manual-sync.md, and quickstart.md require alignment before bank-sync implementation. The plan carries an explicit warning.
+Remove this temporary impact report before committing the amendment.
 -->
 
 # Delightful Finance Constitution
@@ -23,7 +25,7 @@ Represent money as integer `amountMinor` plus an ISO 4217 `currency`; never use 
 
 ### IV. Organization-Based Access
 
-An organization is the tenancy boundary; a financial account is a ledger, not an identity or tenant. Scope business data to organizations and enforce access through Jazz permissions. Org owners/admins can access all org accounts. For members/viewers, `accountAccessMode` is authoritative: `all` grants access to all org accounts, while `selected` grants access only to explicitly granted accounts; no grants in `selected` mode means no account access. Members can write accounts they can access according to their grants; viewers are read-only. Account grants do not grant access without active organization membership. SimpleFIN credentials are readable only by org owners/admins.
+An organization is the tenancy boundary; a financial account is a ledger, not an identity or tenant. Scope business data to organizations and enforce access through Jazz permissions. Org owners/admins can access all org accounts. For members/viewers, `accountAccessMode` is authoritative: `all` grants access to all org accounts, while `selected` grants access only to explicitly granted accounts; no grants in `selected` mode means no account access. Members can write accounts they can access according to their grants; viewers are read-only. Account grants do not grant access without active organization membership. SimpleFIN Access URLs are provider credentials owned by the connecting user and scoped to an organization, not ordinary shared organization data. Persist or replicate them only as ciphertext protected by that user's passkey; keep passkeys and usable decryption keys out of application replicas. The same signed-in user may unlock the encrypted credential on their own compatible devices using the same synced passkey. Bind credentials to the user, organization, and connection; organization membership alone must not grant decryption access. Passkey possession does not replace application identity, membership, or account authorization checks. Local-first provider operations run on the client, directly or through a stateless CORS relay that does not retain credentials. Sharing credentials with other organization members requires a separately approved encrypted key-distribution, recovery, and revocation design; ordinary Jazz role permissions alone are not secret storage.
 
 ### V. Accessible, Internationalized UI
 
@@ -31,7 +33,11 @@ Use SvelteKit with Svelte 5, semantic HTML controls, and Paraglide JS for every 
 
 ### VI. Provider Secrets and Imports
 
-SimpleFIN is optional, bring-your-own-key, and organization-scoped. Never persist setup tokens. Treat the claimed Access URL as a secret. Claiming and fetching happen in a server-side sync worker, not browser replicas. Imported transactions carry provider provenance and an external identifier for idempotency.
+SimpleFIN is optional, bring-your-own-key, and initiated by the user. Never persist, log, or replicate setup tokens. Before claiming a one-use token, verify that the selected passkey can encrypt and subsequently decrypt a harmless sample using WebAuthn PRF; successful passkey creation or sign-in alone is insufficient. Encrypt the claimed Access URL before persistence, and replicate only ciphertext and non-secret unlock metadata through Jazz. The password manager separately manages passkey synchronization. Require passkey user verification for each explicit credential-using operation; keep decrypted credentials and usable keys transient and release them when the operation ends or the user leaves or changes identity/organization. Never persist decrypted credentials or usable decryption keys, expose them in ordinary UI, or include them in logs or navigation URLs. Do not silently downgrade to plaintext storage on incompatible devices.
+
+Transaction fetching occurs only after an authorized user explicitly presses Sync now and completes passkey verification. Startup, reload, network reconnection, timers, ordinary data changes, connection setup, and failed attempts must not fetch or retry transactions. Account discovery is a separate explicit, passkey-unlocked operation that must not fetch transactions. Claiming and fetching are client-initiated operations; a stateless relay may be used only where browser CORS requires it and must not retain or log tokens, Access URLs, or provider responses. Imported transactions carry provider provenance and a stable external identity for idempotency, including repeated imports from different devices.
+
+Initial lost-passkey recovery is reconnection using a new setup token and passkey, preserving imported finance data. Do not promise old-credential recovery through application sign-in, a newly created passkey, or password-manager account recovery. Disconnecting prevents new requests as devices observe the change; invalidating a credential already decrypted or copied requires provider-side revocation. Encrypted storage does not protect a credential from malicious application code while unlocked or from a relay handling the request. Verify compatibility on actual supported devices and distinguish locally synced passkeys from phone/QR flows before declaring cross-device support. Sharing with other organization members, additional recovery methods, and backup passkey enrollment remain subject to separate approved designs.
 
 ### VII. Additive, Queryable Domain Design
 
@@ -64,4 +70,4 @@ Every application feature and production code path must have appropriate automat
 
 This constitution governs implementation and supersedes conflicting project conventions. Amend it when a deliberate architectural decision changes, and update dependent specs/plans in the same change. Each feature plan must state how it complies with the principles above.
 
-**Version**: 2.1.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-14
+**Version**: 2.3.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-15
