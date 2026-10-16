@@ -139,6 +139,20 @@
 						>
 					</li>
 					<li>
+						<a
+							href="/settings/passkey-demo"
+							aria-current={current('/settings/passkey-demo')}
+							onclick={() => (drawerOpen = false)}>{m['passkey_demo.title']()}</a
+						>
+					</li>
+					<li>
+						<a
+							href="/settings/banks"
+							aria-current={current('/settings/banks')}
+							onclick={() => (drawerOpen = false)}>{m['bank.title']()}</a
+						>
+					</li>
+					<li>
 						<a href="/account" aria-current={current('/account')} onclick={() => (drawerOpen = false)}
 							>{m['navigation.account_recovery']()}</a
 						>

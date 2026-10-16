@@ -145,7 +145,7 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 	return result.wait({ tier: 'local' })
 }
 
-async function stableUuid(namespaceId: string, name: string) {
+export async function stableUuid(namespaceId: string, name: string) {
 	const namespaceHex = namespaceId.replaceAll('-', '')
 	const namespaceBytes = Uint8Array.from(
 		Array.from({ length: namespaceHex.length / 2 }, (_, index) =>

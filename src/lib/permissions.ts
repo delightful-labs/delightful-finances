@@ -330,18 +330,50 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	// Removing a referenced detail would leave a check transaction incomplete.
 	policy.checkDetails.allowDelete.never()
 
+	const ownsConnection = (connection: { organizationId: IdExpression; ownerId: IdExpression }) =>
+		allOf([isAdmin(connection.organizationId), { ownerId: session.user.account }])
 	policy.simplefinConnections.allowRead.where((connection) => isAdmin(connection.organizationId))
-	policy.simplefinConnections.allowInsert.where((connection) => isAdmin(connection.organizationId))
+	policy.simplefinConnections.allowInsert.where((connection) =>
+		allOf([ownsConnection(connection), { accessUrl: '' }])
+	)
 	policy.simplefinConnections.allowUpdate
-		.whereOld((connection) => isAdmin(connection.organizationId))
-		.whereNew((connection) => isAdmin(connection.organizationId))
-	policy.simplefinConnections.allowDelete.where((connection) => isAdmin(connection.organizationId))
+		.whereOld((connection) => ownsConnection(connection))
+		.whereNew((connection) =>
+			allOf([
+				ownsConnection(connection),
+				{ accessUrl: '' },
+				policy.simplefinConnections.exists.where({
+					id: connection.id,
+					organizationId: connection.organizationId,
+					ownerId: connection.ownerId
+				})
+			])
+		)
+	policy.simplefinConnections.allowDelete.where((connection) => ownsConnection(connection))
 
 	policy.simplefinAccountLinks.allowRead.where((link) => isAdmin(link.organizationId))
-	policy.simplefinAccountLinks.allowInsert.where((link) => isAdmin(link.organizationId))
+	const validBankMapping = (link: {
+		organizationId: IdExpression
+		accountId: IdExpression
+		connectionId: IdExpression
+	}) =>
+		allOf([
+			isAdmin(link.organizationId),
+			policy.accounts.exists.where({
+				id: link.accountId,
+				organizationId: link.organizationId,
+				archivedAt: { isNull: true }
+			}),
+			policy.simplefinConnections.exists.where({
+				id: link.connectionId,
+				organizationId: link.organizationId,
+				status: 'active'
+			})
+		])
+	policy.simplefinAccountLinks.allowInsert.where((link) => validBankMapping(link))
 	policy.simplefinAccountLinks.allowUpdate
 		.whereOld((link) => isAdmin(link.organizationId))
-		.whereNew((link) => isAdmin(link.organizationId))
+		.whereNew((link) => validBankMapping(link))
 	policy.simplefinAccountLinks.allowDelete.where((link) => isAdmin(link.organizationId))
 
 	policy.transactionAttachments.allowRead.where((attachment) =>

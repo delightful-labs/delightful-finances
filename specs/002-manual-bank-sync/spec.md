@@ -29,11 +29,13 @@ As a user, I can connect SimpleFIN for the active organization and protect its c
 5. **Given** passkey encryption is unsupported, verification is cancelled, or a round trip cannot reproduce the encryption key, **When** setup is attempted, **Then** the app reports the problem before claiming the setup token and does not fall back to plaintext storage.
 6. **Given** a claim succeeds but encrypted persistence fails, **When** setup ends, **Then** the app does not report a usable saved connection and explains that the consumed token cannot be reused and the provider connection may need to be revoked and set up again.
 
+7. **Given** connection setup has started, **When** each passkey step completes, **Then** the form is replaced by the next explanatory XState-driven view with an explicit action to test encryption, test unlocking, or finally claim and save the connection. No next passkey prompt or claim starts until its action is selected. Cancelling clears pending setup data.
+
 ---
 
 ### User Story 2 - Link provider accounts to local accounts (P1)
 
-As a user with permission to manage the active organization's accounts, I can map each available provider account to the matching local account so imported transactions are assigned to the correct ledger.
+As a user with permission to manage the active organization's accounts, I can add a local account using each discovered provider account’s name by default, or optionally map it to an existing local account so imported transactions are assigned to the correct ledger.
 
 **Why this priority**: Imports need a deliberate destination to preserve account-level financial organization and authorization.
 
@@ -42,8 +44,11 @@ As a user with permission to manage the active organization's accounts, I can ma
 **Acceptance Scenarios**:
 
 1. **Given** an active connection with provider accounts, **When** an owner/admin chooses a local account for a provider account, **Then** the mapping is saved and subsequent manual syncs target that local account.
-2. **Given** an account is not mapped, **When** the owner/admin views account mappings, **Then** it is clearly identified as not eligible for transaction import until mapped.
-3. **Given** a mapping refers to an archived or unavailable local account, **When** a sync is requested, **Then** imported transactions are not silently assigned to another account and the owner/admin receives an actionable mapping error.
+2. **Given** a discovered account is not mapped, **When** the owner/admin views it, **Then** the default action adds and links a local bank account using the provider name and currency, without asking for a name.
+3. **Given** no active local accounts exist, **When** discovered accounts are displayed, **Then** existing-account mapping controls are hidden. When local accounts exist, mapping to one is optional.
+4. **Given** an add action is repeated, **When** the account already exists or is mapped, **Then** no duplicate local account is created and existing mappings are preserved.
+5. **Given** a local account is already linked to a different provider account, **When** mapping choices are displayed or a mapping is saved, **Then** that account is excluded from other providers’ choices and a conflicting save is rejected. Conflicting replicated mappings block import until corrected.
+6. **Given** a mapping refers to an archived or unavailable local account, **When** a sync is requested, **Then** imported transactions are not silently assigned to another account and the owner/admin receives an actionable mapping error.
 
 ---
 
@@ -107,7 +112,7 @@ As a user, I can use repeated manual syncs without creating duplicate transactio
 - **FR-002**: The setup token MUST be used only for the one-time claim operation and MUST NOT be persisted, logged, or replicated. If a stateless CORS relay is required, it MUST process the token only for the request and MUST NOT retain or log it.
 - **FR-003**: The claimed Access URL MUST be protected by passkey-based encryption. Only ciphertext and the non-secret metadata needed to unlock it MAY be persisted or replicated through Jazz. Plaintext credentials and usable decryption keys MUST NOT be persisted, logged, placed in navigation URLs, or shown in ordinary UI. Plaintext MAY exist transiently on the client for an explicit provider operation and in a stateless relay only when required.
 - **FR-004**: Connection actions MUST be user initiated and scoped to the active application identity and organization. Encrypted credentials MUST be owned by the connecting user and bound to that user, organization, and connection. Other organization members MUST NOT gain decryption access through organization membership. Sharing with other members is out of scope.
-- **FR-005**: The system MUST let an authorized organization user view provider accounts and map each importable provider account to one local organization account.
+- **FR-005**: The system MUST let an authorized organization user view provider accounts and add a corresponding local account using the provider name and currency as the default action. Adding MUST save the account and mapping together without duplicates. Mapping to an existing local account MUST be optional and shown only when active local accounts exist.
 - **FR-006**: The system MUST provide a clearly labeled Sync now action for an authorized connection owner on a compatible device, distinguishing a saved locked connection from one unavailable on this device.
 - **FR-007**: Provider transaction fetching MUST occur only as a direct result of an explicit Sync now action. App startup, reload, reconnecting to the network, background timers, development reloads, and ordinary data changes MUST NOT initiate or retry a provider transaction fetch.
 - **FR-008**: The system MUST prevent concurrent sync attempts for the same user/organization connection within a device, including multiple tabs, and communicate the current attempt state. Cross-device imports MUST retain the duplicate-prevention guarantees of FR-010.

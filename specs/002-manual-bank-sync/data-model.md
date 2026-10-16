@@ -1,67 +1,19 @@
 # Data Model: Manual SimpleFIN Bank Sync
 
-## Existing Records
+## Connection
 
-The current codebase defines:
+Retain the required legacy accessUrl column shape for migration compatibility; new writes use only an empty-string sentinel, enforced by Jazz permissions. It never receives a usable credential. Add ownerId and versioned encryption metadata: credentialId, prfSalt, iv, ciphertext. Bind the envelope to ownerId, organizationId and row ID through AES-GCM additional authenticated data. Existing unprotected records require reconnection and cannot be used for provider requests. A missing envelope indicates waiting for replication or reconnection, never an unlocked connection.
 
-- `simplefinConnections`: `organizationId`, `accessUrl`, `status`, `lastSyncAt`, `lastError`, and `claimedAt`.
-- `simplefinAccountLinks`: organization id, local account id, SimpleFIN account id, and optional SimpleFIN organization id.
-- `transactions`: transaction source (`manual` or `simplefin`) and optional `externalId`; application validation requires an external id for SimpleFIN-imported transactions.
+Metadata contains active/revoked/error state, last manual attempt time, outcome and counts. Status never implies this device can decrypt. Owner-only mutation requires active owner/admin organization membership; read access to ciphertext cannot grant decryption.
 
-Connection and account-link Jazz records currently have owner/admin-only permissions. Because Jazz records are replicated to clients with access, role restrictions are not device-local secret storage. The existing `accessUrl` field must not be used for plaintext credential storage under this feature; device-local credential storage must be separate.
+## Account mapping
 
-## Target Conceptual Records
+Scope links to organization and connection; provider identity includes institution identity and account ID. Map only active same-organization local accounts. Reconnection preserves mappings and imports. Disconnect removes the encrypted envelope and revokes the application connection without deleting finance data; provider-side revocation remains necessary for previously copied credentials.
 
-### Provider connection metadata (Jazz/client-safe)
+## Imported transactions
 
-- Organization identity
-- Non-secret connection status that is meaningful at the organization level, where appropriate
-- Last completed shared sync metadata, if it is shared across devices
-- User-safe error/status summary, excluding credentials and sensitive provider response data
-- Local-only connection availability is maintained separately and must not be inferred from a shared status record
+Use existing transaction fields, source=simplefin and a stable composite external identity. Derive the row UUID from organization and provider institution/account/transaction identity, independent of local mapping or connecting device. Repeated sync does not update already imported finance data. Deterministic IDs prevent multiple rows from concurrent offline imports; concurrent conflicting content on the same row remains subject to Jazz resolution.
 
-### Provider credential (device-local)
+## Secret lifetime
 
-- Organization/connection identity used to scope the credential to the active workspace on this device
-- Claimed Access URL
-- Stored in device-local secret storage separate from plaintext shared Jazz records
-- Available to the local integration flow for user-initiated requests; never written to logs, URLs, or ordinary UI
-- Not automatically available to another browser, device, or organization member; multi-device sharing requires a separate encrypted key-distribution and recovery design
-
-### Provider account mapping
-
-- Organization identity
-- Provider account identity and provider organization identity when present
-- Local account identity
-- Mapping must resolve to an active local account in the same organization at sync time
-- Mapping is unique enough to prevent one provider account from ambiguously targeting multiple local accounts
-- Mapping can be shared organization data, but the local device must have a matching credential before fetching/importing
-
-### Sync attempt
-
-- Organization identity and local connection identity where needed
-- Attempt identifier and start/completion timestamps
-- Outcome: running, succeeded, partial, failed, or cancelled if cancellation is supported
-- Counts of imported, already-present, and omitted records
-- Sanitized user-safe failure summary
-- The record represents a user-initiated action only; it does not schedule future work
-- Decide which attempt metadata is shared to the organization versus retained locally to avoid implying another device has the credential
-
-### Imported transaction
-
-- Existing transaction financial fields and organization/account/category references
-- Provider source marker
-- Stable provider transaction identifier
-- Provider-account/connection context sufficient to disambiguate identifiers
-- Persistent idempotency invariant for repeat/manual retry
-
-## Invariants
-
-1. A setup token is transient and is never persisted in either Jazz or secret storage.
-2. A claimed Access URL is stored only in device-local secret storage and is not synchronized in plaintext through Jazz. The local browser runtime can access it when the user initiates an operation; this does not protect against same-origin script compromise while unlocked.
-3. One Sync now action creates at most one active attempt for an organization connection.
-4. No timer, lifecycle event, network reconnection, or failure handler creates or retries an attempt.
-5. Only transactions belonging to mapped provider accounts and active local accounts are eligible for import.
-6. An imported provider transaction identity is unique within its provider/account context and cannot create duplicates on repeated sync.
-7. All imported values satisfy the existing transaction amount, currency, category, account, and date invariants.
-8. Failed/partial operations preserve already-committed valid transactions and expose a truthful outcome.
+Setup tokens, decrypted URLs, PRF outputs and CryptoKeys are operation-scoped only. Never persist or log them. Zero mutable PRF buffers after key derivation. Browser memory collection cannot be guaranteed; drop all application references when an operation terminates. Each operation requires a new verified assertion.

@@ -1,35 +1,15 @@
 # Quickstart: Manual SimpleFIN Bank Sync
 
-This feature is not implemented yet. This document records the intended user-facing flow for later implementation and review.
+1. Open bank sync settings as an organization owner/admin.
+2. Paste a SimpleFIN Bridge setup token and choose Create passkey. After creation, follow the separate Test encryption and Test unlocking views, each with its own explanation and explicit button. Once both pass, choose Connect and save securely to claim the token and persist the encrypted credential. Cancel returns to the form and discards pending setup data.
+3. Connection finishes locked; no provider data is fetched.
+4. Explicitly discover accounts and verify the passkey. For each discovered account, use Add account to create and link a local bank account with the provider’s name and currency. When active local accounts exist, optionally link to an existing account instead.
+5. Press Sync now and verify the passkey for one transaction import. Review counts and outcome. Failures never retry automatically.
+6. On another compatible device, sign into the same Jazz identity, wait for ciphertext replication and use the same synced passkey. Do not claim another token merely to unlock.
+7. If the original passkey is lost, reconnect using a new setup token and passkey. Existing finance data remains. Disconnect also requires provider-side revocation to invalidate previously copied credentials.
 
-## Local Connection Flow
+Physical-device compatibility is not yet certified. HTTPS with a stable hostname (localhost for development) is required. Tests await implementation review; never use real provider credentials in fixtures or logs.
 
-1. Open organization integration settings.
-2. Submit a SimpleFIN setup token.
-3. The app claims the token through a client-initiated request, directly or through a stateless CORS relay if browser CORS requires it; it discards the setup token and stores the Access URL in device-local secret storage, outside plaintext shared Jazz records.
-4. Review the non-secret connection status.
-5. Discover provider accounts (discovery behavior to be decided during implementation; it must not fetch transactions).
-6. Map provider accounts to active local accounts.
-7. Press **Sync now** to initiate one transaction fetch and import attempt.
-8. Review the completed, partial, or failed result and last-attempt status.
-9. Press **Sync now** again only when desired; no retry happens automatically.
+## Standalone passkey demo
 
-## Non-Goals
-
-- No scheduled or periodic sync.
-- No background sync, polling, startup fetch, reload fetch, or online/reconnect fetch.
-- No automatic first transaction fetch after connecting.
-- No automatic retry after failure.
-- No automatic local-account creation or implicit provider-account mapping.
-
-## Implementation Preconditions
-
-- Select device-local secret storage appropriate to the browser/PWA target and document its limits, especially XSS, profile-copying, device-loss, and recovery behavior.
-- Confirm server-route authorization and Jazz write approach.
-- Confirm provider protocol semantics, limits, pagination, revocation and financial-value conversion.
-- Decide and document how provider account discovery occurs without transaction fetching.
-- Ensure imported transaction identity is concurrency-safe and repeatable.
-
-## Validation After User Review
-
-Project rule: do not add or run tests until the user reviews and approves the implementation. Once approved, add focused unit and Playwright coverage for credential confidentiality, organization/account invariants, manual-only trigger behavior, idempotency, failure preservation, and supported transaction normalization, then run only the relevant checks.
+Open `/settings/passkey-demo` to exercise the explanatory XState views with arbitrary dummy text. This page creates a real demo passkey, encrypts the text, and verifies decryption only after explicit actions. It never validates a SimpleFIN token, calls the relay/provider, or writes finance data or credentials to Jazz. All sample data and usable key references are released on completion, cancellation, or navigation. The passkey remains in the password manager until removed there. Use this page for UI and encryption experiments; the bank settings route retains the real provider integration.

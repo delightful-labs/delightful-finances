@@ -31,7 +31,10 @@ export function createWorkspaceBootstrapMachine(db: Parameters<typeof ensurePers
 						return { db: context.db, userId: context.userId }
 					},
 					onDone: 'ready',
-					onError: 'error'
+					onError: {
+						target: 'error',
+						actions: ({ event }) => console.error('Workspace preparation failed:', event.error)
+					}
 				},
 				on: {
 					SESSION_READY: { target: 'ensuringWorkspace', reenter: true, actions: setUser },
