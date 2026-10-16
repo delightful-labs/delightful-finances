@@ -173,3 +173,13 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 - [x] Implement Finance-owned viewport-based initial disclosure and mobile-only sidebar link/Sync now dismissal in AppShell; inspect DUI for embedded policy.
 - [x] After implementation approval, add and run focused coverage: the viewport utility unit test and five navigation browser scenarios pass, covering mobile/desktop startup, sidebar links including Add an account, manual toggling, reloads, breakpoint boundaries, and resizing. Application/service-worker checks and browser-test TypeScript checks pass. The resizing scenario emitted a ResizeObserver loop warning; all assertions passed. Sync now dismissal is not covered by these focused browser scenarios.
+
+### Mobile drawer push layout
+
+- [x] Keep mobile main content full width while the drawer pushes it offscreen, leaving a 3.5rem strip visible; preserve desktop layout.
+- [ ] Review the implementation, then add and run focused mobile/desktop geometry and horizontal-overflow browser coverage.
+
+### Mobile drawer accessibility
+
+- [x] Make main content inert only while mobile navigation is open; add a native dismissal button over the visible main strip and restore toggle focus on activation.
+- [ ] After implementation review, add and run focused inertness, dismissal, focus restoration, and resize coverage.

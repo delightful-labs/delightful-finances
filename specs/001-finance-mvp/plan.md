@@ -222,3 +222,7 @@ The compact StatusMessage type error is resolved. Finance uses a local archive b
 ### Responsive drawer policy
 
 Keep this simple disclosure state in AppShell. On mount, use the shared Finance `isMobile()` utility from `src/lib/viewport.ts`, backed by `window.matchMedia('(max-width: 48rem)').matches`, to initialize the drawer closed for compact viewports and open otherwise. The utility is browser-only and returns a boolean for the current viewport. Call it again when sidebar navigation or Sync now is selected; only compact viewports dismiss the drawer. Preserve manual disclosure state across resizing. No responsive policy belongs in Delightful UI; its current Drawer and Navigation already leave these decisions to the caller.
+
+Implement the mobile push layout in AppShell CSS at the shared 48rem breakpoint: remove the workspace gap, keep main at a non-shrinking 100% flex basis including padding, size the drawer to `100% - 3.5rem` of its container, constrain the shell/workspace inline sizes, and clip horizontal overflow on both the shell and workspace. The drawer’s existing flex-basis transition moves the full-width main content. Leave desktop layout and DUI unchanged.
+
+Track the current mobile viewport in AppShell using `isMobile()` on mount and window resize. Derive main inertness from mobile viewport and drawer disclosure. Place a native, translated dismissal button outside inert main over its visible strip; restore toggle focus when activated. Keep this simple presentation state local.

@@ -54,10 +54,13 @@
 	const toggleId = `${shellId}-toggle`
 	const filtersHeadingId = `${shellId}-filters`
 	let drawerOpen = $state(false)
+	let mobileViewport = $state(false)
+	const mainInert = $derived(mobileViewport && drawerOpen)
 	let topNavigationHeight = $state(56)
 
 	onMount(() => {
-		drawerOpen = !isMobile()
+		mobileViewport = isMobile()
+		drawerOpen = !mobileViewport
 
 		const resizeObserver = new ResizeObserver(([entry]) => {
 			if (!entry) return
@@ -83,6 +86,8 @@
 			: undefined
 	}
 </script>
+
+<svelte:window onresize={() => (mobileViewport = isMobile())} />
 
 <div class="app-shell" style="--dui-top-navigation-height: {topNavigationHeight}px">
 	<TopNavigation sticky class="site-header">
@@ -111,7 +116,7 @@
 			headingHidden
 			closeLabel={m['navigation.close']()}
 			showCloseButton={false}
-			style="--dui-drawer-width: 20rem; --dui-drawer-height: calc(100vh - var(--dui-top-navigation-height)); --dui-drawer-top: var(--dui-top-navigation-height)"
+			style="--dui-drawer-height: calc(100vh - var(--dui-top-navigation-height)); --dui-drawer-top: var(--dui-top-navigation-height)"
 			bind:open={drawerOpen}
 		>
 			<div class="sidebar-content">
@@ -254,9 +259,20 @@
 				</div>
 			</div>
 		</Drawer>
-		<main>
+		<main inert={mainInert}>
 			<div class="page-content">{@render children()}</div>
 		</main>
+		{#if mainInert}
+			<button
+				class="drawer-dismiss"
+				type="button"
+				aria-label={m['navigation.close']()}
+				onclick={() => {
+					drawerOpen = false
+					document.getElementById(toggleId)?.focus()
+				}}
+			></button>
+		{/if}
 	</div>
 </div>
 
@@ -291,6 +307,7 @@
 	}
 
 	:global(aside.site-drawer) {
+		--dui-drawer-width: 20rem;
 		flex: 0 0 var(--dui-drawer-width, 20rem);
 	}
 
@@ -370,5 +387,41 @@
 		display: flex;
 		align-items: center;
 		gap: var(--dui-space-xs, 0.5rem);
+	}
+
+	.drawer-dismiss {
+		position: absolute;
+		inset-block: 0;
+		inset-inline-end: 0;
+		inline-size: 3.5rem;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	@media (max-width: 48rem) {
+		.app-shell {
+			inline-size: 100%;
+			min-inline-size: 0;
+			overflow-x: clip;
+		}
+
+		.workspace {
+			position: relative;
+			gap: 0;
+			inline-size: 100%;
+			min-inline-size: 0;
+			overflow-x: clip;
+		}
+
+		:global(aside.site-drawer) {
+			--dui-drawer-width: calc(100% - 3.5rem);
+		}
+
+		main {
+			box-sizing: border-box;
+			flex: 0 0 100%;
+		}
 	}
 </style>
