@@ -170,7 +170,7 @@
 						>
 					</li>
 					<li>
-						<Details>
+						<Details caretPosition="right">
 							{#snippet summary()}
 								<span id={filtersHeadingId}
 									><Icon class="menu-icon" icon={AccountsIcon} />{m['labels.accounts']()}</span
@@ -264,7 +264,7 @@
 						</Details>
 					</li>
 					<li>
-						<Details>
+						<Details caretPosition="right">
 							{#snippet summary()}
 								<Icon class="menu-icon" icon={SettingsIcon} />{m['navigation.settings']()}
 							{/snippet}
@@ -390,6 +390,11 @@
 
 	:global(aside.site-drawer) {
 		--dui-drawer-width: 20rem;
+		--dui-drawer-padding: 0;
+		--dui-details-border-width: 0px;
+		--dui-details-content-border-width: 0px;
+		--dui-details-summary-padding: 0.5rem 1rem;
+		--dui-details-content-padding: var(--dui-space-sm, 1rem);
 		flex: 0 0 var(--dui-drawer-width, 20rem);
 	}
 
@@ -436,6 +441,14 @@
 		flex-shrink: 0;
 		margin-inline-end: var(--dui-space-xs, 0.5rem);
 		vertical-align: middle;
+	}
+
+	.sidebar-content :global(nav a) {
+		padding-inline: 1rem;
+	}
+
+	.sidebar-content :global(details nav a) {
+		padding-inline: 0;
 	}
 
 	.sidebar-content :global(a[aria-current='page']) {

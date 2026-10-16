@@ -204,3 +204,8 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
   - Six unit tests pass. All five browser scenarios pass: controls/persistence/new accounts, single-account/storage fallback, workspace isolation/archives, and direct-navigation defaults for expense and income. The controls scenario passed on a focused rerun after its first attempt preceded Vite readiness. Browser-test TypeScript checks pass.
   - Fixed the direct-navigation initialization race: resolve the preference synchronously and expose it through context rather than copying account IDs after render. The unchanged expense/income regression assertions now pass.
   - Browser validation used an isolated Vite server on port 5174 with the existing local Jazz endpoint; the original server had an empty public Jazz URL and failed startup.
+
+### Sidebar icon alignment
+
+- [x] Bundle updated DUI and align Drawer link/Details icons with right carets, full-width items and zero Details borders.
+- [ ] After implementation approval, add and run focused navigation alignment coverage.

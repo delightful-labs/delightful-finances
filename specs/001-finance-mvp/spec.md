@@ -193,3 +193,7 @@ The Accounts disclosure sits immediately above Settings and contains the account
 ### Sidebar account order
 
 Accounts provide an Edit order button below the list. Editing reveals right-aligned up/down buttons, disabled at their respective boundaries; Done exits editing. Moves apply immediately and retain checkbox selection. Store this personal browser preference per identity and workspace; new accounts append in name order. New transaction defaults follow sidebar order. Changing identity/workspace exits editing. If browser storage is unavailable, ordering remains usable for the current session.
+
+### Sidebar icon alignment
+
+Use DUI right-positioned carets for Accounts and Settings. Remove drawer inner padding and Details borders, including the content divider. Navigation links and disclosure summaries share the same horizontal inset so their icons align. Details child content retains 1rem theme spacing on all sides.

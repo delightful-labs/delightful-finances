@@ -242,3 +242,7 @@ TransactionEntry derives the default account ID from its name-ordered active-acc
 ### Sidebar account order
 
 WorkspaceBootstrap owns the account-order XState actor and browser storage binding. The machine has viewing/editing states, guarded MOVE transitions, OBSERVE for account changes and RESET for scope changes. AppShell receives presentation props/callbacks. The shared orderAccounts transformation orders sidebar accounts and transaction defaults; A dedicated context getter exposes the same synchronously resolved preference to TransactionEntry. Resolve browser storage on scope changes during derivation, rather than copying order through effects after forms render; this preserves the correct initial select value on direct navigation. Browser storage is scoped to identity/workspace and falls back to session-only ordering. No Jazz schema or permission changes.
+
+### Sidebar icon alignment
+
+Bundle current local DUI source with the Details caretPosition API in a distinct vendored archive. Scope zero drawer padding, zero Details borders, theme-spaced Details child content, and equal link/summary horizontal insets to AppShell. Nested navigation links use the Details content inset without additional link padding, aligning their icons with summaries and account checkboxes. Preserve disclosure and navigation behavior. Package and static checks precede review; browser tests follow implementation approval.
