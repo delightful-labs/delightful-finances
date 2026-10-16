@@ -14,6 +14,7 @@
 	import CloseIcon from 'tdesign-icons-svg/src/close.svg?component'
 	import { onMount, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
+	import { isMobile } from '#lib/viewport.js'
 	import type { BankSyncControls } from '#lib/bank-sync.js'
 	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -56,6 +57,8 @@
 	let topNavigationHeight = $state(56)
 
 	onMount(() => {
+		drawerOpen = !isMobile()
+
 		const resizeObserver = new ResizeObserver(([entry]) => {
 			if (!entry) return
 			const borderBox = entry.borderBoxSize[0]
@@ -65,6 +68,10 @@
 		if (siteHeader) resizeObserver.observe(siteHeader)
 		return () => resizeObserver.disconnect()
 	})
+
+	function dismissMobileDrawer() {
+		if (isMobile()) drawerOpen = false
+	}
 
 	function current(href: string) {
 		return (
@@ -110,68 +117,60 @@
 			<div class="sidebar-content">
 				<Navigation label={m['navigation.label']()}>
 					<li>
-						<a href="/" aria-current={current('/')} onclick={() => (drawerOpen = false)}
+						<a href="/" aria-current={current('/')} onclick={dismissMobileDrawer}
 							>{m['navigation.overview']()}</a
 						>
 					</li>
 					<li>
-						<a
-							href="/expenses"
-							aria-current={current('/expenses')}
-							onclick={() => (drawerOpen = false)}>{m['labels.expenses']()}</a
+						<a href="/expenses" aria-current={current('/expenses')} onclick={dismissMobileDrawer}
+							>{m['labels.expenses']()}</a
 						>
 					</li>
 					<li>
-						<a
-							href="/incomes"
-							aria-current={current('/incomes')}
-							onclick={() => (drawerOpen = false)}>{m['labels.income']()}</a
+						<a href="/incomes" aria-current={current('/incomes')} onclick={dismissMobileDrawer}
+							>{m['labels.income']()}</a
 						>
 					</li>
 					<li>
-						<a
-							href="/accounts"
-							aria-current={current('/accounts')}
-							onclick={() => (drawerOpen = false)}>{m['labels.accounts']()}</a
+						<a href="/accounts" aria-current={current('/accounts')} onclick={dismissMobileDrawer}
+							>{m['labels.accounts']()}</a
 						>
 					</li>
 					<li>
 						<a
 							href="/settings/categories"
 							aria-current={current('/settings/categories')}
-							onclick={() => (drawerOpen = false)}>{m['labels.categories']()}</a
+							onclick={dismissMobileDrawer}>{m['labels.categories']()}</a
 						>
 					</li>
 					<li>
 						<a
 							href="/settings/tags"
 							aria-current={current('/settings/tags')}
-							onclick={() => (drawerOpen = false)}>{m['labels.tags']()}</a
+							onclick={dismissMobileDrawer}>{m['labels.tags']()}</a
 						>
 					</li>
 					<li>
 						<a
 							href="/settings/workspace"
 							aria-current={current('/settings/workspace')}
-							onclick={() => (drawerOpen = false)}>{m['workspace.label']()}</a
+							onclick={dismissMobileDrawer}>{m['workspace.label']()}</a
 						>
 					</li>
 					<li>
 						<a
 							href="/settings/banks"
 							aria-current={current('/settings/banks')}
-							onclick={() => (drawerOpen = false)}>{m['bank.title']()}</a
+							onclick={dismissMobileDrawer}>{m['bank.title']()}</a
 						>
 					</li>
 					<li>
-						<a
-							href="/account"
-							aria-current={current('/account')}
-							onclick={() => (drawerOpen = false)}>{m['navigation.account_recovery']()}</a
+						<a href="/account" aria-current={current('/account')} onclick={dismissMobileDrawer}
+							>{m['navigation.account_recovery']()}</a
 						>
 					</li>
 					<li>
-						<a href="/login" aria-current={current('/login')} onclick={() => (drawerOpen = false)}
+						<a href="/login" aria-current={current('/login')} onclick={dismissMobileDrawer}
 							>{m['navigation.login']()}</a
 						>
 					</li>
@@ -181,7 +180,7 @@
 					<Button
 						disabled={bankSync.disabled}
 						onclick={() => {
-							drawerOpen = false
+							dismissMobileDrawer()
 							bankSync.sync()
 						}}>{m['bank.sync']()}</Button
 					>
@@ -240,7 +239,7 @@
 					<a
 						href="/accounts/new"
 						aria-current={current('/accounts/new')}
-						onclick={() => (drawerOpen = false)}>{m['actions.add_account']()}</a
+						onclick={dismissMobileDrawer}>{m['actions.add_account']()}</a
 					>
 				</section>
 				<div class="sidebar-status">

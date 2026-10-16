@@ -168,3 +168,8 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] Adopt the new components in query feedback, transaction entry, account list, app shell and avatar form; preserve business behavior.
 - [x] Prepare static/build/format verification and a separate preview for implementation review. Static/service-worker and formatting checks pass; build compiles but reports the existing dynamic transaction route prerender configuration as a blocker. Preview: http://127.0.0.1:5181.
 - [x] After user review, run 110 focused unit checks and eight browser scenarios for money/transaction/form/avatar behavior, table creation, sidebar layout/scrolling, mobile dismissal/focus, workspace navigation, recovery and avatar submission/removal. Browser-test type checks pass. Detailed invalid-field announcement coverage remains a follow-up.
+
+### Responsive drawer navigation
+
+- [x] Implement Finance-owned viewport-based initial disclosure and mobile-only sidebar link/Sync now dismissal in AppShell; inspect DUI for embedded policy.
+- [x] After implementation approval, add and run focused coverage: the viewport utility unit test and five navigation browser scenarios pass, covering mobile/desktop startup, sidebar links including Add an account, manual toggling, reloads, breakpoint boundaries, and resizing. Application/service-worker checks and browser-test TypeScript checks pass. The resizing scenario emitted a ResizeObserver loop warning; all assertions passed. Sync now dismissal is not covered by these focused browser scenarios.

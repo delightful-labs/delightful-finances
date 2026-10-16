@@ -218,3 +218,7 @@ Browser-test TypeScript checks pass. Failure tests also check that recovery phra
 ### DUI package update (2026-10-15)
 
 The compact StatusMessage type error is resolved. Finance uses a local archive built from DUI’s pushed `main` commit `756bdbb`. Finance and DUI static checks pass with no errors or warnings. DUI’s updated Drawer tests also pass. Package details are in `docs/delightful-ui-integration.md`. CI setup is deferred beyond MVP.
+
+### Responsive drawer policy
+
+Keep this simple disclosure state in AppShell. On mount, use the shared Finance `isMobile()` utility from `src/lib/viewport.ts`, backed by `window.matchMedia('(max-width: 48rem)').matches`, to initialize the drawer closed for compact viewports and open otherwise. The utility is browser-only and returns a boolean for the current viewport. Call it again when sidebar navigation or Sync now is selected; only compact viewports dismiss the drawer. Preserve manual disclosure state across resizing. No responsive policy belongs in Delightful UI; its current Drawer and Navigation already leave these decisions to the caller.

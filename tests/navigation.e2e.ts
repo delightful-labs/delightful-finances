@@ -1,0 +1,52 @@
+import { expect, test } from '@playwright/test'
+
+for (const width of [390, 768, 769, 1280]) {
+	test(`drawer initializes and navigates at ${width}px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 })
+		await page.emulateMedia({ reducedMotion: 'reduce' })
+		await page.goto('/accounts/new')
+		const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+		const drawer = page.locator('aside.inline-drawer')
+		const mobile = width <= 768
+		await expect(toggle).toHaveAttribute('aria-expanded', String(!mobile))
+		await expect(drawer).toHaveAttribute('aria-hidden', String(mobile))
+		if (mobile) await toggle.click()
+		await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+		await drawer.getByRole('link', { name: 'Expenses', exact: true }).click()
+		await expect(page).toHaveURL('/expenses')
+		await expect(toggle).toHaveAttribute('aria-expanded', String(!mobile))
+		await expect(drawer).toHaveAttribute('aria-hidden', String(mobile))
+		if (mobile) await toggle.click()
+		await drawer.getByRole('link', { name: 'Add an account', exact: true }).click()
+		await expect(page).toHaveURL('/accounts/new')
+		await expect(toggle).toHaveAttribute('aria-expanded', String(!mobile))
+		await toggle.click()
+		await expect(toggle).toHaveAttribute('aria-expanded', String(mobile))
+		await page.reload()
+		await expect(
+			page.getByRole('button', { name: 'Toggle navigation', exact: true })
+		).toHaveAttribute('aria-expanded', String(!mobile))
+	})
+}
+
+test('resizing preserves disclosure state and navigation uses the current viewport', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 900 })
+	await page.emulateMedia({ reducedMotion: 'reduce' })
+	await page.goto('/accounts/new')
+	const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+	const drawer = page.locator('aside.inline-drawer')
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+	await page.setViewportSize({ width: 390, height: 900 })
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+	await drawer.getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(page).toHaveURL('/expenses')
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+	await page.setViewportSize({ width: 1280, height: 900 })
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+	await toggle.click()
+	await drawer.getByRole('link', { name: 'Accounts', exact: true }).click()
+	await expect(page).toHaveURL('/accounts')
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+})
