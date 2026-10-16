@@ -1,5 +1,6 @@
 import { assign, fromPromise, setup } from 'xstate'
 import { app } from '#lib/schema.js'
+import { canManageBankCredentials } from '#lib/domain/organization-permissions.js'
 import { stableUuid } from '#lib/data.js'
 import { simplefinDemo } from '#lib/integrations/simplefin.js'
 import { createIdentityMachine, required } from './identity.js'
@@ -87,8 +88,10 @@ export function createAuthorizationMachine(dependencies: Dependencies) {
 					input: ({ context }) => context,
 					onDone: [
 						{
-							guard: ({ event }) =>
-								event.output.some((row) => row.role === 'owner' || row.role === 'admin'),
+							guard: ({ context, event }) =>
+								event.output.some((row) =>
+									canManageBankCredentials(row, context.scope.organizationId)
+								),
 							target: 'generatingDemoId'
 						},
 						{ target: 'unauthorized' }

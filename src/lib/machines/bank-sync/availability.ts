@@ -1,5 +1,6 @@
 import { assign, getInitialSnapshot, raise, setup, stateIn } from 'xstate'
 import type { SnapshotFrom } from 'xstate'
+import { canManageBankCredentials } from '#lib/domain/organization-permissions.js'
 import type { BankSource, Connection, Observation } from './types.js'
 
 type Context = { source: BankSource; connection: Connection | undefined }
@@ -97,11 +98,11 @@ export const bankAvailabilityMachine = setup<
 				checkingRole: {
 					always: [
 						{
-							guard: ({ context }) => context.source.membership?.role === 'owner',
-							target: 'allowed'
-						},
-						{
-							guard: ({ context }) => context.source.membership?.role === 'admin',
+							guard: ({ context }) =>
+								canManageBankCredentials(
+									context.source.membership,
+									context.source.organizationId ?? ''
+								),
 							target: 'allowed'
 						},
 						{ target: 'denied' }
