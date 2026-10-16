@@ -47,7 +47,11 @@
 		accountQueries,
 		onOrganizationChange,
 		onAccountChange,
-		onAllAccountsChange
+		onAllAccountsChange,
+		editingAccountOrder,
+		onEditAccountOrder,
+		onDoneAccountOrder,
+		onMoveAccount
 	}: {
 		children: Snippet
 		bankSync: BankSyncControls
@@ -62,6 +66,10 @@
 		onOrganizationChange: (value: string) => void
 		onAccountChange: (accountId: string, checked: boolean) => void
 		onAllAccountsChange: (checked: boolean) => void
+		editingAccountOrder: boolean
+		onEditAccountOrder: () => void
+		onDoneAccountOrder: () => void
+		onMoveAccount: (id: string, direction: 'up' | 'down') => void
 	} = $props()
 	const shellId = $props.id()
 	const drawerId = `${shellId}-navigation`
@@ -194,7 +202,7 @@
 													onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 												/>
 											</li>
-											{#each accounts as account (account.id)}
+											{#each accounts as account, index (account.id)}
 												<li class="account-filter">
 													<Checkbox
 														checked={selectedAccountIds === null ||
@@ -204,9 +212,44 @@
 														onchange={(event) =>
 															onAccountChange(account.id, event.currentTarget.checked)}
 													/>
+													{#if editingAccountOrder}
+														<span class="account-order-controls">
+															<Button
+																type="button"
+																appearance="flat"
+																disabled={index === 0}
+																aria-label={m['accounts.order.up']({ name: account.name })}
+																onclick={() => onMoveAccount(account.id, 'up')}
+																><Icon
+																	icon={ExpensesIcon}
+																	style="width: 1rem; height: 1rem;"
+																/></Button
+															>
+															<Button
+																type="button"
+																appearance="flat"
+																disabled={index === accounts.length - 1}
+																aria-label={m['accounts.order.down']({ name: account.name })}
+																onclick={() => onMoveAccount(account.id, 'down')}
+																><Icon
+																	icon={IncomeIcon}
+																	style="width: 1rem; height: 1rem;"
+																/></Button
+															>
+														</span>
+													{/if}
 												</li>
 											{/each}
 										</ul>
+										<Button
+											type="button"
+											appearance="flat"
+											aria-pressed={editingAccountOrder}
+											onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
+											>{editingAccountOrder
+												? m['accounts.order.done']()
+												: m['accounts.order.edit']()}</Button
+										>
 									{:else}
 										<p>{m['accounts.sidebar_empty']()}</p>
 									{/if}
@@ -434,6 +477,11 @@
 		display: flex;
 		align-items: center;
 		gap: var(--dui-space-xs, 0.5rem);
+	}
+
+	.account-order-controls {
+		margin-inline-start: auto;
+		display: flex;
 	}
 
 	.drawer-dismiss {

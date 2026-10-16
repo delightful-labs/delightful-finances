@@ -94,6 +94,12 @@
 			"all": "All accounts",
 			"toggle": "Show {name}"
 		},
+		"order": {
+			"edit": "Edit order",
+			"done": "Done",
+			"up": "Move {name} up",
+			"down": "Move {name} down"
+		},
 		"sidebar_empty": "No accounts yet.",
 		"saved": "Account {name} saved.",
 		"validation_error": "Enter an account name and select an account type.",

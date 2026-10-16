@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { orderAccounts } from '#lib/machines/account-order.js'
 	import { createFormController } from '#lib/forms.svelte.js'
 	import { app } from '#lib/schema.js'
 	import {
@@ -10,7 +11,12 @@
 	import { createTransaction } from '#lib/data.js'
 	import { getDb, QuerySubscription } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import {
+		financeFiltersKey,
+		accountOrderKey,
+		type FinanceFilters,
+		type AccountOrder
+	} from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import TransactionForm from '#lib/components/TransactionForm.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
@@ -18,6 +24,7 @@
 	import Message from '#lib/components/Message.svelte'
 	let { kind }: { kind: 'income' | 'expense' } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+	const accountOrder = getContext<AccountOrder>(accountOrderKey)
 
 	const db = getDb()
 	const tagQuery = new QuerySubscription(() =>
@@ -46,7 +53,7 @@
 					.orderBy('name')
 			: undefined
 	)
-	const accounts = $derived(accountQuery.current ?? [])
+	const accounts = $derived(orderAccounts(accountQuery.current ?? [], accountOrder.ids))
 	const defaultAccountId = $derived(
 		accounts.find(
 			(account) =>

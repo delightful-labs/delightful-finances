@@ -4,3 +4,7 @@ export type FinanceFilters = {
 }
 
 export const financeFiltersKey = Symbol('finance-filters')
+
+export type AccountOrder = { readonly ids: readonly string[] }
+
+export const accountOrderKey = Symbol('account-order')

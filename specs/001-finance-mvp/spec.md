@@ -189,3 +189,7 @@ While mobile navigation is open, main content is inert. A transparent, accessibl
 Group Workspace (`/settings/workspace`), Banks (`/settings/banks`), and Account (`/account`) inside a Settings disclosure using the shared Details component. Both Accounts and Settings disclosures start closed. Label the account page Account, retain recovery-specific section copy, and label the sign-in navigation and submit action Login. Include decorative icons beside each sidebar menu item.
 
 The Accounts disclosure sits immediately above Settings and contains the account management link, account filters, and Add account action. The workspace selector lives inside Settings and is labeled Current workspace. Only a link matching the current page receives `aria-current="page"`; highlight it with the green theme accent background, black text, and no underline.
+
+### Sidebar account order
+
+Accounts provide an Edit order button below the list. Editing reveals right-aligned up/down buttons, disabled at their respective boundaries; Done exits editing. Moves apply immediately and retain checkbox selection. Store this personal browser preference per identity and workspace; new accounts append in name order. New transaction defaults follow sidebar order. Changing identity/workspace exits editing. If browser storage is unavailable, ordering remains usable for the current session.

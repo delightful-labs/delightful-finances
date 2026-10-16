@@ -238,3 +238,7 @@ Keep both disclosures closed initially, including on their destination routes. M
 ### Transaction account default
 
 TransactionEntry derives the default account ID from its name-ordered active-account query and the shared sidebar account filters. TransactionForm receives the ID as a presentation prop and uses the native select default, without remounting account or category controls when their defaults change while the form is open. Existing form actors and validation remain responsible for submission. No new workflow state is required for this selection default.
+
+### Sidebar account order
+
+WorkspaceBootstrap owns the account-order XState actor and browser storage binding. The machine has viewing/editing states, guarded MOVE transitions, OBSERVE for account changes and RESET for scope changes. AppShell receives presentation props/callbacks. The shared orderAccounts transformation orders sidebar accounts and transaction defaults; A dedicated context getter exposes the same synchronously resolved preference to TransactionEntry. Resolve browser storage on scope changes during derivation, rather than copying order through effects after forms render; this preserves the correct initial select value on direct navigation. Browser storage is scoped to identity/workspace and falls back to session-only ordering. No Jazz schema or permission changes.

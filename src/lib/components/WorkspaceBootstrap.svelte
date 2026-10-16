@@ -1,13 +1,20 @@
 <script lang="ts">
 	import { app } from '#lib/schema.js'
 	import { QuerySubscription } from 'jazz-tools/svelte'
-	import { getDb } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
-	import { getContext, onMount, type Snippet } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { getContext, setContext, onMount, untrack, type Snippet } from 'svelte'
+	import {
+		financeFiltersKey,
+		accountOrderKey,
+		type FinanceFilters,
+		type AccountOrder
+	} from '#lib/finance-filters.js'
 	import BankSyncIntegration from './BankSyncIntegration.svelte'
 	import AppShell from './AppShell.svelte'
 	import JazzStartup from './JazzStartup.svelte'
+	import { useMachine } from '@xstate/svelte'
+	import { accountOrderMachine, orderAccounts } from '#lib/machines/account-order.js'
 	import { getReadiness } from '#lib/bank-sync.js'
 
 	let { children: pageContent }: { children: Snippet } = $props()
@@ -18,6 +25,39 @@
 	const ready = $derived(workspaceState?.hasTag('workspace-ready') ?? false)
 	const setupError = $derived(workspaceState?.hasTag('workspace-error') ?? false)
 	const db = getDb()
+	const session = fromStore(getJazzSession())
+	const accountOrder = useMachine(accountOrderMachine)
+	const orderSnapshot = accountOrder.snapshot
+	let movedOrder = $state<{ key: string; ids: readonly string[] } | undefined>()
+	const orderKey = $derived(
+		`finance-account-order:${session.current.account?.id ?? ''}:${filters.activeOrganizationId ?? ''}`
+	)
+	const preferredOrder = $derived.by((): readonly string[] => {
+		if (movedOrder?.key === orderKey) return movedOrder.ids
+		try {
+			const stored: unknown = JSON.parse(localStorage.getItem(orderKey) ?? '[]')
+			if (Array.isArray(stored) && stored.every((id): id is string => typeof id === 'string'))
+				return stored
+		} catch {
+			// An unavailable browser store leaves ordering usable for this session.
+		}
+		return []
+	})
+	// Consumers read the same preference before choosing their initial form values.
+	setContext<AccountOrder>(accountOrderKey, {
+		get ids() {
+			return preferredOrder
+		}
+	})
+	$effect(() => {
+		void orderKey
+		untrack(() =>
+			accountOrder.send({
+				type: 'RESET',
+				ids: activeAccounts.map((account) => account.id)
+			})
+		)
+	})
 	const syncConfigured = Boolean(db.getConfig().serverUrl)
 	let browserOffline = $state(false)
 
@@ -46,7 +86,23 @@
 			: undefined
 	)
 	const organizations = $derived(organizationQuery.current ?? [])
-	const activeAccounts = $derived(accountQuery.current ?? [])
+	const activeAccounts = $derived(orderAccounts(accountQuery.current ?? [], preferredOrder))
+	$effect(() => {
+		const ids = activeAccounts.map((account) => account.id)
+		untrack(() => accountOrder.send({ type: 'OBSERVE', ids }))
+	})
+
+	function moveAccount(id: string, direction: 'up' | 'down') {
+		const event = { type: 'MOVE', id, direction } satisfies Parameters<typeof accountOrder.send>[0]
+		if (!accountOrder.actorRef.getSnapshot().can(event)) return
+		accountOrder.send(event)
+		movedOrder = { key: orderKey, ids: accountOrder.actorRef.getSnapshot().context.ids }
+		try {
+			localStorage.setItem(orderKey, JSON.stringify(preferredOrder))
+		} catch {
+			// Keep the current session's order when storage is unavailable.
+		}
+	}
 
 	function setActiveOrganization(value: string | null) {
 		filters.activeOrganizationId = value || null
@@ -84,6 +140,10 @@
 				{syncConfigured}
 				{browserOffline}
 				accounts={activeAccounts}
+				editingAccountOrder={$orderSnapshot.matches('editing')}
+				onEditAccountOrder={() => accountOrder.send({ type: 'EDIT' })}
+				onDoneAccountOrder={() => accountOrder.send({ type: 'DONE' })}
+				onMoveAccount={moveAccount}
 				organizationId={filters.activeOrganizationId}
 				selectedAccountIds={filters.selectedAccountIds}
 				organizationQueries={[organizationQuery]}

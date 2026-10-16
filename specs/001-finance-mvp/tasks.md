@@ -196,3 +196,11 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [ ] T059 Default new income and expense forms to the first checked active account in sidebar order, retaining manual account selection.
   - Implementation ready for review: shared entry derives the default from ordered accounts and sidebar filters; the account select receives the default and resets with the form. No checked account leaves the placeholder selected. Open forms preserve account and category selections when defaults change.
   - After implementation approval, add and run focused coverage for all/some/none checked, list order versus checkbox click order, manual overrides, background default changes preserving open-form selections, add-another reset, and workspace changes.
+
+### Sidebar account order
+
+- [x] Implement viewing/editing statechart, personal browser ordering, boundary-disabled arrow controls and transaction-default alignment.
+- [x] After implementation approval, add and run focused machine and browser coverage for moves, boundaries, selection preservation, reload, scope changes and new/archived accounts.
+  - Six unit tests pass. All five browser scenarios pass: controls/persistence/new accounts, single-account/storage fallback, workspace isolation/archives, and direct-navigation defaults for expense and income. The controls scenario passed on a focused rerun after its first attempt preceded Vite readiness. Browser-test TypeScript checks pass.
+  - Fixed the direct-navigation initialization race: resolve the preference synchronously and expose it through context rather than copying account IDs after render. The unchanged expense/income regression assertions now pass.
+  - Browser validation used an isolated Vite server on port 5174 with the existing local Jazz endpoint; the original server had an empty public Jazz URL and failed startup.
