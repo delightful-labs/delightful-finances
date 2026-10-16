@@ -381,6 +381,11 @@
 		block-size: 2.75rem;
 		display: inline-grid;
 		place-items: center;
+		touch-action: manipulation;
+	}
+
+	:global(header.site-header .navigation-toggle svg) {
+		pointer-events: none;
 	}
 
 	:global(aside.site-drawer) {
