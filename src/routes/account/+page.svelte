@@ -102,8 +102,8 @@
 	}
 </script>
 
-<svelte:head><title>{m['recovery.heading']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['recovery.heading']()} />
+<svelte:head><title>{m['navigation.account']()} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['navigation.account']()} />
 <AccountRecovery
 	{phrase}
 	{revealed}

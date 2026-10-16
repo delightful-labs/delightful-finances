@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, Icon, LoadingScreen } from 'delightful-ui'
+	import Icon from './AppIcon.svelte'
+	import { Button, LoadingScreen } from 'delightful-ui'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -28,7 +29,7 @@
 	/>
 	{#if error && onRetry}
 		<Button type="button" onclick={onRetry}>
-			<Icon style="width: 1em; height: 1em;"><RefreshIcon /></Icon>
+			<Icon style="width: 1em; height: 1em;" icon={RefreshIcon} />
 			{m['actions.retry']()}
 		</Button>
 	{/if}

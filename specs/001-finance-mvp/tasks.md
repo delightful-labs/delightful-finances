@@ -183,3 +183,12 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 - [x] Make main content inert only while mobile navigation is open; add a native dismissal button over the visible main strip and restore toggle focus on activation.
 - [ ] After implementation review, add and run focused inertness, dismissal, focus restoration, and resize coverage.
+
+### Sidebar settings navigation
+
+- [x] Group Workspace, Banks, and Account in Settings Details; add sidebar icons and rename Account/Login labels.
+- [ ] After implementation approval, update and run relevant navigation coverage.
+
+- [x] Move account navigation and filters into Accounts Details above Settings; move the selector into Settings as Current workspace.
+
+- [x] Start both disclosures closed and highlight only the exact current-page link via aria-current with green background, black text, and no underline.

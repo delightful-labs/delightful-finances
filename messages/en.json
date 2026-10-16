@@ -9,6 +9,7 @@
 		"loading": "Getting your private workspace ready…",
 		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
 		"label": "Workspace",
+		"current": "Current workspace",
 		"select_workspace": "Select a workspace.",
 		"name_saved": "Workspace name saved on this device.",
 		"name_required": "Enter a workspace name.",
@@ -29,8 +30,9 @@
 	"navigation": {
 		"label": "Main navigation",
 		"overview": "Overview",
-		"account_recovery": "Account recovery",
-		"login": "Restore account",
+		"account": "Account",
+		"settings": "Settings",
+		"login": "Login",
 		"open": "Open navigation",
 		"close": "Close navigation",
 		"toggle": "Toggle navigation"
@@ -148,7 +150,7 @@
 		"restore_error": "The account could not be restored. Check the recovery phrase and try again.",
 		"session_error": "The account could not be restored. Please try again.",
 		"restoring": "Restoring account…",
-		"restore_action": "Restore account"
+		"restore_action": "Login"
 	},
 	"recovery": {
 		"heading": "Account recovery",

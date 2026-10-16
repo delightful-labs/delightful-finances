@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, Icon } from 'delightful-ui'
+	import Icon from './AppIcon.svelte'
+	import { Button } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Category } from '#lib/schema.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -62,7 +63,7 @@
 								{#if archiving && archivingCategoryId === category.id}
 									{m['status.archiving']({ subject: m['labels.category']() })}
 								{:else}
-									<Icon style="width: 1em; height: 1em;"><ArchiveIcon /></Icon>
+									<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
 									{m['actions.archive']()}
 								{/if}
 							</Button>

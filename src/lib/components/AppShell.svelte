@@ -1,8 +1,9 @@
 <script lang="ts">
+	import Icon from './AppIcon.svelte'
 	import {
 		Button,
-		Icon,
 		Drawer,
+		Details,
 		Navigation,
 		Select,
 		Checkbox,
@@ -12,6 +13,19 @@
 	} from 'delightful-ui'
 	import MenuIcon from 'tdesign-icons-svg/src/menu-fold.svg?component'
 	import CloseIcon from 'tdesign-icons-svg/src/close.svg?component'
+	import OverviewIcon from 'tdesign-icons-svg/src/dashboard.svg?component'
+	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
+	import IncomeIcon from 'tdesign-icons-svg/src/arrow-down.svg?component'
+	import AccountsIcon from 'tdesign-icons-svg/src/wallet.svg?component'
+	import CategoriesIcon from 'tdesign-icons-svg/src/root-list.svg?component'
+	import TagsIcon from 'tdesign-icons-svg/src/tag.svg?component'
+	import WorkspaceIcon from 'tdesign-icons-svg/src/building.svg?component'
+	import BanksIcon from 'tdesign-icons-svg/src/money.svg?component'
+	import AccountIcon from 'tdesign-icons-svg/src/user.svg?component'
+	import LoginIcon from 'tdesign-icons-svg/src/login.svg?component'
+	import SettingsIcon from 'tdesign-icons-svg/src/setting.svg?component'
+	import AddIcon from 'tdesign-icons-svg/src/add.svg?component'
+	import SyncIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import { onMount, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
 	import { isMobile } from '#lib/viewport.js'
@@ -77,13 +91,7 @@
 	}
 
 	function current(href: string) {
-		return (
-			href === '/'
-				? page.url.pathname === '/'
-				: page.url.pathname === href || page.url.pathname.startsWith(`${href}/`)
-		)
-			? 'page'
-			: undefined
+		return page.url.pathname.replace(/\/$/, '') === href.replace(/\/$/, '') ? 'page' : undefined
 	}
 </script>
 
@@ -101,9 +109,9 @@
 		>
 			<ScreenReaderText>{m['navigation.toggle']()}</ScreenReaderText>
 			{#if drawerOpen}
-				<Icon style="width: 1.5rem; height: 1.5rem;"><CloseIcon /></Icon>
+				<Icon style="width: 1.5rem; height: 1.5rem;" icon={CloseIcon} />
 			{:else}
-				<Icon style="width: 1.5rem; height: 1.5rem;"><MenuIcon /></Icon>
+				<Icon style="width: 1.5rem; height: 1.5rem;" icon={MenuIcon} />
 			{/if}
 		</Button>
 		<strong>{m['app.name']()}</strong>
@@ -123,60 +131,147 @@
 				<Navigation label={m['navigation.label']()}>
 					<li>
 						<a href="/" aria-current={current('/')} onclick={dismissMobileDrawer}
-							>{m['navigation.overview']()}</a
+							><Icon class="menu-icon" icon={OverviewIcon} />{m['navigation.overview']()}</a
 						>
 					</li>
 					<li>
 						<a href="/expenses" aria-current={current('/expenses')} onclick={dismissMobileDrawer}
-							>{m['labels.expenses']()}</a
+							><Icon class="menu-icon" icon={ExpensesIcon} />{m['labels.expenses']()}</a
 						>
 					</li>
 					<li>
 						<a href="/incomes" aria-current={current('/incomes')} onclick={dismissMobileDrawer}
-							>{m['labels.income']()}</a
+							><Icon class="menu-icon" icon={IncomeIcon} />{m['labels.income']()}</a
 						>
 					</li>
-					<li>
-						<a href="/accounts" aria-current={current('/accounts')} onclick={dismissMobileDrawer}
-							>{m['labels.accounts']()}</a
-						>
-					</li>
+
 					<li>
 						<a
 							href="/settings/categories"
 							aria-current={current('/settings/categories')}
-							onclick={dismissMobileDrawer}>{m['labels.categories']()}</a
+							onclick={dismissMobileDrawer}
+							><Icon class="menu-icon" icon={CategoriesIcon} />{m['labels.categories']()}</a
 						>
 					</li>
 					<li>
 						<a
 							href="/settings/tags"
 							aria-current={current('/settings/tags')}
-							onclick={dismissMobileDrawer}>{m['labels.tags']()}</a
+							onclick={dismissMobileDrawer}
+							><Icon class="menu-icon" icon={TagsIcon} />{m['labels.tags']()}</a
 						>
 					</li>
 					<li>
-						<a
-							href="/settings/workspace"
-							aria-current={current('/settings/workspace')}
-							onclick={dismissMobileDrawer}>{m['workspace.label']()}</a
-						>
+						<Details>
+							{#snippet summary()}
+								<span id={filtersHeadingId}
+									><Icon class="menu-icon" icon={AccountsIcon} />{m['labels.accounts']()}</span
+								>
+							{/snippet}
+							<Navigation label={m['labels.accounts']()}>
+								<li>
+									<a
+										href="/accounts"
+										aria-current={current('/accounts')}
+										onclick={dismissMobileDrawer}
+										><Icon class="menu-icon" icon={AccountsIcon} />{m['labels.accounts']()}</a
+									>
+								</li>
+							</Navigation>
+							<section aria-labelledby={filtersHeadingId}>
+								<QueryContent
+									queries={accountQueries}
+									loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
+									errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
+								>
+									{#if accounts.length > 0}
+										<ul>
+											<li class="account-filter">
+												<Checkbox
+													checked={selectedAccountIds === null ||
+														accounts.every((account) => selectedAccountIds?.includes(account.id))}
+													label={m['accounts.filters.all']()}
+													onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
+												/>
+											</li>
+											{#each accounts as account (account.id)}
+												<li class="account-filter">
+													<Checkbox
+														checked={selectedAccountIds === null ||
+															selectedAccountIds.includes(account.id)}
+														label={account.name}
+														aria-label={m['accounts.filters.toggle']({ name: account.name })}
+														onchange={(event) =>
+															onAccountChange(account.id, event.currentTarget.checked)}
+													/>
+												</li>
+											{/each}
+										</ul>
+									{:else}
+										<p>{m['accounts.sidebar_empty']()}</p>
+									{/if}
+								</QueryContent>
+								<a
+									href="/accounts/new"
+									aria-current={current('/accounts/new')}
+									onclick={dismissMobileDrawer}
+									><Icon class="menu-icon" icon={AddIcon} />{m['actions.add_account']()}</a
+								>
+							</section>
+						</Details>
 					</li>
 					<li>
-						<a
-							href="/settings/banks"
-							aria-current={current('/settings/banks')}
-							onclick={dismissMobileDrawer}>{m['bank.title']()}</a
-						>
-					</li>
-					<li>
-						<a href="/account" aria-current={current('/account')} onclick={dismissMobileDrawer}
-							>{m['navigation.account_recovery']()}</a
-						>
+						<Details>
+							{#snippet summary()}
+								<Icon class="menu-icon" icon={SettingsIcon} />{m['navigation.settings']()}
+							{/snippet}
+							<QueryContent
+								queries={organizationQueries}
+								loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
+								errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
+							>
+								<Select
+									label={m['workspace.current']()}
+									id="active-organization"
+									value={organizationId ?? ''}
+									onchange={(event) => onOrganizationChange(event.currentTarget.value)}
+								>
+									{#each organizations as organization (organization.id)}
+										<option value={organization.id}>{organization.name}</option>
+									{/each}
+								</Select>
+							</QueryContent>
+							<Navigation label={m['navigation.settings']()}>
+								<li>
+									<a
+										href="/settings/workspace"
+										aria-current={current('/settings/workspace')}
+										onclick={dismissMobileDrawer}
+										><Icon class="menu-icon" icon={WorkspaceIcon} />{m['workspace.label']()}</a
+									>
+								</li>
+								<li>
+									<a
+										href="/settings/banks"
+										aria-current={current('/settings/banks')}
+										onclick={dismissMobileDrawer}
+										><Icon class="menu-icon" icon={BanksIcon} />{m['bank.title']()}</a
+									>
+								</li>
+								<li>
+									<a
+										href="/account"
+										aria-current={current('/account')}
+										onclick={dismissMobileDrawer}
+										><Icon class="menu-icon" icon={AccountIcon} />{m['navigation.account']()}</a
+									>
+								</li>
+							</Navigation>
+						</Details>
 					</li>
 					<li>
 						<a href="/login" aria-current={current('/login')} onclick={dismissMobileDrawer}
-							>{m['navigation.login']()}</a
+							><Icon class="menu-icon" icon={LoginIcon} />{m['navigation.login']()}</a
 						>
 					</li>
 				</Navigation>
@@ -187,66 +282,10 @@
 						onclick={() => {
 							dismissMobileDrawer()
 							bankSync.sync()
-						}}>{m['bank.sync']()}</Button
+						}}><Icon class="menu-icon" icon={SyncIcon} />{m['bank.sync']()}</Button
 					>
 				{/if}
 
-				<section aria-labelledby={filtersHeadingId}>
-					<QueryContent
-						queries={organizationQueries}
-						loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
-						errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
-					>
-						<Select
-							label={m['workspace.label']()}
-							id="active-organization"
-							value={organizationId ?? ''}
-							onchange={(event) => onOrganizationChange(event.currentTarget.value)}
-						>
-							{#each organizations as organization (organization.id)}
-								<option value={organization.id}>{organization.name}</option>
-							{/each}
-						</Select>
-					</QueryContent>
-
-					<h2 id={filtersHeadingId}>{m['labels.accounts']()}</h2>
-					<QueryContent
-						queries={accountQueries}
-						loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
-						errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
-					>
-						{#if accounts.length > 0}
-							<ul>
-								<li class="account-filter">
-									<Checkbox
-										checked={selectedAccountIds === null ||
-											accounts.every((account) => selectedAccountIds?.includes(account.id))}
-										label={m['accounts.filters.all']()}
-										onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
-									/>
-								</li>
-								{#each accounts as account (account.id)}
-									<li class="account-filter">
-										<Checkbox
-											checked={selectedAccountIds === null ||
-												selectedAccountIds.includes(account.id)}
-											label={account.name}
-											aria-label={m['accounts.filters.toggle']({ name: account.name })}
-											onchange={(event) => onAccountChange(account.id, event.currentTarget.checked)}
-										/>
-									</li>
-								{/each}
-							</ul>
-						{:else}
-							<p>{m['accounts.sidebar_empty']()}</p>
-						{/if}
-					</QueryContent>
-					<a
-						href="/accounts/new"
-						aria-current={current('/accounts/new')}
-						onclick={dismissMobileDrawer}>{m['actions.add_account']()}</a
-					>
-				</section>
 				<div class="sidebar-status">
 					<StatusMessage
 						compact
@@ -297,15 +336,6 @@
 		place-items: center;
 	}
 
-	:global(header.site-header .navigation-toggle svg) {
-		inline-size: 1.5rem;
-		block-size: 1.5rem;
-		font-size: 1.5rem;
-		line-height: 1;
-		display: grid;
-		place-items: center;
-	}
-
 	:global(aside.site-drawer) {
 		--dui-drawer-width: 20rem;
 		flex: 0 0 var(--dui-drawer-width, 20rem);
@@ -348,6 +378,20 @@
 		gap: var(--dui-space-sm, 1rem);
 	}
 
+	.sidebar-content :global(.menu-icon) {
+		inline-size: 1.25rem;
+		block-size: 1.25rem;
+		flex-shrink: 0;
+		margin-inline-end: var(--dui-space-xs, 0.5rem);
+		vertical-align: middle;
+	}
+
+	.sidebar-content :global(a[aria-current='page']) {
+		background-color: var(--dui-color-accent, #94ff47);
+		color: #000;
+		text-decoration: none;
+	}
+
 	.sidebar-status {
 		margin-block-start: auto;
 	}
@@ -366,7 +410,6 @@
 		gap: var(--dui-space-xs, 0.5rem);
 	}
 
-	h2,
 	p {
 		margin: 0;
 	}

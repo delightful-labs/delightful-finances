@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, Details, Icon, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
+	import Icon from './AppIcon.svelte'
+	import { Button, Details, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
 	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import type { ComponentProps } from 'svelte'
@@ -174,7 +175,7 @@
 		{/if}
 		{#if showConnected}
 			<Button type="button" onclick={onDiscover} disabled={busy}>
-				<Icon style="width: 1em; height: 1em;"><SearchIcon /></Icon>
+				<Icon style="width: 1em; height: 1em;" icon={SearchIcon} />
 				{m['bank.discover']()}
 			</Button>
 
@@ -214,7 +215,7 @@
 		{#if showConnected}
 			<div class="connection-actions">
 				<Button type="button" onclick={onSync} disabled={busy}>
-					<Icon style="width: 1em; height: 1em;"><RefreshIcon /></Icon>
+					<Icon style="width: 1em; height: 1em;" icon={RefreshIcon} />
 					{m['bank.sync']()}
 				</Button>
 				<Button type="button" onclick={onDisconnect} disabled={busy}

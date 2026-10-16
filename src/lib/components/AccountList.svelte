@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, Icon, Table, StatusMessage } from 'delightful-ui'
+	import Icon from './AppIcon.svelte'
+	import { Button, Table, StatusMessage } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Account } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -64,7 +65,7 @@
 								{#if archiving && archivingAccountId === account.id}
 									{m['status.archiving']({ subject: m['labels.account']() })}
 								{:else}
-									<Icon style="width: 1em; height: 1em;"><ArchiveIcon /></Icon>
+									<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
 									{m['actions.archive']()}
 								{/if}
 							</Button>

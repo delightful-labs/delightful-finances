@@ -226,3 +226,11 @@ Keep this simple disclosure state in AppShell. On mount, use the shared Finance 
 Implement the mobile push layout in AppShell CSS at the shared 48rem breakpoint: remove the workspace gap, keep main at a non-shrinking 100% flex basis including padding, size the drawer to `100% - 3.5rem` of its container, constrain the shell/workspace inline sizes, and clip horizontal overflow on both the shell and workspace. The drawer’s existing flex-basis transition moves the full-width main content. Leave desktop layout and DUI unchanged.
 
 Track the current mobile viewport in AppShell using `isMobile()` on mount and window resize. Derive main inertness from mobile viewport and drawer disclosure. Place a native, translated dismissal button outside inert main over its visible strip; restore toggle focus when activated. Keep this simple presentation state local.
+
+### Sidebar settings navigation
+
+Update the existing AppShell presentation with the shared Details component and existing TDesign icons, keeping navigation behavior and localized labels. Rename the account page title and login labels through Paraglide. No workflow or actor changes are needed. Tests follow implementation review.
+
+Compose the existing account navigation and filters inside an initially closed Accounts Details above Settings. Move the existing workspace selector into Settings with its own Current workspace localization; preserve subscriptions and callbacks.
+
+Keep both disclosures closed initially, including on their destination routes. Match current-page links by exact pathname (ignoring a trailing slash), and style the existing aria-current attribute with the theme accent background, black text, and no underline.
