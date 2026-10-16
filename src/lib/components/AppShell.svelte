@@ -278,12 +278,16 @@
 
 				{#if bankSync.visible}
 					<Button
-						disabled={bankSync.disabled}
+						disabled={browserOffline || bankSync.disabled}
+						aria-describedby={browserOffline ? 'sidebar-bank-sync-offline' : undefined}
 						onclick={() => {
 							dismissMobileDrawer()
 							bankSync.sync()
 						}}><Icon class="menu-icon" icon={SyncIcon} />{m['bank.sync']()}</Button
 					>
+					{#if browserOffline}
+						<p id="sidebar-bank-sync-offline">{m['bank.sync_offline']()}</p>
+					{/if}
 				{/if}
 
 				<div class="sidebar-status">

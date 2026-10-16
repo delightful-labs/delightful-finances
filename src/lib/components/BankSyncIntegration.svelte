@@ -21,11 +21,13 @@
 
 	let {
 		children,
+		browserOffline,
 		organizations,
 		organizationsLoading,
 		organizationsError,
 		onSelectOrganization
 	}: {
+		browserOffline: boolean
 		children: Snippet<[BankSyncControls]>
 		organizations: readonly Organization[] | undefined
 		organizationsLoading: boolean
@@ -156,6 +158,7 @@
 	>
 		{#key `${userId}:${organizationId}`}
 			<BankSync
+				{browserOffline}
 				status={view.status}
 				setupView={view.setupView}
 				setupStep={view.setupStep}

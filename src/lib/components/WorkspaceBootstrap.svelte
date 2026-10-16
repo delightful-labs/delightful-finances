@@ -70,6 +70,7 @@
 </script>
 
 <BankSyncIntegration
+	{browserOffline}
 	organizations={organizationQuery.current}
 	organizationsLoading={organizationQuery.isLoading}
 	organizationsError={organizationQuery.error}

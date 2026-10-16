@@ -50,3 +50,6 @@
 - [x] Replace conditional saved-result projection with an observable history child containing absent/succeeded/partial/failed states. Formatting and type checks pass. Awaiting implementation review; no tests added or run.
 
 - [x] Fix all five lifecycle review findings: cancel-before-stop, global startup/workspace ownership, machine-owned bank section visibility, typed setup outcomes, and reset/cancel precedence on child errors. Formatting and type checks pass. Awaiting implementation review; no tests added or run.
+
+- [x] Reuse sidebar browser offline status to replace bank setup/reconnect controls with an availability message and disable both Sync now buttons with explanatory text. Awaiting implementation review.
+- [x] After implementation approval, add and run focused offline setup and sync-control coverage: two Playwright tests pass for setup/idle-prompt hiding, centered 6rem icon, both disabled sync buttons and accessible explanations, reconnect setup, and connectivity restoration without automatic provider requests. Test TypeScript checks pass.

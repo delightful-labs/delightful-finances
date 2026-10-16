@@ -259,3 +259,5 @@ Setup baseline comparison and connection insert/update selection MUST use guarde
 Saved sync history MUST be represented by a child machine with absent, succeeded, partial, and failed states. Raw connection observations drive history classification independently of the current operation result. Presentation only formats its summary descriptor.
 
 The application readiness actor MUST exist before Jazz session opening and own workspace bootstrap/organization selection and the bank subtree. Teardown must send explicit shutdown, wait for child terminal cleanup, and only then stop owned actors. Setup returns typed complete/cancelled/failed results. Reset/cancellation/shutdown states take precedence over unexpected child errors. Bank section visibility comes from machine-owned view states.
+
+When the browser reports offline using the same observation as the sidebar status indicator, replace bank setup/reconnect controls and their stepper with an offline availability message. Disable Sync now in the bank view and sidebar and show explanatory text below each. Reconnection only restores controls; it never starts syncing automatically.

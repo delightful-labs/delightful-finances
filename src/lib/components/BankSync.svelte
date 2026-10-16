@@ -3,11 +3,13 @@
 	import { Button, Details, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
 	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
+	import WifiNoIcon from 'tdesign-icons-svg/src/wifi-no.svg?component'
 	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
 	import { bankSetupSteps, type BankStatus, type LastSync } from '#lib/machines/bank-sync/types.js'
 	import type { ProviderAccountView } from '#lib/machines/bank-sync/account-options.js'
 	let {
+		browserOffline,
 		status,
 		setupView,
 		setupStep,
@@ -31,6 +33,7 @@
 		onDisconnect,
 		onCancel
 	}: {
+		browserOffline: boolean
 		status: BankStatus | undefined
 		setupStep: number
 		setupView:
@@ -91,80 +94,90 @@
 </script>
 
 {#snippet connectionSetup()}
-	<div class="setup-flow">
-		<Stepper
-			steps={setupSteps}
-			currentStep={setupSteps[setupStep]?.id ?? 'connect'}
-			label={m['bank.setup_progress']()}
-			completedLabel={m['bank.step_completed']()}
-			upcomingLabel={m['bank.step_upcoming']()}
-		/>
-		<p>{m['bank.passkey_help']()}</p>
-		{#if setupView}
-			<section aria-live="polite" aria-atomic="true">
-				{#if setupView === 'creating'}
-					<h2>{m['bank.setup_creating_title']()}</h2>
-					<p>{m['bank.setup_creating_body']()}</p>
-					<LoadingSpinner role="presentation" aria-hidden="true" />
-				{:else if setupView === 'test-encryption'}
-					<h2>{m['bank.setup_encrypt_title']()}</h2>
-					<p>{m['bank.setup_encrypt_body']()}</p>
-					<Button type="button" onclick={onTestEncryption}
-						>{m['bank.setup_encrypt_action']()}</Button
-					>
-				{:else if setupView === 'encrypting'}
-					<h2>{m['bank.setup_encrypt_title']()}</h2>
-					<p>{m['bank.setup_encrypt_waiting']()}</p>
-					<LoadingSpinner role="presentation" aria-hidden="true" />
-				{:else if setupView === 'test-decryption'}
-					<h2>{m['bank.setup_verify_title']()}</h2>
-					<p>{m['bank.setup_verify_body']()}</p>
-					<Button type="button" onclick={onVerifyDecryption}
-						>{m['bank.setup_verify_action']()}</Button
-					>
-				{:else if setupView === 'verifying'}
-					<h2>{m['bank.setup_verify_title']()}</h2>
-					<p>{m['bank.setup_verify_waiting']()}</p>
-					<LoadingSpinner role="presentation" aria-hidden="true" />
-				{:else if setupView === 'save'}
-					<h2>{m['bank.setup_save_title']()}</h2>
-					<p>{m['bank.setup_save_body']()}</p>
-					<Button type="button" onclick={onSaveConnection}>{m['bank.setup_save_action']()}</Button>
-				{:else}
-					<h2>{m['bank.setup_saving_title']()}</h2>
-					<p>{m['bank.setup_saving_body']()}</p>
-					<LoadingSpinner role="presentation" aria-hidden="true" />
-				{/if}
-			</section>
-			<Button type="button" onclick={onCancel}>{m['bank.cancel']()}</Button>
-		{:else}
-			<form
-				onsubmit={(event) => {
-					event.preventDefault()
-					const value = token
-					token = ''
-					onConnect(value)
-				}}
-			>
-				<div class="token-field">
-					<InputText
-						label={m['bank.token']()}
-						id="simplefin-token"
-						autocomplete="off"
-						bind:value={token}
-						disabled={busy}
-					/>
-				</div>
-				<Button type="submit" disabled={busy || !token.trim()}>{m['bank.setup_start']()}</Button>
-			</form>
-		{/if}
-	</div>
+	{#if browserOffline}
+		<div class="offline-message" role="status">
+			<Icon icon={WifiNoIcon} style="width: 6rem; height: 6rem;" />
+			<p>{m['bank.setup_offline']()}</p>
+		</div>
+	{:else}
+		<div class="setup-flow">
+			<Stepper
+				steps={setupSteps}
+				currentStep={setupSteps[setupStep]?.id ?? 'connect'}
+				label={m['bank.setup_progress']()}
+				completedLabel={m['bank.step_completed']()}
+				upcomingLabel={m['bank.step_upcoming']()}
+			/>
+			<p>{m['bank.passkey_help']()}</p>
+			{#if setupView}
+				<section aria-live="polite" aria-atomic="true">
+					{#if setupView === 'creating'}
+						<h2>{m['bank.setup_creating_title']()}</h2>
+						<p>{m['bank.setup_creating_body']()}</p>
+						<LoadingSpinner role="presentation" aria-hidden="true" />
+					{:else if setupView === 'test-encryption'}
+						<h2>{m['bank.setup_encrypt_title']()}</h2>
+						<p>{m['bank.setup_encrypt_body']()}</p>
+						<Button type="button" onclick={onTestEncryption}
+							>{m['bank.setup_encrypt_action']()}</Button
+						>
+					{:else if setupView === 'encrypting'}
+						<h2>{m['bank.setup_encrypt_title']()}</h2>
+						<p>{m['bank.setup_encrypt_waiting']()}</p>
+						<LoadingSpinner role="presentation" aria-hidden="true" />
+					{:else if setupView === 'test-decryption'}
+						<h2>{m['bank.setup_verify_title']()}</h2>
+						<p>{m['bank.setup_verify_body']()}</p>
+						<Button type="button" onclick={onVerifyDecryption}
+							>{m['bank.setup_verify_action']()}</Button
+						>
+					{:else if setupView === 'verifying'}
+						<h2>{m['bank.setup_verify_title']()}</h2>
+						<p>{m['bank.setup_verify_waiting']()}</p>
+						<LoadingSpinner role="presentation" aria-hidden="true" />
+					{:else if setupView === 'save'}
+						<h2>{m['bank.setup_save_title']()}</h2>
+						<p>{m['bank.setup_save_body']()}</p>
+						<Button type="button" onclick={onSaveConnection}>{m['bank.setup_save_action']()}</Button
+						>
+					{:else}
+						<h2>{m['bank.setup_saving_title']()}</h2>
+						<p>{m['bank.setup_saving_body']()}</p>
+						<LoadingSpinner role="presentation" aria-hidden="true" />
+					{/if}
+				</section>
+				<Button type="button" onclick={onCancel}>{m['bank.cancel']()}</Button>
+			{:else}
+				<form
+					onsubmit={(event) => {
+						event.preventDefault()
+						const value = token
+						token = ''
+						onConnect(value)
+					}}
+				>
+					<div class="token-field">
+						<InputText
+							label={m['bank.token']()}
+							id="simplefin-token"
+							autocomplete="off"
+							bind:value={token}
+							disabled={busy}
+						/>
+					</div>
+					<Button type="submit" disabled={busy || !token.trim()}>{m['bank.setup_start']()}</Button>
+				</form>
+			{/if}
+		</div>
+	{/if}
 {/snippet}
 
 <div class="bank-flow">
 	<h1>{m['bank.title']()}</h1>
 	<p>{m['bank.manual_only']()}</p>
-	{#if showStatus}<p role="status" aria-live="polite">{statusText}</p>{/if}
+	{#if showStatus && !(browserOffline && status?.key === 'bank.idle')}
+		<p role="status" aria-live="polite">{statusText}</p>
+	{/if}
 	{#if outcomeText}<p>{outcomeText}</p>{/if}
 	{#if loadingProvider}<LoadingSpinner role="presentation" aria-hidden="true" />{/if}
 	{#if showRestricted}
@@ -214,7 +227,12 @@
 		{/if}
 		{#if showConnected}
 			<div class="connection-actions">
-				<Button type="button" onclick={onSync} disabled={busy}>
+				<Button
+					type="button"
+					onclick={onSync}
+					disabled={browserOffline || busy}
+					aria-describedby={browserOffline ? 'bank-sync-offline' : undefined}
+				>
 					<Icon style="width: 1em; height: 1em;" icon={RefreshIcon} />
 					{m['bank.sync']()}
 				</Button>
@@ -222,6 +240,9 @@
 					>{m['bank.disconnect']()}</Button
 				>
 			</div>
+			{#if browserOffline}
+				<p id="bank-sync-offline">{m['bank.sync_offline']()}</p>
+			{/if}
 			{#if showRecovery}
 				<Details summary={m['bank.lost_passkey']()}>
 					<div class="setup-flow">
@@ -235,6 +256,14 @@
 </div>
 
 <style>
+	.offline-message {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--dui-space-sm, 1rem);
+		text-align: center;
+	}
+
 	.bank-flow,
 	.setup-flow,
 	section {

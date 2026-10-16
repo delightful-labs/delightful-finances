@@ -234,6 +234,8 @@
 		"cancel": "Cancel",
 		"unmapped": "Not mapped — excluded from import",
 		"disconnect": "Disconnect bank sync",
+		"setup_offline": "Bank sync setup is not available offline. Connect to the internet to continue.",
+		"sync_offline": "Sync is not available offline. Connect to the internet to sync your bank transactions.",
 		"lost_passkey": "Lost passkey?",
 		"recovery": "Reconnect with a new setup token and passkey. Imported data and mappings remain. Disconnect also requires revoking access at SimpleFIN to invalidate previously copied credentials.",
 		"idle": "{step} to begin.",
