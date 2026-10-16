@@ -22,3 +22,21 @@ Discovery is a separate explicit action using balances-only=1. Sync now fetches 
 ## Constitution check
 
 Local-first ordinary finance is unchanged. Provider operations require explicit actions. No plaintext secret replication, casts, any, switch statements, invented styling, or automatic requests. Use additive schema changes and deterministic import IDs. Type checks and focused formatting run during implementation; tests await review per repository instructions.
+
+## Approved demo-mode delivery cycles
+
+1. Add optional static public environment configuration (default `false`), simulated
+   provider responses, and a server-side relay guard. Keep provider signatures intact;
+   use a reserved `.invalid` synthetic credential and validate responses with the
+   existing provider schema. Retain production Bridge validation and forwarding.
+2. After review, integrate the bank-page demo notice and `demo` token instructions,
+   retain real passkey/XState/Jazz behavior, and guard organizations against opposite-mode
+   connections using a distinct deterministic demo connection ID. Remove the standalone
+   demo route, component, navigation, messages, and diagnostics namespace.
+3. After review, document activation and data persistence; replace standalone demo tests
+   with bank workflow coverage and retain real-mode coverage. Add/run tests only after
+   approval of their implementation. Verify zero demo provider requests, cancellation,
+   mode mismatch rejection, persistence, mapping, and repeated-sync deduplication.
+
+Each cycle is presented for review before the next begins. Demo mode requires a
+separate organization and does not automatically delete persisted sample data.

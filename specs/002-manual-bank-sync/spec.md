@@ -167,3 +167,17 @@ As a user, I can use repeated manual syncs without creating duplicate transactio
 - Existing accounts, memberships, Jazz permissions, and organization-scoped mappings, transactions, and sync results are reused. The existing replicated `simplefinConnections.accessUrl` field MUST NOT hold a plaintext credential.
 - A relay may transiently forward explicit provider requests when CORS requires it; it must not retain or log credentials or responses. Passkey encryption protects stored/replicated credentials, not against malicious application code during an unlocked operation or a compromised relay handling a request.
 - Disconnect deletes the app's usable connection state as replicas observe it. Invalidating an Access URL that was previously decrypted requires provider-side revocation; no immediate revocation guarantee is made for an offline device.
+
+## Approved environment-controlled demo mode
+
+`PUBLIC_SIMPLEFIN_DEMO` is optional and defaults to `false` when absent, with only
+`true` and `false` accepted. Changing it requires restarting development or rebuilding.
+When enabled, the bank settings page uses real passkey PRF encryption, authorization,
+and Jazz persistence, but simulates token claim, account discovery, and transaction
+sync without relay or external provider requests. The relay also refuses upstream
+forwarding in demo mode. Use the token `demo` and a dedicated demo organization.
+Discovery contains no transactions; explicit sync returns stable sample USD accounts
+and income/expense transactions for repeat-import verification. Opposite-mode
+credentials are rejected without real-request fallback or connection replacement.
+Remove the standalone passkey demo after bank-page integration. No schema change,
+automatic sync, failure-scenario selector, or passkey simulation is included.

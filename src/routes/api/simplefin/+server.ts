@@ -1,7 +1,6 @@
 import { createBankTrace } from '#lib/integrations/diagnostics.js'
-import { json } from '@sveltejs/kit'
 import { z } from 'zod'
-import { bridgeUrl } from '#lib/integrations/simplefin.js'
+import { bridgeUrl, simplefinDemo } from '#lib/integrations/simplefin.js'
 import type { RequestHandler } from './$types'
 
 const requestSchema = z.strictObject({
@@ -22,11 +21,16 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		!request.headers.get('content-type')?.startsWith('application/json')
 	) {
 		trace.log('request.rejected', { status: 403 })
-		return json({ error: 'forbidden' }, { status: 403, headers })
+		return Response.json({ error: 'forbidden' }, { status: 403, headers })
+	}
+	if (simplefinDemo) {
+		trace.log('request.demo-blocked', { status: 503 })
+		return Response.json({ error: 'provider-disabled' }, { status: 503, headers })
 	}
 	try {
 		const body = await request.text()
-		if (body.length > 10000) return json({ error: 'invalid-request' }, { status: 413, headers })
+		if (body.length > 10000)
+			return Response.json({ error: 'invalid-request' }, { status: 413, headers })
 		const input = await trace.step('request.validate', () => requestSchema.parse(JSON.parse(body)))
 		trace.log(`operation.${input.operation}`)
 		const target = await trace.step('destination.validate', () =>
@@ -57,7 +61,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			})
 		)
 		trace.log('upstream.response', { status: upstream.status })
-		if (!upstream.ok) return json({ error: 'provider-failure' }, { status: 502, headers })
+		if (!upstream.ok) return Response.json({ error: 'provider-failure' }, { status: 502, headers })
 		return new Response(upstream.body, {
 			headers: {
 				...headers,
@@ -66,6 +70,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		})
 	} catch (error) {
 		trace.failed('request.failed', error)
-		return json({ error: 'provider-failure' }, { status: 502, headers })
+		return Response.json({ error: 'provider-failure' }, { status: 502, headers })
 	}
 }

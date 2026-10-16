@@ -14,3 +14,9 @@
 - [ ] Validate physical-device passkey compatibility and encrypted replication.
 
 - [x] Add a standalone XState passkey demo accepting dummy text, without SimpleFIN requests, token validation, or finance writes.
+
+## Environment-controlled bank demo
+
+- [x] Add optional `PUBLIC_SIMPLEFIN_DEMO` (default false), simulated provider responses, and relay protection. Implementation awaiting review; tests not added or run.
+- [ ] After review, integrate bank-page demo instructions and opposite-mode connection guards, and remove standalone demo artifacts.
+- [ ] After review, update documentation and add/run approved unit and Playwright coverage for demo and real modes.

@@ -1,5 +1,34 @@
+import { PUBLIC_SIMPLEFIN_DEMO } from '$app/env/public'
 import type { BankTrace } from './diagnostics.js'
 import { providerResponseSchema, type ProviderAccount } from '../validation/integrations.js'
+
+export const simplefinDemo = PUBLIC_SIMPLEFIN_DEMO === 'true'
+
+// This reserved domain cannot be mistaken for a real Bridge credential.
+const demoClaimUrl = 'https://simplefin-demo.invalid/claim'
+const demoAccessUrl = 'https://demo:demo@simplefin-demo.invalid/simplefin'
+const demoOrganization = { 'sfin-url': 'https://simplefin-demo.invalid', id: 'demo-bank' }
+const demoAccounts = [
+	{
+		id: 'demo-checking',
+		name: 'Demo Checking',
+		currency: 'USD',
+		org: demoOrganization,
+		transactions: [
+			{ id: 'demo-payroll', amount: '2500.00', posted: 1790985600, description: 'Demo payroll' },
+			{ id: 'demo-groceries', amount: '-54.32', posted: 1791072000, description: 'Demo groceries' }
+		]
+	},
+	{
+		id: 'demo-savings',
+		name: 'Demo Savings',
+		currency: 'USD',
+		org: demoOrganization,
+		transactions: [
+			{ id: 'demo-interest', amount: '1.25', posted: 1791158400, description: 'Demo interest' }
+		]
+	}
+] satisfies ProviderAccount[]
 
 export function providerAccountIdentity(account: ProviderAccount) {
 	return JSON.stringify([
@@ -49,13 +78,18 @@ export function bridgeUrl(value: string, kind: 'claim' | 'access', trace?: BankT
 }
 
 export function validateSetupToken(token: string, trace: BankTrace) {
-	return trace.step(
-		'claim.validate-token',
-		() => bridgeUrl(atob(token.trim()), 'claim', trace).href
-	)
+	return trace.step('claim.validate-token', () => {
+		if (simplefinDemo) {
+			if (token.trim() !== 'demo') throw new Error('invalid-setup-token')
+			return demoClaimUrl
+		}
+		return bridgeUrl(atob(token.trim()), 'claim', trace).href
+	})
 }
 
 async function request(body: object, signal: AbortSignal, trace: BankTrace) {
+	if (simplefinDemo) throw new Error('provider-failure')
+	signal.throwIfAborted()
 	const response = await trace.step('relay.http', () =>
 		fetch('/api/simplefin', {
 			method: 'POST',
@@ -71,7 +105,10 @@ async function request(body: object, signal: AbortSignal, trace: BankTrace) {
 	return response
 }
 export async function claimToken(token: string, signal: AbortSignal, trace: BankTrace) {
+	signal.throwIfAborted()
 	const claimUrl = await validateSetupToken(token, trace)
+	signal.throwIfAborted()
+	if (simplefinDemo) return demoAccessUrl
 	const response = await request({ operation: 'claim', url: claimUrl }, signal, trace)
 	const accessUrl = await trace.step('claim.read-response', () => response.text())
 	await trace.step('claim.validate-access-url', () => bridgeUrl(accessUrl, 'access', trace))
@@ -83,6 +120,18 @@ export async function fetchAccounts(
 	signal: AbortSignal,
 	trace: BankTrace
 ) {
+	signal.throwIfAborted()
+	if (simplefinDemo) {
+		if (accessUrl !== demoAccessUrl) throw new Error('invalid-provider-url')
+		return trace.step('demo.validate-response', () =>
+			providerResponseSchema.parse({
+				errors: [],
+				accounts: discovery
+					? demoAccounts.map(({ transactions, ...account }) => account)
+					: demoAccounts
+			})
+		)
+	}
 	bridgeUrl(accessUrl, 'access', trace)
 	const response = await request(
 		{ operation: discovery ? 'discover' : 'sync', url: accessUrl },
