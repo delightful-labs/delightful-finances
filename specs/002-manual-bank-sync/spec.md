@@ -181,3 +181,81 @@ and income/expense transactions for repeat-import verification. Opposite-mode
 credentials are rejected without real-request fallback or connection replacement.
 Remove the standalone passkey demo after bank-page integration. No schema change,
 automatic sync, failure-scenario selector, or passkey simulation is included.
+
+Demo and real modes MUST render the same bank view and copy. Do not add demo notices,
+mode-specific labels, or alternate setup/recovery text. Document the demo token and
+activation in developer documentation only. Mode mismatch errors remain actionable.
+
+When demo mode is enabled, show a fixed red border around the viewport throughout
+the app. It must not shift layout, intercept input, or add visible text.
+
+When no bank connection is saved and during active setup, render the DUI Stepper
+as a non-interactive visual indicator. Include entering the setup token as the
+first step, followed by passkey creation, encryption, unlocking, and connection. Reflect current and completed steps from
+the existing workflow; retain its explicit action buttons and cancellation.
+
+Show passkey setup guidance only alongside the setup stepper. For an existing
+connection, disclose the shared token form and stepper using DUI Details labeled
+with the reconnect action. Continue through the existing explicit setup states.
+
+Place Sync now followed by Disconnect bank sync in one row above the Lost passkey
+disclosure. Also expose Sync now in the main drawer using the same visibility and
+disabled conditions and the same shared workflow; do not duplicate provider operations.
+
+The bank-sync workflow is one application-scoped XState actor shared by all pages.
+Expose typed events, a subscribable snapshot, operation phases, and user-visible
+status through Svelte context. Authorization must use explicit identity, membership,
+mode, and connection checks in an XState workflow. Model lock acquisition,
+unlocking, fetching, importing, and result persistence as states rather than one
+imperative operation dispatcher. Preserve explicit requests, per-write authorization,
+abort handling, cross-tab exclusion, duplicate prevention, and transient credentials.
+
+Keep the shared bank workflow definitions in the machine directory, composed from
+small invoked actors and focused authorization, setup, mapping, import, and operation
+machines. The integration binds subscriptions and dependencies and renders the existing
+UI. Machine state must control multi-step sequencing, cancellation, and environment
+changes. Infer public actor and snapshot types from the root machine. Pure validation
+and normalization may remain ordinary functions.
+
+## Explicit workflow outcomes and presentation metadata
+
+Success, partial success, cancellation, and specific failure reasons MUST be explicit
+substates of the root machine's ready state. They remain visible until the next explicit
+action or an identity/workspace change; no timer or automatic retry resets them. The
+ready parent accepts authorized actions from every outcome substate. Neutral states
+distinguish disconnected, locked, waiting for credentials, and restricted access.
+
+Use typed state metadata for localization message keys, setup-view identifiers, and
+loading indicators. Translate keys during rendering. Read active child state metadata
+directly; do not duplicate lifecycle state in context.message or context.phase or relay
+phase-change events. Context retains data such as errors, credentials during active work,
+discovery results, environment observations, and import counts. Cancellation stops child
+actors and clears transient credentials before the settled cancelled state is exposed.
+
+Bank subscriptions MUST enter the root machine as raw observation events. Permission
+and credential readiness, scoped account/mapping data, and the saved last-sync summary
+belong to the machine model. Store normalized last-sync time, localized outcome key,
+and import counts in context. State metadata owns the selected status descriptor and
+setup-step position. The integration must not classify results, choose status messages,
+or reconstruct step progression. Presentation components may translate descriptors,
+format dates, and render lists; simple input/disclosure state remains local.
+
+The bank machine MUST be owned by an application-readiness parent actor. Model observable Jazz session status and organization membership readiness independently. Forward scope/access observations to the bank child to cancel stale work. Do not model Jazz sync connectivity without a supported observable SDK API.
+
+Preparation and authorization MUST express identity, scope, connection selection, membership, provider-mode, and ciphertext decisions as guarded machine transitions. Reuse an invoked identity-check child before/after asynchronous preparation or authorization. Promise actors return query data or generated IDs; they must not hide these workflow decisions in sequential conditional statements.
+
+Account creation, mapping, and unlinking MUST be separately invoked workflows. Command/provider selection, account eligibility, duplicate provider links, and destination conflicts belong to guarded transitions. Preserve atomic account-plus-link creation, transaction-time conflict checks, and authorization immediately before each write.
+
+Transaction import MUST delegate provider-account processing and individual transaction processing to child machines. Omission reasons, category selection, duplicate detection, authorization, and persistence outcomes are explicit guarded states. Keep traversal and count aggregation in the import parent; preserve existing skip/failure rules and integer money parsing.
+
+Bank access, credential completeness, and sync-control visibility MUST be modeled by an observable availability child machine. Raw observations drive guarded states; do not infer these capabilities in UI selectors from combinations of flags. Reuse the same statechart for fresh synchronous security observations.
+
+Discovered provider accounts MUST have machine-owned mapping presentation state and destination eligibility. Presentation must not infer linked/broken/unmapped states or exclude destinations through compound mapping conditions.
+
+An operation MUST classify complete, partial, failed, and cancelled results through explicit states. The selected success state determines the persisted lastOutcome and typed parent output; persistence actors must not independently infer partial success from counts or provider responses.
+
+Setup baseline comparison and connection insert/update selection MUST use guarded child-machine transitions. Keep setup resources as typed actor inputs/outputs rather than a duplicate lifecycle stage field; clear passkey/sample/sealing resources as each is replaced and on terminal cleanup.
+
+Saved sync history MUST be represented by a child machine with absent, succeeded, partial, and failed states. Raw connection observations drive history classification independently of the current operation result. Presentation only formats its summary descriptor.
+
+The application readiness actor MUST exist before Jazz session opening and own workspace bootstrap/organization selection and the bank subtree. Teardown must send explicit shutdown, wait for child terminal cleanup, and only then stop owned actors. Setup returns typed complete/cancelled/failed results. Reset/cancellation/shutdown states take precedence over unexpected child errors. Bank section visibility comes from machine-owned view states.

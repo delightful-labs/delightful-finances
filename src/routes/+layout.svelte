@@ -1,11 +1,17 @@
 <script lang="ts">
 	import 'delightful-ui/theme.css'
-	import { PUBLIC_JAZZ_APP_ID, PUBLIC_JAZZ_SERVER_URL } from '$app/env/public'
-	import { onMount, setContext, type Snippet } from 'svelte'
-	import { useMachine } from '@xstate/svelte'
-	import { fromStore } from 'svelte/store'
-	import { createSessionStartupMachine } from '#lib/machines/session-startup.js'
+	import {
+		PUBLIC_JAZZ_APP_ID,
+		PUBLIC_JAZZ_SERVER_URL,
+		PUBLIC_SIMPLEFIN_DEMO
+	} from '$app/env/public'
+	import { onDestroy, onMount, setContext, type Snippet } from 'svelte'
+	import { createActor } from 'xstate'
+	import { fromStore, readable } from 'svelte/store'
+	import { createApplicationReadinessMachine } from '#lib/machines/application-readiness.js'
+	import { readinessKey, type ReadinessContext } from '#lib/bank-sync.js'
 	import { JazzSessionProvider, type JazzSessionConfig } from 'jazz-tools/svelte'
+	import DemoViewport from '#lib/components/DemoViewport.svelte'
 	import JazzStartup from '#lib/components/JazzStartup.svelte'
 	import SessionStartup from '#lib/components/SessionStartup.svelte'
 	import WorkspaceBootstrap from '#lib/components/WorkspaceBootstrap.svelte'
@@ -26,14 +32,26 @@
 		initial: 'local-first'
 	} satisfies JazzSessionConfig
 
-	const { snapshot, send } = useMachine(
-		createSessionStartupMachine(() => getOrCreateJazzSession(jazzConfig), getCurrentJazzSession())
-	)
+	const actor = createActor(
+		createApplicationReadinessMachine(
+			() => getOrCreateJazzSession(jazzConfig),
+			getCurrentJazzSession()
+		)
+	).start()
+	const snapshot = readable(actor.getSnapshot(), (set) => {
+		const subscription = actor.subscribe(set)
+		return () => subscription.unsubscribe()
+	})
+	const readiness: ReadinessContext = { actor, snapshot }
+	setContext(readinessKey, readiness)
 	const startupState = fromStore(snapshot)
-	const jazzSession = $derived(startupState.current.context.result)
-
-	onMount(() => send({ type: 'START' }))
+	const jazzSession = $derived(startupState.current.context.session)
+	onMount(() => actor.send({ type: 'START' }))
+	// The machine completes only after its workspace/bank children finish cleanup.
+	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
 </script>
+
+<DemoViewport enabled={PUBLIC_SIMPLEFIN_DEMO === 'true'} />
 
 {#snippet startup()}
 	<SessionStartup />
@@ -45,7 +63,7 @@
 	</JazzSessionProvider>
 {:else}
 	<JazzStartup
-		error={startupState.current.matches('error')}
-		onRetry={() => send({ type: 'RETRY' })}
+		error={startupState.current.hasTag('startup-error')}
+		onRetry={() => actor.send({ type: 'RETRY' })}
 	/>
 {/if}

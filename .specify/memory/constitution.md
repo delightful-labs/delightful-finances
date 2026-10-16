@@ -1,12 +1,3 @@
-<!-- Sync Impact Report
-Version: 2.2.0 -> 2.3.0 (minor: expand provider-secret guidance to passkey-protected replication).
-Modified principles: IV. Organization-Based Access; VI. Provider Secrets and Imports.
-Added/removed sections: none. Ratification date unchanged.
-Dependent alignment: specs/002-manual-bank-sync/spec.md and its requirements checklist reflect the approved design; README.md distinguishes the prototype from planned production behavior.
-Follow-up: plan.md, research.md, data-model.md, contracts/manual-sync.md, and quickstart.md require alignment before bank-sync implementation. The plan carries an explicit warning.
-Remove this temporary impact report before committing the amendment.
--->
-
 # Delightful Finance Constitution
 
 ## Core Principles
@@ -29,7 +20,7 @@ An organization is the tenancy boundary; a financial account is a ledger, not an
 
 ### V. Accessible, Internationalized UI
 
-Use SvelteKit with Svelte 5, semantic HTML controls, and Paraglide JS for every user-visible string from the beginning. Keep the interface unstyled and wireframe-like unless the user approves a visual direction; do not invent colors, decoration, or custom visual treatments. Prefer native semantic HTML controls over bespoke controls. Presentation components must stay small and reusable, receive data and callbacks through props, and render independently of Jazz sessions, database queries, or XState actors. Keep Jazz queries, XState setup, permissions, and workflow logic in the page or integration component that uses them, composing imported pure presentation components. Extract helpers for genuinely reused logic rather than relocating each page script into a controller file. Simple presentation state belongs in pure components. Do not put rendered HTML in files that initialize Jazz queries or XState workflows; third-party UI controls and localization are allowed in presentation components. Do not create component files merely to relocate page templates. Do not use Tailwind. Use XState for multi-step workflows; use Svelte runes/stores for simple UI state. Preserve accessible interaction semantics.
+Use SvelteKit with Svelte 5, semantic HTML controls, and Paraglide JS for every user-visible string from the beginning. Keep the interface unstyled and wireframe-like unless the user approves a visual direction; do not invent colors, decoration, or custom visual treatments. Prefer native semantic HTML controls over bespoke controls. Presentation components must stay small and reusable, receive data and callbacks through props, and render independently of Jazz sessions, database queries, or XState actors. Keep Jazz subscriptions, dependency binding, and actor lifecycle wiring in the page or integration component, composing imported pure presentation components. Define complex workflows and reusable authorization/readiness decisions as focused machines under `src/lib/machines/`, composed through child actors. Extract helpers for genuinely reused logic rather than relocating each page script into a controller file. Simple presentation state belongs in pure components. Do not put rendered HTML in integration scripts that bind Jazz queries or XState actors; third-party UI controls and localization are allowed in presentation components. Do not create component files merely to relocate page templates. Do not use Tailwind. Use XState for multi-step workflows; use Svelte runes/stores for simple UI state. Preserve accessible interaction semantics.
 
 ### VI. Provider Secrets and Imports
 
@@ -46,6 +37,32 @@ Keep provider/check-specific data in dedicated related tables when it needs to b
 ### VIII. Tested Application Code
 
 Every application feature and production code path must have appropriate automated unit tests and end-to-end coverage in Playwright. Unit tests cover domain logic, validation, state machines, permission helpers/adapters, and edge cases; Playwright tests cover user-visible workflows, authorization outcomes, and offline behavior where feasible. Add or update tests in the same change as the code. A feature is not complete until its tests pass.
+
+### IX. Explicit State and Actor Ownership
+
+Model complex behavior as a statechart before implementing effects. Sequential business checks and
+state derived from two or more conditions MUST be reviewed for guarded transitions or child-machine
+ownership. Wrapping a branching workflow in `fromPromise` does not make its decisions part of the
+statechart. Use focused promise/callback actors for I/O and platform resource adapters; compose
+multi-step decisions through invoked or spawned machines rather than manually starting actors and
+bridging them through promises.
+
+Use finite states for lifecycle, readiness, capabilities, and terminal outcomes. Keep context for
+observed facts, counters, resource payloads, actor references, and typed results; do not mirror the
+active state with phase/stage/message fields or independent booleans. Determine each outcome once,
+then use it for persistence and parent results. State metadata may carry localization descriptors;
+presentation translates, formats, and renders machine-owned choices. Simple input and disclosure
+state remains local. Pure transformations and defensive type invariants may remain functions.
+Retain transaction-time invariant checks where atomicity requires them.
+
+Give shared workflows an application-tree owner that exists before initialization. Keep session,
+workspace, authorization, and credential readiness explicit and model only observable facts. Keep
+local readiness separate from remote connectivity; omit connectivity state when no supported
+observer exists. Shutdown MUST cancel active children and finish resource cleanup before stopping
+owners. Reset, cancellation, and shutdown states take precedence over late completion/error events.
+Actor stopping alone is not a substitute for domain cleanup. Review teardown ordering in framework
+hooks, not just ordinary cancel-button transitions. Follow `.specify/memory/xstate.md` for practical
+design and review guidance.
 
 ## Technology Constraints
 
@@ -70,4 +87,4 @@ Every application feature and production code path must have appropriate automat
 
 This constitution governs implementation and supersedes conflicting project conventions. Amend it when a deliberate architectural decision changes, and update dependent specs/plans in the same change. Each feature plan must state how it complies with the principles above.
 
-**Version**: 2.3.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-15
+**Version**: 2.4.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-16

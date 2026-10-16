@@ -11,12 +11,14 @@
 	} from 'delightful-ui'
 	import { onMount, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
+	import type { BankSyncControls } from '#lib/bank-sync.js'
 	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import QueryContent from './QueryContent.svelte'
 
 	let {
 		children,
+		bankSync,
 		syncConfigured,
 		browserOffline,
 		organizations,
@@ -30,6 +32,7 @@
 		onAllAccountsChange
 	}: {
 		children: Snippet
+		bankSync: BankSyncControls
 		syncConfigured: boolean
 		browserOffline: boolean
 		organizations: readonly Organization[]
@@ -105,18 +108,24 @@
 						>
 					</li>
 					<li>
-						<a href="/expenses" aria-current={current('/expenses')} onclick={() => (drawerOpen = false)}
-							>{m['labels.expenses']()}</a
+						<a
+							href="/expenses"
+							aria-current={current('/expenses')}
+							onclick={() => (drawerOpen = false)}>{m['labels.expenses']()}</a
 						>
 					</li>
 					<li>
-						<a href="/incomes" aria-current={current('/incomes')} onclick={() => (drawerOpen = false)}
-							>{m['labels.income']()}</a
+						<a
+							href="/incomes"
+							aria-current={current('/incomes')}
+							onclick={() => (drawerOpen = false)}>{m['labels.income']()}</a
 						>
 					</li>
 					<li>
-						<a href="/accounts" aria-current={current('/accounts')} onclick={() => (drawerOpen = false)}
-							>{m['labels.accounts']()}</a
+						<a
+							href="/accounts"
+							aria-current={current('/accounts')}
+							onclick={() => (drawerOpen = false)}>{m['labels.accounts']()}</a
 						>
 					</li>
 					<li>
@@ -127,8 +136,10 @@
 						>
 					</li>
 					<li>
-						<a href="/settings/tags" aria-current={current('/settings/tags')} onclick={() => (drawerOpen = false)}
-							>{m['labels.tags']()}</a
+						<a
+							href="/settings/tags"
+							aria-current={current('/settings/tags')}
+							onclick={() => (drawerOpen = false)}>{m['labels.tags']()}</a
 						>
 					</li>
 					<li>
@@ -140,21 +151,16 @@
 					</li>
 					<li>
 						<a
-							href="/settings/passkey-demo"
-							aria-current={current('/settings/passkey-demo')}
-							onclick={() => (drawerOpen = false)}>{m['passkey_demo.title']()}</a
-						>
-					</li>
-					<li>
-						<a
 							href="/settings/banks"
 							aria-current={current('/settings/banks')}
 							onclick={() => (drawerOpen = false)}>{m['bank.title']()}</a
 						>
 					</li>
 					<li>
-						<a href="/account" aria-current={current('/account')} onclick={() => (drawerOpen = false)}
-							>{m['navigation.account_recovery']()}</a
+						<a
+							href="/account"
+							aria-current={current('/account')}
+							onclick={() => (drawerOpen = false)}>{m['navigation.account_recovery']()}</a
 						>
 					</li>
 					<li>
@@ -163,6 +169,16 @@
 						>
 					</li>
 				</Navigation>
+
+				{#if bankSync.visible}
+					<Button
+						disabled={bankSync.disabled}
+						onclick={() => {
+							drawerOpen = false
+							bankSync.sync()
+						}}>{m['bank.sync']()}</Button
+					>
+				{/if}
 
 				<section aria-labelledby={filtersHeadingId}>
 					<QueryContent
@@ -201,7 +217,8 @@
 								{#each accounts as account (account.id)}
 									<li class="account-filter">
 										<Checkbox
-											checked={selectedAccountIds === null || selectedAccountIds.includes(account.id)}
+											checked={selectedAccountIds === null ||
+												selectedAccountIds.includes(account.id)}
 											label={account.name}
 											aria-label={m['accounts.filters.toggle']({ name: account.name })}
 											onchange={(event) => onAccountChange(account.id, event.currentTarget.checked)}
@@ -213,8 +230,10 @@
 							<p>{m['accounts.sidebar_empty']()}</p>
 						{/if}
 					</QueryContent>
-					<a href="/accounts/new" aria-current={current('/accounts/new')} onclick={() => (drawerOpen = false)}
-						>{m['actions.add_account']()}</a
+					<a
+						href="/accounts/new"
+						aria-current={current('/accounts/new')}
+						onclick={() => (drawerOpen = false)}>{m['actions.add_account']()}</a
 					>
 				</section>
 				<div class="sidebar-status">

@@ -133,18 +133,14 @@ export function safeBankError(error: unknown) {
 	}
 }
 
-export function createBankTrace(
-	operation: string,
-	correlationId: string = crypto.randomUUID(),
-	namespace: 'bank-sync' | 'passkey-demo' = 'bank-sync'
-) {
+export function createBankTrace(operation: string, correlationId: string = crypto.randomUUID()) {
 	function log(stage: string, details: Details = {}) {
 		if (dev)
-			console.info(`[${namespace}] ${operation} ${stage}`, { traceId: correlationId, ...details })
+			console.info(`[bank-sync] ${operation} ${stage}`, { traceId: correlationId, ...details })
 	}
 	function failed(stage: string, error: unknown) {
 		if (dev)
-			console.warn(`[${namespace}] ${operation} ${stage}`, {
+			console.warn(`[bank-sync] ${operation} ${stage}`, {
 				traceId: correlationId,
 				...safeBankError(error)
 			})
