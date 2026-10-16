@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, Table, StatusMessage } from 'delightful-ui'
+	import { Button, Icon, Table, StatusMessage } from 'delightful-ui'
+	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Account } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -60,9 +61,12 @@
 								aria-label={m['actions.archive_account']({ name: account.name })}
 								onclick={() => onArchive(account.id)}
 							>
-								{archiving && archivingAccountId === account.id
-									? m['status.archiving']({ subject: m['labels.account']() })
-									: m['actions.archive']()}
+								{#if archiving && archivingAccountId === account.id}
+									{m['status.archiving']({ subject: m['labels.account']() })}
+								{:else}
+									<Icon style="width: 1em; height: 1em;"><ArchiveIcon /></Icon>
+									{m['actions.archive']()}
+								{/if}
 							</Button>
 						{/if}
 					</td>

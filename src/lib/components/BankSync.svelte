@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { Button, Details, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
+	import { Button, Details, Icon, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
+	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
+	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
 	import { bankSetupSteps, type BankStatus, type LastSync } from '#lib/machines/bank-sync/types.js'
@@ -171,7 +173,10 @@
 			{@render connectionSetup()}
 		{/if}
 		{#if showConnected}
-			<Button type="button" onclick={onDiscover} disabled={busy}>{m['bank.discover']()}</Button>
+			<Button type="button" onclick={onDiscover} disabled={busy}>
+				<Icon style="width: 1em; height: 1em;"><SearchIcon /></Icon>
+				{m['bank.discover']()}
+			</Button>
 
 			{#if busy}<Button type="button" onclick={onCancel}>{m['bank.cancel']()}</Button>{/if}
 			<ul>
@@ -208,7 +213,10 @@
 		{/if}
 		{#if showConnected}
 			<div class="connection-actions">
-				<Button type="button" onclick={onSync} disabled={busy}>{m['bank.sync']()}</Button>
+				<Button type="button" onclick={onSync} disabled={busy}>
+					<Icon style="width: 1em; height: 1em;"><RefreshIcon /></Icon>
+					{m['bank.sync']()}
+				</Button>
 				<Button type="button" onclick={onDisconnect} disabled={busy}
 					>{m['bank.disconnect']()}</Button
 				>

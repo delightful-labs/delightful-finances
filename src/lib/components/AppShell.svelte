@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		Button,
+		Icon,
 		Drawer,
 		Navigation,
 		Select,
@@ -9,6 +10,8 @@
 		TopNavigation,
 		ScreenReaderText
 	} from 'delightful-ui'
+	import MenuIcon from 'tdesign-icons-svg/src/menu-fold.svg?component'
+	import CloseIcon from 'tdesign-icons-svg/src/close.svg?component'
 	import { onMount, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
 	import type { BankSyncControls } from '#lib/bank-sync.js'
@@ -85,7 +88,11 @@
 			onclick={() => (drawerOpen = !drawerOpen)}
 		>
 			<ScreenReaderText>{m['navigation.toggle']()}</ScreenReaderText>
-			<span aria-hidden="true">{drawerOpen ? '×' : '☰'}</span>
+			{#if drawerOpen}
+				<Icon style="width: 1.5rem; height: 1.5rem;"><CloseIcon /></Icon>
+			{:else}
+				<Icon style="width: 1.5rem; height: 1.5rem;"><MenuIcon /></Icon>
+			{/if}
 		</Button>
 		<strong>{m['app.name']()}</strong>
 	</TopNavigation>
@@ -275,7 +282,7 @@
 		place-items: center;
 	}
 
-	:global(header.site-header .navigation-toggle [aria-hidden='true']) {
+	:global(header.site-header .navigation-toggle svg) {
 		inline-size: 1.5rem;
 		block-size: 1.5rem;
 		font-size: 1.5rem;

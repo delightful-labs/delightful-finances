@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, LoadingScreen } from 'delightful-ui'
+	import { Button, Icon, LoadingScreen } from 'delightful-ui'
+	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
@@ -26,7 +27,10 @@
 					: m['database.starting']()}
 	/>
 	{#if error && onRetry}
-		<Button type="button" onclick={onRetry}>{m['actions.retry']()}</Button>
+		<Button type="button" onclick={onRetry}>
+			<Icon style="width: 1em; height: 1em;"><RefreshIcon /></Icon>
+			{m['actions.retry']()}
+		</Button>
 	{/if}
 </main>
 
