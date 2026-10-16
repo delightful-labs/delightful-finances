@@ -156,17 +156,20 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 	return workflow.createMachine({
 		id: 'bank-operation',
 		initial: 'locking',
-		context: ({ input }) => ({
-			...input,
-			identity: { userId: observe().userId, organizationId: observe().organizationId },
-			work: undefined,
-			accessUrl: undefined,
-			response: undefined,
-			counts: emptyCounts(),
-			result: undefined,
-			completion: undefined,
-			error: undefined
-		}),
+		context: ({ input }) => {
+			const observation = observe()
+			return {
+				...input,
+				identity: { userId: observation.userId, organizationId: observation.organizationId },
+				work: undefined,
+				accessUrl: undefined,
+				response: undefined,
+				counts: emptyCounts(),
+				result: undefined,
+				completion: undefined,
+				error: undefined
+			}
+		},
 		output: ({ context }) => required(context.completion),
 		invoke: {
 			src: 'lock',
@@ -199,7 +202,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							})
 						},
 						{
-							target: 'authorizing',
+							target: 'choosingOperation',
 							actions: assign({
 								work: ({ context, event }) => {
 									const prepared = required(event.output.ok ? event.output.value : undefined)
@@ -217,31 +220,16 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					onError: { target: 'settlingFailure', actions: failed }
 				}
 			},
-			authorizing: {
-				invoke: {
-					src: 'authorize',
-					input: ({ context }) => credentialAuthorization(workFor(context)),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'settlingFailure',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'choosingOperation' }
-					],
-					onError: { target: 'settlingFailure', actions: failed }
-				}
-			},
 			choosingOperation: {
 				always: [
 					{
 						guard: ({ context }) => context.command.type === 'DISCONNECT',
-						target: 'disconnecting'
+						target: 'authorizingDisconnect'
 					},
 					{
 						guard: ({ context }) =>
 							context.command.type === 'MAP' || context.command.type === 'CREATE_ACCOUNT',
-						target: 'mapping'
+						target: 'authorizingMapping'
 					},
 					{ target: 'unlocking' }
 				]
@@ -271,6 +259,36 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					onError: { target: 'settlingFailure', actions: failed }
 				}
 			},
+			authorizingDisconnect: {
+				invoke: {
+					src: 'authorize',
+					input: ({ context }) => credentialAuthorization(workFor(context)),
+					onDone: [
+						{
+							guard: ({ event }) => event.output.error !== undefined,
+							target: 'settlingFailure',
+							actions: assign({ error: ({ event }) => event.output.error })
+						},
+						{ target: 'disconnecting' }
+					],
+					onError: { target: 'settlingFailure', actions: failed }
+				}
+			},
+			authorizingMapping: {
+				invoke: {
+					src: 'authorize',
+					input: ({ context }) => credentialAuthorization(workFor(context)),
+					onDone: [
+						{
+							guard: ({ event }) => event.output.error !== undefined,
+							target: 'settlingFailure',
+							actions: assign({ error: ({ event }) => event.output.error })
+						},
+						{ target: 'mapping' }
+					],
+					onError: { target: 'settlingFailure', actions: failed }
+				}
+			},
 			unlocking: {
 				meta: { loadingProvider: true },
 				invoke: {
@@ -280,7 +298,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						target: 'authorizingFetch',
 						actions: assign({ accessUrl: ({ event }) => event.output })
 					},
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'preparingFailure', actions: failed }
 				}
 			},
 			authorizingFetch: {
@@ -290,12 +308,12 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					onDone: [
 						{
 							guard: ({ event }) => event.output.error !== undefined,
-							target: 'authorizingFailure',
+							target: 'settlingFailure',
 							actions: assign({ error: ({ event }) => event.output.error, accessUrl: undefined })
 						},
 						{ target: 'fetching' }
 					],
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'settlingFailure', actions: failed }
 				}
 			},
 			fetching: {
@@ -308,12 +326,9 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					},
 					onDone: {
 						target: 'authorizingResponse',
-						actions: assign({
-							response: ({ event }) => event.output,
-							accessUrl: undefined
-						})
+						actions: assign({ response: ({ event }) => event.output, accessUrl: undefined })
 					},
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'preparingFailure', actions: failed }
 				}
 			},
 			authorizingResponse: {
@@ -323,7 +338,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					onDone: [
 						{
 							guard: ({ event }) => event.output.error !== undefined,
-							target: 'authorizingFailure',
+							target: 'settlingFailure',
 							actions: assign({ error: ({ event }) => event.output.error })
 						},
 						{
@@ -332,14 +347,14 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						},
 						{ target: 'importing' }
 					],
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'settlingFailure', actions: failed }
 				}
 			},
 			checkingDiscovery: {
 				always: [
 					{
 						guard: ({ context }) => required(context.response).errors.length > 0,
-						target: 'authorizingFailure',
+						target: 'settlingFailure',
 						actions: assign({ error: () => new Error('provider_failure') })
 					},
 					{ target: 'discovering' }
@@ -367,34 +382,18 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					onDone: [
 						{
 							guard: ({ event }) => event.output.error !== undefined,
-							target: 'authorizingFailure',
+							target: 'preparingFailure',
 							actions: assign({
 								error: ({ event }) => event.output.error,
 								counts: ({ event }) => event.output.counts
 							})
 						},
 						{
-							target: 'authorizingSuccess',
+							target: 'classifyingSuccess',
 							actions: assign({ counts: ({ event }) => event.output.counts })
 						}
 					],
-					onError: { target: 'authorizingFailure', actions: failed }
-				}
-			},
-			authorizingSuccess: {
-				meta: { loadingProvider: true },
-				invoke: {
-					src: 'authorize',
-					input: ({ context }) => credentialAuthorization(workFor(context)),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'authorizingFailure',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'classifyingSuccess' }
-					],
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'recordingFailure', actions: failed }
 				}
 			},
 			classifyingSuccess: {
@@ -416,7 +415,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						outcome: { lastOutcome: 'succeeded', lastError: null }
 					}),
 					onDone: 'complete',
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'settlingFailure', actions: failed }
 				}
 			},
 			recordingPartial: {
@@ -428,25 +427,15 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						outcome: { lastOutcome: 'partial', lastError: null }
 					}),
 					onDone: 'partial',
-					onError: { target: 'authorizingFailure', actions: failed }
+					onError: { target: 'settlingFailure', actions: failed }
 				}
 			},
-			authorizingFailure: {
-				meta: { loadingProvider: true },
+			preparingFailure: {
 				entry: assign({ accessUrl: undefined }),
-				always: {
-					guard: ({ context }) => context.command.type !== 'SYNC',
-					target: 'settlingFailure'
-				},
-				invoke: {
-					src: 'authorize',
-					input: ({ context }) => credentialAuthorization(workFor(context)),
-					onDone: [
-						{ guard: ({ event }) => event.output.error !== undefined, target: 'settlingFailure' },
-						{ target: 'recordingFailure' }
-					],
-					onError: 'settlingFailure'
-				}
+				always: [
+					{ guard: ({ context }) => context.command.type !== 'SYNC', target: 'settlingFailure' },
+					{ target: 'recordingFailure' }
+				]
 			},
 			recordingFailure: {
 				invoke: {
