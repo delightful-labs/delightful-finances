@@ -11,6 +11,7 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
+	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import TagForm from '#lib/components/TagForm.svelte'
 	import TagList from '#lib/components/TagList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
@@ -39,9 +40,7 @@
 	const membership = new QuerySubscriptionOne(() => {
 		const userId = session.current.account?.id
 		const organizationId = filters.activeOrganizationId
-		return organizationId && userId
-			? app.organizationMembers.where({ organizationId, userId })
-			: undefined
+		return organizationMembershipQuery(organizationId, userId)
 	})
 	const canCreate = $derived(
 		canEditCategoriesAndTags(membership.current, filters.activeOrganizationId)

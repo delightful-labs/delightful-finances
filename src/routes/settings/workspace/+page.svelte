@@ -14,6 +14,7 @@
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import WorkspaceNameForm from '#lib/components/WorkspaceNameForm.svelte'
 	import Message from '#lib/components/Message.svelte'
+	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 
@@ -27,9 +28,7 @@
 	const membershipQuery = new QuerySubscriptionOne(() => {
 		const userId = session.current.account?.id
 		const organizationId = filters.activeOrganizationId
-		return organizationId && userId
-			? app.organizationMembers.where({ organizationId, userId })
-			: undefined
+		return organizationMembershipQuery(organizationId, userId)
 	})
 	const workspace = $derived(workspaceQuery.current)
 	const canRename = $derived(

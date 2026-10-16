@@ -10,6 +10,7 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { canWriteAccount } from '#lib/domain/organization-permissions.js'
+	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import AccountList from '#lib/components/AccountList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
@@ -29,9 +30,7 @@
 	const membership = new QuerySubscriptionOne(() => {
 		const organizationId = filters.activeOrganizationId
 		const userId = session.current.account?.id
-		return organizationId && userId
-			? app.organizationMembers.where({ organizationId, userId })
-			: undefined
+		return organizationMembershipQuery(organizationId, userId)
 	})
 	const grants = new QuerySubscription(() => {
 		const organizationId = filters.activeOrganizationId

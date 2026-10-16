@@ -13,6 +13,7 @@
 	import { selectBankView } from '#lib/machines/bank-sync/index.js'
 	import { createBankTrace } from '#lib/integrations/diagnostics.js'
 	import { app, type Organization } from '#lib/schema.js'
+	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import BankSync from '#lib/components/BankSync.svelte'
@@ -37,7 +38,7 @@
 	const organizationId = $derived(filters.activeOrganizationId)
 	const userId = $derived(session.current.account?.id)
 	const membershipQuery = new QuerySubscriptionOne(() =>
-		organizationId && userId ? app.organizationMembers.where({ organizationId, userId }) : undefined
+		organizationMembershipQuery(organizationId, userId)
 	)
 	const connectionQuery = new QuerySubscription(() =>
 		organizationId && userId

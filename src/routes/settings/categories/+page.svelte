@@ -11,6 +11,7 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
+	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import CategoryForm from '#lib/components/CategoryForm.svelte'
 	import CategoryList from '#lib/components/CategoryList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
@@ -41,9 +42,7 @@
 	const membership = new QuerySubscriptionOne(() => {
 		const organizationId = filters.activeOrganizationId
 		const userId = session.current.account?.id
-		return organizationId && userId
-			? app.organizationMembers.where({ organizationId, userId })
-			: undefined
+		return organizationMembershipQuery(organizationId, userId)
 	})
 	const counts = $derived.by(() => {
 		const result = new Map<string, { transactions: number; tags: number }>()
