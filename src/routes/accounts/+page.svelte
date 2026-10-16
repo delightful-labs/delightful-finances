@@ -9,6 +9,7 @@
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 	import AccountList from '#lib/components/AccountList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
@@ -61,15 +62,11 @@
 	const archiving = $derived(archiveState.current.hasTag('busy'))
 
 	function canArchive(accountId: string) {
-		const member = membership.current
-		if (!member || member.organizationId !== filters.activeOrganizationId) return false
-		if (member.role === 'owner' || member.role === 'admin') return true
-		return (
-			member.role === 'member' &&
-			(member.accountAccessMode === 'all' ||
-				grants.current?.some(
-					(grant) => grant.accountId === accountId && grant.access === 'write'
-				) === true)
+		return canWriteAccount(
+			membership.current,
+			filters.activeOrganizationId,
+			accountId,
+			grants.current ?? []
 		)
 	}
 	const archivableAccountIds = $derived(

@@ -10,6 +10,22 @@ export function canManageBankCredentials(
 	)
 }
 
+export function canWriteAccount(
+	membership: OrganizationMember | null | undefined,
+	organizationId: string | null,
+	accountId: string,
+	grants: readonly { accountId: string; access: 'read' | 'write' }[]
+): boolean {
+	if (membership?.organizationId !== organizationId) return false
+	if (membership.role === 'owner' || membership.role === 'admin') return true
+	return (
+		membership.role === 'member' &&
+		(membership.accountAccessMode === 'all' ||
+			(membership.accountAccessMode === 'selected' &&
+				grants.some((grant) => grant.accountId === accountId && grant.access === 'write')))
+	)
+}
+
 export function canEditCategoriesAndTags(
 	membership: OrganizationMember | null | undefined,
 	organizationId: string | null
