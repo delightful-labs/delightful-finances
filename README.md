@@ -8,6 +8,14 @@ Use Node 22.17 or newer and pnpm. Start the shared development server with `pnpm
 
 Set `PUBLIC_JAZZ_APP_ID` and `PUBLIC_JAZZ_SERVER_URL` for the production deployment before building. These public settings are declared in `src/env.ts` and included in the build. The Jazz development plugin supplies them for the local development server.
 
+## Netlify deployment
+
+Create and claim a hosted app in the Jazz dashboard first. In Netlify's environment variables, set `PUBLIC_JAZZ_APP_ID` to that hosted app's ID, `PUBLIC_JAZZ_SERVER_URL` to `https://v2.sync.jazz.tools/`, and `JAZZ_ADMIN_SECRET` to its admin secret. Make these values available during builds; keep the admin secret private and restrict it to the production deploy context. Never give it a `PUBLIC_` prefix or commit it.
+
+`netlify.toml` runs `pnpm deploy:jazz && pnpm build` for production deployments. The Jazz command uses the installed SDK version and deploys `src/lib/schema.ts`, `src/lib/permissions.ts`, and migrations from `src/lib/migrations`. A failed database deployment stops the frontend build. A successful database deployment takes effect immediately, even if the subsequent frontend build fails, so schema and permission changes must remain compatible with the currently published app.
+
+Other Netlify contexts run only `pnpm build` and do not deploy database changes. Configure separate Jazz app settings for previews when they need database access. Local `pnpm build` also remains a frontend-only build.
+
 ## Native PWA
 
 SvelteKit bundles and registers `src/service-worker/index.ts` in production. `static/manifest.webmanifest` supplies the installation metadata and existing app icon. No PWA plugin or Workbox dependency is used.

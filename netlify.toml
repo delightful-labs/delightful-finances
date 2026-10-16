@@ -1,0 +1,5 @@
+[build]
+command = "pnpm build"
+
+[context.production]
+command = "pnpm deploy:jazz && pnpm build"

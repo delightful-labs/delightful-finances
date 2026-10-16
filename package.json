@@ -11,6 +11,7 @@
 		"pretest:unit": "pnpm paraglide",
 		"pretest:e2e": "pnpm paraglide",
 		"build": "vite build",
+		"deploy:jazz": "jazz-tools deploy --schema-dir src/lib --migrations-dir src/lib/migrations",
 		"preview": "vite preview",
 		"prepare": "pnpm paraglide && FINANCE_PREVIEW=true svelte-kit sync",
 		"check": "FINANCE_PREVIEW=true svelte-kit sync && FINANCE_PREVIEW=true svelte-check --tsconfig ./tsconfig.json && tsc --project src/service-worker/tsconfig.json --noEmit",
