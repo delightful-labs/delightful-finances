@@ -86,7 +86,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 - **FR-001**: The application MUST provide Jazz-backed sign-in and automatically create/reuse a personal organization for each first-time user.
 - **FR-002**: The application MUST provide create, list, and archive flows for USD financial accounts scoped to the active organization, using the shared sidebar and existing account list/create forms. Account history is reviewed through the income/expense views.
-- **FR-003**: The application MUST provide create/list flows for income and expense transactions on an account.
+- **FR-003**: The application MUST provide create/list flows for income and expense transactions on an account. New income and expense forms MUST default to the first checked active account in sidebar list order. When all accounts are checked, use the first account; when none are checked, require manual selection. All active accounts remain available for manual selection. Once the form is open, changes to defaults MUST preserve its current account and category selections.
 - **FR-004**: Every transaction MUST have `amountMinor >= 0`, an ISO 4217 currency, `kind`, `accountId`, `organizationId`, `bookedOn` as an ISO 8601 `YYYY-MM-DD` calendar-date string, and a category matching its kind.
 - **FR-005**: Manually entered income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details with a nonblank check number and a valid check date. The form MUST show those fields only when Check is selected. Imported SimpleFIN income may omit the payment method.
 - **FR-006**: Each organization MUST have non-deletable system Uncategorized categories for both expense and income.

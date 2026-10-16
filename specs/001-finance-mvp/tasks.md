@@ -192,3 +192,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] Move account navigation and filters into Accounts Details above Settings; move the selector into Settings as Current workspace.
 
 - [x] Start both disclosures closed and highlight only the exact current-page link via aria-current with green background, black text, and no underline.
+
+- [ ] T059 Default new income and expense forms to the first checked active account in sidebar order, retaining manual account selection.
+  - Implementation ready for review: shared entry derives the default from ordered accounts and sidebar filters; the account select receives the default and resets with the form. No checked account leaves the placeholder selected. Open forms preserve account and category selections when defaults change.
+  - After implementation approval, add and run focused coverage for all/some/none checked, list order versus checkbox click order, manual overrides, background default changes preserving open-form selections, add-another reset, and workspace changes.

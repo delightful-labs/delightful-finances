@@ -22,6 +22,7 @@
 		kind,
 		organizationId,
 		accounts,
+		defaultAccountId,
 		categories,
 		defaultCategoryId,
 		tagSuggestions,
@@ -30,6 +31,7 @@
 		kind: 'expense' | 'income'
 		organizationId: string | null
 		accounts: readonly Account[]
+		defaultAccountId: string | undefined
 		categories: readonly Category[]
 		defaultCategoryId: string | undefined
 		tagSuggestions: readonly string[]
@@ -65,7 +67,7 @@
 					aria-invalid={fieldInvalid(form.issues, 'accountId') || undefined}
 					name="accountId"
 					required
-					defaultValue=""
+					defaultValue={defaultAccountId ?? ''}
 				>
 					<option value="" disabled>{m['transactions.select_account']()}</option>
 					{#each accounts as account (account.id)}
@@ -79,32 +81,30 @@
 						: ''}
 				/>
 
-				{#key defaultCategoryId}
-					<Select
-						label={m['labels.category']()}
-						id="transaction-category"
-						aria-describedby="transaction-category-feedback"
-						aria-invalid={fieldInvalid(form.issues, 'categoryId') || undefined}
-						name="categoryId"
-						required
-						defaultValue={defaultCategoryId ?? ''}
-					>
-						<option value="" disabled>
-							{m['transactions.select_category']()}
+				<Select
+					label={m['labels.category']()}
+					id="transaction-category"
+					aria-describedby="transaction-category-feedback"
+					aria-invalid={fieldInvalid(form.issues, 'categoryId') || undefined}
+					name="categoryId"
+					required
+					defaultValue={defaultCategoryId ?? ''}
+				>
+					<option value="" disabled>
+						{m['transactions.select_category']()}
+					</option>
+					{#each categories as category (category.id)}
+						<option value={category.id}>
+							{category.name}
 						</option>
-						{#each categories as category (category.id)}
-							<option value={category.id}>
-								{category.name}
-							</option>
-						{/each}
-					</Select>
-					<FieldFeedback
-						id="transaction-category-feedback"
-						errorMessage={fieldInvalid(form.issues, 'categoryId')
-							? m['transactions.category_invalid']()
-							: ''}
-					/>
-				{/key}
+					{/each}
+				</Select>
+				<FieldFeedback
+					id="transaction-category-feedback"
+					errorMessage={fieldInvalid(form.issues, 'categoryId')
+						? m['transactions.category_invalid']()
+						: ''}
+				/>
 
 				<InputCurrency
 					label={m['labels.amount']()}

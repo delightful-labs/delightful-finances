@@ -234,3 +234,7 @@ Update the existing AppShell presentation with the shared Details component and 
 Compose the existing account navigation and filters inside an initially closed Accounts Details above Settings. Move the existing workspace selector into Settings with its own Current workspace localization; preserve subscriptions and callbacks.
 
 Keep both disclosures closed initially, including on their destination routes. Match current-page links by exact pathname (ignoring a trailing slash), and style the existing aria-current attribute with the theme accent background, black text, and no underline.
+
+### Transaction account default
+
+TransactionEntry derives the default account ID from its name-ordered active-account query and the shared sidebar account filters. TransactionForm receives the ID as a presentation prop and uses the native select default, without remounting account or category controls when their defaults change while the form is open. Existing form actors and validation remain responsible for submission. No new workflow state is required for this selection default.

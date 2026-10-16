@@ -47,6 +47,12 @@
 			: undefined
 	)
 	const accounts = $derived(accountQuery.current ?? [])
+	const defaultAccountId = $derived(
+		accounts.find(
+			(account) =>
+				filters.selectedAccountIds === null || filters.selectedAccountIds.includes(account.id)
+		)?.id
+	)
 	const availableCategories = $derived(categoryQuery.current ?? [])
 	const defaultCategory = $derived(
 		defaultTransactionCategory({
@@ -107,6 +113,7 @@
 			{kind}
 			organizationId={filters.activeOrganizationId}
 			{accounts}
+			{defaultAccountId}
 			categories={availableCategories}
 			defaultCategoryId={defaultCategory?.id}
 			{tagSuggestions}
