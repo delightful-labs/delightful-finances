@@ -23,6 +23,7 @@
 	import TagsIcon from 'tdesign-icons-svg/src/tag.svg?component'
 	import WorkspaceIcon from 'tdesign-icons-svg/src/building.svg?component'
 	import BanksIcon from 'tdesign-icons-svg/src/money.svg?component'
+	import EditIcon from 'tdesign-icons-svg/src/edit.svg?component'
 	import AccountIcon from 'tdesign-icons-svg/src/user.svg?component'
 	import LoginIcon from 'tdesign-icons-svg/src/login.svg?component'
 	import SettingsIcon from 'tdesign-icons-svg/src/setting.svg?component'
@@ -181,19 +182,10 @@
 									><Icon class="menu-icon" icon={AccountsIcon} />{m['labels.accounts']()}</span
 								>
 							{/snippet}
-							<Navigation label={m['labels.accounts']()}>
-								<li>
-									<a
-										href="/accounts"
-										aria-current={current('/accounts')}
-										onclick={dismissMobileDrawer}
-										><Icon class="menu-icon" icon={AccountsIcon} />{m['labels.accounts']()}</a
-									>
-								</li>
-							</Navigation>
-							<section aria-labelledby={filtersHeadingId}>
-								<QueryContent
-									queries={accountQueries}
+							<div class="details-content-group">
+								<section class="details-content-section" aria-labelledby={filtersHeadingId}>
+									<QueryContent
+										queries={accountQueries}
 									loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
 									errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
 								>
@@ -268,19 +260,32 @@
 								{/snippet}
 								{@render accountCreation(accountCreationTrigger)}
 							</section>
-						</Details>
+						</div>
+						<Navigation label={m['labels.accounts']()}>
+							<li>
+							<a
+								href="/accounts"
+								aria-current={current('/accounts')}
+								onclick={dismissMobileDrawer}
+								><Icon class="menu-icon" icon={EditIcon} />{m['accounts.manage']()}</a
+							>
+						</li>
+						</Navigation>
+					</Details>
 					</li>
 					<li>
 						<Details caretPosition="right">
 							{#snippet summary()}
 								<Icon class="menu-icon" icon={SettingsIcon} />{m['navigation.settings']()}
 							{/snippet}
-							<QueryContent
-								queries={organizationQueries}
-								loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
-								errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
-							>
-								<Select
+							<div class="details-content-group">
+								<div class="details-content-section">
+									<QueryContent
+									queries={organizationQueries}
+									loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
+									errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
+								>
+									<Select
 									label={m['workspace.current']()}
 									id="active-organization"
 									value={organizationId ?? ''}
@@ -289,8 +294,10 @@
 									{#each organizations as organization (organization.id)}
 										<option value={organization.id}>{organization.name}</option>
 									{/each}
-								</Select>
-							</QueryContent>
+									</Select>
+									</QueryContent>
+								</div>
+							</div>
 							<Navigation label={m['navigation.settings']()}>
 								<li>
 									<a
@@ -412,7 +419,7 @@
 		--dui-details-border-width: 0px;
 		--dui-details-content-border-width: 0px;
 		--dui-details-summary-padding: 0.5rem 1rem;
-		--dui-details-content-padding: var(--dui-space-sm, 1rem);
+		--dui-details-content-padding: 0;
 		flex: 0 0 var(--dui-drawer-width, 20rem);
 	}
 
@@ -450,7 +457,6 @@
 		display: flex;
 		flex-direction: column;
 		min-block-size: 100%;
-		gap: var(--dui-space-sm, 1rem);
 	}
 
 	.sidebar-content :global(.menu-icon) {
@@ -465,8 +471,22 @@
 		padding-inline: 1rem;
 	}
 
-	.sidebar-content :global(details nav a) {
-		padding-inline: 0;
+	.sidebar-content :global(details > .details-content) {
+		display: grid;
+		gap: var(--dui-space-xs, 0.5rem);
+	}
+
+	.details-content-group {
+		display: grid;
+		gap: var(--dui-space-xs, 0.5rem);
+		min-width: 0;
+	}
+
+	.details-content-section {
+		display: grid;
+		gap: var(--dui-space-xs, 0.5rem);
+		min-width: 0;
+		padding: var(--dui-space-xs, 0.5rem) 1rem 0;
 	}
 
 	.sidebar-content :global(a[aria-current='page']) {
@@ -479,14 +499,7 @@
 		margin-block-start: auto;
 	}
 
-	section,
-	section ul {
-		display: grid;
-		gap: var(--dui-space-sm, 1rem);
-		min-width: 0;
-	}
-
-	section ul {
+	.details-content-section ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;

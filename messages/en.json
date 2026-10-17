@@ -85,6 +85,7 @@
 		"save_avatar": "Save avatar"
 	},
 	"accounts": {
+		"manage": "Manage Accounts",
 		"type": {
 			"cash": "Cash",
 			"bank": "Bank",
