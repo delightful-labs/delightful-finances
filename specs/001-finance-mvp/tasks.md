@@ -272,3 +272,12 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] Review the presentation implementation.
 - [x] After approval, update focused transaction-list browser coverage and run relevant checks.
   - All 319 unit tests and 21 selected browser scenarios pass across focused runs; browser-test TypeScript and whitespace checks pass. Browser coverage includes profile/avatar persistence, recovery, offline changes, owner authorization, transaction lists, locale formatting, responsive navigation and sidebar status.
+
+### App shell component boundaries
+
+- [x] Extract props-driven AppTopMenu and AppDrawer with their existing styles; preserve shell-owned responsive coordination and callbacks.
+- [ ] Review the component extraction.
+- [ ] After implementation approval, run relevant navigation coverage and update it if needed.
+
+- [x] Share drawer navigation links across top-level and Details sections using AppNavigationLink.
+- [ ] Review shared-link implementation before running relevant navigation tests.

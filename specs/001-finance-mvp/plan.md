@@ -296,3 +296,9 @@ Use PageContent in the shared TransactionView and its grouped TransactionList. R
 ### Avatar input composition
 
 Use InputAvatar's own Avatar label without a duplicate section heading. Label its chooser Choose image, and show Save avatar only when a file is selected; retain explicit form submission, existing validation/persistence, and saved-avatar removal. Keep selected-file presentation state local and clear it when the profile changes. Tests follow implementation review.
+
+### App shell component boundaries
+
+Extract AppTopMenu for the logo/toggle and AppDrawer for navigation, account filters/order, workspace selection and sync/status presentation. Each owns its existing styles and receives data/callbacks through props. AppShell retains responsive open-state coordination, header measurement, main-content inertness and dismissal focus restoration. Pass pathname into AppDrawer rather than reading route state there. Preserve existing behavior and styling; review this extraction before automated tests.
+
+Use AppNavigationLink for all top-level and Details-nested drawer links. The shared presentation component owns icon/label rendering, normalized pathname matching, aria-current, navigation callbacks and link styling. Keep list structure and localization at the drawer call sites. Review before navigation tests.
