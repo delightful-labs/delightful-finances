@@ -208,4 +208,58 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 ### Sidebar icon alignment
 
 - [x] Bundle updated DUI and align Drawer link/Details icons with right carets, full-width items and zero Details borders.
-- [ ] After implementation approval, add and run focused navigation alignment coverage.
+- [x] After implementation approval, add and run focused navigation alignment coverage.
+
+### Responsive categories table
+
+- [x] Use DUI Table for categories with a localized caption and contained horizontal scrolling.
+- [x] After implementation approval, add and run focused narrow-screen category-table coverage.
+
+### Category creation modal
+
+- [x] Move category creation into DUI Dialog with a localized trigger/Cancel button and workspace dismissal.
+- [x] After implementation approval, add and run focused modal creation, validation, dismissal/focus, draft retention and workspace-reset coverage.
+
+### Page content spacing
+
+- [x] Add shared PageContent with theme gap and use it in AppShell.
+- [x] After implementation approval, verify page spacing and narrow-screen table containment.
+
+### Tags table and creation modal
+
+- [x] Match categories with a responsive tags table and Add tag modal, Cancel first and primary Add action.
+- [x] After implementation approval, add and run focused tag modal and narrow-screen table coverage.
+
+### Shared creation modal and transaction account setup
+
+- [x] Share modal form presentation across account, category and tag creation.
+- [x] Reuse scoped account creation in account pages and empty-account expense/income list/entry states, retaining owner/admin authorization.
+  - Implementation ready for review. Svelte/application/service-worker static checks pass with zero errors or warnings; changed-file formatting and whitespace checks pass. Focused runtime coverage passed after implementation approval; see validation below.
+- [x] After implementation approval, add and run focused modal, authorization, scope-change and account-to-transaction coverage.
+
+### Sidebar account modal
+
+- [x] Remove /accounts/new and open the shared account modal directly from the sidebar; keep field IDs unique across instances.
+- [x] After implementation approval, update account-creation navigation coverage and verify sidebar dismissal/focus behavior.
+
+### Creation modal and navigation validation
+
+- [x] 79 focused unit tests pass across form/account-order/access machines and account/category/tag validation (including seven new account-creation access cases).
+- [x] 17 focused browser scenarios pass across creation modals, workspace resets, first-account expense/income entry, responsive sidebar navigation/alignment, and the migrated finance smoke test.
+- [x] Svelte/application/service-worker and browser-test TypeScript checks pass; formatting and whitespace checks pass.
+  - Browser coverage verifies equal-width Cancel/Add controls and decorative icons, whitespace validation, Cancel/Escape/backdrop dismissal and focus restoration, retained drafts, add-another/reset, persistence, keyboard-scrolling narrow tables, page gap, sidebar modal activation without URL changes, and the removed route’s 404.
+  - Fixed a measured 4px Cancel/Add width difference caused by DUI primary buttons omitting borders: shared controls now use equal border-box flex bases.
+  - Tests used the local app at http://127.0.0.1:5173. Initial connection/setup failures were resolved by starting/restarting the dev server; static sync regenerates the public Jazz URL, so runtime verification followed a server restart. Narrowed reruns verified the fixes. This was focused validation, not the full repository browser suite; the remaining suite migration and its results are recorded below.
+
+### Existing browser suite migration
+
+- [x] Migrate account creation, authentication, account-order, permissions, workspace, UI and PWA tests to shared modals, Current workspace, Login and disclosed sidebar navigation. Keep only the intentional /accounts/new 404 assertion.
+- [x] Add shared user-interaction helpers for disclosure navigation, creation dialogs and workspace switching; preserve security/persistence/offline assertions.
+- [x] Update the old SimpleFIN permission fixture to a dummy encrypted envelope and empty legacy URL sentinel, without changing application policy.
+- [x] Run the affected development and production-PWA suites, fix compatibility failures and record results.
+  - Exercised all 106 affected development-browser cases: 104 pass; the two unchanged expense/income default-category assertions fail on switching back to the original workspace.
+  - All six production-PWA cases pass after adding the public Banks shell to the cache allowlist. Combined affected-browser results: 110 pass, two fail.
+  - Account archive admin replication timed out once under the parallel run and passed in an isolated rerun. Drawer geometry now waits for transition completion; offline status expectations match the compact Offline label.
+  - Browser-test TypeScript, changed-file formatting/whitespace checks and the production build pass. No assertions were weakened to hide the category-default failures.
+
+- [ ] Investigate the existing expense/income default-category regression: after saving in a second workspace and switching back, the category select remains blank instead of selecting the original system category. Keep both existing assertions intact; this is application behavior rather than a navigation-selector migration.

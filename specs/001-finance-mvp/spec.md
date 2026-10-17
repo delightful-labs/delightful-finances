@@ -197,3 +197,25 @@ Accounts provide an Edit order button below the list. Editing reveals right-alig
 ### Sidebar icon alignment
 
 Use DUI right-positioned carets for Accounts and Settings. Remove drawer inner padding and Details borders, including the content divider. Navigation links and disclosure summaries share the same horizontal inset so their icons align. Details child content retains 1rem theme spacing on all sides.
+
+### Responsive categories table
+
+Category settings use the shared DUI Table with a localized caption and keyboard-focusable horizontal scrolling so all columns and archive actions remain reachable on narrow screens.
+
+### Category creation modal
+
+Category creation opens in a DUI modal from an Add category button. Preserve validation, save feedback and add-another behavior. Provide a localized Cancel button, Escape/backdrop dismissal, and native focus restoration. Dismissal retains the draft; workspace changes close the modal and reset the existing workspace-scoped form.
+
+### Page content spacing
+
+Shared page content separates sibling content blocks, including category tables and creation buttons, with theme spacing through CSS gap.
+
+### Tags table and creation modal
+
+Tags use the same responsive DUI Table and creation modal pattern as categories. Add tag opens the modal; Cancel precedes the primary Add tag action. Preserve category selection, validation, save feedback and add-another behavior. Dismissal retains drafts; workspace changes close and reset the form. Shared PageContent supplies spacing between table and trigger.
+
+### Shared creation modal and transaction account setup
+
+Account, category and tag creation share a modal form presentation with Cancel first, a primary Add action, equal-width controls, native dismissal/focus behavior and existing validation/save feedback. Users with no active accounts can create one directly from expense/income lists and entry pages without navigating away. Accounts management uses the same reusable account creation integration; the sidebar Add account button opens the modal directly, and /accounts/new is removed. Only owners/admins may create financial accounts. Workspace/identity changes close and reset account creation. Dismissal retains drafts and does not cancel an already-issued save.
+
+Creation modal openers include a decorative plus icon; shared modal Add actions use a Save icon and Cancel actions use an X icon, retaining their localized labels.

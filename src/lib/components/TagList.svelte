@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from 'delightful-ui'
+	import { Button, Table } from 'delightful-ui'
 	import type { Tag } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -30,7 +30,7 @@
 	<p role="alert">{m['errors.archive']({ subject: m['labels.tag']() })}</p>
 {/if}
 {#if tags.length}
-	<table>
+	<Table caption={m['labels.tags']()}>
 		<thead
 			><tr>
 				<th scope="col">{m['labels.tag_name']()}</th>
@@ -64,7 +64,7 @@
 				</tr>
 			{/each}
 		</tbody>
-	</table>
+	</Table>
 {:else}
 	<p>{m['tags.empty']()}</p>
 {/if}

@@ -12,6 +12,7 @@
 	} from '#lib/finance-filters.js'
 	import BankSyncIntegration from './BankSyncIntegration.svelte'
 	import AppShell from './AppShell.svelte'
+	import AccountCreation from './AccountCreation.svelte'
 	import JazzStartup from './JazzStartup.svelte'
 	import { useMachine } from '@xstate/svelte'
 	import { accountOrderMachine, orderAccounts } from '#lib/machines/account-order.js'
@@ -150,8 +151,13 @@
 				accountQueries={[organizationQuery, accountQuery]}
 				onOrganizationChange={setActiveOrganization}
 				onAccountChange={setAccountSelected}
-				onAllAccountsChange={setAllAccountsSelected}>{@render pageContent()}</AppShell
+				onAllAccountsChange={setAllAccountsSelected}
 			>
+				{#snippet accountCreation(trigger)}
+					<AccountCreation {trigger} />
+				{/snippet}
+				{@render pageContent()}
+			</AppShell>
 		{:else if setupError}
 			<JazzStartup error workspace />
 		{:else}

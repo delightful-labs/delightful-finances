@@ -1,3 +1,4 @@
+import { prepareSidebar } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 import type { OrganizationMember } from '../src/lib/schema.js'
 
@@ -88,6 +89,7 @@ const scenarios: {
 async function start(page: Page) {
 	await page.goto('/')
 	await expect(page.getByRole('complementary').getByRole('navigation')).toBeVisible()
+	await prepareSidebar(page)
 	await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
@@ -104,12 +106,16 @@ async function start(page: Page) {
 
 test('cannot move a category into an unrelated workspace', async ({ page, browser }) => {
 	await start(page)
-	const targetOrganizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const targetOrganizationId = await page
+		.getByLabel('Current workspace', { exact: true })
+		.inputValue()
 	const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
 	try {
 		const subject = await subjectContext.newPage()
 		await start(subject)
-		const organizationId = await subject.getByLabel('Workspace', { exact: true }).inputValue()
+		const organizationId = await subject
+			.getByLabel('Current workspace', { exact: true })
+			.inputValue()
 		const outcome = await subject.evaluate(
 			async ({ organizationId, targetOrganizationId }) => {
 				const { app, db } = window.workspacePermissionTest
@@ -154,7 +160,9 @@ for (const scenario of scenarios) {
 			await start(subject)
 			const subjectId = await subject.evaluate(() => window.workspacePermissionTest.userId)
 			if (!subjectId) throw new Error('Test identity is missing.')
-			const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+			const organizationId = await page
+				.getByLabel('Current workspace', { exact: true })
+				.inputValue()
 			const fixture = await page.evaluate(
 				async ({ organizationId, subjectId, role, mode, grant }) => {
 					const { app, db } = window.workspacePermissionTest
@@ -195,7 +203,13 @@ for (const scenario of scenarios) {
 					const connection = await db
 						.insert(app.simplefinConnections, {
 							organizationId,
-							accessUrl: 'https://example.invalid/test-only',
+							accessUrl: '',
+							ownerId: window.workspacePermissionTest.userId,
+							credentialVersion: 1,
+							credentialId: 'dGVzdA',
+							prfSalt: 'dGVzdA',
+							iv: 'dGVzdA',
+							ciphertext: 'dGVzdA',
 							status: 'active',
 							claimedAt: new Date()
 						})
@@ -247,7 +261,7 @@ for (const scenario of scenarios) {
 								tier: 'remote'
 							})
 						),
-						secret: Boolean(
+						credentialEnvelope: Boolean(
 							await db.one(app.simplefinConnections.where({ id: fixture.connectionId }), {
 								tier: 'remote'
 							})
@@ -259,7 +273,7 @@ for (const scenario of scenarios) {
 			)
 			expect(access.workspace).toBe(Boolean(scenario.role))
 			expect(access.transaction).toBe(scenario.read)
-			expect(access.secret).toBe(scenario.role === 'admin')
+			expect(access.credentialEnvelope).toBe(scenario.role === 'admin')
 			expect(access.rows.sort()).toEqual(
 				(scenario.all
 					? [fixture.firstId, fixture.secondId]
@@ -316,7 +330,7 @@ test('transaction tags enforce workspace consistency, active assignment, immutab
 	page
 }) => {
 	await start(page)
-	const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 	const result = await page.evaluate(async (organizationId) => {
 		const { app, db, userId } = window.workspacePermissionTest
 		const category = await db.one(
@@ -418,7 +432,7 @@ test('transaction tags enforce workspace consistency, active assignment, immutab
 for (const scenario of scenarios) {
 	test(`transaction tag permissions: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
-		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
 		try {
 			const subject = await subjectContext.newPage()
@@ -885,7 +899,7 @@ test('check detail references enforce initial integrity, edits, and single selec
 for (const scenario of scenarios) {
 	test(`check detail access: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
-		const organizationId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 		const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
 		try {
 			const subject = await context.newPage()

@@ -8,6 +8,7 @@
 		onreset,
 		fields,
 		controls,
+		controlsFill = false,
 		feedback
 	}: {
 		view: FormView<Values, Result, Context>
@@ -15,6 +16,7 @@
 		onreset: (event: Event) => void
 		fields: Snippet<[FormView<Values, Result, Context>]>
 		controls?: Snippet<[FormView<Values, Result, Context>]> | undefined
+		controlsFill?: boolean
 		feedback?: Snippet<[FormView<Values, Result, Context>]> | undefined
 	} = $props()
 </script>
@@ -22,7 +24,7 @@
 <form {onsubmit} {onreset} aria-busy={view.busy}>
 	<div class="form-fields">{@render fields(view)}</div>
 	{#if controls}
-		<div class="form-controls">{@render controls(view)}</div>
+		<div class="form-controls" class:fill={controlsFill}>{@render controls(view)}</div>
 	{/if}
 	<!-- Future field feedback: docs/delightful-ui-integration.md#field-feedback -->
 	{#if feedback}
@@ -47,6 +49,11 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--dui-space-xs, 0.5rem);
+	}
+
+	.form-controls.fill :global(> button) {
+		flex: 1 1 calc((100% - var(--dui-space-xs, 0.5rem)) / 2);
+		min-inline-size: 0;
 	}
 
 	.form-fields:empty,

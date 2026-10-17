@@ -103,7 +103,7 @@ messages/en.json
 static/
 ```
 
-Current routes: `/`, `/accounts`, `/accounts/new`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, `/account` (account recovery), `/settings/workspace`, `/settings/categories`, `/settings/tags`, and `/transactions/[id]`. Account management uses the shared sidebar and existing account list/create forms; history stays in the income/expense views.
+Current routes: `/`, `/accounts`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, `/account` (account recovery), `/settings/workspace`, `/settings/categories`, `/settings/tags`, and `/transactions/[id]`. Account management uses the shared sidebar and existing account list/create forms; history stays in the income/expense views.
 
 Workspace settings use `/settings/workspace` and a reusable `WorkspaceNameForm` component. Read the submitted form with `FormData`, validate a trimmed non-empty name with Zod, and save through Jazz at the local durability tier. Owners/admins may edit; members/viewers get read-only controls. The component, page wiring, and sidebar navigation are implemented; the navigation test confirms the selected workspace and database session survive client navigation. Five shared form-machine unit tests and five workspace browser tests pass after implementation approval. Reactive reads use Jazz’s `QuerySubscriptionOne`; `QueryContent` shares loading/error feedback.
 
@@ -246,3 +246,41 @@ WorkspaceBootstrap owns the account-order XState actor and browser storage bindi
 ### Sidebar icon alignment
 
 Bundle current local DUI source with the Details caretPosition API in a distinct vendored archive. Scope zero drawer padding, zero Details borders, theme-spaced Details child content, and equal link/summary horizontal insets to AppShell. Nested navigation links use the Details content inset without additional link padding, aligning their icons with summaries and account checkboxes. Preserve disclosure and navigation behavior. Package and static checks precede review; browser tests follow implementation approval.
+
+### Responsive categories table
+
+Replace CategoryList’s native table wrapper with the existing DUI Table, following AccountList. Preserve column/row semantics, localized counts, archive callbacks and feedback. DUI owns overflow containment; no workflow changes are needed. Static checks precede review.
+
+### Category creation modal
+
+Keep the disclosure boolean in the pure CategoryForm component and wrap its existing FormContent in DUI Dialog. The page continues to own the form actor and persistence. Keep form content mounted to preserve drafts across dismissal; close on workspace changes. Retain the existing success/add-another flow within the modal. No new business workflow is introduced.
+
+### Page content spacing
+
+Extract the existing AppShell content wrapper into a reusable pure PageContent component. Use a single minmax(0, 1fr) grid column and the 1rem theme gap to space page blocks while allowing DUI table overflow containment. Adopt it once in AppShell for consistent routed content spacing.
+
+### Tags table and creation modal
+
+Adopt DUI Table in TagList with a localized caption. Wrap existing TagForm content in DUI Dialog, matching CategoryForm’s local disclosure, workspace-close effect, draft retention and Cancel/primary Add controls. Both creation modals opt into FormContent’s controlsFill presentation prop so Cancel and Add flex equally across the available row width. Keep page-owned subscriptions, permissions and form actors intact; use the existing shared PageContent gap. Static checks precede review.
+
+### Shared creation modal and transaction account setup
+
+User approved a larger related review cycle. Introduce a generic FormModal presentation combining DUI Dialog and FormContent with shared trigger, Cancel/primary Add controls and equal-width buttons; migrate CategoryForm, TagForm and AccountForm to it. Preserve their existing field/feedback snippets and category/tag add-another behavior. AccountCreation owns Jazz membership subscription and the existing form actor, rendering AccountForm; reuse it in account routes and no-account expense/income list/entry states. Preserve local-first createAccount and existing schema validation.
+
+Model account creation access before effects: OBSERVE stores selected workspace, identity, membership loading/error and membership; checking transitions to waiting when scope is absent/loading, error on query failure, denied on mismatched scope/identity or non-admin membership, and allowed for owner/admin. Subsequent observations reevaluate access. Only allowed enables submission. The form actor retains editing → validating → saving → success/invalid/error, resets on workspace/identity changes and rechecks scope/access at persistence. Modal disclosure stays local, closes on scope change, and dismissal retains mounted draft content. On transaction pages the empty-account branch is replaced by the usable transaction UI when the live account query observes the new account; this also dismisses the empty-state modal. No transaction is submitted automatically. Formatting/static checks precede implementation review; tests remain deferred.
+
+### Sidebar account modal
+
+Remove /accounts/new and render AccountCreation from a sidebar snippet supplied by WorkspaceBootstrap. AppShell supplies a pure button trigger; FormModal owns disclosure and shared controls. Do not dismiss the mobile drawer on modal activation, so the trigger remains available for native focus restoration. Account fields use per-instance IDs because sidebar and page modals may coexist. Tests covering the removed route need migration after implementation approval.
+
+Shared FormModal owns the existing TDesign plus/Save/X icons and gap-based icon/label spacing for creation triggers and modal controls. Custom sidebar triggers retain their existing plus icon.
+
+### Creation modal validation results
+
+After implementation approval, 79 focused units and 17 focused browser scenarios pass, along with application/service-worker and browser-test type checks. Runtime coverage spans the shared modal, category/tag persistence and overflow, workspace resets, account creation from all four expense/income list/entry routes, sidebar modal/focus at four viewport widths, geometry/icon alignment and the finance smoke flow. Corrected equal button sizing using border-box flex bases because DUI primary buttons have no border. Kept the local server at http://127.0.0.1:5173; restart after FINANCE_PREVIEW static sync before browser checks so its generated public Jazz URL is restored. The remaining suite migration and its verification results are recorded below.
+
+### Existing browser suite migration
+
+Update the seven existing browser suites and a small shared interaction helper within the approved modal/navigation scope. Tests must expand Accounts/Settings before interacting with nested navigation, use Current workspace and Login labels, scope account fields/actions to the active modal, dismiss before interacting with background content, and reopen after workspace changes. Preserve drafts in modals for production worker-update scenarios. Keep the old account URL only in its explicit 404 regression. Migrate the permission fixture from a legacy plaintext URL to a non-secret dummy encrypted envelope; preserve the current admin-read and owner-write policy assertions. Run development suites before production build because generated environment files are shared with Vite.
+
+Migration verification exercised all 106 affected development-browser cases, with 104 passing and two existing default-category failures. All six production PWA checks pass, covering offline shells/manifest, direct transaction detail, and single-/multi-tab worker updates with modal drafts. The old cache allowlist now includes the public Banks shell and excludes /accounts/new. One archive replication timeout passed on isolation; geometry assertions wait for drawer animation. Browser-test TypeScript, formatting/whitespace checks and production build pass. Kept the failing workspace-switch category assertions intact and tracked the underlying application issue separately.

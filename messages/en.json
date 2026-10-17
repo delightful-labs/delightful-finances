@@ -75,6 +75,7 @@
 		"save": "Save",
 		"retry": "Try again",
 		"add_category": "Add category",
+		"cancel": "Cancel",
 		"archive_category": "Archive {name}",
 		"add_tag": "Add tag",
 		"archive_tag": "Archive {name}",
@@ -171,8 +172,8 @@
 	},
 	"database": {
 		"starting": "Loading your finances…",
-		"local": "Working locally",
-		"offline": "Offline — working locally",
+		"local": "Online",
+		"offline": "Offline",
 		"sync_enabled": "Sync enabled",
 		"start_error": "Your finances could not be opened. Try again."
 	},

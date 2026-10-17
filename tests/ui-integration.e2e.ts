@@ -1,3 +1,4 @@
+import { prepareSidebar, openCreationModal, closeCreationModal } from './helpers/ui.js'
 import { expect, test, type Locator } from '@playwright/test'
 
 async function bounds(locator: Locator) {
@@ -11,19 +12,26 @@ test('inline navigation keeps page height stable and scrolls inside its full-hei
 }) => {
 	await page.setViewportSize({ width: 1280, height: 420 })
 	await page.emulateMedia({ reducedMotion: 'no-preference' })
-	await page.goto('/accounts/new')
-	await expect(page.getByLabel('Account name', { exact: true })).toBeVisible()
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
 	const sidebar = page.locator('aside.inline-drawer')
 	await expect(sidebar).toBeVisible()
 	const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
 	await expect(toggle).toBeVisible()
 	const toggleBounds = await bounds(toggle)
+	await prepareSidebar(page)
 	const before = await bounds(page.locator('.page-content'))
 	const header = page.locator('header.site-header')
 	const headerBox = await bounds(header)
 	const panel = sidebar.locator('.inline-panel')
 	await toggle.click()
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+	await toggle.click()
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 	await expect(sidebar).toBeVisible()
+	await expect.poll(async () => (await bounds(sidebar)).width).toBe(320)
 	const sidebarBox = await bounds(sidebar)
 
 	expect(headerBox.x).toBe(0)
@@ -33,12 +41,13 @@ test('inline navigation keeps page height stable and scrolls inside its full-hei
 	expect(sidebarBox.y).toBe(headerBox.y + headerBox.height)
 	expect(sidebarBox.width).toBe(320)
 	expect((await bounds(page.locator('main'))).x).toBe(sidebarBox.x + sidebarBox.width + 16)
-	await expect(sidebar.getByRole('button')).toHaveCount(0)
+	await expect(sidebar.getByRole('button', { name: 'Add an account', exact: true })).toBeVisible()
 	const body = sidebar.locator('.drawer-body')
 	expect(await body.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true)
-	await sidebar.getByRole('link', { name: 'Add an account', exact: true }).focus()
+	await sidebar.getByRole('button', { name: 'Add an account', exact: true }).focus()
 	expect(await body.evaluate((node) => node.scrollTop)).toBeGreaterThan(0)
 	const open = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+	await open.focus()
 	await expect(open).toBeFocused()
 	await expect
 		.poll(async () => await panel.evaluate((node) => getComputedStyle(node).transform))
@@ -55,8 +64,10 @@ test('sidebar status follows browser connectivity without claiming completed syn
 	context
 }) => {
 	await page.setViewportSize({ width: 1280, height: 1000 })
-	await page.goto('/accounts/new')
-	await expect(page.getByLabel('Account name', { exact: true })).toBeVisible()
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
 	const sidebar = page.locator('aside.inline-drawer')
 	const status = sidebar.getByRole('status')
 	await expect(status).toHaveCount(1)
@@ -65,18 +76,20 @@ test('sidebar status follows browser connectivity without claiming completed syn
 	const body = await bounds(sidebar.locator('.drawer-body'))
 	const indicator = await bounds(status)
 	expect(Math.abs(body.y + body.height - indicator.y - indicator.height)).toBeLessThan(2)
-	const name = page.getByLabel('Account name', { exact: true })
+	const modal = await openCreationModal(page, 'Add an account')
+	const name = modal.getByLabel('Account name', { exact: true })
 	await name.fill('Unsaved draft')
 	await name.focus()
 	try {
 		await context.setOffline(true)
-		await expect(status).toHaveText('Offline — working locally')
+		await expect(status).toHaveText('Offline')
 		await expect(name).toBeFocused()
 		await expect(name).toHaveValue('Unsaved draft')
 	} finally {
 		await context.setOffline(false)
 	}
 	await expect(status).toHaveText('Sync enabled')
+	await closeCreationModal(page)
 	await sidebar.getByRole('link', { name: 'Expenses', exact: true }).click()
 	await expect(page).toHaveURL('/expenses')
 	await expect(status).toHaveText('Sync enabled')
@@ -85,8 +98,10 @@ test('sidebar status follows browser connectivity without claiming completed syn
 test('sidebar status does not claim a successful sync when the database is disconnected', async ({
 	page
 }) => {
-	await page.goto('/accounts/new')
-	await expect(page.getByLabel('Account name', { exact: true })).toBeVisible()
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
 	const status = page.locator('aside.inline-drawer').getByRole('status')
 	await page.evaluate(async () => {
 		const sessionPath = '/src/lib/jazz-session.ts'
@@ -107,21 +122,23 @@ test('mobile sidebar status stays inside the Drawer and is hidden when it closes
 }) => {
 	await page.setViewportSize({ width: 390, height: 650 })
 	await page.emulateMedia({ reducedMotion: 'reduce' })
-	await page.goto('/accounts/new')
-	await expect(page.getByLabel('Account name', { exact: true })).toBeVisible()
-	const open = page.getByRole('button', { name: 'Open navigation', exact: true })
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
+	const open = page.getByRole('button', { name: 'Toggle navigation', exact: true })
 	await open.click()
-	const drawer = page.getByRole('dialog', { name: 'Main navigation', exact: true })
+	const drawer = page.locator('aside.inline-drawer')
 	const status = drawer.getByRole('status')
 	await expect(status).toHaveText('Sync enabled')
 	try {
 		await context.setOffline(true)
-		await expect(status).toHaveText('Offline — working locally')
+		await expect(status).toHaveText('Offline')
 		await status.scrollIntoViewIfNeeded()
 		await expect(status).toBeInViewport()
 		expect(await drawer.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true)
-		await page.keyboard.press('Escape')
-		await expect(drawer).toBeHidden()
+		await page.getByRole('button', { name: 'Close navigation', exact: true }).click()
+		await expect(drawer).toHaveAttribute('aria-hidden', 'true')
 		await expect(open).toBeFocused()
 		await expect(page.getByRole('status')).toHaveCount(0)
 	} finally {
@@ -159,8 +176,10 @@ test('localized manifest keeps the install URL and declares its language', async
 test.describe('active application locale', () => {
 	test.use({ locale: 'de-DE', timezoneId: 'America/Los_Angeles' })
 	test('formats category counts, tag summaries and money with the app locale', async ({ page }) => {
-		await page.goto('/accounts/new')
-		await expect(page.getByLabel('Account name', { exact: true })).toBeVisible()
+		await page.goto('/accounts')
+		await expect(
+			page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+		).toBeVisible()
 		await page.evaluate(async () => {
 			const sveltePath = '/node_modules/svelte/src/index-client.js'
 			const categoryPath = '/src/lib/components/CategoryList.svelte'

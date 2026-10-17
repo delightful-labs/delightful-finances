@@ -11,6 +11,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
+	import AccountCreation from '#lib/components/AccountCreation.svelte'
 	import AccountList from '#lib/components/AccountList.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
@@ -77,10 +78,8 @@
 </script>
 
 <svelte:head><title>{m['labels.accounts']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader
-	title={m['labels.accounts']()}
-	action={{ href: '/accounts/new', label: m['actions.add_account']() }}
-/>
+<PageHeader title={m['labels.accounts']()} />
+<AccountCreation />
 <QueryContent
 	queries={[accounts, membership, grants]}
 	loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}

@@ -1,22 +1,26 @@
+import { prepareSidebar, openCreationModal, closeCreationModal } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
 import { generateAuthSecret } from 'jazz-tools'
 
 async function createAccount(page: Page, name: string) {
-	await page.goto('/accounts/new')
-	await expect(page.getByLabel('Workspace', { exact: true })).not.toHaveValue('')
-	await expect(page.getByRole('button', { name: 'Add an account', exact: true })).toBeEnabled()
-	await page.getByLabel('Account name').fill(name)
-	await page.getByLabel('Account type').selectOption('bank')
-	await page.getByRole('button', { name: 'Add an account' }).click()
-	await expect(page.getByRole('main').getByRole('status')).toContainText(name)
+	await page.goto('/accounts')
+	await prepareSidebar(page)
+	await expect(page.getByLabel('Current workspace', { exact: true })).not.toHaveValue('')
+	const dialog = await openCreationModal(page, 'Add an account')
+	await dialog.getByLabel('Account name').fill(name)
+	await dialog.getByLabel('Account type').selectOption('bank')
+	await dialog.getByRole('button', { name: 'Add an account', exact: true }).click()
+	await expect(dialog.getByRole('status')).toContainText(name)
+	await closeCreationModal(page)
 }
 
 async function restoreAccount(page: Page, phrase: string) {
 	await page.goto('/login')
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	await expect(page).toHaveURL('/')
+	await prepareSidebar(page)
 }
 
 const invalidPhrases = [
@@ -30,22 +34,24 @@ for (const { name, phrase } of invalidPhrases) {
 		// Confirm each fixture is invalid using Jazz's own recovery validator.
 		expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
 		await createAccount(page, 'Retained checking')
-		const workspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+		const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 		await page.goto('/login')
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-		await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
 		await expect(page.getByRole('alert')).toHaveText(
 			'The account could not be restored. Check the recovery phrase and try again.'
 		)
 		await expect(page).toHaveURL('/login')
-		await expect(page.getByRole('button', { name: 'Restore account', exact: true })).toBeEnabled()
+		await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
-		await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
+		await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
 
 		await page.goto('/accounts')
 		await page.reload()
-		await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
-		await expect(page.getByLabel('Workspace', { exact: true }).locator('option')).toHaveCount(1)
+		await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
+		await expect(
+			page.getByLabel('Current workspace', { exact: true }).locator('option')
+		).toHaveCount(1)
 		await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(1)
 	})
 }
@@ -56,7 +62,7 @@ test('restores existing workspace data without duplicates or previous identity a
 	baseURL
 }) => {
 	await createAccount(page, 'Original checking')
-	const workspaceId = await page.getByLabel('Workspace', { exact: true }).inputValue()
+	const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 	await page.goto('/account')
 	await page.getByRole('button', { name: 'Show recovery phrase' }).click()
 	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
@@ -68,10 +74,12 @@ test('restores existing workspace data without duplicates or previous identity a
 		const otherPage = await otherContext.newPage()
 		await createAccount(otherPage, 'Previous identity checking')
 		await restoreAccount(otherPage, phrase)
-		await expect(otherPage.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
-		await expect(otherPage.getByLabel('Workspace', { exact: true }).locator('option')).toHaveCount(
-			1
+		await expect(otherPage.getByLabel('Current workspace', { exact: true })).toHaveValue(
+			workspaceId
 		)
+		await expect(
+			otherPage.getByLabel('Current workspace', { exact: true }).locator('option')
+		).toHaveCount(1)
 		await otherPage.goto('/accounts')
 		await expect(
 			otherPage.getByRole('cell', { name: 'Original checking', exact: true })
@@ -80,10 +88,12 @@ test('restores existing workspace data without duplicates or previous identity a
 
 		await restoreAccount(otherPage, phrase)
 		await otherPage.reload()
-		await expect(otherPage.getByLabel('Workspace', { exact: true })).toHaveValue(workspaceId)
-		await expect(otherPage.getByLabel('Workspace', { exact: true }).locator('option')).toHaveCount(
-			1
+		await expect(otherPage.getByLabel('Current workspace', { exact: true })).toHaveValue(
+			workspaceId
 		)
+		await expect(
+			otherPage.getByLabel('Current workspace', { exact: true }).locator('option')
+		).toHaveCount(1)
 		await otherPage.goto('/accounts')
 		await expect(
 			otherPage.getByRole('cell', { name: 'Original checking', exact: true })
@@ -507,7 +517,7 @@ test('restore session failures retain identity and retry without exposing the re
 			return shutdown(options)
 		}
 	})
-	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	const retry = page.getByRole('button', { name: 'Try again', exact: true })
 	await expect(retry).toBeVisible()
 	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened. Try again.')
@@ -522,7 +532,7 @@ test('restore session failures retain identity and retry without exposing the re
 	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
 	await expect(page.getByRole('alert')).toHaveCount(0)
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	await expect(page).toHaveURL('/')
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')
@@ -564,7 +574,7 @@ test('session retry completes a selected identity after local selection storage 
 			return setItem.call(this, key, value)
 		}
 	})
-	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	const retry = page.getByRole('button', { name: 'Try again', exact: true })
 	await expect(retry).toBeVisible()
 	expect(await page.evaluate(() => window.authFailureTest.storageFailures)).toBe(1)
@@ -623,20 +633,20 @@ test('recoverable restore failure keeps the original client and generic feedback
 	})
 	try {
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-		await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
 		await expect(page.getByRole('alert')).toHaveText(
 			'The account could not be restored. Please try again.'
 		)
 		expect(await currentIdentity(page)).toBe(identity)
 		expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
-		await expect(page.getByRole('button', { name: 'Restore account', exact: true })).toBeEnabled()
+		await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
 	} finally {
 		await page.evaluate(async () => {
 			await window.authFailureTest.releaseSharedClient?.()
 		})
 	}
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Restore account', exact: true }).click()
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	await expect(page).toHaveURL('/')
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')

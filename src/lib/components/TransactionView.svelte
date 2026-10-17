@@ -5,6 +5,8 @@
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import AccountCreation from '#lib/components/AccountCreation.svelte'
+	import Message from '#lib/components/Message.svelte'
 	import TransactionList from '#lib/components/TransactionList.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
@@ -82,6 +84,10 @@
 	loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
 	errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
 >
+	{#if (accounts.current ?? []).filter((account) => !account.archivedAt).length === 0}
+		<Message message={m['transactions.no_accounts']()} />
+		<AccountCreation />
+	{/if}
 	<TransactionList
 		{groups}
 		{accountNames}

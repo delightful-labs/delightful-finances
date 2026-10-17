@@ -18,6 +18,7 @@
 		type AccountOrder
 	} from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import AccountCreation from '#lib/components/AccountCreation.svelte'
 	import TransactionForm from '#lib/components/TransactionForm.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
@@ -115,6 +116,7 @@
 >
 	{#if accounts.length === 0}
 		<Message message={m['transactions.no_accounts']()} />
+		<AccountCreation />
 	{:else}
 		<TransactionForm
 			{kind}

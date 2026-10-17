@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageContent from './PageContent.svelte'
 	import Icon from './AppIcon.svelte'
 	import {
 		Button,
@@ -36,6 +37,7 @@
 
 	let {
 		children,
+		accountCreation,
 		bankSync,
 		syncConfigured,
 		browserOffline,
@@ -54,6 +56,7 @@
 		onMoveAccount
 	}: {
 		children: Snippet
+		accountCreation: Snippet<[Snippet<[() => void, boolean]>]>
 		bankSync: BankSyncControls
 		syncConfigured: boolean
 		browserOffline: boolean
@@ -254,12 +257,12 @@
 										<p>{m['accounts.sidebar_empty']()}</p>
 									{/if}
 								</QueryContent>
-								<a
-									href="/accounts/new"
-									aria-current={current('/accounts/new')}
-									onclick={dismissMobileDrawer}
-									><Icon class="menu-icon" icon={AddIcon} />{m['actions.add_account']()}</a
-								>
+								{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
+									<Button type="button" {disabled} onclick={open}>
+										<Icon class="menu-icon" icon={AddIcon} />{m['actions.add_account']()}
+									</Button>
+								{/snippet}
+								{@render accountCreation(accountCreationTrigger)}
 							</section>
 						</Details>
 					</li>
@@ -346,7 +349,7 @@
 			</div>
 		</Drawer>
 		<main inert={mainInert}>
-			<div class="page-content">{@render children()}</div>
+			<PageContent>{@render children()}</PageContent>
 		</main>
 		{#if mainInert}
 			<button
@@ -485,10 +488,6 @@
 		flex: 1 1 0%;
 		min-width: 0;
 		padding: var(--dui-space-sm, 1rem);
-	}
-
-	.page-content {
-		min-inline-size: 0;
 	}
 
 	.account-filter {

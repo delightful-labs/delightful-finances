@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from './AppIcon.svelte'
-	import { Button } from 'delightful-ui'
+	import { Button, Table } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Category } from '#lib/schema.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -35,7 +35,7 @@
 {/if}
 
 {#if categories.length}
-	<table>
+	<Table caption={m['labels.categories']()}>
 		<thead
 			><tr>
 				<th scope="col">{m['labels.category_name']()}</th>
@@ -72,7 +72,7 @@
 				</tr>
 			{/each}
 		</tbody>
-	</table>
+	</Table>
 {:else}
 	<p>{m['categories.empty']()}</p>
 {/if}

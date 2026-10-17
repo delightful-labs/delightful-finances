@@ -1,3 +1,4 @@
+import { openCreationModal, closeCreationModal } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 
 async function addAccount(page: Page, name: string) {
@@ -105,10 +106,12 @@ test('single account disables both arrows and storage failure still allows sessi
 	).toBeDisabled()
 	// Client navigation keeps the workspace integration and its in-memory preference alive.
 	await accounts.getByRole('link', { name: 'Accounts', exact: true }).click()
-	await page.getByRole('main').getByRole('link', { name: 'Add an account', exact: true }).click()
-	await page.getByLabel('Account name', { exact: true }).fill('Bravo')
-	await page.getByLabel('Account type', { exact: true }).selectOption('bank')
-	await page.getByRole('button', { name: 'Add an account', exact: true }).click()
+	const modal = await openCreationModal(page, 'Add an account')
+	await modal.getByLabel('Account name', { exact: true }).fill('Bravo')
+	await modal.getByLabel('Account type', { exact: true }).selectOption('bank')
+	await modal.getByRole('button', { name: 'Add an account', exact: true }).click()
+	await expect(modal.getByRole('status')).toContainText('Bravo')
+	await closeCreationModal(page)
 	await expect(accounts.getByRole('checkbox', { name: 'Show Bravo', exact: true })).toBeVisible()
 	await accounts.getByRole('button', { name: 'Move Bravo up', exact: true }).click()
 	await expect(accounts.getByRole('button', { name: 'Move Bravo up', exact: true })).toBeDisabled()
