@@ -2,6 +2,44 @@
 
 ## Local-only snapshot and journal
 
+The first implementation slice defines the device-local version-1 wire format in
+`src/lib/validation/account-merge.ts`, with its derived type in matching
+`src/lib/schema/account-merge.ts`. These are not new Jazz tables or a capture API.
+All collections and nullable fields are required explicitly; archive timestamps
+are ISO date-time strings and booked/check dates remain calendar-date strings.
+Validation does not trim, default, deduplicate or otherwise rewrite finance data.
+Unknown fields (including connection credentials) are rejected.
+
+Account, category and tag shapes derive from their canonical Zod schemas.
+Transaction money, dates, source variants, payment methods, memo and check fields
+also reuse existing validation. Snapshot adapters remove defaults, serialize
+archives, and validate transformed text without replacing its original value.
+Graph relationships and snapshot-only metadata remain merge-specific.
+
+Initial limits are 10,000 total collection records and 8 MiB of UTF-8 JSON for the
+validated wire payload. Exceeding either limit rejects the snapshot without
+truncation. The limit excludes the organization descriptor and connection count
+from the record total. It is a persistence payload limit, not an input-stream or
+capture memory guarantee; capture must enforce its own bounded resource use.
+
+The validator checks personal ownership/scope, unique IDs within each table,
+account currency/category kind, batch and tag references, reciprocal check
+references, transaction source identity, and duplicate transaction-tag pairs.
+Archive references are accepted to preserve history. Any attachment blocks the
+snapshot. Bank account links contain only source IDs and non-secret provider IDs;
+connections are represented only by an excluded count. All workspace templates
+are represented because the current schema has no batch-to-template reference.
+
+Successful parsing proves structural and reference validity only. The future
+capture adapter must establish authorization and complete scope separately; an
+explicit empty attachment collection is not evidence that it was fully read.
+After implementation review and explicit authorization to add tests, the validator
+passed 53 focused unit cases covering preservation, required values, graph scope
+and relationships, unsupported payloads, canonical field validation and record/UTF-8
+size boundaries. The existing 50 transaction-validation tests also passed, as did
+TypeScript checking. These results do not establish capture completeness or a
+user-visible merge workflow. No journal or import effects exist yet.
+
 Versioned snapshot: source identity/organization IDs, complete supported finance graph, source row IDs, validated values, referenced batch data and record counts. Exclude credentials and profiles/memberships. Store no separate createdOn/updatedOn timestamps; preserve user dates and original audit metadata only as provenance where needed.
 
 Journal: operation ID, source and destination IDs when known, snapshot version, stable row mappings, per-record committed receipt references and typed failure details. Store facts needed to reconstruct progress; the machine owns live lifecycle states. Never resume into a different identity/organization implicitly. Retain payload after partial/failure; explicit discard explains that previously committed additions remain.

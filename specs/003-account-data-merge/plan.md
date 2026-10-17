@@ -55,6 +55,11 @@ Child actors: source inspection/validation; journal I/O; session switch; destina
 
 ## Focused delivery/review cycles
 
+Cycle 1 review artifact: [lifecycle.md](lifecycle.md) records installed-SDK evidence,
+the proposed actor contracts and cancellation model, and remaining safety gates.
+The feature remains unimplemented; snapshot/import effects must wait for those
+gates to be resolved and the lifecycle model to be reviewed.
+
 1. Prove SDK seams and model lifecycle: inspect supported restore cancellation/readiness, source recovery and cross-tab constraints; define actor contracts and statechart. Review before effects. If SDK cannot establish safe completeness, return the concrete blocker before building an unsafe importer.
 2. Add versioned snapshot validation and journal recovery, with explicit unsupported-data detection. Review, then approved coverage.
 3. Add additive provenance schema/permissions and pure identity/reference mapping. Resolve archived/check/bank collision handling in this cycle. Review, then approved coverage.

@@ -35,7 +35,7 @@ const transactionBaseShape = {
 		.optional()
 }
 
-const checkDetails = z.strictObject({
+export const appCheckDetailsSchema = z.strictObject({
 	checkNumber: checkNumberText,
 	checkDate: dateOnlyText,
 	payerName: z.string().optional(),
@@ -64,7 +64,7 @@ const checkIncomeTransaction = z.strictObject({
 	kind: z.literal('income'),
 	source: z.strictObject({ source: z.literal('manual') }),
 	paymentMethod: z.literal('check'),
-	checkDetails
+	checkDetails: appCheckDetailsSchema
 })
 
 const importedIncomeTransaction = z.strictObject({
