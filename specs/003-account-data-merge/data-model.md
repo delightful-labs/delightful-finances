@@ -38,11 +38,103 @@ passed 53 focused unit cases covering preservation, required values, graph scope
 and relationships, unsupported payloads, canonical field validation and record/UTF-8
 size boundaries. The existing 50 transaction-validation tests also passed, as did
 TypeScript checking. These results do not establish capture completeness or a
-user-visible merge workflow. No journal or import effects exist yet.
+user-visible merge workflow. No capture or import effects exist yet.
 
 Versioned snapshot: source identity/organization IDs, complete supported finance graph, source row IDs, validated values, referenced batch data and record counts. Exclude credentials and profiles/memberships. Store no separate createdOn/updatedOn timestamps; preserve user dates and original audit metadata only as provenance where needed.
 
 Journal: operation ID, source and destination IDs when known, snapshot version, stable row mappings, per-record committed receipt references and typed failure details. Store facts needed to reconstruct progress; the machine owns live lifecycle states. Never resume into a different identity/organization implicitly. Retain payload after partial/failure; explicit discard explains that previously committed additions remain.
+
+### Initial journal storage slice (awaiting implementation review)
+
+`validation/account-merge-journal.ts` composes the existing snapshot validator into
+a strict version-1 envelope: operation ID, immutable snapshot and nullable exact
+destination identity/organization IDs. Its matching schema file exports derived
+types. No phrases, credentials, lifecycle flags or raw failure messages are stored.
+Import mappings, receipts and typed failure details will extend this envelope in a
+later reviewed cycle before an importer uses it.
+
+`machines/account-merge/journal.ts` handles one validated `LOAD`, `CREATE`, `BIND`
+or `DISCARD` command per invocation. Guarded transitions reject an existing journal
+on creation, stale operation IDs and destination retargeting. The parent merge
+coordinator will invoke this child for each explicit storage operation.
+
+```mermaid
+stateDiagram-v2
+    [*] --> validating
+    validating --> reading: valid command
+    validating --> failed: invalid command
+    reading --> deciding: storage settled
+    deciding --> completed: load or already absent discard
+    deciding --> conflicted: incompatible operation or destination
+    deciding --> writing: valid mutation
+    writing --> completed: commit settled
+    writing --> conflicted: atomic comparison failed
+    reading --> cancelling: cancel
+    writing --> cancelling: cancel
+    reading --> closing: shutdown
+    writing --> closing: shutdown
+    cancelling --> cancelled: read settled or transaction aborted
+    cancelling --> partial: write committed
+    cancelling --> closing: shutdown
+    closing --> closed: read settled or transaction aborted
+    closing --> partialShutdown: write committed
+```
+
+Read/write errors also route to explicit failure states. Terminal results distinguish
+completion, conflict, failure, cancellation, shutdown and committed partial progress.
+Shutdown takes precedence over later cancellation. Invoked actors remain alive
+while cancellation/shutdown waits for the active operation to settle; actor
+stopping is not used as the domain cleanup handshake.
+
+The coordinator invokes a focused `journal-write` child machine. Its guarded
+states check creation constraints, unchanged operation/source snapshot, and
+destination compatibility before choosing separate replacing/removing states.
+Conflict, failure, cancellation and committed writes are explicit terminal states
+with typed results. Cancellation keeps the child's I/O actor alive until the write
+settles; the coordinator then reports cancelled versus partial progress and preserves
+shutdown priority. Both machines invoke the shared `journal-storage` state machine.
+
+That storage machine owns availability, opening, transaction selection, abort
+settlement, connection closing and terminal classification. Reading, replacing and
+removing each invoke a focused transaction actor; their nested aborting state keeps
+that actor alive until commit/abort. A connection actor outlives the transaction
+and acknowledges close before the storage machine returns its typed result.
+Cancelled, conflicted, failed and completed are separate final states. No async
+`transact` function or manually started actor/promise bridge remains.
+
+`account-merge/journal.ts` contains the native IndexedDB callback actors and dependency
+binding. Its connection actor owns the open request and database handle. Transaction
+actors register browser handlers and synchronously validate/compare/mutate within
+the active transaction. They report success only from `oncomplete`, or failure from
+abort; these callbacks do not choose journal workflow policy.
+The database is scoped by public app ID and has one pending slot across identity
+replacement. The adapter retains one atomic comparison of the entire stored journal
+with the actor's previously observed value. The actor's policy checks therefore
+apply to the exact value being replaced; a concurrent change produces a conflict
+instead of bypassing those checks. This comparison cannot be moved outside the
+IndexedDB write transaction. Discard deletes only device-local recovery data, never
+Jazz finance records.
+
+Every read validates the envelope and full snapshot. Corrupt or unsupported data
+fails explicitly and remains stored; it is never treated as an empty journal or
+deleted automatically. A dedicated corrupt-journal recovery action is not part of
+this slice. Writes request strict durability and resolve on transaction completion,
+not individual request success. Local storage acceptance does not establish remote
+sync or protection against browser storage eviction.
+
+The actor tree owns database handles, cancellation messages and transaction cleanup.
+Abort before commit cancels the transaction; a completed commit is not rolled back.
+Blocked opens fail explicitly and close a connection if it arrives later. Errors
+expose fixed codes rather than the rejected finance payload. These are resource
+operations and atomic storage invariants. Journal workflow decisions belong to the
+child machines above; the application-owned merge coordinator remains responsible
+for session authorization, exact-target resume and operation-wide cross-tab locking.
+Transaction serialization alone does not prevent a discard during an active import.
+
+TypeScript checking passed. No tests have been added or run for this new slice;
+after review, cover reload persistence, concurrent creation, immutable target
+binding, stale operations, corruption, unavailable/blocked storage, abort races and
+machine cancellation/shutdown settlement (including a commit racing cancellation).
 
 ## Additive Jazz provenance
 
