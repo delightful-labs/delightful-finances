@@ -142,6 +142,9 @@
 				{browserOffline}
 				accounts={activeAccounts}
 				editingAccountOrder={$orderSnapshot.matches('editing')}
+				canToggleAccountOrder={$orderSnapshot.can({ type: 'EDIT' }) ||
+					$orderSnapshot.can({ type: 'DONE' })}
+				canMoveAccount={(id, direction) => $orderSnapshot.can({ type: 'MOVE', id, direction })}
 				onEditAccountOrder={() => accountOrder.send({ type: 'EDIT' })}
 				onDoneAccountOrder={() => accountOrder.send({ type: 'DONE' })}
 				onMoveAccount={moveAccount}

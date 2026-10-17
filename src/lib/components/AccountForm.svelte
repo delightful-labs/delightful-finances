@@ -33,6 +33,7 @@
 	savingLabel={m['status.saving']({ subject: m['labels.account']() })}
 	disabled={form.view.disabled}
 	view={form.view}
+	onopen={form.open}
 	onsubmit={form.submit}
 	onreset={form.reset}
 >

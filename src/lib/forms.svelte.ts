@@ -63,7 +63,11 @@ export function createFormController<Values, Result, Context>(options: {
 		}
 		actor.send({ type: 'RESET' })
 	}
+	function open() {
+		actor.send({ type: 'OPEN' })
+	}
 	return {
+		open,
 		submitValues,
 		submit,
 		reset,

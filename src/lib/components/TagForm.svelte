@@ -26,6 +26,7 @@
 	savingLabel={m['status.saving']({ subject: m['labels.tag']() })}
 	disabled={!canCreate}
 	view={form.view}
+	onopen={form.open}
 	onsubmit={form.submit}
 	onreset={form.reset}
 >

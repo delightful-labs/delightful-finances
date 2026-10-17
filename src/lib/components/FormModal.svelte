@@ -15,6 +15,7 @@
 		savingLabel,
 		disabled = false,
 		view,
+		onopen,
 		onsubmit,
 		onreset,
 		fields,
@@ -26,12 +27,18 @@
 		savingLabel: string
 		disabled?: boolean
 		view: FormView<Values, Result, Context>
+		onopen: () => void
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
 		fields: Snippet<[FormView<Values, Result, Context>]>
 		feedback: Snippet<[FormView<Values, Result, Context>]>
 		trigger?: Snippet<[() => void, boolean]> | undefined
 	} = $props()
+
+	function openModal() {
+		onopen()
+		open = true
+	}
 
 	let open = $state(false)
 	$effect(() => {
@@ -41,33 +48,34 @@
 </script>
 
 {#if trigger}
-	{@render trigger(() => (open = true), disabled)}
+	{@render trigger(openModal, disabled)}
 {:else}
-	<Button type="button" {disabled} onclick={() => (open = true)}>
+	<Button type="button" {disabled} onclick={openModal}>
 		<span class="button-content"><Icon icon={AddIcon} />{label}</span>
 	</Button>
 {/if}
 
 <Dialog heading={label} bind:open closedby="any">
 	{#key scope}
-		<FormContent controlsFill {view} {onsubmit} {onreset} {fields} {feedback}>
-			{#snippet controls(form)}
-				<Button type="button" onclick={() => (open = false)}>
-					<span class="button-content"><Icon icon={CloseIcon} />{m['actions.cancel']()}</span>
-				</Button>
-				{#if form.state.matches('success')}
-					<Button type="reset" variant="primary" {disabled}>
-						<span class="button-content"><Icon icon={SaveIcon} />{label}</span>
+		{#if view.state.matches('success')}
+			{@render feedback(view)}
+			<Button type="button" variant="primary" onclick={() => (open = false)}>
+				<span class="button-content"><Icon icon={CloseIcon} />{m['actions.close']()}</span>
+			</Button>
+		{:else}
+			<FormContent controlsFill {view} {onsubmit} {onreset} {fields} {feedback}>
+				{#snippet controls(form)}
+					<Button type="button" onclick={() => (open = false)}>
+						<span class="button-content"><Icon icon={CloseIcon} />{m['actions.cancel']()}</span>
 					</Button>
-				{:else}
 					<Button type="submit" variant="primary" disabled={form.disabled}>
 						<span class="button-content"
 							><Icon icon={SaveIcon} />{form.busy ? savingLabel : label}</span
 						>
 					</Button>
-				{/if}
-			{/snippet}
-		</FormContent>
+				{/snippet}
+			</FormContent>
+		{/if}
 	{/key}
 </Dialog>
 

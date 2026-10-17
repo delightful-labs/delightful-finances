@@ -26,6 +26,8 @@
 		onAccountChange,
 		onAllAccountsChange,
 		editingAccountOrder,
+		canToggleAccountOrder,
+		canMoveAccount,
 		onEditAccountOrder,
 		onDoneAccountOrder,
 		onMoveAccount
@@ -45,6 +47,8 @@
 		onAccountChange: (accountId: string, checked: boolean) => void
 		onAllAccountsChange: (checked: boolean) => void
 		editingAccountOrder: boolean
+		canToggleAccountOrder: boolean
+		canMoveAccount: (id: string, direction: 'up' | 'down') => boolean
 		onEditAccountOrder: () => void
 		onDoneAccountOrder: () => void
 		onMoveAccount: (id: string, direction: 'up' | 'down') => void
@@ -100,6 +104,8 @@
 			{onAccountChange}
 			{onAllAccountsChange}
 			{editingAccountOrder}
+			{canToggleAccountOrder}
+			{canMoveAccount}
 			{onEditAccountOrder}
 			{onDoneAccountOrder}
 			{onMoveAccount}

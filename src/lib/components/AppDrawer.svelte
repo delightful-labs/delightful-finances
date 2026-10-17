@@ -49,6 +49,8 @@
 		onAccountChange,
 		onAllAccountsChange,
 		editingAccountOrder,
+		canToggleAccountOrder,
+		canMoveAccount,
 		onEditAccountOrder,
 		onDoneAccountOrder,
 		onMoveAccount
@@ -71,6 +73,8 @@
 		onAccountChange: (accountId: string, checked: boolean) => void
 		onAllAccountsChange: (checked: boolean) => void
 		editingAccountOrder: boolean
+		canToggleAccountOrder: boolean
+		canMoveAccount: (id: string, direction: 'up' | 'down') => boolean
 		onEditAccountOrder: () => void
 		onDoneAccountOrder: () => void
 		onMoveAccount: (id: string, direction: 'up' | 'down') => void
@@ -161,7 +165,7 @@
 												onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 											/>
 										</li>
-										{#each accounts as account, index (account.id)}
+										{#each accounts as account (account.id)}
 											<li class="account-filter">
 												<Checkbox
 													checked={selectedAccountIds === null ||
@@ -176,7 +180,7 @@
 														<Button
 															type="button"
 															appearance="flat"
-															disabled={index === 0}
+															disabled={!canMoveAccount(account.id, 'up')}
 															aria-label={m['accounts.order.up']({ name: account.name })}
 															onclick={() => onMoveAccount(account.id, 'up')}
 															><Icon
@@ -187,7 +191,7 @@
 														<Button
 															type="button"
 															appearance="flat"
-															disabled={index === accounts.length - 1}
+															disabled={!canMoveAccount(account.id, 'down')}
 															aria-label={m['accounts.order.down']({ name: account.name })}
 															onclick={() => onMoveAccount(account.id, 'down')}
 															><Icon icon={IncomeIcon} style="width: 1rem; height: 1rem;" /></Button
@@ -197,7 +201,7 @@
 											</li>
 										{/each}
 									</ul>
-									{#if accounts.length > 1}
+									{#if canToggleAccountOrder}
 										<Button
 											type="button"
 											appearance="flat"

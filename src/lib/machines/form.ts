@@ -13,7 +13,7 @@ type FormContext<Values, Result> = {
 	error: unknown
 }
 
-type FormEvent = { type: 'SUBMIT'; values: unknown } | { type: 'RESET' }
+type FormEvent = { type: 'SUBMIT'; values: unknown } | { type: 'RESET' } | { type: 'OPEN' }
 
 export function createFormMachine<Values, Result, Context>(
 	schema: z.ZodType<Values>,
@@ -83,7 +83,7 @@ export function createFormMachine<Values, Result, Context>(
 					}
 				}
 			},
-			success: { on: { SUBMIT: submit, RESET: reset } },
+			success: { on: { SUBMIT: submit, RESET: reset, OPEN: reset } },
 			error: { on: { SUBMIT: submit, RESET: reset } }
 		}
 	})

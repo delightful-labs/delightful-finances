@@ -67,6 +67,7 @@
 		"avatar": "Avatar"
 	},
 	"actions": {
+		"close": "Close",
 		"empty": "No {name} yet.",
 		"add": "Add {name}",
 		"archive": "Archive {name}",

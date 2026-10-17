@@ -52,8 +52,11 @@ export const accountOrderMachine = order.createMachine({
 		OBSERVE: { actions: observe }
 	},
 	states: {
-		viewing: { on: { EDIT: 'editing' } },
+		viewing: {
+			on: { EDIT: { guard: ({ context }) => context.ids.length > 1, target: 'editing' } }
+		},
 		editing: {
+			always: { guard: ({ context }) => context.ids.length < 2, target: 'viewing' },
 			on: {
 				DONE: 'viewing',
 				MOVE: { guard: canMove, actions: move }
