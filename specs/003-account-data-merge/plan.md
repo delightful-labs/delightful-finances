@@ -69,6 +69,19 @@ gates to be resolved and the lifecycle model to be reviewed.
 
 This document provides sequencing, not a generated tasks.md. Generate detailed task checklist after design review.
 
+### Current review slice
+
+Snapshot validation and the IndexedDB journal are implemented. The independent
+identity-allocation portion of cycle 3 is now implemented for review; its statechart
+and exact identity conventions are recorded in [data-model.md](data-model.md).
+It allocates stable ordinary/provider/origin IDs and resolves destination system
+categories, using the existing validators and UUID function. It introduces no Jazz
+schema changes or capture/import effects. After review, add focused identity,
+scope/category ambiguity, cancellation, failure and canonical-provider-ID coverage.
+Provenance schema/permissions and transactional import remain subsequent cycles;
+the consistent source-capture contract is still an explicit prerequisite for a
+working merge.
+
 ## Project structure
 
 Documentation: this directory's spec.md, research.md, data-model.md, contracts/merge-ui.md and quickstart.md.

@@ -151,6 +151,66 @@ Proposed dedicated `mergeOrigins` table, finalized in the schema review: destina
 - Attachments: detect and stop unsupported graphs before import; current file permissions cannot support lossless copying.
 - Credentials/connections/memberships/profile: excluded with explicit connection reconnection notice. Preserve provider account identity as non-secret provenance for later reconnect decisions; do not create active links to absent connections.
 
+## Identity allocation slice (awaiting implementation review)
+
+`validation/account-merge-mapping.ts` reuses the complete snapshot and destination
+validators and canonical category fields. Destination category observations require
+explicit system/archive values; form defaults are removed with `unwrap()`. These
+transient observations do not prove complete hydration or destination authority.
+The matching schema module defines typed allocation results and fixed error codes.
+
+`machines/account-merge/mapping.ts` owns input/scope checks, record routing,
+system-category selection, ID allocation and terminal cleanup. Shared state
+configuration handles ordinary/provider allocation without duplicating their
+invocation/error transitions. `account-merge/mapping.ts` contains pure projections
+and identity-name formatting; it makes no database queries or writes.
+
+```mermaid
+stateDiagram-v2
+    [*] --> validating
+    validating --> checkingIdentity
+    checkingIdentity --> checkingWorkspace
+    checkingWorkspace --> checkingCategories
+    checkingCategories --> nextRecord
+    nextRecord --> routingRecord: remaining record
+    routingRecord --> matchingSystemCategory: system category
+    matchingSystemCategory --> allocatingSystemOrigin: one active match by kind
+    routingRecord --> allocatingProviderIdentity: SimpleFIN transaction
+    routingRecord --> allocatingOriginIdentity: other supported record
+    allocatingSystemOrigin --> advance
+    allocatingProviderIdentity --> advance
+    allocatingOriginIdentity --> advance
+    advance --> nextRecord
+    nextRecord --> mapped: all identities allocated
+```
+
+Invalid input, same identity/workspace, cross-scope/duplicate destination category
+IDs, missing/ambiguous active system categories, and rejected UUID allocation have
+explicit failure transitions. Cancel and shutdown terminate allocation, clear source
+payloads and discard late digest results. UUID calculation has no persisted effect
+requiring a commit/abort handshake. No partial import is reported for allocation.
+
+All hashes use the destination organization as namespace. Ordinary destination IDs
+use `account-merge:` followed by the JSON tuple `[sourceOrganizationId, entity,
+sourceRecordId]`; origin receipt IDs use the same tuple with `account-merge-origin:`.
+SimpleFIN transaction IDs retain the bank importer's exact
+`simplefin-transaction:${externalId}` name. System categories reuse exactly one
+active destination system category of the same income/expense kind. Ordinary
+records are never combined by label, date or amount.
+
+The result contains source/destination IDs and origin receipt IDs for accounts,
+categories, tags, transactions, check details, transaction-tag links, batches and
+templates. It does not create origin receipts, rewrite references or decide target
+row collisions. Multiple source provider transactions can resolve to one canonical
+ID; preview/import must still compare their values and account mappings rather than
+silently skip differences. Source bank-account links remain snapshot provenance;
+this allocator does not plan active links to absent connections.
+
+The proposed `mergeOrigins` table, transactional receipt writes, archive/check
+sequencing and preview/import effects remain separate work. Source capture remains
+gated by [capture-contract.md](capture-contract.md). TypeScript and focused
+formatting checks pass; tests await implementation review under `AGENTS.md`.
+
 ## Invariants
 
 All references stay within the destination organization. Currency and transaction kind match referenced account/category. No implicit authorization transfer, no unrelated destination overwrites. A committed target row and its origin receipt must be consistent atomically. A retry skips already imported origin even after the user edits the target. A canonical provider collision without matching provenance is existing/conflict, never replacement. Import conflicts result in partial completion until explicitly resolved; unsupported graph errors block before any writes.
