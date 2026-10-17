@@ -155,7 +155,8 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 					input: ({ context }) => ({
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
-					})
+					}),
+					onError: { target: '#bank-setup.settlingFailure', actions: fail }
 				},
 				on: { LOCK_FAILED: { target: '#bank-setup.settlingFailure', actions: fail } },
 				states: {
@@ -258,7 +259,8 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 					input: ({ context }) => ({
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
-					})
+					}),
+					onError: { target: '#bank-setup.settlingFailure', actions: fail }
 				},
 				on: { LOCK_FAILED: { target: '#bank-setup.settlingFailure', actions: fail } },
 				states: {
@@ -321,7 +323,8 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 					input: ({ context }) => ({
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
-					})
+					}),
+					onError: { target: '#bank-setup.settlingFailure', actions: fail }
 				},
 				on: { LOCK_FAILED: { target: '#bank-setup.settlingFailure', actions: fail } },
 				states: {
@@ -384,7 +387,8 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 					input: ({ context }) => ({
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
-					})
+					}),
+					onError: { target: '#bank-setup.settlingFailure', actions: fail }
 				},
 				on: {
 					CREDENTIAL_CHANGED: {},

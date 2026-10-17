@@ -33,6 +33,7 @@ export function createWorkspaceReadinessMachine({
 }: WorkspaceAttachment) {
 	const actors = {
 		bank: createBankSyncMachine(dependencies),
+		select: fromPromise(async ({ input }: { input: string | null }) => selectOrganization(input)),
 		bootstrap: fromPromise(({ input }: { input: string }) =>
 			ensurePersonalWorkspace(dependencies.db, input)
 		)
@@ -56,7 +57,12 @@ export function createWorkspaceReadinessMachine({
 		id: 'workspace-readiness',
 		initial: 'active',
 		context: () => ({ ...read(), bootstrapUserId: undefined }),
-		invoke: { id: 'bank', src: 'bank', onDone: '#workspace-readiness.closed' },
+		invoke: {
+			id: 'bank',
+			src: 'bank',
+			onDone: [{ guard: stateIn('closing'), target: '.closed' }, { target: '.failed' }],
+			onError: [{ guard: stateIn('closing'), target: '.closed' }, { target: '.failed' }]
+		},
 		on: {
 			SHUTDOWN: { target: '.closing' },
 			BANK: [
@@ -207,15 +213,27 @@ export function createWorkspaceReadinessMachine({
 								]
 							},
 							selectingPersonal: {
-								entry: ({ context }) =>
-									selectOrganization(
-										required(context.organizations?.find((row) => row.kind === 'personal')).id
-									)
+								invoke: {
+									src: 'select',
+									input: ({ context }) =>
+										required(context.organizations?.find((row) => row.kind === 'personal')).id,
+									onError: '#workspace-readiness.settlingFailure'
+								}
 							},
 							selectingFirst: {
-								entry: ({ context }) => selectOrganization(required(context.organizations?.[0]).id)
+								invoke: {
+									src: 'select',
+									input: ({ context }) => required(context.organizations?.[0]).id,
+									onError: '#workspace-readiness.settlingFailure'
+								}
 							},
-							empty: { entry: () => selectOrganization(null) },
+							empty: {
+								invoke: {
+									src: 'select',
+									input: null,
+									onError: '#workspace-readiness.settlingFailure'
+								}
+							},
 							selected: {},
 							waiting: {},
 							failed: {}
@@ -265,6 +283,14 @@ export function createWorkspaceReadinessMachine({
 						}
 					}
 				}
+			},
+			settlingFailure: {
+				entry: sendTo('bank', { type: 'SHUTDOWN' }),
+				on: { BANK: {}, OBSERVED: {}, REEVALUATE: {} }
+			},
+			failed: {
+				tags: 'workspace-error',
+				on: { SHUTDOWN: 'closed', BANK: {}, OBSERVED: {}, REEVALUATE: {} }
 			},
 			closing: {
 				entry: sendTo('bank', { type: 'SHUTDOWN' }),

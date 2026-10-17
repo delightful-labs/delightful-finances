@@ -96,6 +96,7 @@ const envelope = {
 const seal = vi.fn<passkeys.CredentialSealer>()
 const failed = vi.fn()
 const releaseLock = vi.fn()
+const acquireLock = vi.fn<() => void>()
 const persist = vi.fn<({ input }: { input: PersistInput }) => Promise<{ error: undefined }>>()
 const actors: SetupActor[] = []
 
@@ -116,6 +117,7 @@ function start(): SetupActor {
 	}).provide({
 		actors: {
 			lock: fromCallback<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
+				acquireLock()
 				sendBack({ type: 'LOCK_ACQUIRED' })
 				return releaseLock
 			})
@@ -159,6 +161,38 @@ afterEach(() => {
 })
 
 describe('setup actor failure boundaries', () => {
+	it.each([
+		{ stage: 'creation', acquisition: 1 },
+		{ stage: 'encryption', acquisition: 2 },
+		{ stage: 'verification', acquisition: 3 },
+		{ stage: 'saving', acquisition: 4 }
+	])('handles a lock actor throwing before $stage acquisition', async ({ acquisition }) => {
+		acquireLock.mockImplementation(() => {
+			if (acquireLock.mock.calls.length === acquisition) throw new Error('locking_unavailable')
+		})
+		const actor = start()
+		await advance(actor)
+		expect(await toPromise(actor)).toEqual({
+			kind: 'failed',
+			error: new Error('locking_unavailable')
+		})
+		expect(actor.getSnapshot().context).toMatchObject({
+			token: undefined,
+			accessUrl: undefined,
+			base: undefined,
+			material: undefined
+		})
+		expect(acquireLock).toHaveBeenCalledTimes(acquisition)
+		// Only previously acquired locks have a disposer; the failed actor acquired nothing.
+		expect(releaseLock).toHaveBeenCalledTimes(acquisition - 1)
+		expect(passkeys.createPasskey).toHaveBeenCalledTimes(acquisition > 1 ? 1 : 0)
+		expect(passkeys.encryptPasskeySample).toHaveBeenCalledTimes(acquisition > 2 ? 1 : 0)
+		expect(passkeys.verifyPasskeySample).toHaveBeenCalledTimes(acquisition > 3 ? 1 : 0)
+		expect(provider.claimToken).not.toHaveBeenCalled()
+		expect(seal).not.toHaveBeenCalled()
+		expect(persist).not.toHaveBeenCalled()
+	})
+
 	it.each([
 		{
 			stage: 'token',

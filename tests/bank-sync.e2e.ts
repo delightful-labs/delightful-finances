@@ -27,75 +27,6 @@ async function installPasskey(page: Page) {
 	})
 }
 
-test('passkey demo requires explicit steps, completes a real crypto round trip, and makes no provider requests', async ({
-	page
-}) => {
-	const providerRequests: string[] = []
-	await page.route(/\/api\/simplefin|https:\/\/[^/]*simplefin\.org\//, async (route) => {
-		providerRequests.push(route.request().url())
-		await route.abort()
-	})
-	await installPasskey(page)
-	await page.goto('/settings/passkey-demo')
-	const create = page.getByRole('button', { name: 'Create passkey', exact: true })
-	await expect(create).toBeDisabled()
-	const input = page.locator('#passkey-demo-text')
-	await expect(input).toHaveAttribute('type', 'text')
-	await input.fill('dummy text, not a provider token')
-	await create.click()
-	await expect(input).toBeHidden()
-	const encrypt = page.getByRole('button', { name: 'Test encryption with my passkey', exact: true })
-	await expect(encrypt).toBeVisible()
-	await expect(page.locator('html')).not.toHaveAttribute('data-assertions')
-	await encrypt.click()
-	const verify = page.getByRole('button', { name: 'Test unlocking with my passkey', exact: true })
-	await expect(verify).toBeVisible()
-	await expect(page.locator('html')).toHaveAttribute('data-assertions', '1')
-	await verify.click()
-	await expect(
-		page.getByRole('heading', { name: 'Passkey test passed', exact: true })
-	).toBeVisible()
-	await expect(page.locator('html')).toHaveAttribute('data-assertions', '2')
-	await page.getByRole('button', { name: 'Start another demo', exact: true }).click()
-	await expect(input).toHaveValue('')
-	await page.reload()
-	await expect(input).toBeVisible()
-	expect(providerRequests).toEqual([])
-})
-
-test('cancelling the demo clears the draft and prevents the next assertion', async ({ page }) => {
-	await page.addInitScript(() => {
-		class DemoCredential {
-			rawId = new Uint8Array([1]).buffer
-			getClientExtensionResults() {
-				return { prf: { enabled: true } }
-			}
-		}
-		Object.defineProperty(window, 'PublicKeyCredential', {
-			value: DemoCredential,
-			configurable: true
-		})
-		Object.defineProperty(navigator, 'credentials', {
-			value: {
-				create: async () => new DemoCredential(),
-				get: async () => {
-					throw new Error('Unexpected assertion')
-				}
-			},
-			configurable: true
-		})
-	})
-	await page.goto('/settings/passkey-demo')
-	await page.locator('#passkey-demo-text').fill('discard me')
-	await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
-	await expect(
-		page.getByRole('button', { name: 'Test encryption with my passkey', exact: true })
-	).toBeVisible()
-	await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-	await expect(page.locator('#passkey-demo-text')).toHaveValue('')
-	await expect(page.getByRole('button', { name: 'Create passkey', exact: true })).toBeDisabled()
-})
-
 test('relay rejects cross-origin requests and unsafe destinations', async ({
 	request,
 	baseURL
@@ -218,7 +149,9 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	await expect(page.getByRole('combobox')).toHaveCount(0)
 	await page.getByRole('button', { name: 'Add account “Provider Savings”', exact: true }).click()
 	await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
-	const sync = page.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+	const sync = page
+		.getByRole('main')
+		.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
 	await sync.click()
 	await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
 	await sync.click()
@@ -229,10 +162,112 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	failSync = true
 	await sync.click()
-	await expect(page.getByRole('status')).toContainText('SimpleFIN could not complete the request')
+	await expect(page.getByRole('main').getByRole('status')).toContainText(
+		'SimpleFIN could not complete the request'
+	)
 	await expect(sync).toBeEnabled()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'sync'])
-	await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
+	await page.getByRole('button', { name: 'Disconnect bank sync', exact: true }).click()
 	await expect(discover).toHaveCount(0)
 	await expect(sync).toHaveCount(0)
+})
+
+test('lock actor startup failure clears setup and allows an explicit new attempt', async ({
+	page
+}) => {
+	const errors: string[] = []
+	const stoppedActorWarnings: string[] = []
+	page.on('console', (message) => {
+		if (message.text().includes('sent to stopped actor')) stoppedActorWarnings.push(message.text())
+	})
+	const providerRequests: string[] = []
+	page.on('pageerror', (error) => errors.push(error.message))
+	await installPasskey(page)
+	await page.addInitScript(() => {
+		const request = navigator.locks.request.bind(navigator.locks)
+		let failed = false
+		Object.defineProperty(navigator.locks, 'request', {
+			configurable: true,
+			value: (...args: Parameters<typeof request>) => {
+				if (!failed && args[0].startsWith('simplefin:')) {
+					failed = true
+					throw new Error('Synthetic lock acquisition failure')
+				}
+				return request(...args)
+			}
+		})
+	})
+	await page.route('**/api/simplefin', async (route) => {
+		providerRequests.push(route.request().url())
+		await route.abort()
+	})
+	await page.goto('/settings/banks')
+	const input = page.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+	const create = page.getByRole('button', { name: 'Create passkey', exact: true })
+	const token = btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token')
+	await input.fill(token)
+	await create.click()
+	await expect(page.getByRole('main').getByRole('status')).toContainText(
+		'No automatic retry will occur'
+	)
+	await expect(input).toHaveValue('')
+	await expect(create).toBeDisabled()
+	await input.fill(token)
+	await create.click()
+	await expect(
+		page.getByRole('button', { name: 'Test encryption with my passkey', exact: true })
+	).toBeVisible()
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await expect(input).toHaveValue('')
+	expect(providerRequests).toEqual([])
+	expect(errors).toEqual([])
+	expect(stoppedActorWarnings).toEqual([])
+})
+
+test('cancelled passkey creation ignores a late success and releases the bank lock', async ({
+	page
+}) => {
+	const errors: string[] = []
+	page.on('pageerror', (error) => errors.push(error.message))
+	await installPasskey(page)
+	await page.addInitScript(() => {
+		const create = navigator.credentials.create.bind(navigator.credentials)
+		let release: (() => void) | undefined
+		let delayed = false
+		document.addEventListener('release-test-passkey', () => release?.())
+		Object.defineProperty(navigator.credentials, 'create', {
+			configurable: true,
+			value: async (options: CredentialCreationOptions) => {
+				if (!delayed) {
+					delayed = true
+					document.documentElement.dataset.passkeyPending = 'true'
+					await new Promise<void>((resolve) => {
+						release = resolve
+					})
+				}
+				const credential = await create(options)
+				document.documentElement.dataset.passkeySettled = 'true'
+				return credential
+			}
+		})
+	})
+	await page.goto('/settings/banks')
+	const input = page.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+	const create = page.getByRole('button', { name: 'Create passkey', exact: true })
+	const encrypt = page.getByRole('button', { name: 'Test encryption with my passkey', exact: true })
+	const token = btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token')
+	await input.fill(token)
+	await create.click()
+	await expect(page.locator('html')).toHaveAttribute('data-passkey-pending', 'true')
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await expect(input).toHaveValue('')
+	await page.evaluate(() => document.dispatchEvent(new Event('release-test-passkey')))
+	await expect(page.locator('html')).toHaveAttribute('data-passkey-settled', 'true')
+	await expect(encrypt).toBeHidden()
+	await input.fill(token)
+	await create.click()
+	await expect(encrypt).toBeVisible()
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await expect(input).toHaveValue('')
+	expect(errors).toEqual([])
 })

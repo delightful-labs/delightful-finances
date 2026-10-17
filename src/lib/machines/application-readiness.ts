@@ -1,4 +1,15 @@
-import { assign, fromCallback, fromPromise, sendTo, setup, stopChild } from 'xstate'
+import {
+	assign,
+	fromCallback,
+	fromPromise,
+	not,
+	or,
+	stateIn,
+	raise,
+	sendTo,
+	setup,
+	stopChild
+} from 'xstate'
 import type { ActorRefFrom } from 'xstate'
 import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
 import { createSessionStartupMachine } from './session-startup.js'
@@ -18,11 +29,13 @@ type Event =
 	| { type: 'START' }
 	| { type: 'RETRY' }
 	| { type: 'SESSION_OBSERVED'; status: Status }
+	| { type: 'SESSION_OBSERVER_FAILED' }
 	| { type: 'ATTACH_WORKSPACE'; attachment: WorkspaceAttachment }
 	| { type: 'DETACH_WORKSPACE'; actor: Workspace }
 	| { type: 'WORKSPACE_CLOSED'; actor: unknown }
 	| { type: 'ATTACH_PENDING' }
 	| { type: 'SHUTDOWN' }
+	| { type: `xstate.error.actor.${string}`; actorId: string; error: unknown }
 
 export function createApplicationReadinessMachine(
 	open: () => Promise<Session>,
@@ -31,20 +44,45 @@ export function createApplicationReadinessMachine(
 	const actors = {
 		startup: createSessionStartupMachine(open, existing),
 		observeSession: fromCallback<Event, Session>(({ input, sendBack }) => {
-			const publish = () =>
-				sendBack({ type: 'SESSION_OBSERVED', status: input.getSnapshot().status })
+			// SDK notifications execute outside XState; bridge their failures explicitly.
+			const publish = () => {
+				try {
+					sendBack({ type: 'SESSION_OBSERVED', status: input.getSnapshot().status })
+				} catch {
+					sendBack({ type: 'SESSION_OBSERVER_FAILED' })
+				}
+			}
 			publish()
 			return input.subscribe(publish)
 		}),
 		retrySession: fromPromise(({ input }: { input: Session }) => input.retry())
 	}
-	const workflow = setup<Context, Event, typeof actors, {}, {}, {}, never, string>({ actors })
+	const workflow = setup<
+		Context,
+		Event,
+		typeof actors,
+		{},
+		{},
+		{ acceptStartup: undefined; shuttingDown: undefined },
+		never,
+		string
+	>({
+		actors,
+		guards: {
+			acceptStartup: or([stateIn('opening'), stateIn('startupFailed')]),
+			shuttingDown: stateIn('closing')
+		}
+	})
 	const attach = workflow.assign(({ context, spawn }) => ({
 		workspace: spawn(createWorkspaceReadinessMachine(required(context.pending)), {
 			syncSnapshot: true
 		}),
 		pending: undefined
 	}))
+	const shutDownWorkspace = workflow.enqueueActions(({ context, enqueue }) => {
+		enqueue.assign({ pending: undefined })
+		if (context.workspace) enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
+	})
 	const release = workflow.enqueueActions(({ context, enqueue }) => {
 		enqueue.stopChild(required(context.workspace))
 		enqueue.assign({ workspace: undefined })
@@ -62,7 +100,11 @@ export function createApplicationReadinessMachine(
 		invoke: {
 			id: 'startup',
 			src: 'startup',
+			onError: [{ guard: 'shuttingDown' }, { target: '.settlingStartupFailure' }],
 			onSnapshot: [
+				{
+					guard: not('acceptStartup')
+				},
 				{ guard: ({ event }) => event.snapshot.matches('error'), target: '.startupFailed' },
 				{
 					guard: ({ event }) => event.snapshot.context.result !== undefined,
@@ -73,6 +115,14 @@ export function createApplicationReadinessMachine(
 			]
 		},
 		on: {
+			'xstate.error.actor.*': [
+				{
+					guard: ({ context, event }) => context.workspace?.id === event.actorId,
+					target: '.settlingObserverFailure',
+					actions: [assign({ pending: undefined }), release]
+				},
+				{}
+			],
 			START: { actions: sendTo('startup', { type: 'START' }) },
 			RETRY: { actions: sendTo('startup', { type: 'RETRY' }) },
 			SHUTDOWN: { target: '.closing', actions: assign({ pending: undefined }) },
@@ -99,10 +149,39 @@ export function createApplicationReadinessMachine(
 		states: {
 			opening: {},
 			startupFailed: { tags: 'startup-error' },
+			settlingStartupFailure: {
+				entry: shutDownWorkspace,
+				always: { guard: ({ context }) => !context.workspace, target: 'startupActorFailed' },
+				on: { ATTACH_WORKSPACE: {}, ATTACH_PENDING: {}, RETRY: {}, START: {} }
+			},
+			startupActorFailed: {
+				tags: 'startup-error',
+				on: {
+					RETRY: {
+						target: '#application-readiness',
+						reenter: true,
+						actions: [assign({ session: undefined }), raise({ type: 'START' })]
+					}
+				}
+			},
+			settlingObserverFailure: {
+				entry: shutDownWorkspace,
+				always: { guard: ({ context }) => !context.workspace, target: 'observerFailed' },
+				on: { ATTACH_WORKSPACE: {}, ATTACH_PENDING: {}, RETRY: {}, START: {} }
+			},
+			observerFailed: {
+				tags: 'startup-error',
+				on: { RETRY: 'running', ATTACH_WORKSPACE: {}, ATTACH_PENDING: {} }
+			},
 			running: {
 				initial: 'checking',
-				invoke: { src: 'observeSession', input: ({ context }) => required(context.session) },
+				invoke: {
+					src: 'observeSession',
+					input: ({ context }) => required(context.session),
+					onError: '#application-readiness.settlingObserverFailure'
+				},
 				on: {
+					SESSION_OBSERVER_FAILED: '#application-readiness.settlingObserverFailure',
 					SESSION_OBSERVED: {
 						target: '.checking',
 						actions: assign({ status: ({ event }) => event.status })
@@ -140,6 +219,14 @@ export function createApplicationReadinessMachine(
 					if (context.workspace) enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 				}),
 				on: {
+					'xstate.error.actor.*': [
+						{
+							guard: ({ context, event }) => context.workspace?.id === event.actorId,
+							target: 'closed',
+							actions: release
+						},
+						{}
+					],
 					WORKSPACE_CLOSED: {
 						guard: ({ context, event }) => context.workspace === event.actor,
 						target: 'closed',
@@ -151,7 +238,9 @@ export function createApplicationReadinessMachine(
 					ATTACH_WORKSPACE: {},
 					DETACH_WORKSPACE: {},
 					ATTACH_PENDING: {},
-					SHUTDOWN: {}
+					SHUTDOWN: {},
+					START: {},
+					RETRY: {}
 				}
 			},
 			closed: { type: 'final', entry: assign({ workspace: undefined, pending: undefined }) }

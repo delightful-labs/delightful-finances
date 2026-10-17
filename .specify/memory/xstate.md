@@ -80,6 +80,69 @@ When identities or integrations are replaced, tie detach/completion notification
 belong to. Do not let an old component tear down a newly attached workspace. Preserve progress counts
 across child boundaries without losing or counting them twice.
 
+## Put error handling at the right actor boundary
+
+Use `invoke.onError` for failures of invoked actors, including synchronous acquisition/startup
+failures and rejected promise actors. Do not catch and rethrow inside each `fromPromise` merely to
+assign a workflow-specific error code. Let the owning transition classify the failure once, preserve
+required sanitized diagnostics, and enter the appropriate failure/cleanup state. Keep secrets and raw
+provider payloads out of persisted results and logs when moving classification.
+
+Audit every invocation, including long-lived callback observers and machine children, for an
+unexpected-error path. An ordinary error state in a child or an `onSnapshot` observer does not handle
+the child actor itself failing. Do not send a cleanup command to an actor that has already failed and
+then wait forever for its acknowledgement; distinguish failure before resource acquisition from
+failure after acquisition. Recovery must preserve cancellation/shutdown priority.
+
+Errors thrown by actions fail their machine; async actions are not awaited. Do not move fallible I/O
+into an entry action and expect a local `onError` transition to catch it. Model independently
+understandable operations as invoked actors and their decisions as guarded transitions. Moving a
+large async helper into `fromPromise` without exposing its lifecycle is not this improvement.
+
+Native browser event callbacks run outside XState's processing stack. `invoke.onError` does not
+automatically intercept later DOM callbacks or promise rejections started inside `fromCallback`.
+Those adapters must bridge native failures using typed events or explicit promise rejection. A
+callback actor's internal promise rejection handler can therefore be necessary. Do not mechanically
+remove catches or replace them with a generic helper solely to hide the syntax.
+
+Retain narrow platform/resource handling where cleanup requires it: errors after acquisition must
+abort/release resources and await actual settlement. Do not assume a callback actor's disposer runs
+on every thrown actor failure; inspect the installed implementation when relying on cleanup ordering.
+`try/finally` that clears credential bytes, closes images, or releases timers is resource ownership,
+not duplicated workflow state.
+
+For IndexedDB, keep the compare-and-write synchronous inside the active transaction. Validate policy
+in the owning machine, then compare the complete observed value atomically at the write boundary to
+protect against concurrent changes. Explicitly own opening, transaction selection, abort settlement
+and connection closing as states/children. An abort racing a finished transaction can throw; retain
+the narrow native-boundary handler and report the actual commit/abort result. Stopping a promise
+actor discards its result and is not proof that its side effect was cancelled.
+
+References: [invocation errors](https://stately.ai/docs/invoke),
+[callback actors and errors](https://stately.ai/docs/actors),
+[promise actors](https://stately.ai/docs/promise-actors),
+[IndexedDB transactions](https://www.w3.org/TR/IndexedDB/).
+
+## Supervise observers and stale notifications
+
+Session observers can fail while subscribing or later while reading an SDK snapshot. Handle
+acquisition with `invoke.onError`; bridge later SDK callback failures with a typed event. Exit the
+observer, unsubscribe, and ask the workspace to finish bank cleanup before exposing recovery.
+Restart an unexpectedly failed startup actor on retry instead of sending commands to a dead actor.
+Keep late startup snapshots and errors from interrupting shutdown.
+
+Supervise pure availability/history/mapping children before their errors can kill a bank owner with
+active operations. Route those failures through the existing shutdown/cancellation states and await
+the resource-owning child. A failed or completed bank child cannot acknowledge a subsequent shutdown;
+its workspace must classify the failure or finish an already-requested shutdown immediately.
+
+For dynamically spawned workspace errors, match the reported actor ID to the currently owned
+reference. Consume stale notifications without releasing a replacement workspace. A child may already
+be done while its parent's `onDone` event is still queued; check liveness when forwarding resource
+notifications so a completed child does not receive credential payloads through warning logs.
+Fallible integration callbacks such as selecting an organization belong in an invoked actor with an
+error transition, rather than an entry action that can fail the entire workspace.
+
 ## Review and verification
 
 Review the complete actor tree after focused changes, including startup and presentation boundaries.
@@ -92,3 +155,8 @@ being covered. Formatting and type checks do not establish runtime correctness. 
 state transitions and visible behavior, especially cancellation/races, cleanup, authorization changes,
 partial progress, and parent/child subscription rendering. Do not record an implementation as proven
 merely because it type-checks.
+
+The SvelteKit plugin used by unit tests regenerates the same environment files as the dev server.
+Finish unit/Svelte checks before starting a browser run; concurrent regeneration can replace a live
+server's Jazz environment and produce misleading startup failures. Use the isolated in-memory Jazz
+configuration in `playwright.bank-sync.config.ts` for reproducible bank/readiness browser checks.

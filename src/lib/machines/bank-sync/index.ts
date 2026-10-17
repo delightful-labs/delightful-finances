@@ -34,6 +34,7 @@ type Event =
 	| ProgressEvent
 	| { type: 'OBSERVED'; source: BankSource }
 	| { type: 'SHUTDOWN' }
+	| { type: `xstate.error.actor.${string}`; error: unknown }
 	| {
 			type: 'ENVIRONMENT_CHANGED'
 			environment: BankEnvironment
@@ -131,7 +132,8 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			{
 				id: 'availability',
 				src: 'availability',
-				input: () => inputs.read(),
+				input: ({ context }) => context.availability.context.source,
+				onError: { actions: raise({ type: 'SHUTDOWN' }) },
 				onSnapshot: {
 					actions: raise(({ event }) => ({
 						type: 'ENVIRONMENT_CHANGED',
@@ -144,7 +146,8 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			{
 				id: 'history',
 				src: 'history',
-				input: () => bankObservation(inputs.read()).connection,
+				input: ({ context }) => context.availability.context.connection,
+				onError: { actions: raise({ type: 'SHUTDOWN' }) },
 				onSnapshot: { actions: assign({ lastSync: ({ event }) => event.snapshot.context.summary }) }
 			}
 		],
@@ -166,6 +169,8 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			}
 		},
 		on: {
+			// Mapping children are pure; active resource owners still settle via SHUTDOWN.
+			'xstate.error.actor.*': { actions: raise({ type: 'SHUTDOWN' }) },
 			SHUTDOWN: { target: '.closed' },
 			OBSERVED: {
 				actions: sendTo('availability', ({ event }) => ({ type: 'OBSERVED', source: event.source }))
@@ -422,10 +427,18 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						},
 						{
 							actions: [
-								sendTo('setup', ({ event }) => ({
-									type: 'CREDENTIAL_CHANGED',
-									fingerprint: event.environment.credentialFingerprint
-								})),
+								workflow.enqueueActions(({ event, self, enqueue }) => {
+									const child = self.getSnapshot().children.setup
+									// Completion can precede the parent's queued onDone transition.
+									if (
+										event.type === 'ENVIRONMENT_CHANGED' &&
+										child?.getSnapshot().status === 'active'
+									)
+										enqueue.sendTo(child, {
+											type: 'CREDENTIAL_CHANGED',
+											fingerprint: event.environment.credentialFingerprint
+										})
+								}),
 								updateEnvironment
 							]
 						}

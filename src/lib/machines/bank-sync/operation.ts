@@ -170,7 +170,8 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			input: ({ context }) => ({
 				ownerId: context.identity.userId,
 				organizationId: context.identity.organizationId
-			})
+			}),
+			onError: { target: '.settlingFailure', actions: failed }
 		},
 		on: {
 			CANCEL: { target: '.cancelled' },

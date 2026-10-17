@@ -57,7 +57,9 @@
 	<SessionStartup />
 {/snippet}
 
-{#if jazzSession}
+{#if startupState.current.hasTag('startup-error')}
+	<SessionStartup />
+{:else if jazzSession}
 	<JazzSessionProvider session={jazzSession} fallback={startup}>
 		<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
 	</JazzSessionProvider>
