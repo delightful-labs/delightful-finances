@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Heading, Text, InputAvatar, StatusMessage } from 'delightful-ui'
+	import { Button, Text, InputAvatar, StatusMessage } from 'delightful-ui'
 	import type { z } from 'zod'
 	import { avatarMimeType, type profileAvatarFormSchema } from '#lib/validation/identity.js'
 	import type { FormController } from '#lib/forms.svelte.js'
@@ -22,6 +22,11 @@
 		>
 		onRemove: () => void
 	} = $props()
+	let selectedFile = $state<File | null>(null)
+	$effect(() => {
+		void profileId
+		selectedFile = null
+	})
 	let imageUrl = $state('')
 	let imageFailed = $state(false)
 	$effect(() => {
@@ -36,7 +41,6 @@
 	})
 </script>
 
-<Heading level="h3">{m['labels.avatar']()}</Heading>
 <Text id="avatar-help">{m['profile.avatar_description']()}</Text>
 {#if imageUrl && !imageFailed}
 	<img
@@ -56,7 +60,8 @@
 			<input type="hidden" name="action" value="upload" />
 			<InputAvatar
 				label={m['labels.avatar']()}
-				uploadLabel={m['actions.upload_avatar']()}
+				uploadLabel={m['actions.choose_image']()}
+				bind:value={selectedFile}
 				removeLabel={m['actions.clear_selected_image']()}
 				id="profile-avatar"
 				name="file"
@@ -67,13 +72,13 @@
 			/>
 		{/snippet}
 		{#snippet controls(view)}
-			<Button type="submit" disabled={view.disabled}
-				>{view.busy
-					? m['status.saving']({ subject: m['labels.avatar']() })
-					: avatarData
-						? m['actions.replace_avatar']()
-						: m['actions.upload_avatar']()}</Button
-			>
+			{#if selectedFile}
+				<Button type="submit" disabled={view.disabled}>
+					{view.busy
+						? m['status.saving']({ subject: m['labels.avatar']() })
+						: m['actions.save_avatar']()}
+				</Button>
+			{/if}
 			{#if avatarData}
 				<Button type="button" disabled={view.disabled} onclick={onRemove}
 					>{m['actions.remove_avatar']()}</Button

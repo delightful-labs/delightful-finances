@@ -292,3 +292,7 @@ Adopt the current local DUI snapshot through a distinct vendored archive. Replac
 ### Expense and income list presentation migration
 
 Use PageContent in the shared TransactionView and its grouped TransactionList. Replace list headings, totals, metadata, and empty messages with DUI Heading/Text. Share the repeated baseline-aligned, wrapping two-sided layout as SplitRow, used by day headings and transaction entries. Replace list/item margins and hardcoded gaps with grid spacing and canonical DUI tokens. Preserve semantic sections/lists, date labels, links, localization, and integration-owned subscriptions. Review this five-file presentation batch before tests or another screen migration.
+
+### Avatar input composition
+
+Use InputAvatar's own Avatar label without a duplicate section heading. Label its chooser Choose image, and show Save avatar only when a file is selected; retain explicit form submission, existing validation/persistence, and saved-avatar removal. Keep selected-file presentation state local and clear it when the profile changes. Tests follow implementation review.

@@ -80,7 +80,9 @@
 		"upload_avatar": "Upload avatar",
 		"replace_avatar": "Replace avatar",
 		"remove_avatar": "Remove avatar",
-		"clear_selected_image": "Clear selected image"
+		"clear_selected_image": "Clear selected image",
+		"choose_image": "Choose image",
+		"save_avatar": "Save avatar"
 	},
 	"accounts": {
 		"type": {
