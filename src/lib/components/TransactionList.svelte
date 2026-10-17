@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { Heading, Text } from 'delightful-ui'
+	import PageContent from './PageContent.svelte'
+	import SplitRow from './SplitRow.svelte'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { formatMoney } from '#lib/domain/money.js'
 	import type { TransactionDay } from '#lib/domain/transaction-groups.js'
@@ -31,69 +34,70 @@
 </script>
 
 {#if noAccountsSelected}
-	<p>{m['transactions.no_accounts_selected']()}</p>
+	<Text>{m['transactions.no_accounts_selected']()}</Text>
 {:else if groups.length === 0}
-	<p>{m['transactions.empty.title']()}</p>
+	<Text>{m['transactions.empty.title']()}</Text>
 {:else}
-	{#each groups as group (group.bookedOn)}
-		<section aria-labelledby={`${listId}-${group.bookedOn}`}>
-			<header>
-				<h2 id={`${listId}-${group.bookedOn}`}>
-					<time datetime={group.bookedOn}
-						>{dateFormatter.format(new Date(`${group.bookedOn}T00:00:00Z`))}</time
-					>
-				</h2>
-				<div class="totals">
-					{#each [...group.totals] as [currency, amount] (currency)}
-						<span
-							aria-label={m['transactions.daily_total']({
-								amount: formatMoney(amount, currency, getLocale())
-							})}
-						>
-							{formatMoney(amount, currency, getLocale())}
-						</span>
+	<PageContent>
+		{#each groups as group (group.bookedOn)}
+			<section aria-labelledby={`${listId}-${group.bookedOn}`}>
+				<header>
+					<SplitRow>
+						<Heading level="h2" id={`${listId}-${group.bookedOn}`}>
+							<time datetime={group.bookedOn}
+								>{dateFormatter.format(new Date(`${group.bookedOn}T00:00:00Z`))}</time
+							>
+						</Heading>
+						{#snippet trailing()}
+							<div class="totals">
+								{#each [...group.totals] as [currency, amount] (currency)}
+									<Text
+										as="span"
+										aria-label={m['transactions.daily_total']({
+											amount: formatMoney(amount, currency, getLocale())
+										})}
+									>
+										{formatMoney(amount, currency, getLocale())}
+									</Text>
+								{/each}
+							</div>
+						{/snippet}
+					</SplitRow>
+				</header>
+				<ul class="entries">
+					{#each group.transactions as transaction (transaction.id)}
+						<TransactionListItem
+							href={`/transactions/${transaction.id}`}
+							{transaction}
+							categoryName={categoryNames.get(transaction.categoryId)}
+							accountName={accountNames.get(transaction.accountId)}
+							tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
+						/>
 					{/each}
-				</div>
-			</header>
-			<ul class="entries">
-				{#each group.transactions as transaction (transaction.id)}
-					<TransactionListItem
-						href={`/transactions/${transaction.id}`}
-						{transaction}
-						categoryName={categoryNames.get(transaction.categoryId)}
-						accountName={accountNames.get(transaction.accountId)}
-						tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
-					/>
-				{/each}
-			</ul>
-		</section>
-	{/each}
+				</ul>
+			</section>
+		{/each}
+	</PageContent>
 {/if}
 
 <style>
-	header {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 1rem;
-		flex-wrap: wrap;
-	}
-	h2 {
-		margin: 0;
-	}
 	section {
-		margin-block: 1.5rem;
+		display: grid;
+		gap: var(--dui-spacing-xs);
+		min-inline-size: 0;
 	}
+
 	.entries {
+		display: grid;
+		gap: var(--dui-spacing-md);
 		list-style: none;
+		margin: 0;
 		padding: 0;
 	}
-	p {
-		margin-block: 0.25rem;
-	}
+
 	.totals {
 		display: flex;
-		gap: 0.5rem;
+		gap: var(--dui-spacing-xs);
 		flex-wrap: wrap;
 	}
 </style>

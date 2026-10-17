@@ -263,3 +263,12 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
   - Browser-test TypeScript, changed-file formatting/whitespace checks and the production build pass. No assertions were weakened to hide the category-default failures.
 
 - [ ] Investigate the existing expense/income default-category regression: after saving in a second workspace and switching back, the category select remains blank instead of selecting the original system category. Keep both existing assertions intact; this is application behavior rather than a navigation-selector migration.
+
+### Expense and income list presentation migration
+
+- [x] Adopt PageContent for transaction screen blocks and day groups.
+- [x] Adopt DUI Heading/Text for transaction list content and shared Message feedback.
+- [x] Share the repeated two-sided row layout and use DUI spacing tokens.
+- [x] Review the presentation implementation.
+- [x] After approval, update focused transaction-list browser coverage and run relevant checks.
+  - All 319 unit tests and 21 selected browser scenarios pass across focused runs; browser-test TypeScript and whitespace checks pass. Browser coverage includes profile/avatar persistence, recovery, offline changes, owner authorization, transaction lists, locale formatting, responsive navigation and sidebar status.

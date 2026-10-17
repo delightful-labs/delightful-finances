@@ -288,3 +288,7 @@ Migration verification exercised all 106 affected development-browser cases, wit
 ### DUI typography and spacing primitives
 
 Adopt the current local DUI snapshot through a distinct vendored archive. Replace presentation headings and prose with semantic Heading/Text components, use InputAvatar for avatar selection, and replace custom spacing values with canonical DUI spacing tokens. Preserve semantic heading levels, accessible feedback roles, localized labels, and page-owned workflows. Start with shared page/form presentation and profile forms (five implementation files); migrate remaining screens in later reviewed batches. Static checks precede review; automated tests require implementation approval.
+
+### Expense and income list presentation migration
+
+Use PageContent in the shared TransactionView and its grouped TransactionList. Replace list headings, totals, metadata, and empty messages with DUI Heading/Text. Share the repeated baseline-aligned, wrapping two-sided layout as SplitRow, used by day headings and transaction entries. Replace list/item margins and hardcoded gaps with grid spacing and canonical DUI tokens. Preserve semantic sections/lists, date labels, links, localization, and integration-owned subscriptions. Review this five-file presentation batch before tests or another screen migration.

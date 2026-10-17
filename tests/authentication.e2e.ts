@@ -345,7 +345,11 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 		)
 		.toBe(true)
 	await page.reload()
-	await expect(page.getByRole('button', { name: 'Upload avatar', exact: true })).toBeVisible()
+	await expect(
+		page
+			.getByRole('button', { name: 'Upload avatar', exact: true })
+			.and(page.locator('button[type="submit"]'))
+	).toBeVisible()
 	const removed = await avatarRecord(page)
 	expect(removed).toEqual({ ...first, byteLength: 0, mimeType: null, checksum: null })
 	expect(firstUrl).toMatch(/^blob:/)
@@ -397,7 +401,11 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 	}
 	await expect.poll(async () => (await avatarRecord(page, true)).byteLength).toBe(0)
 	await page.reload()
-	await expect(page.getByRole('button', { name: 'Upload avatar', exact: true })).toBeVisible()
+	await expect(
+		page
+			.getByRole('button', { name: 'Upload avatar', exact: true })
+			.and(page.locator('button[type="submit"]'))
+	).toBeVisible()
 })
 
 test('avatar follows account recovery on another device', async ({ page, browser, baseURL }) => {

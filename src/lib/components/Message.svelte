@@ -1,5 +1,6 @@
 <script lang="ts">
+	import { Text } from 'delightful-ui'
 	let { message, role }: { message: string; role?: 'alert' | 'status' } = $props()
 </script>
 
-<p {role}>{message}</p>
+<Text {role}>{message}</Text>

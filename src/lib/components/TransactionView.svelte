@@ -10,6 +10,7 @@
 	import TransactionList from '#lib/components/TransactionList.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageContent from './PageContent.svelte'
 
 	let { kind }: { kind: 'income' | 'expense' } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -71,31 +72,33 @@
 	>
 </svelte:head>
 
-<PageHeader
-	title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
-	action={{
-		href: kind === 'income' ? '/incomes/new' : '/expenses/new',
-		label: m['actions.add']({
-			name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
-		})
-	}}
-/>
-
-<QueryContent
-	queries={[transactions, accounts, categories, tags, links]}
-	loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
->
-	{#if (accounts.current ?? []).filter((account) => !account.archivedAt).length === 0}
-		<Message message={m['transactions.no_accounts']()} />
-		<AccountCreation />
-	{/if}
-	<TransactionList
-		{groups}
-		{accountNames}
-		{categoryNames}
-		{tagNamesByTransaction}
-		noAccountsSelected={filters.selectedAccountIds !== null &&
-			filters.selectedAccountIds.length === 0}
+<PageContent>
+	<PageHeader
+		title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
+		action={{
+			href: kind === 'income' ? '/incomes/new' : '/expenses/new',
+			label: m['actions.add']({
+				name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+			})
+		}}
 	/>
-</QueryContent>
+
+	<QueryContent
+		queries={[transactions, accounts, categories, tags, links]}
+		loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
+		errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
+	>
+		{#if (accounts.current ?? []).filter((account) => !account.archivedAt).length === 0}
+			<Message message={m['transactions.no_accounts']()} />
+			<AccountCreation />
+		{/if}
+		<TransactionList
+			{groups}
+			{accountNames}
+			{categoryNames}
+			{tagNamesByTransaction}
+			noAccountsSelected={filters.selectedAccountIds !== null &&
+				filters.selectedAccountIds.length === 0}
+		/>
+	</QueryContent>
+</PageContent>

@@ -422,7 +422,9 @@ test('transaction list follows kind, date order, account filters, and workspace 
 	const navigation = page.getByRole('navigation')
 	await navigation.getByRole('link', { name: 'Expenses', exact: true }).click()
 	const main = page.getByRole('main')
-	const memos = main.getByRole('listitem').locator('p')
+	const memos = main
+		.getByRole('listitem')
+		.getByText(/^(Recent expense|Older expense|Salary|Business expense|Live expense)$/)
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
 	await expect(main.getByRole('listitem').getByText('$12.34', { exact: true })).toHaveCount(2)
 	await page.getByRole('checkbox', { name: 'Show Cash', exact: true }).uncheck()
@@ -2153,7 +2155,9 @@ test('transaction list groups days, separates currency totals, and displays arch
 	await expect(first.getByText('Daily category', { exact: true })).toBeVisible()
 	await expect(first.getByText('Historical tag', { exact: true })).toBeVisible()
 	await expect(first.getByText('Daily checking', { exact: true })).toBeVisible()
-	await expect(day.getByRole('listitem').filter({ hasNot: page.locator('p') })).toHaveCount(1)
+	await expect(day.getByRole('listitem').filter({ hasText: '$2.50' })).toHaveText(
+		/Daily category\s*\$2\.50\s*Daily checking/
+	)
 	await page.getByRole('checkbox', { name: 'Show Euro account', exact: true }).uncheck()
 	await expect(day.getByLabel('Daily total: €3.00', { exact: true })).toHaveCount(0)
 	await expect(day.getByLabel('Daily total: $12.50', { exact: true })).toBeVisible()
@@ -2671,7 +2675,8 @@ test('profile name saves offline, follows workspace selection, and supplies tran
 
 test('profile name edits are owner-only even for members of a shared workspace', async ({
 	page,
-	browser
+	browser,
+	baseURL
 }) => {
 	await start(page)
 	const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
@@ -2684,7 +2689,7 @@ test('profile name edits are owner-only even for members of a shared workspace',
 			.wait({ tier: 'global' })
 		return { profileId: profile.id, userId }
 	})
-	const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+	const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
 	try {
 		const subject = await context.newPage()
 		await start(subject)

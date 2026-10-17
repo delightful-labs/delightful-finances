@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Text } from 'delightful-ui'
+	import SplitRow from './SplitRow.svelte'
 	import type { TransactionRow } from '#lib/schema.js'
 	import { formatMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -22,41 +24,37 @@
 
 <li>
 	<a {href}>
-		<div class="entry-heading">
+		<SplitRow>
 			<div class="classification">
-				<strong
-					>{categoryName ??
-						m['transactions.unavailable_item']({ subject: m['labels.category']() })}</strong
+				<Text as="span"
+					><strong
+						>{categoryName ??
+							m['transactions.unavailable_item']({ subject: m['labels.category']() })}</strong
+					></Text
 				>
-				{#if tagNames.length}<span>{tags.format(tagNames)}</span>{/if}
+				{#if tagNames.length}<Text as="span">{tags.format(tagNames)}</Text>{/if}
 			</div>
-			<span>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span>
-		</div>
-		{#if transaction.memo}<p>{transaction.memo}</p>{/if}
-		<small>{accountName ?? m['transactions.account_unavailable']()}</small>
+			{#snippet trailing()}
+				<Text as="span"
+					>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</Text
+				>
+			{/snippet}
+		</SplitRow>
+		{#if transaction.memo}<Text>{transaction.memo}</Text>{/if}
+		<Text size="sm">{accountName ?? m['transactions.account_unavailable']()}</Text>
 	</a>
 </li>
 
 <style>
 	a {
-		display: block;
+		display: grid;
+		gap: var(--dui-spacing-xxs);
 	}
-	.entry-heading {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 1rem;
-		flex-wrap: wrap;
-	}
-	li {
-		margin-block: 1rem;
-	}
-	p {
-		margin-block: 0.25rem;
-	}
+
 	.classification {
 		display: flex;
-		gap: 0.5rem;
+		align-items: baseline;
+		gap: var(--dui-spacing-xs);
 		flex-wrap: wrap;
 	}
 </style>
