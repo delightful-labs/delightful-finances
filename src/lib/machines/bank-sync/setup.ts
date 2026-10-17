@@ -60,53 +60,25 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 	const validateToken = fromPromise<void, { token: string; base: Base }>(
 		async ({ input, signal }) => {
 			signal.throwIfAborted()
-			try {
-				await validateSetupToken(input.token, input.base.trace)
-			} catch {
-				throw new Error('invalid_setup_token')
-			}
+			await validateSetupToken(input.token, input.base.trace)
 		}
 	)
-	const create = fromPromise<PasskeyDescriptor, Base>(async ({ input, signal }) => {
-		try {
-			return await createPasskey(input.scope, signal, passkeyName(), input.trace)
-		} catch {
-			throw new Error('passkey_failure')
-		}
-	})
+	const create = fromPromise<PasskeyDescriptor, Base>(({ input, signal }) =>
+		createPasskey(input.scope, signal, passkeyName(), input.trace)
+	)
 	const encrypt = fromPromise<PasskeySample, { base: Base; passkey: PasskeyDescriptor }>(
-		async ({ input, signal }) => {
-			try {
-				return await encryptPasskeySample(input.base.scope, input.passkey, signal, input.base.trace)
-			} catch {
-				throw new Error('passkey_failure')
-			}
-		}
+		({ input, signal }) =>
+			encryptPasskeySample(input.base.scope, input.passkey, signal, input.base.trace)
 	)
 	const verify = fromPromise<CredentialSealer, { base: Base; sample: PasskeySample }>(
-		async ({ input, signal }) => {
-			try {
-				return await verifyPasskeySample(input.base.scope, input.sample, signal, input.base.trace)
-			} catch {
-				throw new Error('passkey_failure')
-			}
-		}
+		({ input, signal }) =>
+			verifyPasskeySample(input.base.scope, input.sample, signal, input.base.trace)
 	)
-	const claim = fromPromise<string, { token: string; base: Base }>(async ({ input, signal }) => {
-		try {
-			return await claimToken(input.token, signal, input.base.trace)
-		} catch {
-			throw new Error('claim_failure')
-		}
-	})
+	const claim = fromPromise<string, { token: string; base: Base }>(({ input, signal }) =>
+		claimToken(input.token, signal, input.base.trace)
+	)
 	const seal = fromPromise<CredentialEnvelope, { seal: CredentialSealer; accessUrl: string }>(
-		async ({ input, signal }) => {
-			try {
-				return await input.seal(input.accessUrl, signal)
-			} catch {
-				throw new Error('save_failure')
-			}
-		}
+		({ input, signal }) => input.seal(input.accessUrl, signal)
 	)
 	const actors = {
 		lock: bankLock,
@@ -137,11 +109,16 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 	>({
 		actors
 	})
-	const fail = workflow.assign(({ context, event }) => {
-		const error = 'error' in event ? event.error : new Error('failure')
+	const failure = (context: Context, error: unknown) => {
 		context.base?.trace.failed('setup.failed', error)
 		return { error, accessUrl: undefined, token: undefined }
-	})
+	}
+	const fail = workflow.assign(({ context, event }) =>
+		failure(context, 'error' in event ? event.error : new Error('failure'))
+	)
+	const failWith = (
+		code: 'invalid_setup_token' | 'passkey_failure' | 'claim_failure' | 'save_failure'
+	) => workflow.assign(({ context }) => failure(context, new Error(code)))
 	const clear = workflow.assign({
 		base: undefined,
 		material: undefined,
@@ -251,7 +228,10 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								return { token: context.token, base: baseFor(context) }
 							},
 							onDone: 'creatingPasskey',
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: {
+								target: '#bank-setup.settlingFailure',
+								actions: failWith('invalid_setup_token')
+							}
 						}
 					},
 					creatingPasskey: {
@@ -262,7 +242,10 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								target: '#bank-setup.readyToEncrypt',
 								actions: assign({ material: ({ event }) => ({ passkey: event.output }) })
 							},
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: {
+								target: '#bank-setup.settlingFailure',
+								actions: failWith('passkey_failure')
+							}
 						}
 					}
 				}
@@ -322,7 +305,10 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								target: '#bank-setup.readyToVerify',
 								actions: assign({ material: ({ event }) => ({ sample: event.output }) })
 							},
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: {
+								target: '#bank-setup.settlingFailure',
+								actions: failWith('passkey_failure')
+							}
 						}
 					}
 				}
@@ -382,7 +368,10 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								target: '#bank-setup.readyToSave',
 								actions: assign({ material: ({ event }) => ({ seal: event.output }) })
 							},
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: {
+								target: '#bank-setup.settlingFailure',
+								actions: failWith('passkey_failure')
+							}
 						}
 					}
 				}
@@ -444,7 +433,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								target: 'sealing',
 								actions: assign({ accessUrl: ({ event }) => event.output, token: undefined })
 							},
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: { target: '#bank-setup.settlingFailure', actions: failWith('claim_failure') }
 						}
 					},
 					sealing: {
@@ -463,7 +452,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									accessUrl: undefined
 								})
 							},
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: { target: '#bank-setup.settlingFailure', actions: failWith('save_failure') }
 						}
 					},
 					authorizingSave: {

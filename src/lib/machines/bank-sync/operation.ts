@@ -66,42 +66,32 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			})
 			.wait({ tier: 'local' })
 	})
-	const unlock = fromPromise<string, OperationWork>(async ({ input, signal }) => {
+	const unlock = fromPromise<string, OperationWork>(({ input, signal }) => {
 		const { current, scope, trace } = input
-		try {
-			return await unlockCredential(
-				{
-					version: current.credentialVersion,
-					ownerId: current.ownerId,
-					organizationId: current.organizationId,
-					connectionId: current.id,
-					credentialId: current.credentialId,
-					prfSalt: current.prfSalt,
-					iv: current.iv,
-					ciphertext: current.ciphertext
-				},
-				scope,
-				signal,
-				trace
-			)
-		} catch (error) {
-			trace.failed('credential.unlock.failed', error)
-			throw new Error('unlock_failure')
-		}
+		return unlockCredential(
+			{
+				version: current.credentialVersion,
+				ownerId: current.ownerId,
+				organizationId: current.organizationId,
+				connectionId: current.id,
+				credentialId: current.credentialId,
+				prfSalt: current.prfSalt,
+				iv: current.iv,
+				ciphertext: current.ciphertext
+			},
+			scope,
+			signal,
+			trace
+		)
 	})
 	const fetchProvider = fromPromise<ProviderResponse, { work: OperationWork; accessUrl: string }>(
-		async ({ input, signal }) => {
-			try {
-				return await fetchAccounts(
-					input.accessUrl,
-					input.work.command.type === 'DISCOVER',
-					signal,
-					input.work.trace
-				)
-			} catch {
-				throw new Error('provider_failure')
-			}
-		}
+		({ input, signal }) =>
+			fetchAccounts(
+				input.accessUrl,
+				input.work.command.type === 'DISCOVER',
+				signal,
+				input.work.trace
+			)
 	)
 	const persistOutcome = fromPromise<
 		void,
@@ -147,11 +137,15 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 		EventObject,
 		BankViewMeta
 	>({ actors })
-	const failed = workflow.assign(({ context, event }) => {
-		const error = 'error' in event ? event.error : new Error('failure')
+	const failure = (context: Context, error: unknown) => {
 		context.work?.trace.failed('operation.failed', error)
 		return { error, accessUrl: undefined }
-	})
+	}
+	const failed = workflow.assign(({ context, event }) =>
+		failure(context, 'error' in event ? event.error : new Error('failure'))
+	)
+	const failWith = (code: 'unlock_failure' | 'provider_failure') =>
+		workflow.assign(({ context }) => failure(context, new Error(code)))
 	const clear = workflow.assign({ work: undefined, accessUrl: undefined, response: undefined })
 	return workflow.createMachine({
 		id: 'bank-operation',
@@ -298,7 +292,14 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						target: 'authorizingFetch',
 						actions: assign({ accessUrl: ({ event }) => event.output })
 					},
-					onError: { target: 'preparingFailure', actions: failed }
+					onError: {
+						target: 'preparingFailure',
+						actions: [
+							({ context, event }) =>
+								context.work?.trace.failed('credential.unlock.failed', event.error),
+							failWith('unlock_failure')
+						]
+					}
 				}
 			},
 			authorizingFetch: {
@@ -328,7 +329,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						target: 'authorizingResponse',
 						actions: assign({ response: ({ event }) => event.output, accessUrl: undefined })
 					},
-					onError: { target: 'preparingFailure', actions: failed }
+					onError: { target: 'preparingFailure', actions: failWith('provider_failure') }
 				}
 			},
 			authorizingResponse: {
