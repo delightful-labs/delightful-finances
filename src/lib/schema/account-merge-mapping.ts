@@ -1,16 +1,9 @@
 import type { z } from 'zod'
+import type { mergeEntitySchema } from '../validation/account-merge-origins.js'
 import type { accountMergeMappingInputSchema } from '../validation/account-merge-mapping.js'
 
 export type AccountMergeMappingInput = z.output<typeof accountMergeMappingInputSchema>
-export type MergeEntity =
-	| 'accounts'
-	| 'categories'
-	| 'tags'
-	| 'transactions'
-	| 'checkDetails'
-	| 'transactionTags'
-	| 'transactionBatches'
-	| 'batchTemplates'
+export type MergeEntity = z.output<typeof mergeEntitySchema>
 
 export type MergeRecordMapping = {
 	sourceId: string

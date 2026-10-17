@@ -80,7 +80,13 @@ schema changes or capture/import effects. After review, 25 focused unit tests pa
 for identity stability, scope/category ambiguity, input validation, failures,
 cancellation/shutdown, terminal cleanup and canonical provider compatibility.
 TypeScript and focused formatting checks pass.
-Provenance schema/permissions and transactional import remain subsequent cycles;
+The additive provenance schema/permissions slice is now implemented for review:
+immutable `mergeOrigins` receipts, shared entity validation, scoped target-reference
+checks and the SDK-generated table-creation migration. Existing table definitions
+are unchanged. After review, verify strict validation and live permissions,
+including every target type, ownership/role boundaries, wrong scopes, immutable
+receipts and retained history after target deletion. Transactional receipt writers
+and import remain subsequent cycles;
 the consistent source-capture contract is still an explicit prerequisite for a
 working merge.
 

@@ -1,9 +1,11 @@
 import { schema as s } from 'jazz-tools'
-import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
-import { app, type OrganizationMember, type TransactionRow } from './schema.js'
+import type { PermissionExpressionInput, RowContext, RowRefValue } from 'jazz-tools/permissions'
+import type { MergeEntity } from './schema/account-merge-mapping.js'
+import { app, type MergeOrigin, type OrganizationMember, type TransactionRow } from './schema.js'
 
 type Role = NonNullable<OrganizationMember['role']>
 type IdExpression = string | RowRefValue
+type MergeOriginContext = Pick<RowContext<MergeOrigin>, 'organizationId' | 'destinationRecordId'>
 type TransactionContext = Pick<
 	RowContext<TransactionRow>,
 	| 'id'
@@ -375,6 +377,40 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereOld((link) => isAdmin(link.organizationId))
 		.whereNew((link) => validBankMapping(link))
 	policy.simplefinAccountLinks.allowDelete.where((link) => isAdmin(link.organizationId))
+
+	// Exhaustive by source entity: a receipt cannot name a row in another table/scope.
+	const mergeOriginTargetExists = (origin: MergeOriginContext) => {
+		const target = { id: origin.destinationRecordId, organizationId: origin.organizationId }
+		const targets = {
+			accounts: policy.accounts.exists.where(target),
+			categories: policy.categories.exists.where(target),
+			tags: policy.tags.exists.where(target),
+			transactions: policy.transactions.exists.where(target),
+			checkDetails: policy.checkDetails.exists.where(target),
+			transactionTags: policy.transactionTags.exists.where(target),
+			transactionBatches: policy.transactionBatches.exists.where(target),
+			batchTemplates: policy.batchTemplates.exists.where(target)
+		} satisfies Record<MergeEntity, PermissionExpressionInput>
+		return anyOf(
+			Object.entries(targets).map(([sourceEntity, exists]) => allOf([{ sourceEntity }, exists]))
+		)
+	}
+
+	// Receipts survive destination edits/deletion, preventing accidental re-import.
+	policy.mergeOrigins.allowRead.where((origin) => isAdmin(origin.organizationId))
+	policy.mergeOrigins.allowInsert.where((origin) =>
+		allOf([
+			isAdmin(origin.organizationId),
+			policy.organizations.exists.where({
+				id: origin.organizationId,
+				kind: 'personal',
+				ownerId: session.user.account
+			}),
+			mergeOriginTargetExists(origin)
+		])
+	)
+	policy.mergeOrigins.allowUpdate.never()
+	policy.mergeOrigins.allowDelete.never()
 
 	policy.transactionAttachments.allowRead.where((attachment) =>
 		policy.transactions.exists.where({ id: attachment.transactionId })

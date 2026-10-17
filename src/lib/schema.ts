@@ -1,5 +1,6 @@
 import { schema as s } from 'jazz-tools'
 
+import { mergeOriginsSchema } from './schema/account-merge-origins.js'
 import { accountsSchema } from './schema/accounts.js'
 import { attachmentsSchema } from './schema/attachments.js'
 import { batchesSchema } from './schema/batches.js'
@@ -17,7 +18,8 @@ const schema = {
 	...transactionsSchema,
 	...integrationsSchema,
 	...attachmentsSchema,
-	...batchesSchema
+	...batchesSchema,
+	...mergeOriginsSchema
 }
 
 export const app = s.defineApp(schema)
@@ -27,6 +29,7 @@ export type OrganizationMember = s.RowOf<typeof app.organizationMembers>
 export type Account = s.RowOf<typeof app.accounts>
 export type Category = s.RowOf<typeof app.categories>
 export type Tag = s.RowOf<typeof app.tags>
+export type MergeOrigin = s.RowOf<typeof app.mergeOrigins>
 export type TransactionRow = s.RowOf<typeof app.transactions>
 
 export const transactionDetailQuery = app.transactions

@@ -138,7 +138,36 @@ machine cancellation/shutdown settlement (including a commit racing cancellation
 
 ## Additive Jazz provenance
 
-Proposed dedicated `mergeOrigins` table, finalized in the schema review: destination organizationId, source organizationId, source entity type, source recordId, destination recordId. Deterministic receipt ID from the complete origin tuple. Enforce destination admin authority and valid referenced destination records. Do not store source secrets or grants. Receipts persist after local snapshot cleanup and distinguish a prior import from an unrelated row-ID collision. Include supported original attribution metadata only if required for the reviewed UI, never forge Jazz audit fields.
+The `mergeOrigins` table is now implemented for review. Each immutable receipt has
+its SDK row ID plus destination `organizationId`, `sourceOrganizationId`,
+`sourceEntity`, `sourceRecordId` and `destinationRecordId`. The source-entity enum
+is shared by the canonical strict validator, the Jazz table and mapping types.
+Receipt IDs use the allocator's stable complete-origin tuple. Receipts contain no
+source payload, credentials, profiles, grants or duplicated audit timestamps.
+
+Insertion requires current owner/admin membership, an owned personal destination
+organization, and a target row in the declared table and destination organization.
+An exhaustive typed lookup covers all eight supported entity types. Archived
+records and existing system categories may have receipts; the policy does not
+require target changes or relax ordinary finance-write permissions. Reads require
+destination admin authority but deliberately do not require target existence.
+Update/delete are denied, preserving origin history after later edits/deletions
+and after the device-local snapshot is discarded. Unrelated users, viewers/members,
+foreign scopes and business-workspace creation are excluded by the policy.
+
+New destination rows and their receipts must still be inserted atomically by the
+future importer. This policy establishes target-reference validity; it does not
+prove source capture, source ownership, snapshot equivalence, deterministic row IDs
+or the absence of conflicting destination values. Preview/import must verify those
+facts and recognize prior receipts without overwriting later edits or resurrecting
+deleted target records. Receipts for reused/canonical destination rows remain subject
+to explicit conflict checks.
+
+The SDK generated an additive `createTables: { mergeOrigins: true }` migration from
+`bcc2715859fa` to `efb204a86e44`, with a structural snapshot. Comparing the snapshots
+shows only the new table; existing definitions are unchanged. TypeScript, local
+schema/policy compilation and focused formatting checks pass. Permission runtime
+coverage and validator tests await implementation review under `AGENTS.md`.
 
 ## Mapping rules
 
@@ -206,8 +235,9 @@ ID; preview/import must still compare their values and account mappings rather t
 silently skip differences. Source bank-account links remain snapshot provenance;
 this allocator does not plan active links to absent connections.
 
-The proposed `mergeOrigins` table, transactional receipt writes, archive/check
-sequencing and preview/import effects remain separate work. Source capture remains
+The `mergeOrigins` schema/policy slice is implemented for review. Transactional
+receipt writes, archive/check sequencing and preview/import effects remain separate
+work. Source capture remains
 gated by [capture-contract.md](capture-contract.md). After implementation review,
 25 focused unit tests pass for supported-graph allocation, source preservation,
 manual-record separation, stable retry/order/scope identities, canonical provider
