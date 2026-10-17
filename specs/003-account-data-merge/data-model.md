@@ -138,36 +138,41 @@ machine cancellation/shutdown settlement (including a commit racing cancellation
 
 ## Additive Jazz provenance
 
-The `mergeOrigins` table is now implemented for review. Each immutable receipt has
-its SDK row ID plus destination `organizationId`, `sourceOrganizationId`,
-`sourceEntity`, `sourceRecordId` and `destinationRecordId`. The source-entity enum
-is shared by the canonical strict validator, the Jazz table and mapping types.
-Receipt IDs use the allocator's stable complete-origin tuple. Receipts contain no
-source payload, credentials, profiles, grants or duplicated audit timestamps.
+The provenance reference correction is implemented for review. Eight tables share
+one receipt-column factory: `mergeAccountOrigins`, `mergeCategoryOrigins`,
+`mergeTagOrigins`, `mergeTransactionOrigins`, `mergeCheckDetailOrigins`,
+`mergeTransactionTagOrigins`, `mergeTransactionBatchOrigins` and
+`mergeBatchTemplateOrigins`. The exhaustive `mergeOriginTables` lookup maps each
+source entity to its receipt table. Each table declares `destinationRecordId` as a
+relationship to exactly its corresponding finance table. Receipt values retain
+destination `organizationId`, `sourceOrganizationId`, `sourceEntity`,
+`sourceRecordId` and `destinationRecordId`; allocator IDs and canonical validation
+remain unchanged. Receipts contain no source payload, credentials or audit copies.
 
-Insertion requires current owner/admin membership, an owned personal destination
-organization, and a target row in the declared table and destination organization.
-An exhaustive typed lookup covers all eight supported entity types. Archived
-records and existing system categories may have receipts; the policy does not
-require target changes or relax ordinary finance-write permissions. Reads require
-destination admin authority but deliberately do not require target existence.
-Update/delete are denied, preserving origin history after later edits/deletions
-and after the device-local snapshot is discarded. Unrelated users, viewers/members,
-foreign scopes and business-workspace creation are excluded by the policy.
+A shared policy loop enforces the table's matching `sourceEntity`, current
+owner/admin membership, an owned personal destination organization, and target
+existence in that organization. Reads require admin membership without target
+existence; updates/deletes are denied so history survives later target deletion.
+The original `mergeOrigins` table remains structurally unchanged for additive
+compatibility, with all operations denied. It is not an importer destination.
 
-New destination rows and their receipts must still be inserted atomically by the
-future importer. This policy establishes target-reference validity; it does not
-prove source capture, source ownership, snapshot equivalence, deterministic row IDs
-or the absence of conflicting destination values. Preview/import must verify those
-facts and recognize prior receipts without overwriting later edits or resurrecting
-deleted target records. Receipts for reused/canonical destination rows remain subject
-to explicit conflict checks.
+The SDK generated an additive migration from `efb204a86e44` to `3d0e719e1e0d`
+creating only these eight tables. Existing table definitions remain unchanged.
+TypeScript and local schema/policy compilation pass. This correction awaits review
+before live-server verification and adapting the previously added browser suite.
+The earlier 33 validator tests cover the unchanged canonical receipt values.
 
-The SDK generated an additive `createTables: { mergeOrigins: true }` migration from
-`bcc2715859fa` to `efb204a86e44`, with a structural snapshot. Comparing the snapshots
-shows only the new table; existing definitions are unchanged. TypeScript, local
-schema/policy compilation and focused formatting checks pass. Permission runtime
-coverage and validator tests await implementation review under `AGENTS.md`.
+The original single-table design failed during live permission publication with
+`JoinNotRefCompatible`: an untyped UUID could not join eight different target
+tables. Local compilation had accepted it. The corrected representation uses
+ordinary declared references rather than weakening target checks or adding sparse
+per-entity columns. Server compatibility is not yet established.
+
+Future importer writes must select the receipt table through `mergeOriginTables`
+and insert new target rows and receipts atomically. These policies do not prove
+source capture/ownership, deterministic IDs, snapshot equivalence or absence of
+conflicting destination values. Preview/import must enforce those invariants and
+honor receipts after target edits/deletion, including canonical/reused targets.
 
 ## Mapping rules
 
@@ -235,12 +240,9 @@ ID; preview/import must still compare their values and account mappings rather t
 silently skip differences. Source bank-account links remain snapshot provenance;
 this allocator does not plan active links to absent connections.
 
-The `mergeOrigins` schema/policy slice has a live-server compatibility blocker:
-the server rejects the polymorphic `destinationRecordId` policy join with
-`JoinNotRefCompatible` during permission publication. Local validation passed but
-does not establish server support. The reference representation needs correction
-and review before provenance can be deployed. Its 33 canonical-validator tests pass;
-the added live permission suite cannot start until publication succeeds. Transactional
+The typed provenance reference correction is implemented for review; see the
+additive provenance section for the original server rejection and verification gate.
+Transactional
 receipt writes, archive/check sequencing and preview/import effects remain separate
 work. Source capture remains
 gated by [capture-contract.md](capture-contract.md). After implementation review,

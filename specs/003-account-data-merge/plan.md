@@ -80,19 +80,17 @@ schema changes or capture/import effects. After review, 25 focused unit tests pa
 for identity stability, scope/category ambiguity, input validation, failures,
 cancellation/shutdown, terminal cleanup and canonical provider compatibility.
 TypeScript and focused formatting checks pass.
-The additive provenance schema/permissions slice is now implemented for review:
-immutable `mergeOrigins` receipts, shared entity validation, scoped target-reference
-checks and the SDK-generated table-creation migration. Existing table definitions
-are unchanged. After review, 33 strict-validator tests pass and the focused browser
-suite type-checks. Live verification is blocked at server startup: publishing the
-insert policy fails with `JoinNotRefCompatible` for `destinationRecordId`. The local
-schema/policy validator did not detect this incompatibility. A single untyped UUID
-cannot currently serve as the declared reference for these eight target-table joins.
-The browser suite covers every target type, ownership/role boundaries, wrong scopes,
-immutable receipts and retained history after target deletion, but none of its
-assertions have run. Resolve the supported reference representation and review the
-schema/policy correction before rerunning coverage. Do not weaken target checks to
-make publishing succeed. Transactional receipt writers
+The initial provenance slice passed 33 strict-validator tests, but live-server
+startup rejected its polymorphic destination join with `JoinNotRefCompatible`.
+The correction is now implemented for review: eight target-specific receipt tables
+share one column factory and policy loop, each with a declared destination
+relationship. The original table remains unchanged with all access denied; an
+additive SDK migration creates the eight new tables. Table/entity agreement,
+owned-personal/admin gates, scoped target existence, immutable history and reads
+after deletion remain enforced. TypeScript and local schema/policy validation pass.
+After review, adapt and run the focused browser suite to establish live publication
+and permission behavior. No runtime success is claimed from local compilation.
+Transactional receipt writers
 and import remain subsequent cycles;
 the consistent source-capture contract is still an explicit prerequisite for a
 working merge.
