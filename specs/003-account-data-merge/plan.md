@@ -72,12 +72,14 @@ This document provides sequencing, not a generated tasks.md. Generate detailed t
 ### Current review slice
 
 Snapshot validation and the IndexedDB journal are implemented. The independent
-identity-allocation portion of cycle 3 is now implemented for review; its statechart
+identity-allocation portion of cycle 3 is reviewed and verified; its statechart
 and exact identity conventions are recorded in [data-model.md](data-model.md).
 It allocates stable ordinary/provider/origin IDs and resolves destination system
 categories, using the existing validators and UUID function. It introduces no Jazz
-schema changes or capture/import effects. After review, add focused identity,
-scope/category ambiguity, cancellation, failure and canonical-provider-ID coverage.
+schema changes or capture/import effects. After review, 25 focused unit tests pass
+for identity stability, scope/category ambiguity, input validation, failures,
+cancellation/shutdown, terminal cleanup and canonical provider compatibility.
+TypeScript and focused formatting checks pass.
 Provenance schema/permissions and transactional import remain subsequent cycles;
 the consistent source-capture contract is still an explicit prerequisite for a
 working merge.

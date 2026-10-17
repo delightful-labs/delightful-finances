@@ -151,7 +151,7 @@ Proposed dedicated `mergeOrigins` table, finalized in the schema review: destina
 - Attachments: detect and stop unsupported graphs before import; current file permissions cannot support lossless copying.
 - Credentials/connections/memberships/profile: excluded with explicit connection reconnection notice. Preserve provider account identity as non-secret provenance for later reconnect decisions; do not create active links to absent connections.
 
-## Identity allocation slice (awaiting implementation review)
+## Identity allocation slice (reviewed and unit-verified)
 
 `validation/account-merge-mapping.ts` reuses the complete snapshot and destination
 validators and canonical category fields. Destination category observations require
@@ -208,8 +208,15 @@ this allocator does not plan active links to absent connections.
 
 The proposed `mergeOrigins` table, transactional receipt writes, archive/check
 sequencing and preview/import effects remain separate work. Source capture remains
-gated by [capture-contract.md](capture-contract.md). TypeScript and focused
-formatting checks pass; tests await implementation review under `AGENTS.md`.
+gated by [capture-contract.md](capture-contract.md). After implementation review,
+25 focused unit tests pass for supported-graph allocation, source preservation,
+manual-record separation, stable retry/order/scope identities, canonical provider
+IDs with distinct origin receipts, active system-category selection, empty graphs,
+strict required input fields, invalid scope/graphs, missing/ambiguous categories,
+allocation rejection and cancellation/shutdown racing late resolution/rejection.
+Assertions also verify terminal payload cleanup. TypeScript and focused formatting
+checks pass. This verifies allocation independently of capture, authorization,
+preview conflict decisions or finance writes.
 
 ## Invariants
 
