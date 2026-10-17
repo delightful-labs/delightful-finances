@@ -235,7 +235,12 @@ ID; preview/import must still compare their values and account mappings rather t
 silently skip differences. Source bank-account links remain snapshot provenance;
 this allocator does not plan active links to absent connections.
 
-The `mergeOrigins` schema/policy slice is implemented for review. Transactional
+The `mergeOrigins` schema/policy slice has a live-server compatibility blocker:
+the server rejects the polymorphic `destinationRecordId` policy join with
+`JoinNotRefCompatible` during permission publication. Local validation passed but
+does not establish server support. The reference representation needs correction
+and review before provenance can be deployed. Its 33 canonical-validator tests pass;
+the added live permission suite cannot start until publication succeeds. Transactional
 receipt writes, archive/check sequencing and preview/import effects remain separate
 work. Source capture remains
 gated by [capture-contract.md](capture-contract.md). After implementation review,

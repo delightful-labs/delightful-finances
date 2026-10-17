@@ -83,9 +83,16 @@ TypeScript and focused formatting checks pass.
 The additive provenance schema/permissions slice is now implemented for review:
 immutable `mergeOrigins` receipts, shared entity validation, scoped target-reference
 checks and the SDK-generated table-creation migration. Existing table definitions
-are unchanged. After review, verify strict validation and live permissions,
-including every target type, ownership/role boundaries, wrong scopes, immutable
-receipts and retained history after target deletion. Transactional receipt writers
+are unchanged. After review, 33 strict-validator tests pass and the focused browser
+suite type-checks. Live verification is blocked at server startup: publishing the
+insert policy fails with `JoinNotRefCompatible` for `destinationRecordId`. The local
+schema/policy validator did not detect this incompatibility. A single untyped UUID
+cannot currently serve as the declared reference for these eight target-table joins.
+The browser suite covers every target type, ownership/role boundaries, wrong scopes,
+immutable receipts and retained history after target deletion, but none of its
+assertions have run. Resolve the supported reference representation and review the
+schema/policy correction before rerunning coverage. Do not weaken target checks to
+make publishing succeed. Transactional receipt writers
 and import remain subsequent cycles;
 the consistent source-capture contract is still an explicit prerequisite for a
 working merge.
