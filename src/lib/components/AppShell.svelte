@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PageContent from './PageContent.svelte'
 	import Icon from './AppIcon.svelte'
+	import FinanceLogo from '#lib/assets/delightful-finance-logo.svg?component'
 	import {
 		Button,
 		Drawer,
@@ -81,7 +82,7 @@
 	let drawerOpen = $state(false)
 	let mobileViewport = $state(false)
 	const mainInert = $derived(mobileViewport && drawerOpen)
-	let topNavigationHeight = $state(56)
+	let topNavigationHeight = $state(44)
 
 	onMount(() => {
 		mobileViewport = isMobile()
@@ -112,6 +113,7 @@
 	<TopNavigation sticky class="site-header">
 		<Button
 			class="navigation-toggle"
+			appearance="flat"
 			id={toggleId}
 			type="button"
 			aria-controls={drawerId}
@@ -125,7 +127,7 @@
 				<Icon style="width: 1.5rem; height: 1.5rem;" icon={MenuIcon} />
 			{/if}
 		</Button>
-		<strong>{m['app.name']()}</strong>
+		<FinanceLogo class="app-logo" role="img" aria-label={m['app.name']()} />
 	</TopNavigation>
 	<div class="workspace" data-drawer-open={drawerOpen}>
 		<Drawer
@@ -375,12 +377,22 @@
 	}
 
 	:global(header.site-header) {
+		--dui-top-navigation-padding: 0;
 		inline-size: 100%;
-		min-block-size: 3.5rem;
+		min-block-size: 44px;
+	}
+
+	:global(header.site-header .app-logo) {
+		inline-size: auto;
+		max-inline-size: 100%;
+		block-size: 44px;
+		flex-shrink: 0;
+		color: var(--dui-color-foreground, #646464);
 	}
 
 	:global(header.site-header .navigation-toggle) {
 		--dui-button-padding: 0;
+		--dui-button-border-width: 0;
 		--dui-button-min-height: 2.75rem;
 		inline-size: 2.75rem;
 		block-size: 2.75rem;
@@ -396,6 +408,7 @@
 	:global(aside.site-drawer) {
 		--dui-drawer-width: 20rem;
 		--dui-drawer-padding: 0;
+		--dui-navigation-gap: 0;
 		--dui-details-border-width: 0px;
 		--dui-details-content-border-width: 0px;
 		--dui-details-summary-padding: 0.5rem 1rem;
