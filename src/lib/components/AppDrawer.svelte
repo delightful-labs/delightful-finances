@@ -197,15 +197,17 @@
 											</li>
 										{/each}
 									</ul>
-									<Button
-										type="button"
-										appearance="flat"
-										aria-pressed={editingAccountOrder}
-										onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
-										>{editingAccountOrder
-											? m['accounts.order.done']()
-											: m['accounts.order.edit']()}</Button
-									>
+									{#if accounts.length > 1}
+										<Button
+											type="button"
+											appearance="flat"
+											aria-pressed={editingAccountOrder}
+											onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
+											>{editingAccountOrder
+												? m['accounts.order.done']()
+												: m['accounts.order.edit']()}</Button
+										>
+									{/if}
 								{:else}
 									<p>{m['actions.empty']({ name: m['labels.accounts']() })}</p>
 								{/if}
