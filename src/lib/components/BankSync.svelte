@@ -146,7 +146,7 @@
 						<LoadingSpinner role="presentation" aria-hidden="true" />
 					{/if}
 				</section>
-				<Button type="button" onclick={onCancel}>{m['bank.cancel']()}</Button>
+				<Button type="button" onclick={onCancel}>{m['actions.cancel']()}</Button>
 			{:else}
 				<form
 					onsubmit={(event) => {
@@ -165,7 +165,7 @@
 							disabled={busy}
 						/>
 					</div>
-					<Button type="submit" disabled={busy || !token.trim()}>{m['bank.setup_start']()}</Button>
+					<Button type="submit" disabled={busy || !token.trim()}>{m['bank.step_create']()}</Button>
 				</form>
 			{/if}
 		</div>
@@ -192,7 +192,7 @@
 				{m['bank.discover']()}
 			</Button>
 
-			{#if busy}<Button type="button" onclick={onCancel}>{m['bank.cancel']()}</Button>{/if}
+			{#if busy}<Button type="button" onclick={onCancel}>{m['actions.cancel']()}</Button>{/if}
 			<ul>
 				{#each providerAccounts as provider (provider.id)}
 					<li>
@@ -203,7 +203,7 @@
 							<p>{m['bank.mapping_failure']()}</p>
 						{:else}
 							<Button type="button" disabled={busy} onclick={() => onCreateAccount(provider.id)}
-								>{m['bank.add_account']({ name: provider.name })}</Button
+								>{m['actions.add']({ name: `account “${provider.name}”` })}</Button
 							>
 						{/if}
 						{#if provider.showExisting}

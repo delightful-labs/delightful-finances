@@ -25,7 +25,10 @@
 </script>
 
 {#if archivedName}
-	<StatusMessage variant="success" text={m['accounts.archived']({ name: archivedName })} />
+	<StatusMessage
+		variant="success"
+		text={m['actions.archived']({ subject: m['labels.account'](), name: archivedName })}
+	/>
 {:else if archiveFailed}
 	<StatusMessage variant="error" text={m['errors.archive']({ subject: m['labels.account']() })} />
 {/if}
@@ -59,14 +62,14 @@
 							<Button
 								type="button"
 								disabled={archiving}
-								aria-label={m['actions.archive_account']({ name: account.name })}
+								aria-label={m['actions.archive']({ name: account.name })}
 								onclick={() => onArchive(account.id)}
 							>
 								{#if archiving && archivingAccountId === account.id}
 									{m['status.archiving']({ subject: m['labels.account']() })}
 								{:else}
 									<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
-									{m['actions.archive']()}
+									{m['actions.archive_button']()}
 								{/if}
 							</Button>
 						{/if}

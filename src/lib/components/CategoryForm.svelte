@@ -24,7 +24,7 @@
 
 <FormModal
 	scope={organizationId}
-	label={m['actions.add_category']()}
+	label={m['actions.add']({ name: m['labels.category']() })}
 	savingLabel={m['status.saving']({ subject: m['labels.category']() })}
 	disabled={!canCreate}
 	view={form.view}
@@ -55,7 +55,12 @@
 	{/snippet}
 	{#snippet feedback(form)}
 		{#if form.state.matches('success') && form.state.context.result}
-			<p role="status">{m['categories.saved']({ name: form.state.context.result.name })}</p>
+			<p role="status">
+				{m['actions.saved']({
+					subject: m['labels.category'](),
+					name: form.state.context.result.name
+				})}
+			</p>
 		{:else if form.state.matches('invalid')}
 			<p role="alert">{m['categories.validation_error']()}</p>
 		{:else if form.state.matches('error')}

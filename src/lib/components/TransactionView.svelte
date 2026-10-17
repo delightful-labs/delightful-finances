@@ -75,7 +75,9 @@
 	title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
 	action={{
 		href: kind === 'income' ? '/incomes/new' : '/expenses/new',
-		label: kind === 'income' ? m['actions.add_income']() : m['actions.add_expense']()
+		label: m['actions.add']({
+			name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+		})
 	}}
 />
 

@@ -16,7 +16,7 @@
 	<TagInput
 		name="tags"
 		label={m['labels.tags']()}
-		addLabel={m['tags.input.add']()}
+		addLabel={m['actions.add']({ name: m['labels.tag']() })}
 		removeLabel={(name) => m['tags.input.remove']({ name })}
 		selectedTagsLabel={m['tags.input.selected']()}
 		addedMessage={(name) => m['tags.input.added']({ name })}

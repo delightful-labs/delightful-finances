@@ -67,18 +67,16 @@
 		"avatar": "Avatar"
 	},
 	"actions": {
-		"add_account": "Add an account",
-		"archive": "Archive",
-		"archive_account": "Archive {name}",
-		"add_expense": "Add expense",
-		"add_income": "Add income",
+		"empty": "No {name} yet.",
+		"add": "Add {name}",
+		"archive": "Archive {name}",
+		"archive_button": "Archive",
 		"save": "Save",
 		"retry": "Try again",
-		"add_category": "Add category",
 		"cancel": "Cancel",
-		"archive_category": "Archive {name}",
-		"add_tag": "Add tag",
-		"archive_tag": "Archive {name}",
+		"saved": "{subject} {name} saved.",
+		"saved_without_name": "{subject} saved.",
+		"archived": "{subject} {name} archived.",
 		"upload_avatar": "Upload avatar",
 		"replace_avatar": "Replace avatar",
 		"remove_avatar": "Remove avatar",
@@ -101,10 +99,7 @@
 			"up": "Move {name} up",
 			"down": "Move {name} down"
 		},
-		"sidebar_empty": "No accounts yet.",
-		"saved": "Account {name} saved.",
 		"validation_error": "Enter an account name and select an account type.",
-		"archived": "Account {name} archived.",
 		"empty": {
 			"title": "Start with one place you keep money."
 		}
@@ -129,11 +124,10 @@
 		},
 		"no_accounts": "Add an account before recording a transaction.",
 		"validation_error": "Check the transaction details and try again.",
-		"saved": "Transaction saved.",
 		"add_another": "Add another transaction",
 		"save": "Save transaction",
 		"daily_total": "Daily total: {amount}",
-		"category_unavailable": "Category unavailable",
+		"unavailable_item": "{subject} unavailable",
 		"account_unavailable": "Account unavailable",
 		"details": "Transaction details",
 		"tag_unavailable": "Tag unavailable",
@@ -178,10 +172,7 @@
 		"start_error": "Your finances could not be opened. Try again."
 	},
 	"categories": {
-		"saved": "Category {name} saved.",
-		"validation_error": "Enter a category name and select income or expense.",
-		"archived": "Category {name} archived.",
-		"empty": "No categories yet."
+		"validation_error": "Enter a category name and select income or expense."
 	},
 	"status": {
 		"loading": "Loading {subject}…",
@@ -195,13 +186,8 @@
 	},
 	"tags": {
 		"no_category": "No category",
-		"saved": "Tag {name} saved.",
 		"validation_error": "Enter a tag name and select an available category or no category.",
-		"archived": "Tag {name} archived.",
-		"empty": "No tags yet.",
-		"category_unavailable": "Category unavailable",
 		"input": {
-			"add": "Add tag",
 			"remove": "Remove {name}",
 			"selected": "Selected tags",
 			"added": "Tag {name} selected.",
@@ -238,7 +224,7 @@
 		"passkey_help": "First create a passkey. We will then explain two separate tests: encrypting a harmless sample and unlocking it again. Your SimpleFIN token is claimed only after both tests pass and you choose to save the connection.",
 		"discover": "Discover accounts",
 		"sync": "Sync now (last 90 days)",
-		"cancel": "Cancel",
+		"setup_start": "Create passkey",
 		"unmapped": "Not mapped — excluded from import",
 		"disconnect": "Disconnect bank sync",
 		"setup_offline": "Bank sync setup is not available offline. Connect to the internet to continue.",
@@ -266,12 +252,10 @@
 		"provider_failure": "SimpleFIN could not complete the request. Check connectivity or reauthorize your accounts at SimpleFIN, then retry manually.",
 		"mapping_failure": "A mapped account is archived, unavailable or ambiguous. Discover accounts and map each provider account to an active local account, then retry manually.",
 		"invalid_setup_token": "This setup token is invalid or uses an unsupported SimpleFIN address. Paste the complete setup token from SimpleFIN Bridge. No provider request was made and the token has not been claimed.",
-		"add_account": "Add account “{name}”",
 		"use_existing": "Or link to an existing account",
 		"choose_existing": "Choose an existing account",
 		"linked_account": "Linked to {name}",
 		"account_already_linked": "This local account is already linked to another provider account. Add a new account or choose an unlinked account.",
-		"setup_start": "Create passkey",
 		"setup_creating_title": "Step 2: Create your passkey",
 		"setup_creating_body": "Choose your password manager and approve passkey creation. This passkey will protect your SimpleFIN connection. Your setup token has not been claimed.",
 		"setup_encrypt_title": "Step 3: Test encryption",

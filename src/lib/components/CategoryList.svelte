@@ -29,7 +29,9 @@
 </script>
 
 {#if archivedName}
-	<p role="status">{m['categories.archived']({ name: archivedName })}</p>
+	<p role="status">
+		{m['actions.archived']({ subject: m['labels.category'](), name: archivedName })}
+	</p>
 {:else if archiveFailed}
 	<p role="alert">{m['errors.archive']({ subject: m['labels.category']() })}</p>
 {/if}
@@ -57,14 +59,14 @@
 							<Button
 								type="button"
 								disabled={archiving}
-								aria-label={m['actions.archive_category']({ name: category.name })}
+								aria-label={m['actions.archive']({ name: category.name })}
 								onclick={() => onArchive(category.id)}
 							>
 								{#if archiving && archivingCategoryId === category.id}
 									{m['status.archiving']({ subject: m['labels.category']() })}
 								{:else}
 									<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
-									{m['actions.archive']()}
+									{m['actions.archive_button']()}
 								{/if}
 							</Button>
 						{/if}</td
@@ -74,5 +76,5 @@
 		</tbody>
 	</Table>
 {:else}
-	<p>{m['categories.empty']()}</p>
+	<p>{m['actions.empty']({ name: m['labels.categories']() })}</p>
 {/if}

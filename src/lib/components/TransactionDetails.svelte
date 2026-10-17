@@ -47,7 +47,10 @@
 		<dt>{m['labels.account']()}</dt>
 		<dd>{transaction.account?.name ?? m['transactions.account_unavailable']()}</dd>
 		<dt>{m['labels.category']()}</dt>
-		<dd>{transaction.category?.name ?? m['transactions.category_unavailable']()}</dd>
+		<dd>
+			{transaction.category?.name ??
+				m['transactions.unavailable_item']({ subject: m['labels.category']() })}
+		</dd>
 		{#if transaction.tags?.length}
 			<dt>{m['labels.tags']()}</dt>
 			<dd>

@@ -254,12 +254,14 @@
 												: m['accounts.order.edit']()}</Button
 										>
 									{:else}
-										<p>{m['accounts.sidebar_empty']()}</p>
+										<p>{m['actions.empty']({ name: m['labels.accounts']() })}</p>
 									{/if}
 								</QueryContent>
 								{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
 									<Button type="button" {disabled} onclick={open}>
-										<Icon class="menu-icon" icon={AddIcon} />{m['actions.add_account']()}
+										<Icon class="menu-icon" icon={AddIcon} />{m['actions.add']({
+											name: m['labels.account']()
+										})}
 									</Button>
 								{/snippet}
 								{@render accountCreation(accountCreationTrigger)}

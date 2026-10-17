@@ -103,12 +103,16 @@
 
 <svelte:head
 	><title
-		>{kind === 'income' ? m['actions.add_income']() : m['actions.add_expense']()} · {m[
-			'app.name'
-		]()}</title
+		>{m['actions.add']({
+			name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+		})} · {m['app.name']()}</title
 	></svelte:head
 >
-<PageHeader title={kind === 'income' ? m['actions.add_income']() : m['actions.add_expense']()} />
+<PageHeader
+	title={m['actions.add']({
+		name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+	})}
+/>
 <QueryContent
 	queries={[accountQuery, categoryQuery, tagQuery]}
 	loadingMessage={m['status.loading']({ subject: m['labels.accounts_and_categories']() })}

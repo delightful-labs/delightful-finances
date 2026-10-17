@@ -25,7 +25,7 @@
 </script>
 
 {#if archivedName}
-	<p role="status">{m['tags.archived']({ name: archivedName })}</p>
+	<p role="status">{m['actions.archived']({ subject: m['labels.tag'](), name: archivedName })}</p>
 {:else if archiveFailed}
 	<p role="alert">{m['errors.archive']({ subject: m['labels.tag']() })}</p>
 {/if}
@@ -44,7 +44,8 @@
 					<th scope="row">{tag.name}</th>
 					<td
 						>{tag.categoryId
-							? (categoryNames.get(tag.categoryId) ?? m['tags.category_unavailable']())
+							? (categoryNames.get(tag.categoryId) ??
+								m['transactions.unavailable_item']({ subject: m['labels.category']() }))
 							: m['tags.no_category']()}</td
 					>
 					<td
@@ -52,12 +53,12 @@
 							<Button
 								type="button"
 								disabled={archiving}
-								aria-label={m['actions.archive_tag']({ name: tag.name })}
+								aria-label={m['actions.archive']({ name: tag.name })}
 								onclick={() => onArchive(tag.id)}
 							>
 								{archiving && archivingTagId === tag.id
 									? m['status.archiving']({ subject: m['labels.tag']() })
-									: m['actions.archive']()}
+									: m['actions.archive_button']()}
 							</Button>
 						{/if}</td
 					>
@@ -66,5 +67,5 @@
 		</tbody>
 	</Table>
 {:else}
-	<p>{m['tags.empty']()}</p>
+	<p>{m['actions.empty']({ name: m['labels.tags']() })}</p>
 {/if}

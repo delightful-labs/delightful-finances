@@ -3,11 +3,11 @@ import { expect, test } from '@playwright/test'
 test('creates a workspace account and records an expense', async ({ page }) => {
 	await page.goto('/accounts')
 	const main = page.getByRole('main')
-	await main.getByRole('button', { name: 'Add an account', exact: true }).click()
-	const dialog = page.getByRole('dialog', { name: 'Add an account', exact: true })
+	await main.getByRole('button', { name: 'Add Account', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true })
 	await dialog.getByLabel('Account name').fill('Everyday checking')
 	await dialog.getByLabel('Account type').selectOption('bank')
-	await dialog.getByRole('button', { name: 'Add an account', exact: true }).click()
+	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(dialog.getByRole('status')).toContainText('Everyday checking')
 	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 

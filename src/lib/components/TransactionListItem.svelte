@@ -24,7 +24,10 @@
 	<a {href}>
 		<div class="entry-heading">
 			<div class="classification">
-				<strong>{categoryName ?? m['transactions.category_unavailable']()}</strong>
+				<strong
+					>{categoryName ??
+						m['transactions.unavailable_item']({ subject: m['labels.category']() })}</strong
+				>
 				{#if tagNames.length}<span>{tags.format(tagNames)}</span>{/if}
 			</div>
 			<span>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span>

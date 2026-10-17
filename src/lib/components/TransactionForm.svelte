@@ -217,7 +217,10 @@
 		{/snippet}
 		{#snippet feedback(form)}
 			{#if form.state.matches('success')}
-				<StatusMessage variant="success" text={m['transactions.saved']()} />
+				<StatusMessage
+					variant="success"
+					text={m['actions.saved_without_name']({ subject: m['labels.transaction']() })}
+				/>
 			{:else if form.state.matches('invalid')}
 				<StatusMessage variant="error" text={m['transactions.validation_error']()} />
 			{:else if form.state.matches('error')}

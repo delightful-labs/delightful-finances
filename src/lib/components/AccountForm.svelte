@@ -29,7 +29,7 @@
 <FormModal
 	{scope}
 	{trigger}
-	label={m['actions.add_account']()}
+	label={m['actions.add']({ name: m['labels.account']() })}
 	savingLabel={m['status.saving']({ subject: m['labels.account']() })}
 	disabled={form.view.disabled}
 	view={form.view}
@@ -65,7 +65,12 @@
 	{/snippet}
 	{#snippet feedback(form)}
 		{#if form.state.matches('success') && form.state.context.result}
-			<p role="status">{m['accounts.saved']({ name: form.state.context.result.name })}</p>
+			<p role="status">
+				{m['actions.saved']({
+					subject: m['labels.account'](),
+					name: form.state.context.result.name
+				})}
+			</p>
 		{:else if form.state.matches('invalid')}
 			<p role="alert">{m['accounts.validation_error']()}</p>
 		{:else if form.state.matches('error')}
