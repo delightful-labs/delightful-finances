@@ -12,8 +12,8 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(svelte@5.57.2)(xstate@5.33.2)
       delightful-ui:
-        specifier: file:vendor/delightful-ui-0.0.24-caret-position.tgz
-        version: file:vendor/delightful-ui-0.0.24-caret-position.tgz(svelte@5.57.2)
+        specifier: file:vendor/delightful-ui-0.0.24-typography-primitives.tgz
+        version: file:vendor/delightful-ui-0.0.24-typography-primitives.tgz(svelte@5.57.2)
       jazz-tools:
         specifier: 2.0.0-alpha.59
         version: 2.0.0-alpha.59(svelte@5.57.2)
@@ -958,8 +958,8 @@ packages:
     resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
     engines: {node: '>=0.10.0'}
 
-  delightful-ui@file:vendor/delightful-ui-0.0.24-caret-position.tgz:
-    resolution: {integrity: sha512-d/9MLSmAWnEGAn9MwrT943NkbMq/8BnqxGoMFVO11K2C7p0DFKOfFNv+rnOx9U/rfvTSYgI83HTKgrL8Nt1D3A==, tarball: file:vendor/delightful-ui-0.0.24-caret-position.tgz}
+  delightful-ui@file:vendor/delightful-ui-0.0.24-typography-primitives.tgz:
+    resolution: {integrity: sha512-JIWuJyCulWLSL5FTwhM7beAV7LRbK4IXJBVjJG/ZcyN4Be+RgmRhZlQxQMYVOoOI6SA1+XwIcgzyoqj8p3MHnQ==, tarball: file:vendor/delightful-ui-0.0.24-typography-primitives.tgz}
     version: 0.0.24
     engines: {node: ^22.17.0 || >=24.0.0}
     peerDependencies:
@@ -2217,7 +2217,7 @@ snapshots:
 
   deepmerge@4.3.1: {}
 
-  delightful-ui@file:vendor/delightful-ui-0.0.24-caret-position.tgz(svelte@5.57.2):
+  delightful-ui@file:vendor/delightful-ui-0.0.24-typography-primitives.tgz(svelte@5.57.2):
     dependencies:
       svelte: 5.57.2
       tdesign-icons-svg: 0.4.7

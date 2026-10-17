@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, InputImage, StatusMessage } from 'delightful-ui'
+	import { Button, Heading, Text, InputAvatar, StatusMessage } from 'delightful-ui'
 	import type { z } from 'zod'
 	import { avatarMimeType, type profileAvatarFormSchema } from '#lib/validation/identity.js'
 	import type { FormController } from '#lib/forms.svelte.js'
@@ -36,8 +36,8 @@
 	})
 </script>
 
-<h3>{m['labels.avatar']()}</h3>
-<p id="avatar-help">{m['profile.avatar_description']()}</p>
+<Heading level="h3">{m['labels.avatar']()}</Heading>
+<Text id="avatar-help">{m['profile.avatar_description']()}</Text>
 {#if imageUrl && !imageFailed}
 	<img
 		src={imageUrl}
@@ -54,8 +54,9 @@
 	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
 		{#snippet fields(view)}
 			<input type="hidden" name="action" value="upload" />
-			<InputImage
+			<InputAvatar
 				label={m['labels.avatar']()}
+				uploadLabel={m['actions.upload_avatar']()}
 				removeLabel={m['actions.clear_selected_image']()}
 				id="profile-avatar"
 				name="file"

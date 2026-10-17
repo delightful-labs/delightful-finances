@@ -35,24 +35,24 @@
 <style>
 	form {
 		display: grid;
-		gap: var(--dui-space-sm, 1rem);
+		gap: var(--dui-spacing-md);
 	}
 
 	.form-fields,
 	.form-feedback {
 		display: grid;
-		gap: var(--dui-space-xs, 0.5rem);
+		gap: var(--dui-spacing-xs);
 		min-width: 0;
 	}
 
 	.form-controls {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--dui-space-xs, 0.5rem);
+		gap: var(--dui-spacing-xs);
 	}
 
 	.form-controls.fill :global(> button) {
-		flex: 1 1 calc((100% - var(--dui-space-xs, 0.5rem)) / 2);
+		flex: 1 1 calc((100% - var(--dui-spacing-xs)) / 2);
 		min-inline-size: 0;
 	}
 
@@ -60,9 +60,5 @@
 	.form-controls:empty,
 	.form-feedback:empty {
 		display: none;
-	}
-
-	form :global(p) {
-		margin: 0;
 	}
 </style>

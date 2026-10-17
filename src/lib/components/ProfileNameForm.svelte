@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, InputText } from 'delightful-ui'
+	import { Button, Heading, Text, InputText } from 'delightful-ui'
 	import type { z } from 'zod'
 	import type { profileNameFormSchema } from '#lib/validation/identity.js'
 	import type { FormController } from '#lib/forms.svelte.js'
@@ -20,8 +20,8 @@
 	} = $props()
 </script>
 
-<h2>{m['labels.profile']()}</h2>
-<p>{m['profile.name_description']()}</p>
+<Heading level="h2">{m['labels.profile']()}</Heading>
+<Text>{m['profile.name_description']()}</Text>
 {#key profileId}
 	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
 		{#snippet fields(view)}
@@ -43,11 +43,11 @@
 		{/snippet}
 		{#snippet feedback(view)}
 			{#if view.state.matches('success')}
-				<p role="status">{m['profile.name_saved']()}</p>
+				<Text role="status">{m['profile.name_saved']()}</Text>
 			{:else if view.state.matches('invalid')}
-				<p role="alert">{m['profile.name_invalid']()}</p>
+				<Text role="alert">{m['profile.name_invalid']()}</Text>
 			{:else if view.state.matches('error')}
-				<p role="alert">{m['errors.save']({ subject: m['labels.profile']() })}</p>
+				<Text role="alert">{m['errors.save']({ subject: m['labels.profile']() })}</Text>
 			{/if}
 		{/snippet}
 	</FormContent>

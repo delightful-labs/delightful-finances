@@ -11,7 +11,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		align-content: start;
-		gap: var(--dui-space-sm, 1rem);
+		gap: var(--dui-spacing-md);
 		min-inline-size: 0;
 	}
 </style>

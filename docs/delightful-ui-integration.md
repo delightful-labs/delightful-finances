@@ -69,3 +69,9 @@ Finance uses `vendor/delightful-ui-0.0.24-navigation-compact-status.tgz`, built 
 The archive was built with `pnpm package` and `pnpm pack`. Finance keeps using a local file dependency.
 
 Finance and DUI static checks pass with no errors or warnings. DUI packaging, 15 focused unit tests, and eight Drawer browser tests pass. The Drawer tests now match its current API; those test changes are still uncommitted and do not affect the package.
+
+## Typography and spacing migration (review pending)
+
+Finance now consumes `vendor/delightful-ui-0.0.24-typography-primitives.tgz`, packaged from local DUI commit `b21ee28`. The library still declares version 0.0.24; the archive name distinguishes this snapshot. Built in an isolated temporary directory with `svelte-package`, validated with `publint`, and packed with pnpm.
+
+The first review batch adopts Heading/Text in PageHeader and the profile forms, InputAvatar for profile file selection, and canonical spacing tokens in PageContent/FormContent. InputAvatar receives localized upload/remove labels. The saved-avatar image remains native because DUI exports an upload control, not a standalone display Avatar. Keep page/form layout CSS; use DUI spacing tokens for gaps rather than custom values. Remaining screens and shell typography/spacing need subsequent review batches. Tests are deferred until implementation approval.
