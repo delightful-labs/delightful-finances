@@ -1,7 +1,13 @@
-import { untrack } from 'svelte'
-import { createActor } from 'xstate'
+import { onMount, untrack } from 'svelte'
+import { createActor, type Snapshot } from 'xstate'
 import { z } from 'zod'
 import { createFormMachine, type FormSave, type FormView } from '#lib/machines/form.js'
+import {
+	createScopedFormMachine,
+	selectScopedFormView,
+	type ScopedFormOptions
+} from '#lib/machines/scoped-form.js'
+import type { FormOperationResult } from '#lib/form-contract.js'
 
 export function createFormController<Values, Result, Context>(options: {
 	schema: z.ZodType<Values>
@@ -80,3 +86,115 @@ export function createFormController<Values, Result, Context>(options: {
 export type FormController<Values, Result, Context> = ReturnType<
 	typeof createFormController<Values, Result, Context>
 >
+
+/** Additive path: each integration owns one exact dependency binding until shutdown settles. */
+export function createScopedFormController<
+	Values,
+	Result,
+	Reason,
+	Scope,
+	Observation,
+	AvailabilitySnapshot extends Snapshot<unknown>,
+	OperationSnapshot extends Snapshot<FormOperationResult<Result, Reason>>
+>(
+	options: ScopedFormOptions<
+		Values,
+		Result,
+		Reason,
+		Scope,
+		Observation,
+		AvailabilitySnapshot,
+		OperationSnapshot
+	> & {
+		observe: () => Observation
+		arrayFields?: () => readonly string[]
+	}
+) {
+	const bound = untrack(() => options)
+	const actor = untrack(() =>
+		createActor(
+			createScopedFormMachine<
+				Values,
+				Result,
+				Reason,
+				Scope,
+				Observation,
+				AvailabilitySnapshot,
+				OperationSnapshot
+			>(bound),
+			{ input: bound.observe() }
+		)
+	)
+	let formSnapshot = $state.raw(actor.getSnapshot())
+	const view = $derived(
+		selectScopedFormView<
+			Values,
+			Result,
+			Reason,
+			Scope,
+			Observation,
+			AvailabilitySnapshot,
+			OperationSnapshot
+		>(formSnapshot, bound)
+	)
+	$effect(() => {
+		const observation = bound.observe()
+		untrack(() => actor.send({ type: 'OBSERVE', observation }))
+	})
+	onMount(() => {
+		const subscription = actor.subscribe({
+			next: (snapshot) => {
+				formSnapshot = snapshot
+			},
+			error: () => {
+				formSnapshot = actor.getSnapshot()
+			}
+		})
+		actor.start()
+		return () => {
+			subscription.unsubscribe()
+			if (actor.getSnapshot().status !== 'active') {
+				actor.stop()
+				return
+			}
+			const completion = actor.subscribe({
+				complete: () => actor.stop(),
+				error: () => actor.stop()
+			})
+			actor.send({ type: 'SHUTDOWN' })
+			if (actor.getSnapshot().status === 'done') {
+				completion.unsubscribe()
+				actor.stop()
+			}
+		}
+	})
+	function submitValues(values: unknown) {
+		actor.send({ type: 'OBSERVE', observation: bound.observe() })
+		actor.send({ type: 'SUBMIT', values })
+	}
+	function submit(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const data = new FormData(event.currentTarget)
+		const arrays = Object.fromEntries(
+			(bound.arrayFields?.() ?? []).map((name) => [name, data.getAll(name)])
+		)
+		submitValues({ ...Object.fromEntries(data), ...arrays })
+	}
+	function reset(event: Event) {
+		event.preventDefault()
+		// Presentation keys fields by draftRevision; rejected RESET must leave native fields intact.
+		actor.send({ type: 'RESET' })
+	}
+	return {
+		submitValues,
+		submit,
+		reset,
+		open: () => actor.send({ type: 'OPEN' }),
+		cancel: () => actor.send({ type: 'CANCEL' }),
+		retryReadiness: () => actor.send({ type: 'RETRY_READINESS' }),
+		get view() {
+			return view
+		}
+	}
+}

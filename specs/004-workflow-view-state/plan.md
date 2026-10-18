@@ -1,6 +1,6 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: first slice verified; slice 2a shared forms model prepared for review. See tasks.md for evidence and review gates.
+Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation prepared for review. Tests await approval of this implementation.
 
 ## Scope and technical context
 
@@ -45,7 +45,7 @@ availability/operation machines, and FR-012 to props-only typed views.
 
 Slice 2b proposes four implementation files: new scoped owner/submission machine
 modules, a props-only form contract module, and additive integration in
-forms.svelte.ts. Review concrete paths before effects. Slice 2c handles shared
+forms.svelte.ts. The four concrete paths are recorded in forms.md and tasks.md; implementation is ready for review. Slice 2c handles shared
 presentation compatibility; slice 2d adopts workspace rename as the first domain
 consumer and satisfies that portion of slice 5. Account creation is the first
 modal adoption in its own later cycle. Existing exports remain until their

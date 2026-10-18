@@ -1,6 +1,6 @@
 # Shared forms: proposed contract (slice 2a)
 
-Status: model prepared for review. No shared form effects changed.
+Status: model approved by user continuation; slice 2b implemented for review. No production consumers migrated; runtime verification awaits implementation approval.
 
 ## Inventory and concrete gaps
 
@@ -224,3 +224,39 @@ write settlement, nested view updates, void success, Files/repeated fields,
 accepted versus rejected native reset, and dialog dismissal/reopen while busy.
 Do not treat compatibility-only consumers as migrated or tested under the new
 domain contract. No shared form behavior is implemented by this document.
+
+## Slice 2b implementation notes
+
+The reviewed four-file batch is now present: form-contract.ts (props-only data),
+scoped-form-submission.ts, scoped-form.ts, and additive integration in
+forms.svelte.ts. The existing createFormMachine/createFormController behavior is
+unchanged. Availability logic and operation logic are supplied typed actors;
+the new API has no generic branching save callback or external disabled predicate.
+
+The owner uses parallel availability and workflow regions. Awaiting/current
+availability states control readiness projection; observation revision/scope
+checks guard capability acceptance. A small invoked availability supervisor owns
+projection so a thrown projection fails at the owner's invocation boundary and
+routes active work through invalidation/settlement. Availability machines receive
+facts only and must own no asynchronous external resources: subscription binding
+remains in integration. Retrying readiness restarts its child only after active
+work settles and never retries a write.
+
+The submission retains its validation invocation through interruption and its
+operation invocation through settlement. Interruption states override queued
+completion/error without inventing effect reversal; unknown child settlement
+stays unknown. Top-level final entries clear raw/validated request payloads and
+observations. The owner releases completed child snapshots and clears its scoped
+data on shutdown. Pure scopeOf/sameScope callbacks must be total identity
+projections/comparisons, not fallible I/O or authorization workflows.
+
+The controller is bound for its component lifetime. Remount the integration when
+its DB/session dependency binding is replaced; scope observation updates do not
+retarget the operation machine's bound dependencies. It forwards raw observations
+before SUBMIT, serializes FormData including Files/repeated fields, prevents
+native reset, and exposes machine-owned draftRevision for keyed field rebuilding.
+On unmount it detaches view subscription and waits for explicit owner completion
+before stopping. Slice 2c still needs to adopt the view/revision in presentation.
+
+`pnpm check` passed with zero Svelte errors/warnings. No tests were added/run
+before implementation review; no production behavior is claimed verified yet.

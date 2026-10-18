@@ -55,12 +55,33 @@ review of its verification evidence.
 ## Shared forms model: slice 2a
 
 - [x] T008 Inspect shared form machine/controller/components, representative consumers, and persistence/resource semantics; propose the model in forms.md. Maps FR-010–012.
-- [ ] T009 Review forms.md: approve ownership, close/reset/reopen policy, additive migration strategy, first adoption, and proposed slice 2b file scope. This gates shared-form effects.
+- [x] T009 Review forms.md: approve ownership, close/reset/reopen policy, additive migration strategy, first adoption, and proposed slice 2b file scope. This gates shared-form effects.
 
 T008 evidence: static inventory of account/category/tag forms, workspace/profile
 editing, transaction entry, and avatar transformation; no application changes,
-test additions/runs, or server startup. Model is ready for review, not approved.
+test additions/runs, or server startup. Model was subsequently approved by the user's continuation instruction.
 
-After T009, detail slice 2b implementation tasks for the agreed four-file batch,
-including separate implementation review and subsequent test approval. Do not
-start 2c or migrate consumers before 2b is shown and reviewed.
+T009: user approved continuation after the shared model was presented.
+
+## Shared form ownership: slice 2b
+
+- [x] T010 Add props-only contracts in src/lib/form-contract.ts and the submission child in src/lib/machines/scoped-form-submission.ts, composing supplied domain operation logic with validation and explicit settlement.
+- [x] T011 Add the owner and supervised availability integration in src/lib/machines/scoped-form.ts, plus additive createScopedFormController in src/lib/forms.svelte.ts. Keep legacy exports/consumers unchanged.
+- [x] T012 Format the four-file implementation and run static checking; present for implementation review.
+- [ ] T013 Obtain approval of the exact slice 2b implementation before adding/running its tests.
+- [ ] T014 After T013, add focused machine/controller coverage for revisions, direct-event submission guards, reset/reopen, validation/operation cancellation, scope changes, child failures, and teardown. Record actual results and remaining browser integration limits.
+- [ ] T015 Show verified 2b evidence before beginning shared presentation slice 2c.
+
+T010–T012: implemented the reviewed four-file batch. `pnpm check` passed with
+zero Svelte errors/warnings, including generated messages and service-worker
+TypeScript checking. No tests added/run, no server started, and no consumers
+migrated in this cycle. Static checking does not establish runtime correctness
+or successful domain composition; the first production adoption remains slice 2d.
+
+The owner supervises snapshot projection in an availability wrapper, guards
+reports by observation revision/scope, and explicitly models awaiting/current
+readiness. Submission and owner both preserve interruption priority across queued
+completions; the child retains validation and domain-operation invocations until
+settlement. Context payload cleanup uses terminal entries rather than relying on
+actor stopping or machine-root exit. Controller reset emits a draft revision;
+actual field rebuilding belongs to presentation adoption in 2c.

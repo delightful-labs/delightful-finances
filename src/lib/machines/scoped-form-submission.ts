@@ -1,0 +1,293 @@
+import { assign, fromPromise, setup, stateIn, type ActorLogic, type Snapshot } from 'xstate'
+import { z } from 'zod'
+import type {
+	FormChildEvent,
+	FormInterruption,
+	FormObservation,
+	FormOperationInput,
+	FormOperationResult,
+	FormRequest,
+	FormResult
+} from '#lib/form-contract.js'
+
+type Input<Scope, Observation> = {
+	request: FormRequest<Scope>
+	observation: FormObservation<Observation>
+}
+
+export function createScopedFormSubmissionMachine<
+	Values,
+	Result,
+	Reason,
+	Scope,
+	Observation,
+	OperationSnapshot extends Snapshot<FormOperationResult<Result, Reason>>
+>(options: {
+	schema: z.ZodType<Values>
+	operation: ActorLogic<
+		OperationSnapshot,
+		FormChildEvent<Observation>,
+		FormOperationInput<Values, Scope, Observation>
+	>
+}) {
+	type Context = Omit<Input<Scope, Observation>, 'observation'> & {
+		observation: FormObservation<Observation> | undefined
+		validated: { value: Values } | undefined
+		result: FormResult<Result, Reason> | undefined
+	}
+	type Event = FormChildEvent<Observation>
+	const actors = {
+		validate: fromPromise<Values, unknown>(({ input }) => options.schema.parseAsync(input)),
+		operation: options.operation
+	}
+	const workflow = setup<
+		Context,
+		Event,
+		typeof actors,
+		{},
+		{},
+		{
+			closing: undefined
+			invalidated: undefined
+			cancelling: undefined
+			operationClosing: undefined
+			operationInvalidated: undefined
+			operationCancelling: undefined
+		},
+		never,
+		string,
+		Input<Scope, Observation>,
+		FormResult<Result, Reason>
+	>({
+		actors,
+		guards: {
+			closing: stateIn({ validating: 'closing' }),
+			invalidated: stateIn({ validating: 'invalidated' }),
+			cancelling: stateIn({ validating: 'cancelling' }),
+			operationClosing: stateIn({ operating: 'closing' }),
+			operationInvalidated: stateIn({ operating: 'invalidated' }),
+			operationCancelling: stateIn({ operating: 'cancelling' })
+		}
+	})
+	const observe = workflow.assign({
+		observation: ({ context, event }) =>
+			event.type === 'OBSERVE' ? event.observation : context.observation
+	})
+	const forward = workflow.enqueueActions(({ self, event, enqueue }) => {
+		const child = self.getSnapshot().children.operation
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, event)
+	})
+	const clearPayloads = workflow.assign({
+		request: ({ context }) => ({ ...context.request, values: undefined }),
+		validated: undefined,
+		observation: undefined
+	})
+	const finishInterrupted = (outcome: FormInterruption) =>
+		workflow.createStateConfig({
+			type: 'final',
+			entry: [
+				workflow.assign({
+					result: ({ context }) => context.result ?? { outcome, settlement: 'notStarted' }
+				}),
+				clearPayloads
+			]
+		})
+	return workflow.createMachine({
+		id: 'scoped-form-submission',
+		initial: 'validating',
+		context: ({ input }) => ({ ...input, validated: undefined, result: undefined }),
+		output: ({ context }) => {
+			if (!context.result) throw new Error('Missing form result')
+			return context.result
+		},
+		states: {
+			validating: {
+				initial: 'pending',
+				tags: 'validating',
+				invoke: {
+					src: 'validate',
+					input: ({ context }: { context: Context }) => context.request.values,
+					onDone: [
+						{ guard: 'closing', target: 'closed' },
+						{ guard: 'invalidated', target: 'scopeChanged' },
+						{ guard: 'cancelling', target: 'cancelled' },
+						{
+							target: 'operating',
+							actions: assign({ validated: ({ event }) => ({ value: event.output }) })
+						}
+					],
+					onError: [
+						{ guard: 'closing', target: 'closed' },
+						{ guard: 'invalidated', target: 'scopeChanged' },
+						{ guard: 'cancelling', target: 'cancelled' },
+						{
+							guard: ({ event }) => event.error instanceof z.ZodError,
+							target: 'invalid',
+							actions: assign({
+								result: ({ event }) => ({
+									outcome: 'invalid',
+									settlement: 'notStarted',
+									issues:
+										event.error instanceof z.ZodError
+											? event.error.issues.map((issue) => ({ path: issue.path, code: issue.code }))
+											: []
+								})
+							})
+						},
+						{
+							target: 'failed',
+							actions: assign({
+								result: () => ({
+									outcome: 'failed',
+									code: 'validationFailed',
+									settlement: 'notStarted'
+								})
+							})
+						}
+					]
+				},
+				on: {
+					OBSERVE: { actions: observe },
+					INVALIDATE: '.invalidated',
+					CANCEL: '.cancelling',
+					SHUTDOWN: '.closing'
+				},
+				states: {
+					pending: {},
+					cancelling: { tags: 'cancelling', on: { CANCEL: {} } },
+					invalidated: { tags: 'scopeChanged', on: { CANCEL: {}, INVALIDATE: {} } },
+					closing: {
+						tags: 'closing',
+						on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: {}, OBSERVE: {} }
+					}
+				}
+			},
+			operating: {
+				tags: 'operating',
+				initial: 'pending',
+				invoke: {
+					id: 'operation',
+					src: 'operation',
+					input: ({ context }) => {
+						if (!context.validated || !context.observation)
+							throw new Error('Missing validated form input')
+						return {
+							request: { ...context.request, values: context.validated.value },
+							observation: context.observation
+						}
+					},
+					onDone: [
+						{
+							guard: 'operationClosing',
+							target: 'closed',
+							actions: assign({
+								result: ({ event }) => ({
+									outcome: 'closed',
+									settlement: event.output?.settlement ?? 'unknown'
+								})
+							})
+						},
+						{
+							guard: 'operationInvalidated',
+							target: 'scopeChanged',
+							actions: assign({
+								result: ({ event }) => ({
+									outcome: 'scopeChanged',
+									settlement: event.output?.settlement ?? 'unknown'
+								})
+							})
+						},
+						{
+							guard: 'operationCancelling',
+							target: 'cancelled',
+							actions: assign({
+								result: ({ event }) => ({
+									outcome: 'cancelled',
+									settlement: event.output?.settlement ?? 'unknown'
+								})
+							})
+						},
+						{
+							target: 'classifying',
+							actions: assign({
+								result: ({ event }) =>
+									event.output ?? { outcome: 'failed', code: 'unexpected', settlement: 'unknown' }
+							})
+						}
+					],
+					onError: [
+						{
+							guard: 'operationClosing',
+							target: 'closed',
+							actions: assign({ result: () => ({ outcome: 'closed', settlement: 'unknown' }) })
+						},
+						{
+							guard: 'operationInvalidated',
+							target: 'scopeChanged',
+							actions: assign({
+								result: () => ({ outcome: 'scopeChanged', settlement: 'unknown' })
+							})
+						},
+						{
+							guard: 'operationCancelling',
+							target: 'cancelled',
+							actions: assign({ result: () => ({ outcome: 'cancelled', settlement: 'unknown' }) })
+						},
+						{
+							target: 'failed',
+							actions: assign({
+								result: () => ({
+									outcome: 'failed',
+									code: 'operationFailed',
+									settlement: 'unknown'
+								})
+							})
+						}
+					]
+				},
+				on: {
+					OBSERVE: { actions: [observe, forward] },
+					INVALIDATE: { target: '.invalidated', actions: forward },
+					CANCEL: { target: '.cancelling', actions: forward },
+					SHUTDOWN: { target: '.closing', actions: forward }
+				},
+				states: {
+					pending: {},
+					cancelling: { tags: 'cancelling', on: { CANCEL: {} } },
+					invalidated: { tags: 'scopeChanged', on: { CANCEL: {}, INVALIDATE: {} } },
+					closing: {
+						tags: 'closing',
+						on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: {}, OBSERVE: {} }
+					}
+				}
+			},
+			classifying: {
+				always: [
+					{ guard: ({ context }) => context.result?.outcome === 'succeeded', target: 'succeeded' },
+					{ guard: ({ context }) => context.result?.outcome === 'partial', target: 'partial' },
+					{ guard: ({ context }) => context.result?.outcome === 'denied', target: 'denied' },
+					{
+						guard: ({ context }) => context.result?.outcome === 'unavailable',
+						target: 'unavailable'
+					},
+					{
+						guard: ({ context }) => context.result?.outcome === 'scopeChanged',
+						target: 'scopeChanged'
+					},
+					{ guard: ({ context }) => context.result?.outcome === 'cancelled', target: 'cancelled' },
+					{ guard: ({ context }) => context.result?.outcome === 'closed', target: 'closed' },
+					{ target: 'failed' }
+				]
+			},
+			succeeded: { type: 'final', entry: clearPayloads },
+			partial: { type: 'final', entry: clearPayloads },
+			denied: { type: 'final', entry: clearPayloads },
+			unavailable: { type: 'final', entry: clearPayloads },
+			invalid: { type: 'final', entry: clearPayloads },
+			failed: { type: 'final', entry: clearPayloads },
+			scopeChanged: finishInterrupted('scopeChanged'),
+			cancelled: finishInterrupted('cancelled'),
+			closed: finishInterrupted('closed')
+		}
+	})
+}
