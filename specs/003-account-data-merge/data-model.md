@@ -331,8 +331,9 @@ the same destination ID. Row validation reuses the lossless snapshot row schemas
 receipt validation reuses the canonical provenance schema with its SDK row ID.
 Missing fields are errors: `null` observations must mean an established absence,
 not a read failure. Neither supplied arrays nor this actor prove hydration or
-permission readiness. The producer must provide all relevant peers, including
-conflicting candidates; it must not deduplicate before classification.
+permission readiness. The producer must cover all relevant peers, including conflicting candidates.
+The graph builder may supply equality witnesses from that complete group while
+retaining every source origin for classification.
 
 ```mermaid
 stateDiagram-v2
@@ -395,6 +396,118 @@ classifier's event type: `never` was incompatible with XState `createActor`; the
 machine now uses `EventObject` without adding handlers or effects. Workflow-level
 Playwright coverage awaits integration. This slice performs no destination reads,
 receipt writes, capture, graph dependency classification or UI integration.
+
+## Graph preview (current review slice)
+
+`accountMergePreviewMachine` composes reference preparation, per-record
+classification and `accountMergePreviewDependencyMachine`. This slice defines five
+new implementation modules (validation, types, graph helpers and two machines),
+plus a comment clarifying the existing classifier's peer-witness contract. It
+performs no Jazz reads/writes and introduces no UI or persistence effects.
+
+Input contains the reviewed mapping input and explicit target/receipt arrays for
+all eight entity tables. The producer must establish authorized, complete reads
+for planned IDs, source-origin tuples and relevant references; empty arrays are
+not hydration proof. Destination rows use the lossless snapshot row validators.
+Duplicate IDs, ambiguous source-origin receipts, cross-organization observations,
+more than 20,000 observed rows/receipts or more than 24 MiB of total input are
+rejected. Source snapshot limits remain 10,000 records / 8 MiB. These observation
+limits support one target and receipt per planned record, not unbounded loading of
+a destination workspace. Scope/identity/mapping errors propagate from the reviewed
+reference child. The integration owner must cancel/rebuild when identity,
+permissions, scope or observations change.
+
+```mermaid
+stateDiagram-v2
+    [*] --> validating
+    validating --> failed: invalid input
+    validating --> preparing
+    preparing --> buildingGraph: references prepared
+    preparing --> failed: domain or actor failure
+    buildingGraph --> classifying: indexed observations
+    buildingGraph --> failed: projection failure
+    classifying --> classifying: next source origin
+    classifying --> dependencyPass: every origin classified
+    classifying --> failed: invalid observation or child error
+    dependencyPass --> dependencyPass: next record
+    dependencyPass --> dependencyPass: changed decisions require another pass
+    dependencyPass --> previewed: stable with no conflicts or blocked records
+    dependencyPass --> partial: stable with conflicts or blocked records
+    dependencyPass --> failed: child error
+    preparing --> cancelled: CANCEL
+    buildingGraph --> cancelled: CANCEL
+    classifying --> cancelled: CANCEL
+    dependencyPass --> cancelled: CANCEL
+    preparing --> closed: SHUTDOWN
+    buildingGraph --> closed: SHUTDOWN
+    classifying --> closed: SHUTDOWN
+    dependencyPass --> closed: SHUTDOWN
+```
+
+All invocation boundaries have explicit error transitions. Final states clear
+input, prepared values, graph indexes, decisions and counters after constructing
+the payload-free result. Cancellation/shutdown discard late child results; no
+native writes require settlement in this actor tree. The synchronous dependency
+child clears its own observed graph/effective rows before returning.
+
+Graph construction indexes targets and receipts, retains every source candidate,
+and groups by `(entity, destinationId)`. Receipt lookup checks both the expected
+stable ID and complete source tuple. A noncanonical receipt for a known source
+therefore becomes a provenance conflict instead of being silently ignored. Every
+candidate in a canonical group sees up to two equality witnesses derived from the
+complete group. Equal peers need one representative; once two values differ, each
+candidate must differ from at least one witness. No source origin is discarded,
+and large alias groups do not allocate a quadratic peer matrix.
+
+Dependency checking changes only additions to blocked decisions; existing origins
+and targets remain authoritative. It checks canonical siblings first, then mapped
+account/category/check/batch/transaction/tag edges. Conflicting/blocked parents and
+missing targets are unavailable. A receipt after parent deletion is still existing
+for that origin, but cannot satisfy new children. A different source alias cannot
+recreate a deleted canonical target that another recorded origin identifies.
+Blocked decisions propagate through subsequent passes until stable. The process
+is monotone: each source origin can become blocked at most once.
+
+Compatibility uses actual retained destination values or planned new candidates.
+New transactions require matching account currency and category kind; retained
+accounts/categories must be active. Check details require an active account;
+new tag links require an active tag. Archived flags may be staged only for new
+rows, with restoration left to the importer. Existing rows are never unarchived or
+rewritten to satisfy source dependencies. Transaction/check-detail edges verify
+both directions, matching account IDs, check kind and payment method. New coherent
+check pairs can survive the dependency pass together; missing or edited retained
+counterparts block the new side. Their atomic write ordering remains future work.
+Nullable references generate no edge. Existing recorded origins are never
+reclassified merely because later destination edits or deletions changed them.
+
+Results are `previewed`, `partial`, `failed`, `cancelled` or `closed`; `partial`
+means preview conflicts, not committed finance writes. Per-origin decisions carry
+identity metadata and conflict/dependency reason codes only. Counts distinguish
+unique new finance targets, existing source origins, conflicts, blocked origins
+and new receipts (including receipt-only reuse of system/provider targets).
+Equal canonical source aliases share one target count and retain separate receipt
+counts. Excluded bank-connection counts remain visible. Neither preview outcome
+proves authorization, persistence, remote acceptance or readiness to execute writes;
+the importer must recheck invariants atomically and still needs the capture gate.
+
+After implementation approval, 50 focused graph-preview tests pass (33 graph and
+validation cases plus 17 supervision/lifecycle cases). They exercise the real
+reference/classifier/dependency composition, full and empty source graphs, staged
+archives and reciprocal check pairs, equal/conflicting canonical aliases, deleted
+recorded parents and canonical targets, edited retained account/category/tag/check
+values, closure under reversed traversal, noncanonical receipts, receipt-only and
+per-target counts, missing graph references, dependency-child cleanup, and a
+129-member provider group with a differing final alias and bounded witnesses.
+Validation covers explicit table observations, duplicate/cross-scope targets and
+receipts, ambiguous origin tuples, unsupported/secret fields, wrong-table row
+shapes, combined record and byte limits. Lifecycle cases cover reference domain
+failures, graph rejection, unexpected classifier/dependency startup errors,
+classifier domain failures, cancel/shutdown during reference/graph work with late
+resolution/rejection, and cancellation during classification/dependency traversal.
+Terminal assertions verify cleanup and sanitized results. TypeScript and focused
+formatting pass; no production fixes were needed. Workflow-level Playwright
+coverage awaits integration. Destination observation adapters and user-visible
+preview remain unimplemented.
 
 ## Invariants
 

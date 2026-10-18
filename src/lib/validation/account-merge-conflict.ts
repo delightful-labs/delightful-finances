@@ -21,7 +21,8 @@ const observation = <Entity extends MergeEntity>(entity: Entity) => {
 		candidate: z.strictObject({ mapping: identity, value: row }),
 		target: row.nullable(),
 		receipt: appMergeOriginSchema.extend({ id: z.uuid() }).nullable(),
-		// Explicit complete peer observation; empty is not a hydration guarantee.
+		// Peer values or equality witnesses from complete graph grouping.
+		// The graph owner must not omit a differing peer; this is not hydration proof.
 		peers: z.array(row).max(mergeSnapshotLimits.records)
 	})
 }

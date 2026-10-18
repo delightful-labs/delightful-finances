@@ -120,9 +120,24 @@ cleanup removes finance payloads. All 76 classifier/validation tests pass after
 approval, covering all entities, precedence, conflicts, invalid observations and
 cleanup. TypeScript and formatting pass; the event type was corrected for
 `createActor` compatibility without adding effects. Browser workflow coverage awaits
-integration. A composing graph-preview actor must still supply complete observations,
-propagate dependency conflicts (including deleted parents), group canonical peers,
-and own cancellation/readiness. No preview UI or importer is implemented here.
+integration. Graph composition is implemented in the next review slice below;
+destination observation/readiness adapters, preview UI and import remain separate.
+
+Graph preview is reviewed and verified in five new modules and a classifier
+contract comment. The preview owner invokes reference preparation, indexes complete
+supplied observations, groups canonical peers, composes per-record classifiers and
+runs the dependency child to a stable result. Additions become blocked on missing,
+conflicting or incompatible parents; retained destination rows stay authoritative.
+New archived rows may be staged later, but existing rows are not altered. Reciprocal
+check dependencies and deleted canonical targets receive explicit checks. Outcomes
+and counts distinguish clean/partial previews, unique targets and per-origin
+receipts. After approval, all 50 graph-preview tests pass, covering composition,
+canonical groups, dependency closure/compatibility, check cycles, limits, failures,
+cancellation races, counts and cleanup. TypeScript and formatting pass; no
+production fixes were needed. Browser workflow coverage awaits integration. This
+slice performs no database effects. See the graph statechart and observation limits in
+[data-model.md](data-model.md). Capture completeness, destination-read adapters,
+transactional writers and UI integration remain subsequent work.
 
 ## Project structure
 
