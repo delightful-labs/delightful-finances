@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add a choice before recovery-phrase connection. For Merge, durably snapshot the source personal workspace, switch with the supported Jazz session API, wait for the replacement workspace dependencies, preview the destination mapping and import additive records with stable identities. Preserve source records and remote edits. This is a proposed design, not implemented behavior.
+Build the merge choices and all related presentation on the dedicated `/account-merge` route, leaving the existing `/login` flow and navigation unchanged. For Merge, durably snapshot the source personal workspace, switch with the supported Jazz session API, wait for the replacement workspace dependencies, preview the destination mapping and import additive records with stable identities. Preserve source records and remote edits. This is a proposed design, not implemented behavior.
 
 ## Technical context
 
@@ -164,6 +164,30 @@ formatting and svelte-check pass with zero diagnostics; tests await approval.
 It remains unmounted in login pending coordinator/capture integration. Actual SDK
 browser verification is the next focused test slice; finance/receipt observations
 and writes remain separate.
+
+### Isolated presentation route (current review slice)
+
+Per the user's routing decision, all merge-facing presentation now targets
+`/account-merge`, independently of `/login`. The first slice implements the route,
+a pure `AccountMerge` component, focused presentation machine and translations;
+a small integration teardown correction avoids commands to completed actors.
+The route displays the capture prerequisite, bank reconnection notice and disabled
+import action, plus explicit destination checks using the real integration.
+It never collects a phrase, switches identity or writes finance data. No sidebar
+or login changes were made. Later source/connection/preview/result panels stay here.
+
+The presentation statechart assesses observed session/client/workspace facts,
+then exposes available -> checking -> eligible/denied, with cancellation,
+reassessment and shutdown. Identical observations preserve active requests;
+changed identity/scope/binding cancels the view's old request. Callback identity
+checks reject stale completions. Route cleanup explicitly closes an active
+integration child before stopping its presentation owner. The public interface
+passes machine-owned views and callbacks to pure presentation.
+
+Paraglide generation, TypeScript, svelte-check and focused formatting are the
+review checks. New machine/component/browser tests await approval. The remaining
+capture gate still prevents actual merging. The existing development server's
+review path is `http://localhost:5173/account-merge`.
 
 ## Project structure
 

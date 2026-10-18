@@ -8,6 +8,8 @@ Before connecting another login identity by recovery phrase, a user with local f
 
 ## Requirements
 
+- Develop all merge presentation on the standalone `/account-merge` URL, including choices, summaries, previews, results and recovery. Keep the existing `/login` flow and navigation unchanged during development. The route must not switch identities or change finance data just by being opened.
+
 - Show a source summary and explain duplicate handling and bank reconnection before switching identities. Empty seeded workspaces may use the existing connection flow. Same-identity connection is a no-op.
 - Scope the first version to the source identity's owned personal workspace, never shared/business workspaces or other members' records. Do not silently select among multiple eligible personal workspaces: require source/destination selection if ambiguous.
 - Capture and durably save a validated source snapshot before switching. Do not delete or modify source finance records. Retain recovery information across navigation/reload; never persist recovery phrases or bank credentials in the merge journal.

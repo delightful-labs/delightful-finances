@@ -86,7 +86,7 @@
 		return () => {
 			// This child owns only synchronous subscription cleanup. Complete shutdown
 			// before stopping so disposal is part of the statechart's terminal path.
-			actor.send({ type: 'SHUTDOWN' })
+			if (actor.getSnapshot().status === 'active') actor.send({ type: 'SHUTDOWN' })
 			completion.unsubscribe()
 			actor.stop()
 		}

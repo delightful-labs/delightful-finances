@@ -275,5 +275,26 @@
 		"setup_save_action": "Connect and save securely",
 		"setup_saving_title": "Saving your connection",
 		"setup_saving_body": "Claiming your SimpleFIN token and saving the encrypted credential. The connection will be locked when setup finishes."
+	},
+	"account_merge": {
+		"title": "Account merge",
+		"description": "Bring finance records from a local account into your personal workspace. Your existing records will be preserved.",
+		"capture_unavailable": "Import is not available yet. A complete copy of the source records must be saved safely before connecting another account.",
+		"reconnection_notice": "Bank connections will need to be reconnected separately. Credentials will not be copied, and merging will not fetch bank transactions.",
+		"merge_action": "Merge local data",
+		"destination_heading": "Destination workspace",
+		"destination_description": "Check whether the currently selected workspace can receive a merge. This check does not change your account or finance records.",
+		"waiting": "Waiting for your workspace…",
+		"session_unavailable": "Your account is not ready. Wait for it to finish opening, then try again.",
+		"session_changed": "Your account or workspace changed. Check the selected workspace again.",
+		"checking": "Checking the destination workspace…",
+		"check_destination": "Check this workspace",
+		"check_again": "Check again",
+		"destination_eligible": "This is your personal workspace and your membership allows a merge. Import remains unavailable until source records can be saved safely.",
+		"owned_personal_required": "Choose a personal workspace that you own. Shared and business workspaces cannot receive a merge.",
+		"admin_required": "An active owner or admin membership is required for this workspace.",
+		"remote_failed": "The destination could not be checked with the server. Check your connection and try again.",
+		"check_failed": "The destination could not be verified. Try checking the workspace again.",
+		"check_timeout": "The destination check timed out. Check your connection and try again."
 	}
 }
