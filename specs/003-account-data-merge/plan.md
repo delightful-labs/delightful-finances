@@ -139,6 +139,21 @@ slice performs no database effects. See the graph statechart and observation lim
 [data-model.md](data-model.md). Capture completeness, destination-read adapters,
 transactional writers and UI integration remain subsequent work.
 
+Destination eligibility is reviewed and unit-verified in two focused modules. A
+callback-owned XState child observes the bound session, then owned-personal
+organization/admin membership facts through integration-supplied remote
+subscriptions. Explicit identity/workspace/client checks, missing/ambiguous/scope
+rejection, errors, a 30-second budget, cancel/shutdown and cleanup are modeled.
+The input reuses the canonical destination validator. All 41 approved unit tests
+pass for ownership/role gates, changing observations, errors, timeout,
+cancel/shutdown, synchronous callbacks and subscription/context cleanup. TypeScript
+and formatting pass; no production fixes were needed. These tests do not establish
+actual SDK read-tier behavior. Public SDK inspection supports unsubscribe-based
+cancellation, while one-shot query options expose no AbortSignal. Actual Jazz
+subscription bindings remain in the future integration component; no finance
+queries, provider calls, session switching or writes were added. See the detailed
+contract/statechart in [data-model.md](data-model.md).
+
 ## Project structure
 
 Documentation: this directory's spec.md, research.md, data-model.md, contracts/merge-ui.md and quickstart.md.

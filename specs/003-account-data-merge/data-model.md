@@ -509,6 +509,93 @@ formatting pass; no production fixes were needed. Workflow-level Playwright
 coverage awaits integration. Destination observation adapters and user-visible
 preview remain unimplemented.
 
+## Destination eligibility (current review slice)
+
+`createAccountMergeDestinationMachine` is the read-only eligibility child for the
+future destination-observation integration. Two implementation modules define
+its typed callback-binding contract and statechart. It reuses the existing strict
+`mergeDestinationSchema`; the bound destination is explicit, so it never selects
+among multiple personal workspaces or silently changes application selection.
+
+```mermaid
+stateDiagram-v2
+    [*] --> validating
+    validating --> failed: malformed destination
+    validating --> waitingForSession
+    waitingForSession --> checkingSession: session observed
+    checkingSession --> checkingIdentity: ready
+    checkingIdentity --> checkingWorkspace: requested identity
+    checkingWorkspace --> checkingBinding: requested workspace
+    checkingBinding --> observingAuthority: exact bound client
+    checkingSession --> failed: session unavailable
+    checkingIdentity --> failed: identity changed
+    checkingWorkspace --> failed: workspace changed
+    checkingBinding --> failed: client binding changed
+    observingAuthority --> waitingForAuthority: either read not delivered
+    waitingForAuthority --> observingAuthority: another remote result
+    observingAuthority --> eligible: owned personal organization and one owner/admin membership
+    observingAuthority --> failed: wrong scope, owner, kind or membership
+    waitingForSession --> failed: observer error or 30-second budget expired
+    observingAuthority --> failed: read/observer error or budget expired
+    observingAuthority --> checkingSession: changed session
+    observingAuthority --> cancelled: CANCEL
+    observingAuthority --> closed: SHUTDOWN
+```
+
+The session subscription starts only after input validation and stays active while
+organization and membership observations are pending. The exact client/Db binding
+object is compared by identity, in addition to selected user and workspace; a
+replacement session cannot authorize work through an old client's binding. A
+repeated valid session observation updates facts without restarting remote reads.
+A non-ready session or changed identity/workspace/client terminates this attempt.
+Integration may explicitly retry with replacement bindings; no automatic retry is
+introduced. CANCEL/SHUTDOWN apply throughout active work, including before the
+first session event. The overall active wait budget is 30 seconds.
+
+Both authority subscriptions remain live until a terminal outcome. The machine
+requires an explicitly observed organization array and membership array; pending
+observations are not empty results. Every returned row must match the requested
+scope/user. Exactly one organization must be personal and owned by the destination
+identity; exactly one membership must have owner/admin role. Missing, duplicate,
+member/viewer or foreign-scope data cannot grant eligibility. Startup failures of
+all callback actors use invoke error transitions. Later native errors use typed
+failure events, with no raw exception strings or financial/identity payloads in
+results. All terminal paths stop invoked subscriptions and clear observed context;
+results retain only the requested destination or sanitized failure code.
+
+Integration owns the Jazz subscriptions and lifecycle binding, as required by the
+repository agreement. It must use supported public `db.subscribe` callbacks with
+`tier: 'remote'`, scoped to organization ID and destination user ID, and supply a
+synchronous unsubscribe for each binding. The session binding must forward later
+SDK snapshot failures to its error callback and identify the exact bound client.
+A binding that throws during acquisition must clean up anything it acquired.
+These concrete integration bindings are not implemented in this slice.
+
+Installed SDK inspection found public `db.all` query options have no AbortSignal;
+`db.subscribe` returns an unsubscribe function. Its implementation aborts pending
+readiness and retires active native subscriptions on disposal. Callback actors
+therefore provide a cancellable seam without treating an abandoned one-shot
+promise as cancelled native work. No unsupported internal readiness property or
+network-online flag is used. The remote subscription opening/authority behavior
+must still be exercised through the actual integration binding in Playwright.
+
+Eligibility is advisory and ends with this attempt; it is not durable permission
+or a guarantee of coherent multi-table finance reads. Destination observations,
+preview integration and transaction-boundary rechecks remain separate. Source
+capture remains gated by its own contract. After implementation approval, 41
+focused destination-eligibility unit tests pass. Coverage includes owner/admin
+success in either observation order, malformed/secret input, initial and in-flight
+session/identity/workspace/client changes, missing/foreign/business/unowned/
+ambiguous organization data, missing/member/viewer/foreign/ambiguous membership,
+ownership changes and membership revocation while another query is pending,
+acquisition and later callback errors for every observer, cancellation/shutdown
+before/during authority reads with late callbacks, and all pending-read timeout
+paths without budget resets. Tests assert terminal data cleanup, exactly-once
+subscription disposal, no authority subscriptions before a valid session, and
+synchronous initial callback cleanup. TypeScript and formatting pass; no
+production fixes were needed. These tests validate the callback contract and actor,
+not actual Jazz read tiers. Adapter/Playwright coverage awaits concrete integration.
+
 ## Invariants
 
 All references stay within the destination organization. Currency and transaction kind match referenced account/category. No implicit authorization transfer, no unrelated destination overwrites. A committed target row and its origin receipt must be consistent atomically. A retry skips already imported origin even after the user edits the target. A canonical provider collision without matching provenance is existing/conflict, never replacement. Import conflicts result in partial completion until explicitly resolved; unsupported graph errors block before any writes.
