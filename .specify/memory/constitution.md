@@ -1,3 +1,10 @@
+<!-- Sync Impact Report (review scratch; remove before commit)
+Version: 2.4.0 -> 2.5.0 (new mandatory SDK feasibility principle).
+Added: X. External Jazz SDK and Proven Feasibility.
+Modified principles: none. Removed sections: none. Deferred placeholders: none.
+Dependent templates read the constitution at runtime; no template changes required.
+-->
+
 # Delightful Finance Constitution
 
 ## Core Principles
@@ -64,6 +71,28 @@ Actor stopping alone is not a substitute for domain cleanup. Review teardown ord
 hooks, not just ordinary cancel-button transitions. Follow `.specify/memory/xstate.md` for practical
 design and review guidance.
 
+### X. External Jazz SDK and Proven Feasibility
+
+The Jazz SDK is an external dependency that this project cannot edit. Feature designs MUST
+work with its existing supported public APIs. Do not plan SDK patches, forks, edits to
+`node_modules`, or hypothetical future SDK capabilities as a path to completing a feature.
+
+Before designing or building any feature, thoroughly inspect the actual installed Jazz
+code relevant to its data and lifecycle requirements: public types, implementation paths,
+permissions, reads, writes, synchronization, cancellation and session replacement where
+applicable. Record the installed version, concrete source/API evidence, supported approach
+and material limits in the feature artifacts. Method names, documentation alone and
+assumptions about other releases do not establish feasibility. Existing verified evidence
+may be reused when the installed version and relevant behavior have not changed.
+
+Resolve uncertain SDK behavior with a focused feasibility probe, following the existing
+implementation-review and test-approval rules, before building dependent production code.
+If a proposed guarantee is unsupported, simplify or redesign the application workflow within
+Jazz's existing capabilities and review consequential tradeoffs before implementation.
+Never build layers of dependent machinery around an unverified capability or present an
+SDK change as a required next step. Prefer ordinary application reads and writes when they
+satisfy the user outcome; do not introduce stronger guarantees without a real requirement.
+
 ## Technology Constraints
 
 - App: SvelteKit 3, Svelte 5, TypeScript, Jazz (`jazz-tools` v2).
@@ -87,4 +116,4 @@ design and review guidance.
 
 This constitution governs implementation and supersedes conflicting project conventions. Amend it when a deliberate architectural decision changes, and update dependent specs/plans in the same change. Each feature plan must state how it complies with the principles above.
 
-**Version**: 2.4.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-16
+**Version**: 2.5.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-18

@@ -44,7 +44,7 @@ Versioned snapshot: source identity/organization IDs, complete supported finance
 
 Journal: operation ID, source and destination IDs when known, snapshot version, stable row mappings, per-record committed receipt references and typed failure details. Store facts needed to reconstruct progress; the machine owns live lifecycle states. Never resume into a different identity/organization implicitly. Retain payload after partial/failure; explicit discard explains that previously committed additions remain.
 
-### Initial journal storage slice (awaiting implementation review)
+### Journal storage and command policy
 
 `validation/account-merge-journal.ts` composes the existing snapshot validator into
 a strict version-1 envelope: operation ID, immutable snapshot and nullable exact
@@ -86,13 +86,18 @@ Shutdown takes precedence over later cancellation. Invoked actors remain alive
 while cancellation/shutdown waits for the active operation to settle; actor
 stopping is not used as the domain cleanup handshake.
 
-The coordinator invokes a focused `journal-write` child machine. Its guarded
-states check creation constraints, unchanged operation/source snapshot, and
-destination compatibility before choosing separate replacing/removing states.
-Conflict, failure, cancellation and committed writes are explicit terminal states
-with typed results. Cancellation keeps the child's I/O actor alive until the write
-settles; the coordinator then reports cancelled versus partial progress and preserves
-shutdown priority. Both machines invoke the shared `journal-storage` state machine.
+The journal command machine is the sole policy owner. `CREATE` rejects an
+existing journal or prebound destination; `BIND` and `DISCARD` reject stale
+operations; `BIND` preserves the current operation/source snapshot and rejects
+destination retargeting. No arbitrary replacement command is exposed. The
+redundant `journal-write` child has been removed.
+
+Reading and writing each invoke their own `journal-storage` child. Writing chooses
+replacing or removing through guarded transitions. Cancellation/shutdown states
+are nested under the active access state so the storage child remains alive until
+it reports settlement; a commit racing cancellation returns partial progress.
+No storage child is started for malformed input. The atomic adapter still compares
+the entire observed journal inside the write transaction.
 
 That storage machine owns availability, opening, transaction selection, abort
 settlement, connection closing and terminal classification. Reading, replacing and
@@ -131,10 +136,11 @@ child machines above; the application-owned merge coordinator remains responsibl
 for session authorization, exact-target resume and operation-wide cross-tab locking.
 Transaction serialization alone does not prevent a discard during an active import.
 
-TypeScript checking passed. No tests have been added or run for this new slice;
-after review, cover reload persistence, concurrent creation, immutable target
-binding, stale operations, corruption, unavailable/blocked storage, abort races and
-machine cancellation/shutdown settlement (including a commit racing cancellation).
+The consolidation awaits implementation review. Tests that directly invoked the
+removed internal write-policy API were retired; no tests were added or run.
+After approval, cover the retained public commands, immutable snapshot/target,
+stale operations, atomic conflicts and cancellation/shutdown settlement, including
+a commit racing cancellation. Existing storage and browser coverage remains in place.
 
 ## Additive Jazz provenance
 

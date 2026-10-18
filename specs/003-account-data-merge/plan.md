@@ -243,3 +243,19 @@ preparation, before wiring the real coordinator and replacing the check-only UI.
 This revises the earlier next-step sequence; no additional readiness/presentation
 machine is planned in parallel. Existing tests must follow retained behavior after
 each implementation review, rather than keeping redundant actors alive.
+
+### Journal consolidation (awaiting implementation review)
+
+The journal now owns command policy directly and invokes storage per read/write.
+The redundant `journal-write.ts` machine is deleted. Nested cancellation/shutdown
+states retain the active storage owner through commit/abort settlement. Immutable
+source/operation and bound destination are enforced by the public command model
+and guarded transitions; the native atomic compare/write remains unchanged.
+Tests of the deleted internal API were removed; replacement public-command
+coverage follows approval. No tests were added or run in this implementation slice.
+
+Constitution 2.5.0 makes Jazz an uneditable external dependency and requires actual
+installed-source feasibility evidence before feature implementation. This focused
+journal consolidation uses existing browser IndexedDB actors and introduces no
+Jazz APIs or assumptions. The merge uses the ordinary local-copy contract; no SDK
+patch or global snapshot primitive is a dependency.

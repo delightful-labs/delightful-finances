@@ -7,7 +7,6 @@ import { mergeJournalCommandSchema } from '../../validation/account-merge-journa
 import { type JournalErrorCode, type MergeJournalStorage } from '../../account-merge/journal.js'
 import { required } from '../bank-sync/identity.js'
 import { journalStorageActor } from './journal-storage.js'
-import { createJournalWriteMachine } from './journal-write.js'
 
 type Result =
 	| { outcome: 'completed'; journal: AccountMergeJournal | null }
@@ -28,7 +27,7 @@ type Context = {
 }
 
 export function createMergeJournalMachine(storage: MergeJournalStorage) {
-	const actors = { storage: journalStorageActor, writer: createJournalWriteMachine(storage) }
+	const actors = { storage: journalStorageActor }
 	const workflow = setup<
 		Context,
 		Event,
@@ -45,7 +44,6 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 		current: ({ context, event }) => ('journal' in event ? event.journal : context.current)
 	})
 	const abort = workflow.sendTo('storage', { type: 'CANCEL' })
-	const abortWrite = workflow.sendTo('writer', { type: 'CANCEL' })
 	const finish = (result: (context: Context) => Result) =>
 		({
 			type: 'final',
@@ -56,6 +54,38 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 				next: null
 			})
 		}) satisfies { type: 'final'; entry: unknown }
+	const access = workflow.createStateConfig({
+		invoke: {
+			id: 'storage',
+			src: 'storage',
+			input: () => storage,
+			onDone: { actions: raise(({ event }) => event.output) },
+			onError: { actions: raise({ type: 'ERROR', code: 'storage' }) }
+		}
+	})
+	// These states remain inside the access owner, so cancellation cannot stop
+	// storage before its transaction has reported commit or abort settlement.
+	const settlement = {
+		cancelling: workflow.createStateConfig({
+			on: {
+				READ: '#account-merge-journal.cancelled',
+				ERROR: '#account-merge-journal.cancelled',
+				WRITTEN: { target: '#account-merge-journal.partial', actions: remember },
+				CANCEL: {},
+				SHUTDOWN: 'closing'
+			}
+		}),
+		closing: workflow.createStateConfig({
+			on: {
+				READ: '#account-merge-journal.closed',
+				ERROR: '#account-merge-journal.closed',
+				WRITTEN: { target: '#account-merge-journal.partialShutdown', actions: remember },
+				CANCEL: {},
+				SHUTDOWN: {}
+			}
+		})
+	}
+
 	return workflow.createMachine({
 		id: 'account-merge-journal',
 		context: ({ input }) => {
@@ -69,21 +99,6 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 			}
 		},
 		initial: 'validating',
-		invoke: [
-			{
-				id: 'storage',
-				src: 'storage',
-				input: () => storage,
-				onDone: { actions: raise(({ event }) => event.output) },
-				onError: { actions: raise({ type: 'ERROR', code: 'storage' }) }
-			},
-			{
-				id: 'writer',
-				src: 'writer',
-				onDone: { actions: raise(({ event }) => event.output) },
-				onError: { actions: raise({ type: 'ERROR', code: 'storage' }) }
-			}
-		],
 		output: ({ context }) => required(context.result),
 		on: { CANCEL: '.cancelled', SHUTDOWN: '.closed' },
 		states: {
@@ -94,7 +109,9 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 				]
 			},
 			reading: {
-				entry: sendTo('storage', { type: 'READ' }),
+				...access,
+				initial: 'active',
+				states: { active: { entry: sendTo('storage', { type: 'READ' }) }, ...settlement },
 				on: {
 					READ: { target: 'deciding', actions: remember },
 					ERROR: {
@@ -103,8 +120,8 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 							error: ({ context, event }) => (event.type === 'ERROR' ? event.code : context.error)
 						})
 					},
-					CANCEL: { target: 'cancelling', actions: abort },
-					SHUTDOWN: { target: 'closing', actions: abort }
+					CANCEL: { target: '.cancelling', actions: abort },
+					SHUTDOWN: { target: '.closing', actions: abort }
 				}
 			},
 			deciding: {
@@ -154,11 +171,30 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 				]
 			},
 			writing: {
-				entry: sendTo('writer', ({ context }) => ({
-					type: 'WRITE',
-					expected: context.current,
-					next: context.next
-				})),
+				...access,
+				initial: 'choosingWrite',
+				states: {
+					choosingWrite: {
+						always: [
+							{ guard: ({ context }) => context.next === null, target: 'removing' },
+							{ target: 'replacing' }
+						]
+					},
+					replacing: {
+						entry: sendTo('storage', ({ context }) => ({
+							type: 'REPLACE',
+							expected: context.current,
+							journal: required(context.next)
+						}))
+					},
+					removing: {
+						entry: sendTo('storage', ({ context }) => ({
+							type: 'REMOVE',
+							expected: context.current
+						}))
+					},
+					...settlement
+				},
 				on: {
 					WRITTEN: { target: 'completed', actions: remember },
 					ERROR: [
@@ -170,28 +206,11 @@ export function createMergeJournalMachine(storage: MergeJournalStorage) {
 							})
 						}
 					],
-					CANCEL: { target: 'cancelling', actions: abortWrite },
-					SHUTDOWN: { target: 'closing', actions: abortWrite }
+					CANCEL: { target: '.cancelling', actions: abort },
+					SHUTDOWN: { target: '.closing', actions: abort }
 				}
 			},
-			cancelling: {
-				on: {
-					READ: 'cancelled',
-					ERROR: 'cancelled',
-					WRITTEN: { target: 'partial', actions: remember },
-					CANCEL: {},
-					SHUTDOWN: 'closing'
-				}
-			},
-			closing: {
-				on: {
-					READ: 'closed',
-					ERROR: 'closed',
-					WRITTEN: { target: 'partialShutdown', actions: remember },
-					CANCEL: {},
-					SHUTDOWN: {}
-				}
-			},
+
 			completed: finish((context) => ({ outcome: 'completed', journal: context.current })),
 			cancelled: finish(() => ({ outcome: 'cancelled' })),
 			closed: finish(() => ({ outcome: 'closed' })),
