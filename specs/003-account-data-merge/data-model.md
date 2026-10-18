@@ -138,7 +138,7 @@ machine cancellation/shutdown settlement (including a commit racing cancellation
 
 ## Additive Jazz provenance
 
-The provenance reference correction is implemented for review. Eight tables share
+The provenance reference correction is reviewed and verified. Eight tables share
 one receipt-column factory: `mergeAccountOrigins`, `mergeCategoryOrigins`,
 `mergeTagOrigins`, `mergeTransactionOrigins`, `mergeCheckDetailOrigins`,
 `mergeTransactionTagOrigins`, `mergeTransactionBatchOrigins` and
@@ -158,15 +158,22 @@ compatibility, with all operations denied. It is not an importer destination.
 
 The SDK generated an additive migration from `efb204a86e44` to `3d0e719e1e0d`
 creating only these eight tables. Existing table definitions remain unchanged.
-TypeScript and local schema/policy compilation pass. This correction awaits review
-before live-server verification and adapting the previously added browser suite.
-The earlier 33 validator tests cover the unchanged canonical receipt values.
+After approval, 33 canonical-validator tests pass and eight focused Playwright
+scenarios pass against the isolated in-memory Jazz server. The browser coverage
+verifies server publication, valid receipts for all eight entities, update/delete
+and entity/table mismatch rejection for every receipt table, retained history after
+target edits/deletion, missing/wrong-table/cross-scope target rejection, business
+workspace rejection, admin/member/viewer/unrelated-user boundaries, denied legacy
+table insertion, owned-personal creation by an admin, and read/insert denial after
+membership revocation. Every write assertion waits for global acknowledgment;
+reads use the remote tier. Browser tests type-check and focused formatting passes.
 
 The original single-table design failed during live permission publication with
 `JoinNotRefCompatible`: an untyped UUID could not join eight different target
 tables. Local compilation had accepted it. The corrected representation uses
 ordinary declared references rather than weakening target checks or adding sparse
-per-entity columns. Server compatibility is not yet established.
+per-entity columns. The focused browser runs now establish server compatibility
+for these receipt policies, independently of future capture/import behavior.
 
 Future importer writes must select the receipt table through `mergeOriginTables`
 and insert new target rows and receipts atomically. These policies do not prove
@@ -254,6 +261,57 @@ allocation rejection and cancellation/shutdown racing late resolution/rejection.
 Assertions also verify terminal payload cleanup. TypeScript and focused formatting
 checks pass. This verifies allocation independently of capture, authorization,
 preview conflict decisions or finance writes.
+
+## Reference preparation (current review slice)
+
+`accountMergeReferencesMachine` invokes the reviewed identity allocator as a child,
+then invokes a pure reference projection. It takes the existing strict mapping
+input; no new capture API, destination observation contract or validation copy is
+introduced. Parent-level cancellation/shutdown terminate the child invocation and
+clear transient source/allocation context. Late allocation/projection results are
+ignored after terminal transitions. All invoked failures have explicit routes;
+allocation domain errors remain typed and projection failures use
+`reference-mapping-failed` without raw payloads or exception text.
+
+```mermaid
+stateDiagram-v2
+    [*] --> validating
+    validating --> failed: invalid input
+    validating --> allocating: valid input
+    allocating --> rewriting: child mapped
+    allocating --> failed: typed allocation failure or actor error
+    allocating --> cancelled: child cancelled
+    allocating --> closed: child closed
+    rewriting --> prepared: pure projection completed
+    rewriting --> failed: projection rejected
+    allocating --> cancelled: CANCEL
+    rewriting --> cancelled: CANCEL
+    allocating --> closed: SHUTDOWN
+    rewriting --> closed: SHUTDOWN
+```
+
+The result groups candidates by all eight supported entities. Each candidate keeps
+its source/destination/origin identity mapping and a projected wire-format value.
+Every finance row ID and organization ID is replaced with the allocated destination;
+tags reference mapped categories, transactions reference mapped accounts/categories,
+checks/batches, check details reference mapped accounts/transactions, and tag links
+reference mapped tags/transactions. Nullable references remain null. Labels, integer
+money, currencies, dates, notes, archives and provider external IDs are preserved.
+No canonical form adapter is applied to captured values. Original bank-link rows
+are copied separately as source provenance, never destination insertion requests.
+
+Candidates are not executable writes. Archives remain ISO strings; system-category
+reuse retains its allocation kind; multiple source provider transactions resolving
+to one canonical ID remain separate candidates. Conflict preview must examine them
+rather than collapse them in a destination-ID map. Preview must also honor existing
+receipts after target deletion, reject unmatched existing-row collisions, and check
+dependency compatibility before any importer consumes a candidate. Destination
+hydration/authorization observations and atomic rechecks remain separate work.
+
+The three implementation files type-check and pass focused formatting. They await
+review before adding/running focused tests for all references, preservation,
+canonical collisions, failures, cancellation/shutdown and terminal cleanup. No
+runtime verification, live capture, conflict classification or writes are claimed.
 
 ## Invariants
 

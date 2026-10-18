@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { prepareSidebar } from './helpers/ui.js'
 import type { MergeEntity } from '../src/lib/schema/account-merge-mapping.js'
 
 declare global {
@@ -6,6 +7,7 @@ declare global {
 		mergeOriginTest: {
 			db: ReturnType<typeof import('jazz-tools/svelte').getDb>
 			app: typeof import('../src/lib/schema.js').app
+			tables: typeof import('../src/lib/schema/account-merge-origins.js').mergeOriginTables
 			userId: string
 			organizationId: string
 		}
@@ -13,6 +15,7 @@ declare global {
 }
 async function start(page: Page) {
 	await page.goto('/')
+	await prepareSidebar(page)
 	await expect(page.getByLabel('Current workspace', { exact: true })).toBeVisible()
 	const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 	await page.evaluate(async (organizationId) => {
@@ -22,11 +25,15 @@ async function start(page: Page) {
 		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
 			sessionPath
 		)
+		const originsPath = '/src/lib/schema/account-merge-origins.ts'
+		const { mergeOriginTables }: typeof import('../src/lib/schema/account-merge-origins.js') =
+			await import(originsPath)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.client || !snapshot.account) throw new Error('Session is not ready')
 		window.mergeOriginTest = {
 			db: snapshot.client.db,
 			app,
+			tables: mergeOriginTables,
 			userId: snapshot.account.id,
 			organizationId
 		}
@@ -36,7 +43,7 @@ async function start(page: Page) {
 test('receipts cover every target and remain immutable after target deletion', async ({ page }) => {
 	await start(page)
 	const result = await page.evaluate(async () => {
-		const { db, app, organizationId } = window.mergeOriginTest
+		const { db, app, tables, organizationId } = window.mergeOriginTest
 		const account = await db
 			.insert(app.accounts, { organizationId, name: 'Merge target', kind: 'bank', currency: 'USD' })
 			.wait({ tier: 'global' })
@@ -91,52 +98,64 @@ test('receipts cover every target and remain immutable after target deletion', a
 			transactionBatches: batch.id,
 			batchTemplates: template.id
 		}
-		const receiptIds: string[] = []
-		for (const [sourceEntity, destinationRecordId] of Object.entries(targets)) {
-			const entityPath = '/src/lib/validation/account-merge-origins.ts'
-			const { mergeEntitySchema }: typeof import('../src/lib/validation/account-merge-origins.js') =
-				await import(entityPath)
+		const receipts: { table: (typeof tables)[MergeEntity]; id: string }[] = []
+		const denied: string[] = []
+		const entityPath = '/src/lib/validation/account-merge-origins.ts'
+		const { mergeEntitySchema }: typeof import('../src/lib/validation/account-merge-origins.js') =
+			await import(entityPath)
+		for (const sourceEntity of mergeEntitySchema.options) {
+			const table = tables[sourceEntity]
 			const row = await db
-				.insert(app.mergeOrigins, {
+				.insert(app[table], {
 					organizationId,
 					sourceOrganizationId: crypto.randomUUID(),
-					sourceEntity: mergeEntitySchema.parse(sourceEntity),
+					sourceEntity,
 					sourceRecordId: crypto.randomUUID(),
-					destinationRecordId
+					destinationRecordId: targets[sourceEntity]
 				})
 				.wait({ tier: 'global' })
-			receiptIds.push(row.id)
-		}
-		const firstId = receiptIds[0]
-		if (!firstId) throw new Error('Missing receipt')
-		const denied: string[] = []
-		for (const operation of [
-			() =>
-				db
-					.update(app.mergeOrigins, firstId, { sourceRecordId: crypto.randomUUID() })
-					.wait({ tier: 'global' }),
-			() => db.delete(app.mergeOrigins, firstId).wait({ tier: 'global' })
-		]) {
-			try {
-				await operation()
-				denied.push('accepted')
-			} catch (error) {
-				denied.push(error instanceof Error ? error.message : 'unknown')
+			receipts.push({ table, id: row.id })
+			for (const operation of [
+				() =>
+					db
+						.update(app[table], row.id, { sourceRecordId: crypto.randomUUID() })
+						.wait({ tier: 'global' }),
+				() => db.delete(app[table], row.id).wait({ tier: 'global' }),
+				() =>
+					db
+						.insert(app[table], {
+							organizationId,
+							sourceOrganizationId: crypto.randomUUID(),
+							sourceEntity: sourceEntity === 'accounts' ? 'categories' : 'accounts',
+							sourceRecordId: crypto.randomUUID(),
+							destinationRecordId: targets[sourceEntity]
+						})
+						.wait({ tier: 'global' })
+			]) {
+				try {
+					await operation()
+					denied.push('accepted')
+				} catch (error) {
+					denied.push(error instanceof Error ? error.message : 'unknown')
+				}
 			}
 		}
 		await db
 			.update(app.batchTemplates, template.id, { name: 'Edited target' })
 			.wait({ tier: 'global' })
 		await db.delete(app.batchTemplates, template.id).wait({ tier: 'global' })
-		const rows = await db.all(app.mergeOrigins.where({ organizationId }), { tier: 'remote' })
-		return {
-			count: rows.filter((row) => receiptIds.includes(row.id)).length,
-			denied,
-			retained: rows.some((row) => row.destinationRecordId === template.id)
+		let count = 0
+		let retained = false
+		for (const receipt of receipts) {
+			const rows = await db.all(app[receipt.table].where({ organizationId }), { tier: 'remote' })
+			count += rows.filter((row) => row.id === receipt.id).length
+			retained ||= rows.some((row) => row.destinationRecordId === template.id)
 		}
+		return { count, denied, retained }
 	})
 	expect(result.count).toBe(8)
 	expect(result.retained).toBe(true)
+	expect(result.denied).toHaveLength(24)
 	for (const error of result.denied) expect(error).toMatch(/AuthorizationDenied|permission_denied/)
 })
 
@@ -182,7 +201,7 @@ test('rejects missing, wrong-table and cross-organization destinations and busin
 		]) {
 			try {
 				await db
-					.insert(app.mergeOrigins, {
+					.insert(app.mergeAccountOrigins, {
 						...target,
 						sourceEntity: 'accounts',
 						sourceOrganizationId: crypto.randomUUID(),
@@ -220,7 +239,7 @@ for (const role of ['admin', 'member', 'viewer', 'unrelated']) {
 						})
 						.wait({ tier: 'global' })
 					const receipt = await db
-						.insert(app.mergeOrigins, {
+						.insert(app.mergeAccountOrigins, {
 							organizationId,
 							sourceEntity: 'accounts',
 							sourceOrganizationId: crypto.randomUUID(),
@@ -244,13 +263,13 @@ for (const role of ['admin', 'member', 'viewer', 'unrelated']) {
 			const result = await subject.evaluate(async (fixture) => {
 				const { db, app } = window.mergeOriginTest
 				const rows = await db.all(
-					app.mergeOrigins.where({ organizationId: fixture.organizationId }),
+					app.mergeAccountOrigins.where({ organizationId: fixture.organizationId }),
 					{ tier: 'remote' }
 				)
 				let insert = 'accepted'
 				try {
 					await db
-						.insert(app.mergeOrigins, {
+						.insert(app.mergeAccountOrigins, {
 							organizationId: fixture.organizationId,
 							destinationRecordId: fixture.destinationRecordId,
 							sourceEntity: 'accounts',
@@ -270,3 +289,99 @@ for (const role of ['admin', 'member', 'viewer', 'unrelated']) {
 		}
 	})
 }
+
+test('the legacy polymorphic table rejects receipts even for an owner', async ({ page }) => {
+	await start(page)
+	const result = await page.evaluate(async () => {
+		const { db, app, organizationId } = window.mergeOriginTest
+		const target = await db
+			.insert(app.accounts, {
+				organizationId,
+				name: 'Legacy target',
+				kind: 'bank',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		try {
+			await db
+				.insert(app.mergeOrigins, {
+					organizationId,
+					sourceOrganizationId: crypto.randomUUID(),
+					sourceEntity: 'accounts',
+					sourceRecordId: crypto.randomUUID(),
+					destinationRecordId: target.id
+				})
+				.wait({ tier: 'global' })
+			return 'accepted'
+		} catch (error) {
+			return error instanceof Error ? error.message : 'unknown'
+		}
+	})
+	expect(result).toMatch(/AuthorizationDenied|permission_denied/)
+})
+
+test('owned personal receipts require current admin membership, including after revocation', async ({
+	page
+}) => {
+	await start(page)
+	const result = await page.evaluate(async () => {
+		const { db, app, userId } = window.mergeOriginTest
+		const organization = await db
+			.insert(app.organizations, {
+				name: 'Owned admin scope',
+				kind: 'personal',
+				ownerId: userId,
+				defaultCurrency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const organizationId = organization.id
+		const membership = await db
+			.insert(app.organizationMembers, {
+				organizationId,
+				userId,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'global' })
+		const target = await db
+			.insert(app.accounts, { organizationId, name: 'Admin target', kind: 'bank', currency: 'USD' })
+			.wait({ tier: 'global' })
+		await db
+			.update(app.organizationMembers, membership.id, { role: 'admin' })
+			.wait({ tier: 'global' })
+		const receipt = await db
+			.insert(app.mergeAccountOrigins, {
+				organizationId,
+				sourceOrganizationId: crypto.randomUUID(),
+				sourceEntity: 'accounts',
+				sourceRecordId: crypto.randomUUID(),
+				destinationRecordId: target.id
+			})
+			.wait({ tier: 'global' })
+		const before = await db.all(app.mergeAccountOrigins.where({ organizationId }), {
+			tier: 'remote'
+		})
+		await db.delete(app.organizationMembers, membership.id).wait({ tier: 'global' })
+		const after = await db.all(app.mergeAccountOrigins.where({ organizationId }), {
+			tier: 'remote'
+		})
+		let insert = 'accepted'
+		try {
+			await db
+				.insert(app.mergeAccountOrigins, {
+					organizationId,
+					sourceOrganizationId: crypto.randomUUID(),
+					sourceEntity: 'accounts',
+					sourceRecordId: crypto.randomUUID(),
+					destinationRecordId: target.id
+				})
+				.wait({ tier: 'global' })
+		} catch (error) {
+			insert = error instanceof Error ? error.message : 'unknown'
+		}
+		return { before: before.some((row) => row.id === receipt.id), after: after.length, insert }
+	})
+	expect(result.before).toBe(true)
+	expect(result.after).toBe(0)
+	expect(result.insert).toMatch(/AuthorizationDenied|permission_denied/)
+})

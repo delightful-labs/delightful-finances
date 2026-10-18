@@ -82,18 +82,31 @@ cancellation/shutdown, terminal cleanup and canonical provider compatibility.
 TypeScript and focused formatting checks pass.
 The initial provenance slice passed 33 strict-validator tests, but live-server
 startup rejected its polymorphic destination join with `JoinNotRefCompatible`.
-The correction is now implemented for review: eight target-specific receipt tables
+The correction is reviewed and verified: eight target-specific receipt tables
 share one column factory and policy loop, each with a declared destination
 relationship. The original table remains unchanged with all access denied; an
 additive SDK migration creates the eight new tables. Table/entity agreement,
 owned-personal/admin gates, scoped target existence, immutable history and reads
 after deletion remain enforced. TypeScript and local schema/policy validation pass.
-After review, adapt and run the focused browser suite to establish live publication
-and permission behavior. No runtime success is claimed from local compilation.
+After approval, all 33 canonical-validator tests and eight focused Playwright
+scenarios pass. Live publication succeeds; browser coverage verifies all target
+tables, immutability, entity/table mismatches, scope/role/ownership boundaries,
+retained history after target deletion, legacy insert denial and membership
+revocation. Browser TypeScript and focused formatting checks pass. This validates
+provenance independently of capture, conflict preview or transactional imports.
 Transactional receipt writers
 and import remain subsequent cycles;
 the consistent source-capture contract is still an explicit prerequisite for a
 working merge.
+
+The next focused slice, reference preparation, is implemented for review in three
+files (types, pure projection, and a composing XState machine). It invokes the
+identity allocator, remaps all eight entities and their foreign keys, and preserves
+source candidates and bank-link attribution for later conflict decisions. Explicit
+prepared/failed/cancelled/closed outcomes and terminal payload cleanup are modeled.
+TypeScript and focused formatting pass; runtime tests await review. Conflict
+classification, destination observations and import effects are not implemented by
+this slice. See the reference-preparation statechart in [data-model.md](data-model.md).
 
 ## Project structure
 
