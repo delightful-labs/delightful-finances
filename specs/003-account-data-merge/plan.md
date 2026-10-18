@@ -232,3 +232,14 @@ No source writes, identity replacement, journal writes or page mounting are incl
 in this focused extraction change. TypeScript and svelte-check pass with zero
 diagnostics; tests await implementation approval. Next: approved extraction coverage,
 then connect capture and durable saving to the dedicated route.
+
+### Consolidation before more workflow machinery
+
+The [code audit](code-audit.md) identifies three owners to replace or consolidate:
+the temporary presentation root, the separate journal write-policy child, and the
+allocation/reference preparation wrapper. Retain their domain checks and resource
+cleanup in the surviving statecharts. Consolidate journal policy first, then
+preparation, before wiring the real coordinator and replacing the check-only UI.
+This revises the earlier next-step sequence; no additional readiness/presentation
+machine is planned in parallel. Existing tests must follow retained behavior after
+each implementation review, rather than keeping redundant actors alive.
