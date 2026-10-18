@@ -99,14 +99,30 @@ and import remain subsequent cycles;
 the consistent source-capture contract is still an explicit prerequisite for a
 working merge.
 
-The next focused slice, reference preparation, is implemented for review in three
+Reference preparation is reviewed and verified in three
 files (types, pure projection, and a composing XState machine). It invokes the
 identity allocator, remaps all eight entities and their foreign keys, and preserves
 source candidates and bank-link attribution for later conflict decisions. Explicit
 prepared/failed/cancelled/closed outcomes and terminal payload cleanup are modeled.
-TypeScript and focused formatting pass; runtime tests await review. Conflict
-classification, destination observations and import effects are not implemented by
+After approval, 22 reference-preparation tests and all 25 allocation tests pass,
+including reference integrity, preservation, collisions, failure supervision,
+cancel/shutdown races and terminal cleanup. TypeScript and focused formatting pass.
+Workflow-level browser coverage awaits integration. Conflict classification,
+destination observations and import effects are not implemented by
 this slice. See the reference-preparation statechart in [data-model.md](data-model.md).
+
+Per-record conflict classification is reviewed and verified in four focused
+files: strict observations reusing snapshot/provenance validators, typed outcomes,
+pure predicates and a synchronous XState child. Guarded transitions distinguish
+recorded origins, reusable system categories, equal provider records, differing
+source/provider values, occupied ordinary IDs and malformed observations. Terminal
+cleanup removes finance payloads. All 76 classifier/validation tests pass after
+approval, covering all entities, precedence, conflicts, invalid observations and
+cleanup. TypeScript and formatting pass; the event type was corrected for
+`createActor` compatibility without adding effects. Browser workflow coverage awaits
+integration. A composing graph-preview actor must still supply complete observations,
+propagate dependency conflicts (including deleted parents), group canonical peers,
+and own cancellation/readiness. No preview UI or importer is implemented here.
 
 ## Project structure
 

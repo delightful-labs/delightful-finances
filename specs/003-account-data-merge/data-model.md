@@ -308,10 +308,93 @@ receipts after target deletion, reject unmatched existing-row collisions, and ch
 dependency compatibility before any importer consumes a candidate. Destination
 hydration/authorization observations and atomic rechecks remain separate work.
 
-The three implementation files type-check and pass focused formatting. They await
-review before adding/running focused tests for all references, preservation,
-canonical collisions, failures, cancellation/shutdown and terminal cleanup. No
-runtime verification, live capture, conflict classification or writes are claimed.
+After implementation approval, 22 focused reference-preparation tests pass alongside
+all 25 allocation tests. Coverage includes every entity/foreign key, null references,
+exact whitespace/archive/check values, source immutability and bank attribution,
+canonical provider collisions with distinct account/value candidates and tag links,
+shared source UUIDs across tables, empty graphs, invalid input, allocation domain
+failures and unexpected child errors, missing allocated references, projection
+failure, and late resolution/rejection after cancel/shutdown in either invocation.
+Terminal assertions verify source/allocation cleanup. The suites share the existing
+allocation fixture. TypeScript and focused formatting checks pass. No production
+changes were needed during verification. Workflow-level Playwright coverage awaits
+integration; live capture, conflict classification and writes remain separate work.
+
+## Per-record conflict classification (current review slice)
+
+`accountMergeConflictMachine` is a synchronous, side-effect-free child for the
+future graph preview. The four implementation files define strict observations,
+typed decisions, pure comparison/invariant predicates and guarded classification.
+Input contains one prepared candidate, its source organization and destination,
+explicit target/receipt observations, and all source peer values that resolve to
+the same destination ID. Row validation reuses the lossless snapshot row schemas;
+receipt validation reuses the canonical provenance schema with its SDK row ID.
+Missing fields are errors: `null` observations must mean an established absence,
+not a read failure. Neither supplied arrays nor this actor prove hydration or
+permission readiness. The producer must provide all relevant peers, including
+conflicting candidates; it must not deduplicate before classification.
+
+```mermaid
+stateDiagram-v2
+    [*] --> validating
+    validating --> failed: malformed input or inconsistent observations
+    validating --> checkingReceipt
+    checkingReceipt --> existing: exact complete origin receipt
+    checkingReceipt --> conflict: mismatched receipt
+    checkingReceipt --> routingKind: no receipt
+    routingKind --> checkingSystemCategory: system-category allocation
+    routingKind --> checkingProviderPeers: provider allocation
+    routingKind --> checkingOrdinaryTarget: ordinary allocation
+    checkingSystemCategory --> existing: active system category of same kind
+    checkingSystemCategory --> conflict: missing or incompatible category
+    checkingProviderPeers --> conflict: differing source peer values
+    checkingProviderPeers --> checkingProviderTarget: peers compatible
+    checkingProviderTarget --> addition: absent target
+    checkingProviderTarget --> existing: every mapped value matches
+    checkingProviderTarget --> conflict: differing destination values
+    checkingOrdinaryTarget --> addition: absent target
+    checkingOrdinaryTarget --> conflict: destination ID already occupied
+```
+
+Scope and mapping-kind consistency are checked before classification. Exact receipt
+matching includes receipt ID, source organization/entity/record, destination
+organization and target ID. A matching receipt wins over target edits/deletion and
+peer differences; it means this origin is already recorded, never a request to
+restore/replace the target. A mismatched receipt cannot authorize reuse.
+
+System-category reuse ignores translated labels but requires the observed target
+to be system, active and of the same income/expense kind. Provider comparisons
+include every projected scalar value, including account/category/check/batch
+references, amount, currency, notes, dates, archives where applicable and provider
+provenance. Equal provider peers remain separate source origins. Ordinary records
+never reuse an occupied ID without a matching receipt, even if values look equal.
+Conflict decisions carry stable reason codes and identity metadata, not finance
+payloads or raw diagnostics. All terminal states clear observed finance data.
+
+This child has no asynchronous work or resource ownership; it completes in one
+statechart turn. The future graph-preview owner must own cancellation/shutdown,
+read failures, scope/permission changes, observation refresh and late results.
+Per-record `addition`/`existing` is not graph readiness or permission to write.
+Before import, the graph pass must block dependencies on missing/deleted targets
+or conflicting parents, validate compatibility with retained/edited parent rows,
+handle bidirectional check dependencies and canonical peer groups, and separate
+new target writes from receipt-only writes. In particular, an existing receipt for
+a deleted parent must not enable importing children referencing that missing row.
+Preview decisions remain advisory until transaction-boundary rechecks.
+
+After approval, 76 focused classifier/validation tests pass. They cover additions,
+occupied IDs and receipt-after-deletion decisions across all eight entities;
+receipt precedence after edits and peer differences; every receipt identity/scope
+field; active/missing/incompatible system categories; provider equality and changes
+to every transaction value/reference; conflicting source peers with present/absent
+targets; missing observations, unsupported/secret fields and wrong entity shapes;
+mapping/scope/ID inconsistencies; lossless values, scalar comparison and terminal
+payload cleanup. The suite uses candidates from the real reference-preparation
+actor. TypeScript and formatting pass. Verification exposed and corrected the
+classifier's event type: `never` was incompatible with XState `createActor`; the
+machine now uses `EventObject` without adding handlers or effects. Workflow-level
+Playwright coverage awaits integration. This slice performs no destination reads,
+receipt writes, capture, graph dependency classification or UI integration.
 
 ## Invariants
 
