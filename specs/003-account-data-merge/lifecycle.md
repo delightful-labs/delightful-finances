@@ -71,7 +71,7 @@ stateDiagram-v2
     choosingSource --> inspectingSource: explicit selection
     inspectingSource --> choosingAction: validated summary
     choosingAction --> capturingSource: merge
-    capturingSource --> savingSnapshot: supported complete graph
+    capturingSource --> savingSnapshot: validated local copy
     savingSnapshot --> quiescingWorkspace: durable snapshot
     choosingAction --> quiescingWorkspace: connected account only
     quiescingWorkspace --> switching: cleanup acknowledged
@@ -112,17 +112,14 @@ before switching leaves the current identity unchanged.
 
 ## Open implementation gates
 
-1. **Consistent capture:** the public Db surface inspected here exposes graceful
-   shutdown with a sync wait, but no live whole-database sync barrier. Establish a
-   supported way to reconcile remote scope with pending local inserts, edits and
-   deletions, including related-table consistency. Unioning arrays by ID does not
-   resolve versions or deletions. Do not implement snapshot capture until this is
-   resolved; offline or unreadable scope must fail recoverably.
-2. **Concurrent editing:** the existing `simplefin:<identity>:<organization>` Web
-   Lock serializes bank operations only. Finance forms do not participate in a merge
-   lock. An operation lock alone cannot freeze the source. Determine a supported
-   consistent snapshot boundary or propose coordinated writer participation for a
-   separate review. Do not silently broaden this cycle into edits across all forms.
+1. **Source copy — revised by user direction:** use ordinary local-first reads,
+   validate the records available on this device, show counts and durably save the
+   copy. Global synchronization and a cross-table atomic boundary are not required.
+   Missing references fail validation before switching. See
+   [capture-contract.md](capture-contract.md).
+2. **Concurrent editing — simplified:** later edits are outside the saved copy.
+   A merge-operation lock serializes merge attempts only; ordinary forms do not
+   need to participate. Do not promise a frozen source or coordinated sibling tabs.
 3. **Same identity — resolved by inspection:** `jazz-tools` publicly exports
    `exportLocalFirstSecret`, already used in `src/routes/account/+page.svelte`.
    Compare its canonical result with the entered canonical secret entirely in
@@ -138,26 +135,11 @@ before switching leaves the current identity unchanged.
    promise against a timer. A timeout is a recoverable failure, never evidence of
    empty scope. Remote delivery still excludes pending local writes.
 
-The importer is gated on these findings. No SDK behavior in this review has been
-verified through runtime tests or physical cross-device experiments.
+## Revised next implementation
 
-## Capture gate follow-up
-
-Further installed-SDK inspection establishes these limits:
-
-- `Db.runShutdown` invokes an internal pending-write wait before closing. Neither
-  that runtime-source method nor the connection method is a public live-Db barrier.
-  Shutting down and retaining the old source handle for capture is invalid.
-- `Transaction.readAll` supplies `openTransactionId` and deferred local updates.
-  Its public contract promises transaction-scoped reads, but does not establish
-  remote hydration plus pending local edits/deletions at one cross-table boundary.
-  Do not infer these guarantees from the method name.
-- `db.disconnect()` explicitly permits continued local writes; it does not freeze
-  the workspace or drain pending writes.
-- SDK client-holder shutdown protection and the bank Web Lock do not establish
-  exclusion of sibling-tab finance writes.
-
-The concrete missing guarantee is described in [capture-contract.md](capture-contract.md).
-Capture and import remain gated on it or an equivalent reviewed design. Pure
-snapshot validation and device-local journal work can proceed independently, but
-must not be presented as a working merge.
+Implement the source-copy child against normal local-first query subscriptions and
+existing validation. Then save its output using the journal before session replacement.
+The earlier investigation found no supported global snapshot primitive, but that is
+no longer a prerequisite: the user explicitly chose a normal read-and-copy workflow.
+Keep session settlement, authorization, cancellation and local/global write outcomes
+as real lifecycle concerns. No SDK changes are planned.

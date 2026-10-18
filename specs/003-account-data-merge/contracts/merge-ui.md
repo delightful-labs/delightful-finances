@@ -17,7 +17,6 @@ Outcomes: completed locally, partial with committed/skipped/conflict counts, can
 
 On reload, detect a pending journal and offer resume/discard before another merge. Resume requires the journal's exact target identity and destination. Prevent overlapping operations across tabs and state clearly when another tab owns the operation.
 
-
 ## Isolated route delivery
 
 The first route slice is read-only: localized introduction, capture/reconnection
@@ -38,4 +37,14 @@ before stopping the presentation owner. The integration avoids sending shutdown
 to already-completed actors. Subsequent feature panels remain on this route.
 
 The page uses existing controls and Paraglide strings with no added styling.
-This initial slice awaits implementation review before new tests.
+After approval, 19 presentation-machine tests and five Playwright scenarios pass.
+Unit cases cover explicit checks, readiness gates, unchanged/changed observations,
+eligible/denied results, explicit retry, stale-result rejection, child cancellation
+and shutdown cleanup. Browser cases exercise this route with real Jazz remote
+subscriptions: owned-personal eligibility, repeated checks, business rejection,
+unchanged sign-in, disabled import/no phrase collection, no finance writes/provider
+calls, pending remote openings despite cached local data, cancellation/navigation
+cleanup and workspace changes while a check is pending. Public subscribe/dispose
+instrumentation verifies the remote tier and subscription release independently of
+SDK inspector mode. These checks establish read-only destination behavior, not
+source capture or importing.

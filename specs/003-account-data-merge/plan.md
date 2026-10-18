@@ -46,7 +46,7 @@ Child actors: source inspection/validation; journal I/O; session switch; destina
 
 ## Import strategy
 
-1. Hydrate source remote scope with ReadTier.Remote and reconcile pending ReadTier.LocalFirst records (or use a confirmed sync barrier first). Validate the complete graph; save snapshot before switching. Offline inability to establish scope is a retryable failure, not an empty workspace. Refuse incomplete/unsupported records with actionable explanation.
+1. Read the selected source workspace with explicit local-first queries, as normal application screens do. Validate the captured records and relationships using the existing snapshot validator. Show counts and explain that only data available on this device is copied; later edits and unsynchronized remote records are outside the copy. Save it before switching. No SDK changes, global sync barrier or coordinated finance editors are required. See [capture-contract.md](capture-contract.md).
 2. Hydrate destination queries and verify target identity, owned personal organization and permissions. Empty local query results alone do not prove remote absence. If SDK cannot establish safe readiness, stop with retry guidance.
 3. Build stable destination IDs scoped to destination organization + source organization + entity type + source ID. Use canonical existing bank IDs instead for imported provider transactions; map system categories by kind. Preview additions, known existing records, conflicts and excluded bank connections.
 4. Persist mapping/provenance with each corresponding write atomically. Recheck identity, permission, reference invariants and duplicate existence in transactions. Existing target rows are skipped or classified as conflicts, never blindly updated. Deterministic identities protect retries and concurrent devices; lock/journal ownership protects concurrent tabs on this device.
@@ -60,7 +60,7 @@ the proposed actor contracts and cancellation model, and remaining safety gates.
 The feature remains unimplemented; snapshot/import effects must wait for those
 gates to be resolved and the lifecycle model to be reviewed.
 
-1. Prove SDK seams and model lifecycle: inspect supported restore cancellation/readiness, source recovery and cross-tab constraints; define actor contracts and statechart. Review before effects. If SDK cannot establish safe completeness, return the concrete blocker before building an unsafe importer.
+1. Prove SDK seams and model lifecycle: inspect supported restore cancellation/readiness, source recovery and cross-tab constraints; define actor contracts and statechart. Review before effects. Use the user-directed local copy semantics; do not gate implementation on global snapshot capabilities.
 2. Add versioned snapshot validation and journal recovery, with explicit unsupported-data detection. Review, then approved coverage.
 3. Add additive provenance schema/permissions and pure identity/reference mapping. Resolve archived/check/bank collision handling in this cycle. Review, then approved coverage.
 4. Add the dependency-ordered import child machines and transactional adapters. Review, then approved coverage.
@@ -96,8 +96,8 @@ revocation. Browser TypeScript and focused formatting checks pass. This validate
 provenance independently of capture, conflict preview or transactional imports.
 Transactional receipt writers
 and import remain subsequent cycles;
-the consistent source-capture contract is still an explicit prerequisite for a
-working merge.
+source capture and transactional insertion remain to be wired using the revised
+ordinary read-and-copy contract.
 
 Reference preparation is reviewed and verified in three
 files (types, pure projection, and a composing XState machine). It invokes the
@@ -165,7 +165,7 @@ It remains unmounted in login pending coordinator/capture integration. Actual SD
 browser verification is the next focused test slice; finance/receipt observations
 and writes remain separate.
 
-### Isolated presentation route (current review slice)
+### Isolated presentation route (reviewed and verified)
 
 Per the user's routing decision, all merge-facing presentation now targets
 `/account-merge`, independently of `/login`. The first slice implements the route,
@@ -184,16 +184,34 @@ checks reject stale completions. Route cleanup explicitly closes an active
 integration child before stopping its presentation owner. The public interface
 passes machine-owned views and callbacks to pure presentation.
 
-Paraglide generation, TypeScript, svelte-check and focused formatting are the
-review checks. New machine/component/browser tests await approval. The remaining
-capture gate still prevents actual merging. The existing development server's
+After approval, all 19 presentation-machine tests and five focused Playwright
+scenarios pass. Browser coverage verifies real remote subscriptions and their
+cleanup, explicit/repeated eligibility checks, business denial, unchanged login,
+read-only behavior and no provider calls, held remote responses despite cached
+local records, cancellation/navigation and workspace changes. TypeScript and
+focused formatting pass; no production fixes were needed. Earlier Paraglide and
+svelte-check diagnostics were clean. The capture gate still prevents actual merging. The existing development server's
 review path is `http://localhost:5173/account-merge`.
 
 ## Project structure
 
 Documentation: this directory's spec.md, research.md, data-model.md, contracts/merge-ui.md and quickstart.md.
-Proposed implementation: `src/lib/machines/account-merge/`, focused `src/lib/schema/` and matching `src/lib/validation/` files, `src/lib/components/LoginForm.svelte`, `src/routes/login/+page.svelte`, application-readiness integration and `messages/en.json` (confirm actual catalog location when implementing). Extend existing modules only as needed; do not expand data.ts into a generic import controller.
+Proposed implementation: `src/lib/machines/account-merge/`, focused `src/lib/schema/` and matching `src/lib/validation/` files, `src/lib/components/AccountMerge.svelte`, `src/routes/account-merge/+page.svelte`, application-readiness integration and `messages/en.json` (confirm actual catalog location when implementing). Extend existing modules only as needed; do not expand data.ts into a generic import controller.
 
 ## Complexity tracking
 
 No constitutional exceptions proposed. SDK capability checks and physical cross-device validation remain implementation gates; no runtime feasibility is claimed from planning alone.
+
+### Revised direction: ordinary read and copy
+
+The user rejected the global snapshot prerequisite. The implementation will copy
+source records available through normal local-first reads and recreate them with
+ordinary destination writes, preserving relationships and using the existing
+validation, mapping, preview and journal. No Jazz modification or all-writer
+coordination is planned. This supersedes earlier capture-completeness gates.
+
+The next focused implementation is the source-copy machine and scoped Jazz read
+binding: read -> validate -> captured, with failure, invalid, cancel and shutdown
+outcomes. Present captured counts before switching. Save using the existing journal;
+then wire session replacement and dependency-ordered inserts in following review
+cycles. Tests follow approval of each implementation under repository rules.

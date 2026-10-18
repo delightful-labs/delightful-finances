@@ -631,11 +631,15 @@ standing permission grant. No session switching, finance/receipt reads, provider
 operations or destination writes are performed here.
 
 TypeScript, focused formatting and svelte-check (zero errors/warnings) pass.
-The new component awaits review before unit/Playwright tests of actual remote
-openings, eligibility/denial, offline waits, session/workspace changes and unmount
-cleanup. Existing actor unit tests do not establish behavior of this concrete SDK
-binding. Future browser coverage can mount this production component with a real
-Jazz session without adding an unfinished merge flow to the login page.
+The component is now exercised through the dedicated `/account-merge` route.
+After approval, five Playwright scenarios verify real remote-tier authority reads,
+owned-personal eligibility/repeated checks, business rejection, held remote openings
+despite cached records, cancel/navigation cleanup and workspace changes during a
+pending check. Subscription instrumentation records public remote subscribe calls
+and verifies their disposal; inspector traces are disabled in the isolated server.
+The route also has 19 passing presentation-machine tests. No production fixes were
+needed during this verification. Actual identity replacement, source capture and
+finance observations remain separate work; `/login` is unchanged.
 
 ## Invariants
 

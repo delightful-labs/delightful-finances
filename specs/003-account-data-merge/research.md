@@ -22,15 +22,24 @@ Alternative: memory-only snapshot rejected because reload loses recovery; export
 
 ## Readiness and concurrency gates
 
-Decision: destination absence requires supported hydration/sync evidence; local empty reads and navigator.onLine are insufficient. Implementation cycle 1 must inspect the installed SDK for exact read guarantees, shutdown failure behavior and existing account selection APIs. Cross-tab lock precedes snapshot/switch/import, with stale ownership recovery after tab termination. Finance editing in sibling tabs must be blocked or cause source revalidation before snapshot finalization. Resume imports the immutable captured snapshot, not a changing source dataset. No network API or new dependency is selected at planning time.
-
-These are explicit implementation feasibility checks, not unresolved user preferences. Failure of a check stops the dependent implementation for review.
+Decision: source capture uses ordinary local-first reads and the existing snapshot
+validator. It copies records available on this device, including pending local
+values returned by Jazz. No global completeness or atomic cross-tab boundary is
+promised. Show captured counts before switching; later changes are outside the
+copy. Invalid relationships fail capture and allow another attempt. A merge-operation
+lock may serialize merge attempts, but does not freeze ordinary editing. Resume
+imports the saved copy. See [capture-contract.md](capture-contract.md).
 
 ## Exact SDK read/write tiers
 
-Installed SDK inspection confirms `ReadTier.Remote` reads the current remote query scope but excludes pending local writes; `ReadTier.LocalFirst` includes local knowledge and pending writes. Source capture must reconcile remote hydration and local pending records by identity, or use a confirmed source sync barrier followed by remote hydration. Conflicting versions must not be merged by arbitrary array order. Destination planning likewise includes remote scope and pending local writes; `LocalFirstUnlessEmpty` alone is insufficient.
+`ReadTier.LocalFirst` includes local knowledge and pending writes and is the source
+copy tier. `ReadTier.Remote` excludes pending local writes; do not combine remote
+and local arrays to invent a snapshot. Destination authorization and duplicate
+checks still use existing supported reads and ordinary write authorization.
 
-Write handles support `.wait({ tier: 'local' })` for device persistence and `.wait({ tier: 'global' })` for server acceptance. Model globally confirmed success separately from locally saved/pending synchronization. A server rejection after local acceptance must leave a recoverable partial/failed result, not permanent success.
+Write handles support `.wait({ tier: 'local' })` for device persistence and
+`.wait({ tier: 'global' })` for server acceptance. Report these separately. A later
+server rejection must remain recoverable; it cannot be reported as confirmed success.
 
 ## XState error handling at the IndexedDB boundary
 
