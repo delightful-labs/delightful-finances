@@ -21,7 +21,7 @@
 		feedback,
 		trigger
 	}: {
-		scope: string | null
+		scope: unknown
 		label: string
 		/** @deprecated Submit labels remain stable; accepted for existing callers. */
 		savingLabel?: string

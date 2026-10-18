@@ -1,7 +1,21 @@
 <script lang="ts">
-	import { createFormController } from '#lib/forms.svelte.js'
+	import { observeRow, observeRows } from '#lib/observations.js'
+	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { tagArchiveSchema, tagFormSchema } from '#lib/validation/tags.js'
-	import type { FormSave } from '#lib/machines/form.js'
+	import { createSingleWriteFormOptions } from '#lib/machines/scoped-form-policy.js'
+	import {
+		createManagementAvailability,
+		selectManagementAvailability,
+		managementScope,
+		sameManagementScope,
+		selectManagementArchiveIds
+	} from '#lib/machines/management.js'
+	import type {
+		ManagementObservation,
+		ManagementReason,
+		ManagementScope
+	} from '#lib/management-contract.js'
+	import type { SnapshotFrom } from 'xstate'
 	import { archiveTag, createTag } from '#lib/data.js'
 	import { app, type Tag } from '#lib/schema.js'
 	import type { z } from 'zod'
@@ -10,7 +24,6 @@
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import TagForm from '#lib/components/TagForm.svelte'
 	import TagList from '#lib/components/TagList.svelte'
@@ -42,66 +55,110 @@
 		const organizationId = filters.activeOrganizationId
 		return organizationMembershipQuery(organizationId, userId)
 	})
-	const canCreate = $derived(
-		canEditCategoriesAndTags(membership.current, filters.activeOrganizationId)
-	)
 	const availableCategories = $derived(
 		(categories.current ?? [])
-			.filter(
-				(category) =>
-					category.organizationId === filters.activeOrganizationId && !category.archivedAt
-			)
-			.toSorted((left, right) => left.name.localeCompare(right.name))
+			.filter((c) => c.organizationId === filters.activeOrganizationId && !c.archivedAt)
+			.toSorted((a, b) => a.name.localeCompare(b.name))
 	)
-	const schema = tagFormSchema.refine(
-		(values) =>
-			values.categoryId === null ||
-			availableCategories.some((category) => category.id === values.categoryId),
-		{ path: ['categoryId'], message: 'Select an available category.' }
-	)
-	const save: FormSave<
+
+	const identityId = $derived(session.current.account?.id ?? null)
+	const organizationId = $derived(filters.activeOrganizationId)
+	const binding = $derived(session.current.client?.db ?? null)
+	const scope = $derived({ identityId, organizationId, binding })
+	function observe(): ManagementObservation {
+		return {
+			identityId: session.current.account?.id ?? null,
+			organizationId: filters.activeOrganizationId,
+			binding: session.current.client?.db ?? null,
+			sessionReady: session.current.status === 'ready',
+			membership: observeRow(membership.current),
+			loading: [membership, categories, tags].some((q) => q.isLoading),
+			failed: [membership, categories, tags].some((q) => q.error != null),
+			categories: observeRows(categories.current),
+			tags: observeRows(tags.current)
+		}
+	}
+	const availability = createManagementAvailability(db)
+	const common = {
+		availability,
+		selectAvailability: selectManagementAvailability,
+		scopeOf: managementScope,
+		sameScope: sameManagementScope,
+		observe,
+		classifyBlocked: (reason: ManagementReason): 'denied' | 'unavailable' =>
+			reason === 'readOnly' || reason === 'protectedRecord' ? 'denied' : 'unavailable'
+	}
+
+	const options = createSingleWriteFormOptions<
 		z.output<typeof tagFormSchema>,
 		Tag,
-		{ organizationId: string | null }
-	> = async (values, { context, signal }) => {
-		signal.throwIfAborted()
-		if (
-			!canCreate ||
-			!context.organizationId ||
-			context.organizationId !== filters.activeOrganizationId
-		)
-			throw new Error('The workspace is not editable.')
-		return createTag(db, context.organizationId, values.name, values.categoryId)
-	}
-	const form = createFormController({
-		schema,
-		save,
-		context: () => ({ organizationId: filters.activeOrganizationId }),
-		key: () => filters.activeOrganizationId,
-		disabled: () => !canCreate
+		ManagementReason,
+		ManagementScope,
+		ManagementObservation,
+		SnapshotFrom<typeof availability>
+	>({
+		...common,
+		schema: tagFormSchema,
+		mode: 'create',
+		successContent: 'replace',
+		assessmentObservation: ({ request, observation }) => ({
+			...observation.facts,
+			intent: { kind: 'createTag', categoryId: request.values.categoryId }
+		}),
+		write: async ({ request }) => {
+			const id = request.scope.organizationId
+			if (id === null) throw new Error('Missing authorized workspace')
+			return createTag(db, id, request.values.name, request.values.categoryId)
+		}
 	})
-	const archive = createFormController({
+	const form = createScopedFormController<
+		z.output<typeof tagFormSchema>,
+		Tag,
+		ManagementReason,
+		ManagementScope,
+		ManagementObservation,
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<typeof options.operation>
+	>(options)
+	const archiveOptions = createSingleWriteFormOptions<
+		z.output<typeof tagArchiveSchema>,
+		string,
+		ManagementReason,
+		ManagementScope,
+		ManagementObservation,
+		SnapshotFrom<typeof availability>
+	>({
+		...common,
 		schema: tagArchiveSchema,
-		save: async (values, { signal }) => {
-			signal.throwIfAborted()
-			const tag = tags.current?.find((row) => row.id === values.tagId)
-			if (values.organizationId !== filters.activeOrganizationId || !tag || !canCreate)
-				throw new Error('The tag is not editable in the active workspace.')
-			await archiveTag(db, tag.id)
-			return tag.name
-		},
-		context: () => undefined,
-		key: () => filters.activeOrganizationId,
-		disabled: () => !canCreate
+		mode: 'create',
+		successContent: 'retain',
+		assessmentObservation: ({ request, observation }) => ({
+			...observation.facts,
+			intent: {
+				kind: 'archiveTag',
+				id: request.values.tagId,
+				organizationId: request.values.organizationId
+			}
+		}),
+		write: async ({ request, observation }) => {
+			const row = observation.facts.tags.find((row) => row.id === request.values.tagId)
+			if (!row) throw new Error('Missing authorized record')
+			await archiveTag(db, row.id)
+			return row.name
+		}
 	})
-	const archiveState = $derived(archive.view.state)
-	const archivedName = $derived(
-		archiveState.matches('success') ? archiveState.context.result : undefined
-	)
-	const archiveFailed = $derived(archiveState.matches('error') || archiveState.matches('invalid'))
-	const archivingTagId = $derived(archiveState.context.validated?.value.tagId)
-	function onArchive(tagId: string) {
-		archive.submitValues({ tagId, organizationId: filters.activeOrganizationId })
+	const archive = createScopedFormController<
+		z.output<typeof tagArchiveSchema>,
+		string,
+		ManagementReason,
+		ManagementScope,
+		ManagementObservation,
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<typeof archiveOptions.operation>
+	>(archiveOptions)
+	const archivableIds = $derived(selectManagementArchiveIds(observe(), db, 'archiveTag'))
+	function onArchive(id: string) {
+		archive.submitValues({ tagId: id, organizationId: filters.activeOrganizationId })
 	}
 </script>
 
@@ -119,18 +176,19 @@
 		<TagList
 			tags={tags.current ?? []}
 			{categoryNames}
-			canArchive={canCreate}
-			archiving={archive.view.busy}
-			{archivingTagId}
-			{archivedName}
-			{archiveFailed}
+			archivableTagIds={archivableIds}
+			archiveView={archive.view}
 			{onArchive}
-		/>
-		<TagForm
-			organizationId={filters.activeOrganizationId}
-			{canCreate}
-			categories={availableCategories}
-			{form}
 		/>
 	{/if}
 </QueryContent>
+
+<TagForm
+	{scope}
+	view={form.view}
+	onopen={form.open}
+	onsubmit={form.submit}
+	onreset={form.reset}
+	onRetryReadiness={form.retryReadiness}
+	categories={availableCategories}
+/>

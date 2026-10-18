@@ -12,8 +12,9 @@
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category } from '#lib/schema.js'
-	import type { AppTransaction } from '#lib/domain/transaction.js'
-	import type { FormController } from '#lib/forms.svelte.js'
+	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
+	import FormFeedback from './FormFeedback.svelte'
+	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'
@@ -26,7 +27,9 @@
 		categories,
 		defaultCategoryId,
 		tagSuggestions,
-		form
+		view,
+		onsubmit,
+		onreset
 	}: {
 		kind: 'expense' | 'income'
 		organizationId: string | null
@@ -35,13 +38,16 @@
 		categories: readonly Category[]
 		defaultCategoryId: string | undefined
 		tagSuggestions: readonly string[]
-		form: FormController<
-			AppTransaction,
-			void,
-			{ organizationId: string | null; kind: 'expense' | 'income' }
-		>
+		view: TransactionEntryView
+		onsubmit: (event: SubmitEvent) => void
+		onreset: (event: Event) => void
 	} = $props()
 	let showCheckFields = $state(false)
+	const resetRevision = $derived(view.draftRevision)
+	$effect(() => {
+		void resetRevision
+		showCheckFields = false
+	})
 	function syncPaymentMethod(element: HTMLSelectElement) {
 		showCheckFields = element.value === 'check'
 	}
@@ -57,14 +63,19 @@
 </script>
 
 {#key `${organizationId}:${kind}`}
-	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
+	<FormContent {view} {onsubmit} {onreset}>
 		{#snippet fields(form)}
-			{#if !form.state.matches('success')}
+			{#if form.content.kind !== 'success'}
 				<Select
 					label={m['labels.account']()}
 					id="transaction-account"
 					aria-describedby="transaction-account-feedback"
-					aria-invalid={fieldInvalid(form.issues, 'accountId') || undefined}
+					aria-invalid={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'accountId'
+					) || undefined}
 					name="accountId"
 					required
 					defaultValue={defaultAccountId ?? ''}
@@ -76,7 +87,12 @@
 				</Select>
 				<FieldFeedback
 					id="transaction-account-feedback"
-					errorMessage={fieldInvalid(form.issues, 'accountId')
+					errorMessage={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'accountId'
+					)
 						? m['transactions.account_invalid']()
 						: ''}
 				/>
@@ -85,7 +101,12 @@
 					label={m['labels.category']()}
 					id="transaction-category"
 					aria-describedby="transaction-category-feedback"
-					aria-invalid={fieldInvalid(form.issues, 'categoryId') || undefined}
+					aria-invalid={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'categoryId'
+					) || undefined}
 					name="categoryId"
 					required
 					defaultValue={defaultCategoryId ?? ''}
@@ -101,7 +122,12 @@
 				</Select>
 				<FieldFeedback
 					id="transaction-category-feedback"
-					errorMessage={fieldInvalid(form.issues, 'categoryId')
+					errorMessage={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'categoryId'
+					)
 						? m['transactions.category_invalid']()
 						: ''}
 				/>
@@ -111,7 +137,12 @@
 					currencyLabel="USD"
 					id="transaction-amount"
 					aria-describedby="transaction-amount-feedback"
-					aria-invalid={fieldInvalid(form.issues, 'amount') || undefined}
+					aria-invalid={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'amount'
+					) || undefined}
 					name="amount"
 					inputmode="decimal"
 					autocomplete="off"
@@ -120,7 +151,12 @@
 				/>
 				<FieldFeedback
 					id="transaction-amount-feedback"
-					errorMessage={fieldInvalid(form.issues, 'amount')
+					errorMessage={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'amount'
+					)
 						? m['transactions.amount_invalid']()
 						: ''}
 				/>
@@ -129,14 +165,24 @@
 					label={m['labels.date']()}
 					id="transaction-date"
 					aria-describedby="transaction-date-feedback"
-					aria-invalid={fieldInvalid(form.issues, 'bookedOn') || undefined}
+					aria-invalid={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'bookedOn'
+					) || undefined}
 					name="bookedOn"
 					defaultValue={todayDateOnly()}
 					required
 				/>
 				<FieldFeedback
 					id="transaction-date-feedback"
-					errorMessage={fieldInvalid(form.issues, 'bookedOn')
+					errorMessage={fieldInvalid(
+						form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+							? form.feedback.result.issues
+							: [],
+						'bookedOn'
+					)
 						? m['transactions.date_invalid']()
 						: ''}
 				/>
@@ -146,7 +192,12 @@
 						label={m['transactions.payment.method']()}
 						id="transaction-payment-method"
 						aria-describedby="transaction-payment-method-feedback"
-						aria-invalid={fieldInvalid(form.issues, 'paymentMethod') || undefined}
+						aria-invalid={fieldInvalid(
+							form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+								? form.feedback.result.issues
+								: [],
+							'paymentMethod'
+						) || undefined}
 						name="paymentMethod"
 						required
 						defaultValue="cash"
@@ -160,7 +211,12 @@
 					</Select>
 					<FieldFeedback
 						id="transaction-payment-method-feedback"
-						errorMessage={fieldInvalid(form.issues, 'paymentMethod')
+						errorMessage={fieldInvalid(
+							form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+								? form.feedback.result.issues
+								: [],
+							'paymentMethod'
+						)
 							? m['transactions.payment_invalid']()
 							: ''}
 					/>
@@ -170,13 +226,23 @@
 							label={m['transactions.check.number']()}
 							id="check-number"
 							aria-describedby="check-number-feedback"
-							aria-invalid={fieldInvalid(form.issues, 'checkNumber') || undefined}
+							aria-invalid={fieldInvalid(
+								form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+									? form.feedback.result.issues
+									: [],
+								'checkNumber'
+							) || undefined}
 							name="checkNumber"
 							required
 						/>
 						<FieldFeedback
 							id="check-number-feedback"
-							errorMessage={fieldInvalid(form.issues, 'checkNumber')
+							errorMessage={fieldInvalid(
+								form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+									? form.feedback.result.issues
+									: [],
+								'checkNumber'
+							)
 								? m['transactions.check_number_invalid']()
 								: ''}
 						/>
@@ -185,13 +251,23 @@
 							label={m['transactions.check.date']()}
 							id="check-date"
 							aria-describedby="check-date-feedback"
-							aria-invalid={fieldInvalid(form.issues, 'checkDate') || undefined}
+							aria-invalid={fieldInvalid(
+								form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+									? form.feedback.result.issues
+									: [],
+								'checkDate'
+							) || undefined}
 							name="checkDate"
 							required
 						/>
 						<FieldFeedback
 							id="check-date-feedback"
-							errorMessage={fieldInvalid(form.issues, 'checkDate')
+							errorMessage={fieldInvalid(
+								form.feedback.kind === 'result' && form.feedback.result.outcome === 'invalid'
+									? form.feedback.result.issues
+									: [],
+								'checkDate'
+							)
 								? m['transactions.check_date_invalid']()
 								: ''}
 						/>
@@ -199,34 +275,32 @@
 				{/if}
 
 				{#if organizationId}
-					<TransactionTagInput {organizationId} suggestions={tagSuggestions} disabled={form.busy} />
+					<TransactionTagInput
+						{organizationId}
+						suggestions={tagSuggestions}
+						disabled={!form.fieldsEditable}
+					/>
 				{/if}
 				<Textarea label={m['labels.memo']()} id="transaction-memo" name="memo"></Textarea>
 			{/if}
 		{/snippet}
 		{#snippet controls(form)}
-			{#if form.state.matches('success')}
+			{#if form.content.kind === 'success'}
 				<Button type="reset">{m['transactions.add_another']()}</Button>
 			{:else}
-				<Button type="submit" disabled={form.disabled}>
+				<Button type="submit" disabled={!form.canSubmit}>
 					{m['transactions.save']()}
 				</Button>
 			{/if}
 		{/snippet}
-		{#snippet feedback(form)}
-			{#if form.state.matches('success')}
-				<StatusMessage
-					variant="success"
-					text={m['actions.saved_without_name']({ subject: m['labels.transaction']() })}
-				/>
-			{:else if form.state.matches('invalid')}
-				<StatusMessage variant="error" text={m['transactions.validation_error']()} />
-			{:else if form.state.matches('error')}
-				<StatusMessage
-					variant="error"
-					text={m['errors.save']({ subject: m['labels.transaction']() })}
-				/>
-			{/if}
+		{#snippet feedback(view)}
+			<FormFeedback
+				{view}
+				subject={m['labels.transaction']()}
+				reasonText={(reason) => formReasonText[reason]()}
+				invalidMessage={m['transactions.validation_error']()}
+				section="result"
+			/>
 		{/snippet}
 	</FormContent>
 {/key}

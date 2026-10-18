@@ -2,7 +2,7 @@
 
 **Feature Branch**: No branch created; authored on `main`.
 **Created**: 2026-10-18
-**Status**: Draft for review
+**Status**: Implemented and automated verification passed; combined review pending
 **Input**: Incrementally improve XState workflow and view ownership, using account-data-merge as a reference. Reduce scattered visual conditions and expose business decisions in statecharts instead of hiding workflows in functions.
 
 ## User Scenarios & Testing
@@ -125,3 +125,12 @@ Users reveal, confirm saving, and hide their recovery phrase with feedback tied 
 - No new persisted domain schema, provider operation, or unsupported connectivity observer is assumed.
 - Simple input/disclosure state, optional display fields, formatting, and pure transformations may remain outside workflow models.
 - Technical direction and progress tracking are in [delivery.md](delivery.md). Detailed implementation tasks follow reviewed design.
+
+## Authorized completion and combined review
+
+The user subsequently requested finishing the remaining XState work including
+implementation and tests while away, with review of the combined result afterward.
+This explicitly authorizes the remaining delivery slices, larger related file
+scope and test execution without the earlier per-slice pauses (FR-009/SC-005).
+It does not authorize commits or changes to finance/provider/security policy.
+See remaining-work.md for the concrete models and review.md for the combined guide.

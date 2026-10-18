@@ -15,12 +15,7 @@ type Context = Input & {
 	index: number
 	eligibleAccounts: Account[]
 }
-export type ProviderAccountView = ProviderSummary & {
-	mapping: Mapping
-	selectedAccountId: string
-	availableAccounts: readonly Account[]
-	showExisting: boolean
-}
+export type { ProviderAccountView } from '#lib/bank-presentation-contract.js'
 
 export const accountOptionsMachine = setup<
 	Context,

@@ -1,34 +1,36 @@
 <script lang="ts">
 	import { Button, Table } from 'delightful-ui'
 	import type { Tag } from '#lib/schema.js'
+	import type { ManagementView } from '#lib/management-contract.js'
+	import { formReasonText } from '#lib/form-messages.js'
+	import FormFeedback from './FormFeedback.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
 		tags,
 		categoryNames,
-		canArchive,
-		archiving,
-		archivingTagId,
-		archivedName,
-		archiveFailed,
+		archivableTagIds,
+		archiveView,
 		onArchive
 	}: {
 		tags: readonly Tag[]
 		categoryNames: ReadonlyMap<string, string>
-		canArchive: boolean
-		archiving: boolean
-		archivingTagId: string | undefined
-		archivedName: string | undefined
-		archiveFailed: boolean
+		archivableTagIds: readonly string[]
+		archiveView: ManagementView<string>
 		onArchive: (tagId: string) => void
 	} = $props()
 </script>
 
-{#if archivedName}
-	<p role="status">{m['actions.archived']({ subject: m['labels.tag'](), name: archivedName })}</p>
-{:else if archiveFailed}
-	<p role="alert">{m['errors.archive']({ subject: m['labels.tag']() })}</p>
-{/if}
+<FormFeedback
+	view={archiveView}
+	subject={m['labels.tag']()}
+	reasonText={(reason) => formReasonText[reason]()}
+	invalidMessage={m['tags.validation_error']()}
+	successMessage={(name) => m['actions.archived']({ subject: m['labels.tag'](), name })}
+	action="archive"
+	section="result"
+/>
+
 {#if tags.length}
 	<Table caption={m['labels.tags']()}>
 		<thead
@@ -49,16 +51,14 @@
 							: m['tags.no_category']()}</td
 					>
 					<td
-						>{#if canArchive}
+						>{#if archivableTagIds.includes(tag.id)}
 							<Button
 								type="button"
-								disabled={archiving}
+								disabled={!archiveView.canSubmit}
 								aria-label={m['actions.archive']({ name: tag.name })}
 								onclick={() => onArchive(tag.id)}
 							>
-								{archiving && archivingTagId === tag.id
-									? m['status.archiving']({ subject: m['labels.tag']() })
-									: m['actions.archive_button']()}
+								{m['actions.archive_button']()}
 							</Button>
 						{/if}</td
 					>

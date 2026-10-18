@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { observeRow, observeRows } from '#lib/observations.js'
 	import { getContext, onDestroy, setContext, type Snippet } from 'svelte'
 	import {
 		bankSyncKey,
@@ -59,10 +60,10 @@
 		organizationId,
 		userId,
 		sessionReady: session.current.status === 'ready',
-		membership: membershipQuery.current,
-		connections: connectionQuery.current ?? [],
-		accounts: accountQuery.current ?? [],
-		links: linkQuery.current ?? []
+		membership: observeRow(membershipQuery.current),
+		connections: observeRows(connectionQuery.current),
+		accounts: observeRows(accountQuery.current),
+		links: observeRows(linkQuery.current)
 	})
 	const readReadiness = () => ({
 		source: read(),
@@ -159,21 +160,10 @@
 		{#key `${userId}:${organizationId}`}
 			<BankSync
 				{browserOffline}
-				status={view.status}
-				setupView={view.setupView}
-				setupStep={view.setupStep}
+				{view}
 				onTestEncryption={() => dispatch({ type: 'TEST_ENCRYPTION' })}
 				onVerifyDecryption={() => dispatch({ type: 'VERIFY_DECRYPTION' })}
 				onSaveConnection={() => dispatch({ type: 'SAVE_CONNECTION' })}
-				busy={view.busy}
-				loadingProvider={view.loadingProvider}
-				showSetup={view.showSetup}
-				showConnected={view.showConnected}
-				showRecovery={view.showRecovery}
-				showRestricted={view.showRestricted}
-				showStatus={view.showStatus}
-				providerAccounts={view.providerAccounts}
-				outcome={view.outcome}
 				onConnect={(token) => dispatch({ type: 'CONNECT', token })}
 				onDiscover={() => dispatch({ type: 'DISCOVER' })}
 				onSync={() => dispatch({ type: 'SYNC' })}

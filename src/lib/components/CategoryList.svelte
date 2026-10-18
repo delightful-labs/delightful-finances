@@ -4,37 +4,36 @@
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Category } from '#lib/schema.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
+	import type { ManagementView } from '#lib/management-contract.js'
+	import { formReasonText } from '#lib/form-messages.js'
+	import FormFeedback from './FormFeedback.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
 		categories,
 		counts,
 		archivableCategoryIds,
-		archiving,
-		archivingCategoryId,
-		archivedName,
-		archiveFailed,
+		archiveView,
 		onArchive
 	}: {
 		categories: readonly Category[]
 		counts: ReadonlyMap<string, { transactions: number; tags: number }>
 		archivableCategoryIds: readonly string[]
-		archiving: boolean
-		archivingCategoryId: string | undefined
-		archivedName: string | undefined
-		archiveFailed: boolean
+		archiveView: ManagementView<string>
 		onArchive: (categoryId: string) => void
 	} = $props()
 	const numbers = $derived(new Intl.NumberFormat(getLocale()))
 </script>
 
-{#if archivedName}
-	<p role="status">
-		{m['actions.archived']({ subject: m['labels.category'](), name: archivedName })}
-	</p>
-{:else if archiveFailed}
-	<p role="alert">{m['errors.archive']({ subject: m['labels.category']() })}</p>
-{/if}
+<FormFeedback
+	view={archiveView}
+	subject={m['labels.category']()}
+	reasonText={(reason) => formReasonText[reason]()}
+	invalidMessage={m['categories.validation_error']()}
+	successMessage={(name) => m['actions.archived']({ subject: m['labels.category'](), name })}
+	action="archive"
+	section="result"
+/>
 
 {#if categories.length}
 	<Table caption={m['labels.categories']()}>
@@ -58,16 +57,12 @@
 						>{#if archivableCategoryIds.includes(category.id)}
 							<Button
 								type="button"
-								disabled={archiving}
+								disabled={!archiveView.canSubmit}
 								aria-label={m['actions.archive']({ name: category.name })}
 								onclick={() => onArchive(category.id)}
-							>
-								{#if archiving && archivingCategoryId === category.id}
-									{m['status.archiving']({ subject: m['labels.category']() })}
-								{:else}
-									<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
-									{m['actions.archive_button']()}
-								{/if}
+								><Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />{m[
+									'actions.archive_button'
+								]()}
 							</Button>
 						{/if}</td
 					>

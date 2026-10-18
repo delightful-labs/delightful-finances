@@ -22,7 +22,8 @@ export async function navigateSidebar(page: Page, label: string) {
 	if (label === 'Accounts') await openSidebarSection(page, 'Accounts')
 	if (['Workspace', 'Banks', 'Account', 'Login'].includes(label))
 		await openSidebarSection(page, 'Settings')
-	await page.locator('aside').getByRole('link', { name: label, exact: true }).click()
+	if (label === 'Accounts') await page.locator('aside a[href="/accounts"]').click()
+	else await page.locator('aside').getByRole('link', { name: label, exact: true }).click()
 }
 
 export function creationDialog(page: Page, label: string) {
@@ -41,9 +42,9 @@ export async function openCreationModal(page: Page, label: string) {
 export async function closeCreationModal(page: Page) {
 	const dialog = page
 		.getByRole('dialog')
-		.filter({ has: page.getByRole('button', { name: 'Cancel', exact: true }) })
+		.filter({ has: page.getByRole('button', { name: /^(Cancel|Close)$/ }) })
 	if (await dialog.isVisible()) {
-		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+		await dialog.getByRole('button', { name: /^(Cancel|Close)$/ }).click()
 		await expect(dialog).not.toBeVisible()
 	}
 }

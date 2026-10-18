@@ -131,3 +131,46 @@ describe('bank supervisor error boundaries', () => {
 		expect(actor.getSnapshot().context.error).toBeUndefined()
 	})
 })
+
+describe('discriminated bank presentation', () => {
+	it('projects exclusive setup, connected and restricted modes from existing availability states', () => {
+		const actor = start()
+		expect(selectBankView(actor.getSnapshot()).mode).toEqual({
+			kind: 'connected',
+			recovery: 'available'
+		})
+		actor.send({ type: 'OBSERVED', source: { ...source, connections: [] } })
+		expect(selectBankView(actor.getSnapshot()).mode).toEqual({
+			kind: 'setup',
+			stage: null,
+			step: 0
+		})
+		actor.send({ type: 'OBSERVED', source: { ...source, membership: null } })
+		expect(selectBankView(actor.getSnapshot()).mode).toEqual({ kind: 'restricted' })
+		expect(actor.getSnapshot().children.operation).toBeUndefined()
+	})
+	it('preserves sync history independently while another explicit operation is running', () => {
+		const actor = start()
+		const at = new Date('2026-10-18T10:00:00Z')
+		actor.send({
+			type: 'OBSERVED',
+			source: {
+				...source,
+				connections: [{ ...connection, lastSyncAt: at, lastOutcome: 'succeeded', importedCount: 3 }]
+			}
+		})
+		const history = selectBankView(actor.getSnapshot()).history
+		expect(history).toMatchObject({ time: at, outcomeKey: 'bank.succeeded', imported: 3 })
+		expect(selectBankView(actor.getSnapshot()).activity).toEqual({ kind: 'idle' })
+		actor.send({ type: 'DISCOVER' })
+		expect(selectBankView(actor.getSnapshot()).activity.kind).toBe('working')
+		expect(selectBankView(actor.getSnapshot()).history).toEqual(history)
+	})
+	it('does not start provider work from repeated observations', () => {
+		const actor = start()
+		for (let i = 0; i < 3; i++) actor.send({ type: 'OBSERVED', source })
+		expect(actor.getSnapshot().children.operation).toBeUndefined()
+		expect(actor.getSnapshot().children.setup).toBeUndefined()
+		expect(selectBankView(actor.getSnapshot()).activity).toEqual({ kind: 'idle' })
+	})
+})

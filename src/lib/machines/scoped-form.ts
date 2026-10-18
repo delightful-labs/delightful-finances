@@ -47,6 +47,8 @@ export type ScopedFormOptions<
 	scopeOf: (observation: Observation) => Scope
 	sameScope: (left: Scope, right: Scope) => boolean
 	successContent?: 'replace' | 'retain'
+	/** Release file drafts and rebuild controls after successful inline saves. */
+	resetOnSuccess?: boolean
 } & FormMode<Values, Observation>
 
 export function createScopedFormMachine<
@@ -413,6 +415,14 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? event.output
 														: undefined,
+												draft: ({ context, event }) =>
+													options.resetOnSuccess && event.output.outcome === 'succeeded'
+														? undefined
+														: context.draft,
+												draftRevision: ({ context, event }) =>
+													options.resetOnSuccess && event.output.outcome === 'succeeded'
+														? context.draftRevision + 1
+														: context.draftRevision,
 												request: undefined,
 												submission: undefined
 											})

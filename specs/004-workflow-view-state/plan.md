@@ -1,6 +1,10 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; workspace rename adoption (2d), shared create/edit mode and stable submit labels are approved and focused verification passed (76 unit tests, nine browser scenarios).
+Status: implementation and focused verification complete across all slices.
+User-authorized combined review is pending. Final evidence: 389 unit tests and
+54 browser scenarios passed, plus application/test/configuration type checks.
+The sections below retain the incremental history; current scope and review maps
+are in remaining-work.md and review.md.
 
 ## Scope and technical context
 
@@ -113,3 +117,18 @@ See tasks.md for exact commands, test-only setup corrections and coverage limits
 This completes reviewed general forms cycles 2a–2d; review this evidence before
 the next domain adoption. Legacy profile/category/tag/transaction consumers still
 migrate in their own planned cycles.
+
+## Account creation design (slice 3a)
+
+See [account-creation.md](account-creation.md) for the audit, readiness adapter
+chart, reuse of accountCreationAccessMachine, revision/scope protocol, shared
+create-mode operation, first-account unmount guarantee and six-file scope.
+The model preserves owner/admin SDK policy and the existing createAccount helper.
+Its explicit modal choice permits blocked inspection without permitting submission.
+Concrete model review precedes implementation effects; exact implementation review
+and focused verification remain separate gates.
+
+Slice 3a implementation is now prepared for review in the approved six-file
+scope. It reuses the existing access policy and shared create/write lifecycle.
+Static application checks pass. Focused runtime verification remains pending
+implementation approval; no tests were added or run in this cycle.

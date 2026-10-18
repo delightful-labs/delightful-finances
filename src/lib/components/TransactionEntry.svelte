@@ -1,15 +1,27 @@
 <script lang="ts">
+	import { observeRow, observeRows } from '#lib/observations.js'
 	import { orderAccounts } from '#lib/machines/account-order.js'
-	import { createFormController } from '#lib/forms.svelte.js'
+	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { app } from '#lib/schema.js'
+	import { defaultTransactionCategory } from '#lib/validation/transactions.js'
 	import {
-		defaultTransactionCategory,
-		transactionFormSchema
-	} from '#lib/validation/transactions.js'
-	import type { FormSave } from '#lib/machines/form.js'
+		createTransactionEntryFormOptions,
+		writableTransactionAccounts,
+		applicableTransactionCategories
+	} from '#lib/machines/transaction-entry.js'
+	import type {
+		TransactionEntryObservation,
+		TransactionEntryReason,
+		TransactionEntryScope
+	} from '#lib/transaction-entry-contract.js'
+	import type { SnapshotFrom } from 'xstate'
+	import FormFeedback from './FormFeedback.svelte'
+	import { formReasonText } from '#lib/form-messages.js'
+	import { fromStore } from 'svelte/store'
+	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import type { AppTransaction } from '#lib/domain/transaction.js'
 	import { createTransaction } from '#lib/data.js'
-	import { getDb, QuerySubscription } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
 	import {
 		financeFiltersKey,
@@ -21,8 +33,6 @@
 	import AccountCreation from '#lib/components/AccountCreation.svelte'
 	import TransactionForm from '#lib/components/TransactionForm.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
-	import QueryContent from '#lib/components/QueryContent.svelte'
-	import Message from '#lib/components/Message.svelte'
 	let { kind }: { kind: 'income' | 'expense' } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accountOrder = getContext<AccountOrder>(accountOrderKey)
@@ -54,14 +64,46 @@
 					.orderBy('name')
 			: undefined
 	)
-	const accounts = $derived(orderAccounts(accountQuery.current ?? [], accountOrder.ids))
+
+	const session = fromStore(getJazzSession())
+	const membership = new QuerySubscriptionOne(() =>
+		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
+	)
+	const grantQuery = new QuerySubscription(() =>
+		filters.activeOrganizationId && session.current.account?.id
+			? app.accountMemberships.where({
+					organizationId: filters.activeOrganizationId,
+					userId: session.current.account.id
+				})
+			: undefined
+	)
+	function observe(): TransactionEntryObservation {
+		return {
+			identityId: session.current.account?.id ?? null,
+			organizationId: filters.activeOrganizationId,
+			binding: session.current.client?.db ?? null,
+			sessionReady: session.current.status === 'ready',
+			kind,
+			membership: observeRow(membership.current),
+			grants: observeRows(grantQuery.current),
+			accounts: observeRows(accountQuery.current),
+			categories: observeRows(categoryQuery.current),
+			loading: [membership, grantQuery, accountQuery, categoryQuery, tagQuery].some(
+				(q) => q.isLoading
+			),
+			failed: [membership, grantQuery, accountQuery, categoryQuery, tagQuery].some(
+				(q) => q.error != null
+			)
+		}
+	}
+	const accounts = $derived(orderAccounts(writableTransactionAccounts(observe()), accountOrder.ids))
 	const defaultAccountId = $derived(
 		accounts.find(
 			(account) =>
 				filters.selectedAccountIds === null || filters.selectedAccountIds.includes(account.id)
 		)?.id
 	)
-	const availableCategories = $derived(categoryQuery.current ?? [])
+	const availableCategories = $derived(applicableTransactionCategories(observe()))
 	const defaultCategory = $derived(
 		defaultTransactionCategory({
 			organizationId: filters.activeOrganizationId,
@@ -69,36 +111,23 @@
 			categories: availableCategories
 		})
 	)
-
-	const schema = transactionFormSchema(() => ({
-		organizationId: filters.activeOrganizationId,
-		kind,
-		accounts,
-		categories: availableCategories
-	}))
-	const save: FormSave<
+	const options = createTransactionEntryFormOptions({
+		binding: db,
+		observe,
+		create: async (transaction) => {
+			const result = await createTransaction(db, transaction)
+			if ('error' in result) throw new Error(result.error)
+		}
+	})
+	const form = createScopedFormController<
 		AppTransaction,
 		void,
-		{ organizationId: string | null; kind: typeof kind }
-	> = async (transaction, { context, signal }) => {
-		signal.throwIfAborted()
-		if (
-			transaction.organizationId !== context.organizationId ||
-			transaction.kind !== context.kind ||
-			context.organizationId !== filters.activeOrganizationId
-		)
-			throw new Error('The transaction workspace changed before saving.')
-		const result = await createTransaction(db, transaction)
-		if ('error' in result) throw new Error(result.error)
-	}
-	const form = createFormController({
-		schema,
-		save,
-		context: () => ({ organizationId: filters.activeOrganizationId, kind }),
-		key: () => `${filters.activeOrganizationId}:${kind}`,
-		disabled: () => accounts.length === 0 || availableCategories.length === 0,
-		arrayFields: () => ['tags']
-	})
+		TransactionEntryReason,
+		TransactionEntryScope,
+		TransactionEntryObservation,
+		SnapshotFrom<typeof options.availability>,
+		SnapshotFrom<typeof options.operation>
+	>({ ...options, arrayFields: () => ['tags'] })
 </script>
 
 <svelte:head
@@ -113,24 +142,28 @@
 		name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
 	})}
 />
-<QueryContent
-	queries={[accountQuery, categoryQuery, tagQuery]}
-	loadingMessage={m['status.loading']({ subject: m['labels.accounts_and_categories']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.accounts_and_categories']() })}
->
-	{#if accounts.length === 0}
-		<Message message={m['transactions.no_accounts']()} />
-		<AccountCreation />
-	{:else}
-		<TransactionForm
-			{kind}
-			organizationId={filters.activeOrganizationId}
-			{accounts}
-			{defaultAccountId}
-			categories={availableCategories}
-			defaultCategoryId={defaultCategory?.id}
-			{tagSuggestions}
-			{form}
-		/>
-	{/if}
-</QueryContent>
+
+<FormFeedback
+	view={form.view}
+	subject={m['labels.transaction']()}
+	reasonText={(reason) => formReasonText[reason]()}
+	invalidMessage={m['transactions.validation_error']()}
+	section={form.view.readiness.kind === 'ready' ? 'readiness' : 'all'}
+	onRetryReadiness={form.retryReadiness}
+/>
+{#if form.view.readiness.kind === 'blocked' && form.view.readiness.reason === 'noAccounts'}
+	<AccountCreation />
+{:else if form.view.readiness.kind === 'ready'}
+	<TransactionForm
+		{kind}
+		organizationId={filters.activeOrganizationId}
+		{accounts}
+		{defaultAccountId}
+		categories={availableCategories}
+		defaultCategoryId={defaultCategory?.id}
+		{tagSuggestions}
+		view={form.view}
+		onsubmit={form.submit}
+		onreset={form.reset}
+	/>
+{/if}

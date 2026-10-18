@@ -1,50 +1,63 @@
 <script lang="ts">
 	import { Button, Heading, Text, InputText } from 'delightful-ui'
-	import type { z } from 'zod'
-	import type { profileNameFormSchema } from '#lib/validation/identity.js'
-	import type { FormController } from '#lib/forms.svelte.js'
+	import type { ProfileView } from '#lib/profile-contract.js'
+	import FormFeedback from './FormFeedback.svelte'
+	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
 	let {
 		profileId,
 		displayName,
-		form
+		view,
+		onsubmit,
+		onreset,
+		oninput,
+		onRetryReadiness
 	}: {
 		profileId: string
 		displayName: string | null | undefined
-		form: FormController<
-			z.output<typeof profileNameFormSchema>,
-			void,
-			{ profileId: string | null; userId: string | null }
-		>
+		view: ProfileView
+		onsubmit: (event: SubmitEvent) => void
+		onreset: (event: Event) => void
+		oninput: (event: Event) => void
+		onRetryReadiness: () => void
 	} = $props()
 </script>
 
 <Heading level="h2">{m['labels.profile']()}</Heading>
 <Text>{m['profile.name_description']()}</Text>
+<FormFeedback
+	{view}
+	subject={m['labels.profile']()}
+	reasonText={(reason) => formReasonText[reason]()}
+	invalidMessage={m['profile.name_invalid']()}
+	section="readiness"
+	{onRetryReadiness}
+/>
 {#key profileId}
-	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
+	<FormContent {view} {onsubmit} {onreset} {oninput}>
 		{#snippet fields(view)}
 			<InputText
 				label={m['labels.display_name']()}
 				id="profile-display-name"
 				name="displayName"
 				value={displayName ?? ''}
-				disabled={view.disabled}
+				disabled={!view.fieldsEditable}
 				autocomplete="nickname"
 			/>
 		{/snippet}
 		{#snippet controls(view)}
-			<Button type="submit" disabled={view.disabled}>{m['actions.save']()}</Button>
+			<Button type="submit" disabled={!view.canSubmit}>{m['actions.save']()}</Button>
 		{/snippet}
 		{#snippet feedback(view)}
-			{#if view.state.matches('success')}
-				<Text role="status">{m['profile.name_saved']()}</Text>
-			{:else if view.state.matches('invalid')}
-				<Text role="alert">{m['profile.name_invalid']()}</Text>
-			{:else if view.state.matches('error')}
-				<Text role="alert">{m['errors.save']({ subject: m['labels.profile']() })}</Text>
-			{/if}
+			<FormFeedback
+				{view}
+				subject={m['labels.profile']()}
+				reasonText={(reason) => formReasonText[reason]()}
+				invalidMessage={m['profile.name_invalid']()}
+				successMessage={() => m['profile.name_saved']()}
+				section="result"
+			/>
 		{/snippet}
 	</FormContent>
 {/key}

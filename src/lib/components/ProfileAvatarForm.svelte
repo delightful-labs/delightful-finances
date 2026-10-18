@@ -1,32 +1,43 @@
 <script lang="ts">
 	import { Button, Text, InputAvatar, StatusMessage } from 'delightful-ui'
-	import type { z } from 'zod'
-	import { avatarMimeType, type profileAvatarFormSchema } from '#lib/validation/identity.js'
-	import type { FormController } from '#lib/forms.svelte.js'
+	import { avatarMimeType } from '#lib/validation/identity.js'
+	import type { ProfileView } from '#lib/profile-contract.js'
+	import FormFeedback from './FormFeedback.svelte'
+	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
 	let {
 		profileId,
 		avatarData,
 		mimeType,
-		form,
-		onRemove
+		view,
+		onsubmit,
+		onreset,
+		oninput,
+		onRetryReadiness,
+		onRemove,
+		onSelectionChange
 	}: {
 		profileId: string
 		avatarData: Uint8Array | null | undefined
 		mimeType: string | null | undefined
-		form: FormController<
-			z.output<typeof profileAvatarFormSchema>,
-			void,
-			{ profileId: string | null; userId: string | null }
-		>
+		view: ProfileView
+		onsubmit: (event: SubmitEvent) => void
+		onreset: (event: Event) => void
+		oninput: (event: Event) => void
+		onRetryReadiness: () => void
 		onRemove: () => void
+		onSelectionChange: (file: File | null) => void
 	} = $props()
 	let selectedFile = $state<File | null>(null)
+	const resetRevision = $derived(view.draftRevision)
+	const recordId = $derived(profileId)
 	$effect(() => {
-		void profileId
+		void recordId
+		void resetRevision
 		selectedFile = null
 	})
+
 	let imageUrl = $state('')
 	let imageFailed = $state(false)
 	$effect(() => {
@@ -54,43 +65,58 @@
 {:else if imageFailed}
 	<StatusMessage variant="error" text={m['profile.avatar_invalid']()} />
 {/if}
+<FormFeedback
+	{view}
+	subject={m['labels.profile']()}
+	reasonText={(reason) => formReasonText[reason]()}
+	invalidMessage={m['profile.name_invalid']()}
+	section="readiness"
+	{onRetryReadiness}
+/>
 {#key profileId}
-	<FormContent view={form.view} onsubmit={form.submit} onreset={form.reset}>
+	<FormContent {view} {onsubmit} {onreset} {oninput}>
 		{#snippet fields(view)}
 			<input type="hidden" name="action" value="upload" />
 			<InputAvatar
 				label={m['labels.avatar']()}
 				uploadLabel={m['actions.choose_image']()}
-				bind:value={selectedFile}
+				bind:value={
+					() => selectedFile,
+					(file) => {
+						selectedFile = file
+						onSelectionChange(file)
+					}
+				}
 				removeLabel={m['actions.clear_selected_image']()}
 				id="profile-avatar"
 				name="file"
 				accept={avatarMimeType.options.join(',')}
 				aria-describedby="avatar-help"
 				required
-				disabled={view.disabled}
+				disabled={!view.fieldsEditable}
 			/>
 		{/snippet}
 		{#snippet controls(view)}
 			{#if selectedFile}
-				<Button type="submit" disabled={view.disabled}>
+				<Button type="submit" disabled={!view.canSubmit}>
 					{m['actions.save_avatar']()}
 				</Button>
 			{/if}
 			{#if avatarData}
-				<Button type="button" disabled={view.disabled} onclick={onRemove}
+				<Button type="button" disabled={!view.fieldsEditable} onclick={onRemove}
 					>{m['actions.remove_avatar']()}</Button
 				>
 			{/if}
 		{/snippet}
 		{#snippet feedback(view)}
-			{#if view.state.matches('success')}
-				<StatusMessage variant="success" text={m['profile.avatar_saved']()} />
-			{:else if view.state.matches('invalid')}
-				<StatusMessage variant="error" text={m['profile.avatar_invalid']()} />
-			{:else if view.state.matches('error')}
-				<StatusMessage variant="error" text={m['errors.save']({ subject: m['labels.avatar']() })} />
-			{/if}
+			<FormFeedback
+				{view}
+				subject={m['labels.profile']()}
+				reasonText={(reason) => formReasonText[reason]()}
+				invalidMessage={m['profile.avatar_invalid']()}
+				successMessage={() => m['profile.avatar_saved']()}
+				section="result"
+			/>
 		{/snippet}
 	</FormContent>
 {/key}

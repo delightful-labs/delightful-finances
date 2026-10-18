@@ -18,7 +18,7 @@ async function openCreation(page: Page, route: string, label: string) {
 
 for (const entity of ['category', 'tag']) {
 	const category = entity === 'category'
-	const label = category ? 'Add category' : 'Add tag'
+	const label = category ? 'Add Category' : 'Add Tag'
 	const route = category ? '/settings/categories' : '/settings/tags'
 	const field = category ? 'Category name' : 'Tag name'
 	const caption = category ? 'Categories' : 'Tags'
@@ -64,7 +64,8 @@ for (const entity of ['category', 'tag']) {
 		await name.fill(savedName)
 		await dialog.getByRole('button', { name: label, exact: true }).click()
 		await expect(dialog.getByRole('status')).toContainText(savedName)
-		await dialog.getByRole('button', { name: label, exact: true }).click()
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await trigger.click()
 		await expect(name).toHaveValue('')
 		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 		const table = page.getByRole('main').getByRole('table', { name: caption, exact: true })
@@ -98,11 +99,11 @@ for (const route of ['/expenses', '/incomes', '/expenses/new', '/incomes/new']) 
 	test(`first account can be created from ${route} and used for a transaction`, async ({
 		page
 	}) => {
-		const { dialog } = await openCreation(page, route, 'Add an account')
+		const { dialog } = await openCreation(page, route, 'Add Account')
 		await expect(page).toHaveURL(route)
 		await dialog.getByLabel('Account name', { exact: true }).fill('First checking')
 		await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
-		await dialog.getByRole('button', { name: 'Add an account', exact: true }).click()
+		await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 		await expect(dialog).not.toBeVisible()
 		await expect(page).toHaveURL(route)
 		const entry = route.endsWith('/new') ? route : `${route}/new`
@@ -123,10 +124,10 @@ for (const route of ['/expenses', '/incomes', '/expenses/new', '/incomes/new']) 
 test('account management reuses the modal and the removed account route is unavailable', async ({
 	page
 }) => {
-	const { dialog } = await openCreation(page, '/accounts', 'Add an account')
+	const { dialog } = await openCreation(page, '/accounts', 'Add Account')
 	await dialog.getByLabel('Account name', { exact: true }).fill('Modal checking')
 	await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
-	await dialog.getByRole('button', { name: 'Add an account', exact: true }).click()
+	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(dialog.getByRole('status')).toContainText('Modal checking')
 	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 	await expect(
@@ -170,7 +171,7 @@ for (const entity of ['category', 'tag', 'account']) {
 			entity === 'account'
 				? '/accounts'
 				: `/settings/${entity === 'category' ? 'categories' : 'tags'}`
-		const label = entity === 'account' ? 'Add an account' : `Add ${entity}`
+		const label = entity === 'account' ? 'Add Account' : `Add ${entity}`
 		const field = `${entity[0]?.toUpperCase()}${entity.slice(1)} name`
 		const { dialog } = await openCreation(page, route, label)
 		await dialog.getByLabel(field, { exact: true }).fill('Old workspace draft')

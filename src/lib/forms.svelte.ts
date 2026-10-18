@@ -179,11 +179,15 @@ export function createScopedFormController<
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		submitValues(formValues(event.currentTarget))
 	}
+	function changeValues(values: unknown) {
+		actor.send({ type: 'OBSERVE', observation: bound.observe() })
+		actor.send({ type: 'CHANGE', values })
+	}
 	function input(event: Event) {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		actor.send({ type: 'OBSERVE', observation: bound.observe() })
-		actor.send({ type: 'CHANGE', values: formValues(event.currentTarget) })
+		changeValues(formValues(event.currentTarget))
 	}
+
 	function reset(event: Event) {
 		event.preventDefault()
 		// Presentation keys fields by draftRevision; rejected RESET must leave native fields intact.
@@ -191,6 +195,7 @@ export function createScopedFormController<
 	}
 	return {
 		input,
+		changeValues,
 		submitValues,
 		submit,
 		reset,

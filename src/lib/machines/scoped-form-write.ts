@@ -28,6 +28,7 @@ export function createScopedFormWriteMachine<
 	observe: () => Observation
 	classifyBlocked: (reason: Reason) => 'denied' | 'unavailable'
 	write: (input: FormOperationInput<Values, Scope, Observation>) => Promise<Result>
+	assessmentObservation?: (input: FormOperationInput<Values, Scope, Observation>) => Observation
 	settlement: 'locallyPersisted' | 'confirmed'
 }) {
 	type Input = FormOperationInput<Values, Scope, Observation>
@@ -203,7 +204,14 @@ export function createScopedFormWriteMachine<
 			authorizing: {
 				invoke: {
 					src: 'review',
-					input: ({ context }) => observation(context),
+					input: ({ context }) => ({
+						...observation(context),
+						facts:
+							options.assessmentObservation?.({
+								request: request(context),
+								observation: observation(context)
+							}) ?? observation(context).facts
+					}),
 					onSnapshot: {
 						guard: ({ context, event }) => {
 							const capability = event.snapshot.context.capability

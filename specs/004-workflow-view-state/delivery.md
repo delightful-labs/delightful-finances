@@ -1,6 +1,9 @@
 # Incremental delivery: workflow and view state
 
-Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; 2c evidence was accepted; workspace rename (2d), shared create/edit mode and stable submit labels are approved and focused verification passed. General forms cycles 2a–2d are complete for their reviewed scope.
+Status: all eight delivery slices are implemented and automated verification passed.
+The user authorized completion including tests while away; the combined review is
+pending. Final evidence: 389 unit tests, 54 focused browser scenarios, application/
+test/configuration type checks and formatting checks. No commits. See [review.md](review.md).
 
 ## Architectural direction
 
@@ -21,20 +24,20 @@ These illustrate explicit eligibility, typed views, child composition, and issue
 
 ## Proposed slices and progress
 
-Slice 1 model and implementation reviews are approved; focused verification passed. Later slices
-remain pending and their order may change through review. Split rows into focused
-cycles, normally 4–6 implementation files. Discuss larger batches before editing.
+All slices below are delivered. The later completion batches and refinements were
+explicitly authorized for execution/testing and await the combined review; earlier
+approved review cycles remain recorded in the history below.
 
-| Slice | Scope                                                                                                                                                                                                  | Requirements           | Model reviewed                   | Implementation reviewed          | Verified                       |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------------------------------- | -------------------------------- | ------------------------------ |
-| 1     | Account archiving: readiness/access, per-account capability, scoped request, persistence result, teardown.                                                                                             | FR-001–007, FR-009     | Approved                         | Approved                         | Passed                         |
-| 2     | General forms refactor: shared machine/controller/view contract, domain-child composition, submission guards, typed feedback, reset/reopen/close and teardown semantics. See detailed subcycles below. | FR-002–006, FR-009–012 | Approved                         | Approved                         | Passed                         |
-| 3     | Account creation: audit existing account-creation-access ownership and close demonstrated gaps.                                                                                                        | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
-| 4     | Category management, then tag management as separate cycles: permission, protected entities, create/archive outcomes.                                                                                  | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
-| 5     | Workspace rename (first adoption in 2d), then profile editing as separate cycles: ownership, record binding, scope changes.                                                                            | FR-001–007, FR-009     | Rename approved; profile pending | Rename approved; profile pending | Rename passed; profile pending |
-| 6     | Transaction entry: explicit prerequisites/access, ready/blocked views, scoped submission, changing references.                                                                                         | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
-| 7     | Bank presentation: typed mutually exclusive modes, independent history, unchanged provider policy. Split setup and operation views if needed.                                                          | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
-| 8     | Recovery phrase lifecycle: reveal/confirmation/failure and clearing on identity changes and teardown.                                                                                                  | FR-003–009             | Pending                          | Pending                          | Pending                        |
+| Slice | Scope                                                                                                                                                                                                  | Requirements           | Model reviewed                                | Implementation reviewed                          | Verified |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | --------------------------------------------- | ------------------------------------------------ | -------- |
+| 1     | Account archiving: readiness/access, per-account capability, scoped request, persistence result, teardown.                                                                                             | FR-001–007, FR-009     | Approved                                      | Approved                                         | Passed   |
+| 2     | General forms refactor: shared machine/controller/view contract, domain-child composition, submission guards, typed feedback, reset/reopen/close and teardown semantics. See detailed subcycles below. | FR-002–006, FR-009–012 | Approved                                      | Approved                                         | Passed   |
+| 3     | Account creation: existing access actor composed with shared create/write lifecycle.                                                                                                                   | FR-001–007, FR-009     | Approved                                      | Combined review pending                          | Passed   |
+| 4     | Category and tag management: shared editing policy, protected/reference checks, create/archive outcomes.                                                                                               | FR-001–007, FR-009     | Execution authorized                          | Combined review pending                          | Passed   |
+| 5     | Workspace rename and profile name/avatar editing.                                                                                                                                                      | FR-001–007, FR-009     | Rename approved; profile execution authorized | Rename approved; completion changes await review | Passed   |
+| 6     | Transaction entry: prerequisites, account grants, exact scoped references and typed outcomes.                                                                                                          | FR-001–007, FR-009     | Execution authorized                          | Combined review pending                          | Passed   |
+| 7     | Discriminated bank presentation and independent history; provider behavior retained.                                                                                                                   | FR-001–007, FR-009     | Execution authorized                          | Combined review pending                          | Passed   |
+| 8     | Identity-bound recovery phrase lifecycle, confirmation and teardown cleanup.                                                                                                                           | FR-003–009             | Execution authorized                          | Combined review pending                          | Passed   |
 
 ## General forms work: slice 2
 
@@ -159,3 +162,32 @@ Domain permission/navigation races are covered by controlled machines, while rea
 browser scenarios cover local offline save/reload and owner/admin/member/viewer
 access. Other domain forms still need their separate adoption cycles. Review this
 verified cycle before starting the account-creation slice.
+
+## Slice 3a: account creation audit/model
+
+The prior verified cycle was accepted through user continuation. The concrete
+[account-creation model](account-creation.md) proposes reusing the existing access
+actor through a revision-aware readiness adapter and composing the shared create
+owner/submission/single-write base. It records first-account self-unmount, opaque
+modal scope keys, blocked-form inspection and the six-file implementation scope.
+Review this model before effects; no application changes or tests were made in
+this documentation cycle.
+
+Slice 3a implementation is now prepared for review in the approved six-file
+scope. It reuses the existing access policy and shared create/write lifecycle.
+Static application checks pass. Focused runtime verification remains pending
+implementation approval; no tests were added or run in this cycle.
+
+## Authorized combined completion
+
+All remaining slices and their tests are complete under the user's explicit
+combined-review authorization. `remaining-work.md` records the model and actual
+integration corrections; `review.md` maps the implementation to review routes.
+The final generic refinements (request assessment projection, controlled input,
+success reset and immutable observation snapshots) are included in that review.
+
+Final browser runs: workflow completion 37; bank/readiness 7; shared forms 5;
+workspace rename access 4; account archive 1. All passed, totaling 54 scenarios.
+Final unit run: 389 passed in 28 files. Static/type/format checks passed.
+See tasks.md for exact commands, intermediate corrections and coverage limits.
+This is automated verification, not a claim that the pending user review occurred.

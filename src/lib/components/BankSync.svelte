@@ -6,25 +6,13 @@
 	import WifiNoIcon from 'tdesign-icons-svg/src/wifi-no.svg?component'
 	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
-	import { bankSetupSteps, type BankStatus, type LastSync } from '#lib/machines/bank-sync/types.js'
-	import type { ProviderAccountView } from '#lib/machines/bank-sync/account-options.js'
+	import { bankSetupSteps, type BankPresentation } from '#lib/bank-presentation-contract.js'
 	let {
 		browserOffline,
-		status,
-		setupView,
-		setupStep,
+		view,
 		onTestEncryption,
 		onVerifyDecryption,
 		onSaveConnection,
-		busy,
-		loadingProvider,
-		showSetup,
-		showConnected,
-		showRecovery,
-		showRestricted,
-		showStatus,
-		providerAccounts,
-		outcome,
 		onConnect,
 		onDiscover,
 		onSync,
@@ -34,29 +22,10 @@
 		onCancel
 	}: {
 		browserOffline: boolean
-		status: BankStatus | undefined
-		setupStep: number
-		setupView:
-			| 'creating'
-			| 'test-encryption'
-			| 'encrypting'
-			| 'test-decryption'
-			| 'verifying'
-			| 'save'
-			| 'saving'
-			| null
+		view: BankPresentation
 		onTestEncryption: () => void
 		onVerifyDecryption: () => void
 		onSaveConnection: () => void
-		busy: boolean
-		loadingProvider: boolean
-		showSetup: boolean
-		showConnected: boolean
-		showRecovery: boolean
-		showRestricted: boolean
-		showStatus: boolean
-		providerAccounts: readonly ProviderAccountView[]
-		outcome: LastSync | undefined
 		onConnect: (token: string) => void
 		onDiscover: () => void
 		onSync: () => void
@@ -65,6 +34,13 @@
 		onDisconnect: () => void
 		onCancel: () => void
 	} = $props()
+	const status = $derived(view.status)
+	const outcome = $derived(view.history)
+	const providerAccounts = $derived(view.providerAccounts)
+	const busy = $derived(view.activity.kind === 'working')
+	const setupStep = $derived(view.mode.kind === 'setup' ? view.mode.step : 0)
+	const setupView = $derived(view.mode.kind === 'setup' ? view.mode.stage : null)
+
 	let token = $state('')
 	const statusText = $derived(
 		status?.key === 'bank.idle'
@@ -175,18 +151,21 @@
 <div class="bank-flow">
 	<h1>{m['bank.title']()}</h1>
 	<p>{m['bank.manual_only']()}</p>
-	{#if showStatus && !(browserOffline && status?.key === 'bank.idle')}
+	{#if status && !(browserOffline && status?.key === 'bank.idle')}
 		<p role="status" aria-live="polite">{statusText}</p>
 	{/if}
 	{#if outcomeText}<p>{outcomeText}</p>{/if}
-	{#if loadingProvider}<LoadingSpinner role="presentation" aria-hidden="true" />{/if}
-	{#if showRestricted}
+	{#if view.activity.kind === 'working' && view.activity.indicator === 'provider'}<LoadingSpinner
+			role="presentation"
+			aria-hidden="true"
+		/>{/if}
+	{#if view.mode.kind === 'restricted'}
 		<p>{m['bank.restricted']()}</p>
 	{:else}
-		{#if showSetup}
+		{#if view.mode.kind === 'setup'}
 			{@render connectionSetup()}
 		{/if}
-		{#if showConnected}
+		{#if view.mode.kind === 'connected'}
 			<Button type="button" onclick={onDiscover} disabled={busy}>
 				<Icon style="width: 1em; height: 1em;" icon={SearchIcon} />
 				{m['bank.discover']()}
@@ -203,7 +182,7 @@
 							<p>{m['bank.mapping_failure']()}</p>
 						{:else}
 							<Button type="button" disabled={busy} onclick={() => onCreateAccount(provider.id)}
-								>{m['actions.add']({ name: `account “${provider.name}”` })}</Button
+								>{m['bank.add_provider_account']({ name: provider.name })}</Button
 							>
 						{/if}
 						{#if provider.showExisting}
@@ -225,7 +204,7 @@
 				{/each}
 			</ul>
 		{/if}
-		{#if showConnected}
+		{#if view.mode.kind === 'connected'}
 			<div class="connection-actions">
 				<Button
 					type="button"
@@ -243,7 +222,7 @@
 			{#if browserOffline}
 				<p id="bank-sync-offline">{m['bank.sync_offline']()}</p>
 			{/if}
-			{#if showRecovery}
+			{#if view.mode.recovery === 'available'}
 				<Details summary={m['bank.lost_passkey']()}>
 					<div class="setup-flow">
 						<p>{m['bank.recovery']()}</p>

@@ -7,10 +7,10 @@ async function createAccount(page: Page, name: string) {
 	await page.goto('/accounts')
 	await prepareSidebar(page)
 	await expect(page.getByLabel('Current workspace', { exact: true })).not.toHaveValue('')
-	const dialog = await openCreationModal(page, 'Add an account')
+	const dialog = await openCreationModal(page, 'Add Account')
 	await dialog.getByLabel('Account name').fill(name)
 	await dialog.getByLabel('Account type').selectOption('bank')
-	await dialog.getByRole('button', { name: 'Add an account', exact: true }).click()
+	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(dialog.getByRole('status')).toContainText(name)
 	await closeCreationModal(page)
 }
@@ -286,9 +286,7 @@ async function uploadAvatar(
 	replace = false
 ) {
 	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
-	await page
-		.getByRole('button', { name: replace ? 'Replace avatar' : 'Upload avatar', exact: true })
-		.click()
+	await page.getByRole('button', { name: 'Save avatar', exact: true }).click()
 	await expect(
 		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved on this device.' })
 	).toHaveCount(1)
@@ -345,11 +343,8 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 		)
 		.toBe(true)
 	await page.reload()
-	await expect(
-		page
-			.getByRole('button', { name: 'Upload avatar', exact: true })
-			.and(page.locator('button[type="submit"]'))
-	).toBeVisible()
+	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+	await expect(page.getByRole('button', { name: 'Save avatar', exact: true })).toHaveCount(0)
 	const removed = await avatarRecord(page)
 	expect(removed).toEqual({ ...first, byteLength: 0, mimeType: null, checksum: null })
 	expect(firstUrl).toMatch(/^blob:/)
@@ -368,7 +363,7 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 		{ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') }
 	]) {
 		await page.getByLabel('Avatar', { exact: true }).setInputFiles(file)
-		await page.getByRole('button', { name: 'Upload avatar', exact: true }).click()
+		await page.getByRole('button', { name: 'Save avatar', exact: true }).click()
 		await expect(page.getByRole('alert')).toHaveText(
 			'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
 		)
@@ -401,11 +396,8 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 	}
 	await expect.poll(async () => (await avatarRecord(page, true)).byteLength).toBe(0)
 	await page.reload()
-	await expect(
-		page
-			.getByRole('button', { name: 'Upload avatar', exact: true })
-			.and(page.locator('button[type="submit"]'))
-	).toBeVisible()
+	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+	await expect(page.getByRole('button', { name: 'Save avatar', exact: true })).toHaveCount(0)
 })
 
 test('avatar follows account recovery on another device', async ({ page, browser, baseURL }) => {

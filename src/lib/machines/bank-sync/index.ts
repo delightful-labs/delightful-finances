@@ -1,3 +1,4 @@
+import type { BankPresentation } from '#lib/bank-presentation-contract.js'
 import type { ActorRefFrom, EventObject, SnapshotFrom } from 'xstate'
 import { assign, getInitialSnapshot, raise, sendTo, setup, stateIn } from 'xstate'
 import { bankAvailabilityMachine, availabilityObservation } from './availability.js'
@@ -581,11 +582,21 @@ export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBa
 		allowed: snapshot.context.environment.allowed,
 		connected: snapshot.context.environment.connected,
 		showSync: snapshot.context.availability.hasTag('show-sync'),
-		showSetup: snapshot.context.availability.hasTag('show-setup'),
-		showConnected: snapshot.context.availability.hasTag('show-connected'),
-		showRecovery: snapshot.context.availability.hasTag('show-recovery'),
-		showRestricted: snapshot.context.availability.hasTag('show-restricted'),
-		showStatus: !snapshot.hasTag('setup'),
+		mode: snapshot.context.availability.hasTag('show-restricted')
+			? { kind: 'restricted' }
+			: snapshot.context.availability.hasTag('show-setup')
+				? {
+						kind: 'setup',
+						step: metadata.setupStep ?? 0,
+						stage: snapshot.matches('setup') ? (metadata.setupView ?? null) : null
+					}
+				: { kind: 'connected', recovery: 'available' },
+		activity: snapshot.hasTag('busy')
+			? { kind: 'working', indicator: metadata.loadingProvider ? 'provider' : 'general' }
+			: { kind: 'idle' },
+		status: snapshot.hasTag('setup') ? undefined : metadata.status,
+		history: snapshot.context.lastSync,
+
 		providerAccounts: Array.from(
 			snapshot.context.mappingActors.values(),
 			(actor): ProviderAccountView => {
@@ -600,5 +611,5 @@ export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBa
 			}
 		),
 		outcome: snapshot.context.lastSync
-	}
+	} satisfies BankPresentation & Record<string, unknown>
 }

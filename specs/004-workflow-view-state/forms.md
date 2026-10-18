@@ -377,3 +377,25 @@ access checks and offline rename/reload passed. Stable modal labeling was checke
 while its synthetic write remained pending. Other domain forms retain their legacy
 controllers until their scheduled migration; no broader edit-mode adoption is
 implied. Exact commands and controlled-race/browser limits are in tasks.md.
+
+## Completion adoption refinements
+
+The user's request to finish the remaining work including tests authorizes the
+remaining domain adoptions and combined review. Single-write composition now has
+an optional pure `assessmentObservation` projection: validated request values are
+made visible to the same domain policy used for availability. Generic code still
+contains no entity policy. Raw observations determine scope before assessment.
+
+Inline file editing can select `resetOnSuccess` at owner startup. A successful
+operation then releases tracked raw draft data and advances the shared draft
+revision while retaining typed success feedback. This avoids retaining uploaded
+Files or interpreting a native file reset as new user input. Rejected validation
+retains the selected draft for correction; busy reset remains guarded. Ordinary
+forms keep their existing success behavior. A dedicated avatar machine test and
+browser upload/replace/remove/offline scenarios cover this option.
+
+The controller exposes `changeValues` for controlled inputs such as InputAvatar;
+DOM form input and controlled selection both forward observations and CHANGE to
+the same guarded owner. Pure components receive a selection callback, never a
+controller. Presentation resets track derived scalar draft revisions so unrelated
+view snapshots cannot clear the user's selection or payment disclosure.

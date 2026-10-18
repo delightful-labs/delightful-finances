@@ -141,10 +141,10 @@ test('account list shows an empty result and newly created accounts', async ({ p
 	const main = page.getByRole('main')
 	await expect(main.getByText('Start with one place you keep money.')).toBeVisible()
 	await expect(main.getByRole('table')).toHaveCount(0)
-	const modal = await openCreationModal(page, 'Add an account')
+	const modal = await openCreationModal(page, 'Add Account')
 	await modal.getByLabel('Account name').fill('Everyday checking')
 	await modal.getByLabel('Account type').selectOption('bank')
-	await modal.getByRole('button', { name: 'Add an account' }).click()
+	await modal.getByRole('button', { name: 'Add Account' }).click()
 	await expect(modal.getByRole('status')).toContainText('Everyday checking')
 	await navigateSidebar(page, 'Accounts')
 	await expect(main.getByRole('cell', { name: 'Everyday checking', exact: true })).toBeVisible()
@@ -160,16 +160,16 @@ test('account form rejects whitespace and allows corrected cash, bank, and card 
 }) => {
 	for (const kind of ['cash', 'bank', 'card']) {
 		await page.goto('/accounts')
-		const modal = await openCreationModal(page, 'Add an account')
+		const modal = await openCreationModal(page, 'Add Account')
 		await modal.getByLabel('Account name').fill('   ')
 		await modal.getByLabel('Account type').selectOption(kind)
-		await modal.getByRole('button', { name: 'Add an account' }).click()
+		await modal.getByRole('button', { name: 'Add Account' }).click()
 		await expect(modal.getByRole('alert')).toHaveText(
 			'Enter an account name and select an account type.'
 		)
 		await expect(modal.getByLabel('Account type')).toHaveValue(kind)
 		await modal.getByLabel('Account name').fill(`  Test ${kind}  `)
-		await modal.getByRole('button', { name: 'Add an account' }).click()
+		await modal.getByRole('button', { name: 'Add Account' }).click()
 		await expect(modal.getByRole('status')).toHaveText(`Account Test ${kind} saved.`)
 		await navigateSidebar(page, 'Accounts')
 		await expect(
@@ -202,20 +202,20 @@ test('account form resets its draft and saves to the selected workspace', async 
 		return workspace.id
 	})
 	await navigateSidebar(page, 'Accounts')
-	const modal = await openCreationModal(page, 'Add an account')
+	const modal = await openCreationModal(page, 'Add Account')
 	await modal.getByLabel('Account name').fill('Previous workspace draft')
 	await modal.getByLabel('Account type').selectOption('cash')
 	const selector = page.getByLabel('Current workspace', { exact: true })
 	await selectWorkspace(selector, secondWorkspaceId)
-	await openCreationModal(page, 'Add an account')
+	await openCreationModal(page, 'Add Account')
 	await expect(modal.getByLabel('Account name')).toHaveValue('')
 	await expect(modal.getByLabel('Account type')).toHaveValue('')
 	await modal.getByLabel('Account name').fill('Business checking')
 	await modal.getByLabel('Account type').selectOption('bank')
-	await modal.getByRole('button', { name: 'Add an account' }).click()
+	await modal.getByRole('button', { name: 'Add Account' }).click()
 	await expect(modal.getByRole('status')).toHaveText('Account Business checking saved.')
 	await selectWorkspace(selector, firstWorkspaceId)
-	await openCreationModal(page, 'Add an account')
+	await openCreationModal(page, 'Add Account')
 	await expect(modal.getByLabel('Account name')).toHaveValue('')
 	await expect(modal.getByRole('status')).toHaveCount(0)
 	await navigateSidebar(page, 'Accounts')
@@ -296,14 +296,14 @@ test('transaction list shows empty income and expense views', async ({ page }) =
 	const main = page.getByRole('main')
 	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
 	await expect(main.getByRole('listitem')).toHaveCount(0)
-	await expect(main.getByRole('link', { name: 'Add expense' })).toHaveAttribute(
+	await expect(main.getByRole('link', { name: 'Add Expenses' })).toHaveAttribute(
 		'href',
 		'/expenses/new'
 	)
 	await navigateSidebar(page, 'Income')
 	await expect(page).toHaveURL('/incomes')
 	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
-	await expect(main.getByRole('link', { name: 'Add income' })).toHaveAttribute(
+	await expect(main.getByRole('link', { name: 'Add Income' })).toHaveAttribute(
 		'href',
 		'/incomes/new'
 	)
@@ -578,7 +578,7 @@ for (const scenario of formScenarios) {
 		await page
 			.getByRole('main')
 			.getByRole('link', {
-				name: scenario.kind === 'expense' ? 'Add expense' : 'Add income',
+				name: scenario.kind === 'expense' ? 'Add Expenses' : 'Add Income',
 				exact: true
 			})
 			.click()
@@ -768,7 +768,7 @@ for (const scenario of formScenarios) {
 		await page
 			.getByRole('main')
 			.getByRole('link', {
-				name: scenario.kind === 'expense' ? 'Add expense' : 'Add income',
+				name: scenario.kind === 'expense' ? 'Add Expenses' : 'Add Income',
 				exact: true
 			})
 			.click()
@@ -903,7 +903,7 @@ test('account archive works offline, retains history, and excludes new-entry opt
 		.toEqual({ archived: true, retained: true })
 	await navigateSidebar(page, 'Expenses')
 	await expect(main.getByText('Retained archived history', { exact: true })).toBeVisible()
-	await main.getByRole('link', { name: 'Add expense', exact: true }).click()
+	await main.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 	await expect(main.getByText('Add an account before recording a transaction.')).toBeVisible()
 	await page.goto('/accounts')
 	await expect(main.getByText('Start with one place you keep money.')).toBeVisible()
@@ -1118,10 +1118,10 @@ test('category page creates both kinds, validates names, resets drafts, and pers
 	await navigation.getByRole('link', { name: 'Categories', exact: true }).click()
 	await expect(page).toHaveURL('/settings/categories')
 	const main = page.getByRole('main')
-	const modal = await openCreationModal(page, 'Add category')
+	const modal = await openCreationModal(page, 'Add Category')
 	const name = modal.getByLabel('Category name', { exact: true })
 	const kind = modal.getByLabel('Transaction type', { exact: true })
-	const add = modal.getByRole('button', { name: 'Add category', exact: true })
+	const add = modal.getByRole('button', { name: 'Add Category', exact: true })
 	await name.fill('   ')
 	await add.click()
 	await expect(modal.getByRole('alert')).toHaveText(
@@ -1130,14 +1130,16 @@ test('category page creates both kinds, validates names, resets drafts, and pers
 	await name.fill('  Travel  ')
 	await add.click()
 	await expect(modal.getByRole('status')).toHaveText('Category Travel saved.')
+	await closeCreationModal(page)
 	await expect(main.getByRole('row', { name: /Travel Expenses/ })).toBeVisible()
-	await add.click()
+	await openCreationModal(page, 'Add Category')
 	await name.fill('  Bonus  ')
 	await kind.selectOption('income')
 	await add.click()
 	await expect(modal.getByRole('status')).toHaveText('Category Bonus saved.')
+	await closeCreationModal(page)
 	await expect(main.getByRole('row', { name: /Bonus Income/ })).toBeVisible()
-	await add.click()
+	await openCreationModal(page, 'Add Category')
 	await name.fill('Unsaved category')
 	const secondId = await page.evaluate(async () => {
 		const { app, db, userId } = window.workspaceSettingsTest
@@ -1163,7 +1165,7 @@ test('category page creates both kinds, validates names, resets drafts, and pers
 	const firstId = await selector.inputValue()
 	await expect(selector.locator(`option[value="${secondId}"]`)).toHaveCount(1)
 	await selectWorkspace(selector, secondId)
-	await openCreationModal(page, 'Add category')
+	await openCreationModal(page, 'Add Category')
 	await expect(name).toHaveValue('')
 	await expect(main.getByRole('row', { name: /Travel Expenses/ })).toHaveCount(0)
 	await expect(main.getByText('No categories yet.')).toBeVisible()
@@ -1285,7 +1287,7 @@ test('category page counts connections, archives offline, protects system catego
 	await page.getByRole('checkbox', { name: 'All accounts', exact: true }).check()
 	await navigateSidebar(page, 'Expenses')
 	await expect(main.getByText('Category retained history', { exact: true })).toBeVisible()
-	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
+	await page.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 	await expect(
 		main.getByLabel('Category', { exact: true }).locator(`option[value="${fixture.categoryId}"]`)
 	).toHaveCount(0)
@@ -1295,7 +1297,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 	test(`category page permissions: ${role}`, async ({ page, browser }) => {
 		await start(page)
 		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-		const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await otherContext.newPage()
 			await start(subject)
@@ -1336,10 +1338,16 @@ for (const role of ['admin', 'member', 'viewer']) {
 				has: subject.getByRole('rowheader', { name: 'Permission category', exact: true })
 			})
 			await expect(row).toBeVisible()
-			const add = main.getByRole('button', { name: 'Add category', exact: true }).first()
+			const add = main.getByRole('button', { name: 'Add Category', exact: true }).first()
 			if (role === 'viewer') {
-				await expect(add).toBeDisabled()
-				await expect(creationDialog(subject, 'Add category')).not.toBeVisible()
+				await expect(add).toBeEnabled()
+				await add.click()
+				const blocked = creationDialog(subject, 'Add Category')
+				await expect(blocked.getByLabel('Category name', { exact: true })).toBeDisabled()
+				await expect(
+					blocked.getByRole('button', { name: 'Add Category', exact: true })
+				).toBeDisabled()
+				await blocked.getByRole('button', { name: 'Cancel', exact: true }).click()
 				await expect(row.getByRole('button')).toHaveCount(0)
 				const outcomes = await subject.evaluate(
 					async ({ organizationId, categoryId }) => {
@@ -1373,9 +1381,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				for (const outcome of outcomes)
 					expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
 			} else {
-				const modal = await openCreationModal(subject, 'Add category')
+				const modal = await openCreationModal(subject, 'Add Category')
 				await modal.getByLabel('Category name', { exact: true }).fill(`${role} category`)
-				await modal.getByRole('button', { name: 'Add category', exact: true }).click()
+				await modal.getByRole('button', { name: 'Add Category', exact: true }).click()
 				await expect(modal.getByRole('status')).toHaveText(`Category ${role} category saved.`)
 				await closeCreationModal(subject)
 				await row.getByRole('button', { name: 'Archive Permission category', exact: true }).click()
@@ -1406,7 +1414,7 @@ test('category page counts only readable transactions for selected account acces
 }) => {
 	await start(page)
 	const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-	const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+	const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 	try {
 		const subject = await otherContext.newPage()
 		await start(subject)
@@ -1509,10 +1517,10 @@ test('tag page creates optional categories, rejects blank names, filters archive
 	await navigateSidebar(page, 'Tags')
 	await expect(page).toHaveURL('/settings/tags')
 	const main = page.getByRole('main')
-	const modal = await openCreationModal(page, 'Add tag')
+	const modal = await openCreationModal(page, 'Add Tag')
 	const name = modal.getByLabel('Tag name', { exact: true })
 	const category = modal.getByLabel('Category', { exact: true })
-	const add = modal.getByRole('button', { name: 'Add tag', exact: true })
+	const add = modal.getByRole('button', { name: 'Add Tag', exact: true })
 	await expect(
 		category.getByRole('option', { name: 'Archived choice (Expenses)', exact: true })
 	).toHaveCount(0)
@@ -1525,19 +1533,21 @@ test('tag page creates optional categories, rejects blank names, filters archive
 	await name.fill('  Unassigned tag  ')
 	await add.click()
 	await expect(modal.getByRole('status')).toHaveText('Tag Unassigned tag saved.')
+	await closeCreationModal(page)
 	await expect(main.getByRole('row', { name: /Unassigned tag No category/ })).toBeVisible()
-	await add.click()
+	await openCreationModal(page, 'Add Tag')
 	await name.fill('  Categorized tag  ')
 	await category.selectOption(categoryId)
 	await add.click()
 	await expect(modal.getByRole('status')).toHaveText('Tag Categorized tag saved.')
+	await closeCreationModal(page)
 	await expect(main.getByRole('row', { name: /Categorized tag Tag category/ })).toBeVisible()
 	await page.evaluate(async (id) => {
 		const { app, db } = window.workspaceSettingsTest
 		await db.update(app.categories, id, { archivedAt: new Date() }).wait({ tier: 'global' })
 	}, categoryId)
 	await expect(main.getByRole('row', { name: /Categorized tag Tag category/ })).toBeVisible()
-	await add.click()
+	await openCreationModal(page, 'Add Tag')
 	await expect(category.locator(`option[value="${categoryId}"]`)).toHaveCount(0)
 	await expect(category).toHaveValue('')
 	await page.reload()
@@ -1592,20 +1602,20 @@ test('tag page switches workspace drafts and archives offline without removing c
 	}, firstId)
 	await navigateSidebar(page, 'Tags')
 	const main = page.getByRole('main')
-	const modal = await openCreationModal(page, 'Add tag')
+	const modal = await openCreationModal(page, 'Add Tag')
 	const name = modal.getByLabel('Tag name', { exact: true })
 	const selector = page.getByLabel('Current workspace', { exact: true })
 	await name.fill('Unsaved draft')
 	await selectWorkspace(selector, fixture.secondId)
-	await openCreationModal(page, 'Add tag')
+	await openCreationModal(page, 'Add Tag')
 	await expect(name).toHaveValue('')
-	await expect(main.getByText('No tags yet.', { exact: true })).toBeVisible()
+	await expect(main.getByText('No Tags yet.', { exact: true })).toBeVisible()
 	const category = modal.getByLabel('Category', { exact: true })
 	await expect(
 		category.getByRole('option', { name: 'Retained tag category (Expenses)', exact: true })
 	).toHaveCount(0)
 	await name.fill('Second tag')
-	await modal.getByRole('button', { name: 'Add tag', exact: true }).click()
+	await modal.getByRole('button', { name: 'Add Tag', exact: true }).click()
 	await expect(modal.getByRole('status')).toHaveText('Tag Second tag saved.')
 	await selectWorkspace(selector, firstId)
 	await expect(main.getByRole('row', { name: /Second tag/ })).toHaveCount(0)
@@ -1644,7 +1654,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 	test(`tag page permissions: ${role}`, async ({ page, browser }) => {
 		await start(page)
 		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-		const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await otherContext.newPage()
 			await start(subject)
@@ -1683,10 +1693,14 @@ for (const role of ['admin', 'member', 'viewer']) {
 				has: subject.getByRole('rowheader', { name: 'Permission tag', exact: true })
 			})
 			await expect(row).toBeVisible()
-			const add = main.getByRole('button', { name: 'Add tag', exact: true }).first()
+			const add = main.getByRole('button', { name: 'Add Tag', exact: true }).first()
 			if (role === 'viewer') {
-				await expect(add).toBeDisabled()
-				await expect(creationDialog(subject, 'Add tag')).not.toBeVisible()
+				await expect(add).toBeEnabled()
+				await add.click()
+				const blocked = creationDialog(subject, 'Add Tag')
+				await expect(blocked.getByLabel('Tag name', { exact: true })).toBeDisabled()
+				await expect(blocked.getByRole('button', { name: 'Add Tag', exact: true })).toBeDisabled()
+				await blocked.getByRole('button', { name: 'Cancel', exact: true }).click()
 				await expect(row.getByRole('button')).toHaveCount(0)
 				const outcomes = await subject.evaluate(
 					async ({ organizationId, tagId }) => {
@@ -1716,9 +1730,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				for (const outcome of outcomes)
 					expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
 			} else {
-				const modal = await openCreationModal(subject, 'Add tag')
+				const modal = await openCreationModal(subject, 'Add Tag')
 				await modal.getByLabel('Tag name', { exact: true }).fill(`${role} tag`)
-				await modal.getByRole('button', { name: 'Add tag', exact: true }).click()
+				await modal.getByRole('button', { name: 'Add Tag', exact: true }).click()
 				await expect(modal.getByRole('status')).toHaveText(`Tag ${role} tag saved.`)
 				await closeCreationModal(subject)
 				await row.getByRole('button', { name: 'Archive Permission tag', exact: true }).click()
@@ -1795,7 +1809,7 @@ for (const kind of ['expense', 'income']) {
 			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
 			.click()
 		await page
-			.getByRole('link', { name: kind === 'expense' ? 'Add expense' : 'Add income', exact: true })
+			.getByRole('link', { name: kind === 'expense' ? 'Add Expenses' : 'Add Income', exact: true })
 			.click()
 		const main = page.getByRole('main')
 		await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
@@ -1911,7 +1925,7 @@ test('transaction tags reject a tag archived after selection without saving part
 		).id
 	}, organizationId)
 	await navigateSidebar(page, 'Expenses')
-	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
+	await page.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 	const main = page.getByRole('main')
 	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Retry tag account' })
 	await main.getByLabel('Amount', { exact: true }).fill('5')
@@ -1926,7 +1940,10 @@ test('transaction tags reject a tag archived after selection without saving part
 		await db.update(app.tags, id, { archivedAt: new Date() }).wait({ tier: 'global' })
 	}, tagId)
 	await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
-	await expect(main.getByRole('alert')).toHaveText('Could not save Transaction. Please try again.')
+	await expect(main.getByRole('alert')).toHaveText([
+		'Could not save Transaction. Please try again.',
+		'The save result is unknown. Check your records before trying again.'
+	])
 	const partial = await page.evaluate(async (organizationId) => {
 		const { app, db } = window.workspaceSettingsTest
 		return (
@@ -1998,7 +2015,7 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 		return { organizationId: org.id, accountId: account.id, categoryId: category.id }
 	}, firstId)
 	await navigateSidebar(page, 'Expenses')
-	await page.getByRole('link', { name: 'Add expense', exact: true }).click()
+	await page.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 	const main = page.getByRole('main')
 	const tags = main
 		.getByRole('combobox', { name: 'Tags', exact: true })
@@ -2418,7 +2435,7 @@ for (const scenario of [
 				.update(app.profiles, profile.id, { displayName: 'Shared author' })
 				.wait({ tier: 'global' })
 		})
-		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const subjectContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await subjectContext.newPage()
 			await start(subject)
@@ -2813,7 +2830,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 				.wait({ tier: 'global' })
 			return { id: profile.id, userId }
 		})
-		const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const context = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await context.newPage()
 			await start(subject)

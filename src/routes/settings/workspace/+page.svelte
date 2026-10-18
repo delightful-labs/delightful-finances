@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { observeRow } from '#lib/observations.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { createWorkspaceRenameFormOptions } from '#lib/machines/workspace-rename.js'
 	import type {
@@ -43,8 +44,8 @@
 			membershipLoading: membershipQuery.isLoading,
 			workspaceError: workspaceQuery.error != null,
 			membershipError: membershipQuery.error != null,
-			workspace: workspaceQuery.current,
-			membership: membershipQuery.current
+			workspace: observeRow(workspaceQuery.current),
+			membership: observeRow(membershipQuery.current)
 		}
 	}
 	const options = createWorkspaceRenameFormOptions({

@@ -105,7 +105,7 @@ test('scope replacement closes the modal and resets its visible draft', async ({
 	await expect(page.getByTestId('starts')).toHaveText('0')
 })
 
-test('existing account modal retains validation, draft dismissal, save feedback and fresh reopen through the legacy adapter', async ({
+test('existing account modal retains validation, draft dismissal, save feedback and fresh reopen through the scoped owner', async ({
 	page
 }) => {
 	await page.goto('/accounts')

@@ -1,71 +1,80 @@
 <script lang="ts">
 	import { InputText, Select } from 'delightful-ui'
-	import type { z } from 'zod'
-	import type { Category, Tag } from '#lib/schema.js'
-	import type { FormController } from '#lib/forms.svelte.js'
-	import type { tagFormSchema } from '#lib/validation/tags.js'
+	import type { Tag, Category } from '#lib/schema.js'
+	import type { ManagementView, ManagementScope } from '#lib/management-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { formReasonText } from '#lib/form-messages.js'
 	import FormModal from './FormModal.svelte'
-
+	import FormFeedback from './FormFeedback.svelte'
 	let {
-		organizationId,
-		canCreate,
-		categories,
-		form
+		scope,
+		view,
+		onopen,
+		onsubmit,
+		onreset,
+		onRetryReadiness,
+		categories
 	}: {
-		organizationId: string
-		canCreate: boolean
+		scope: ManagementScope
+		view: ManagementView<Tag>
+		onopen: () => void
+		onsubmit: (event: SubmitEvent) => void
+		onreset: (event: Event) => void
+		onRetryReadiness: () => void
 		categories: readonly Category[]
-		form: FormController<z.output<typeof tagFormSchema>, Tag, { organizationId: string | null }>
 	} = $props()
 </script>
 
+<FormFeedback
+	{view}
+	subject={m['labels.tag']()}
+	reasonText={(reason) => formReasonText[reason]()}
+	invalidMessage={m['tags.validation_error']()}
+	section="readiness"
+	{onRetryReadiness}
+/>
 <FormModal
-	scope={organizationId}
+	{scope}
 	label={m['actions.add']({ name: m['labels.tag']() })}
-	savingLabel={m['status.saving']({ subject: m['labels.tag']() })}
-	disabled={!canCreate}
-	view={form.view}
-	onopen={form.open}
-	onsubmit={form.submit}
-	onreset={form.reset}
+	{view}
+	{onopen}
+	{onsubmit}
+	{onreset}
 >
 	{#snippet fields(form)}
-		{#if !form.state.matches('success')}
-			<InputText
-				label={m['labels.tag_name']()}
-				id="tag-name"
-				name="name"
-				required
-				disabled={form.busy || !canCreate}
-			/>
-			<Select
-				label={m['labels.category']()}
-				id="tag-category"
-				name="categoryId"
-				defaultValue=""
-				disabled={form.busy || !canCreate}
-			>
-				<option value="">{m['tags.no_category']()}</option>
-				{#each categories as category (category.id)}
-					<option value={category.id}
-						>{category.name} ({category.kind === 'expense'
-							? m['labels.expenses']()
-							: m['labels.income']()})</option
-					>
-				{/each}
-			</Select>
-		{/if}
+		<InputText
+			label={m['labels.tag_name']()}
+			id="tag-name"
+			name="name"
+			required
+			disabled={!form.fieldsEditable}
+		/>
+		<Select
+			label={m['labels.category']()}
+			id="tag-category"
+			name="categoryId"
+			defaultValue=""
+			disabled={!form.fieldsEditable}
+		>
+			<option value="">{m['tags.no_category']()}</option>
+			{#each categories as category (category.id)}
+				<option value={category.id}
+					>{category.name} ({category.kind === 'expense'
+						? m['labels.expenses']()
+						: m['labels.income']()})</option
+				>
+			{/each}
+		</Select>
 	{/snippet}
-	{#snippet feedback(form)}
-		{#if form.state.matches('success') && form.state.context.result}
-			<p role="status">
-				{m['actions.saved']({ subject: m['labels.tag'](), name: form.state.context.result.name })}
-			</p>
-		{:else if form.state.matches('invalid')}
-			<p role="alert">{m['tags.validation_error']()}</p>
-		{:else if form.state.matches('error')}
-			<p role="alert">{m['errors.save']({ subject: m['labels.tag']() })}</p>
-		{/if}
+	{#snippet feedback(view)}
+		<FormFeedback
+			{view}
+			subject={m['labels.tag']()}
+			reasonText={(reason) => formReasonText[reason]()}
+			invalidMessage={m['tags.validation_error']()}
+			successMessage={(value) =>
+				m['actions.saved']({ subject: m['labels.tag'](), name: value.name })}
+			section="all"
+		/>
 	{/snippet}
 </FormModal>

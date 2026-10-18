@@ -1,81 +1,89 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
 	import { InputText, Select } from 'delightful-ui'
-	import type { z } from 'zod'
-	import type { Account } from '#lib/schema.js'
-	import type { FormController } from '#lib/forms.svelte.js'
-	import type { accountFormSchema } from '#lib/validation/accounts.js'
+	import type {
+		AccountCreationReason,
+		AccountCreationScope,
+		AccountCreationView
+	} from '#lib/account-creation-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormModal from './FormModal.svelte'
-
+	import FormFeedback from './FormFeedback.svelte'
 	let {
-		organizationId,
-		scope = organizationId,
-		form,
-		trigger
+		scope,
+		view,
+		trigger,
+		onopen,
+		onsubmit,
+		onreset,
+		onRetryReadiness
 	}: {
-		organizationId: string | null
-		scope?: string | null
+		scope: AccountCreationScope
+		view: AccountCreationView
 		trigger?: Snippet<[() => void, boolean]> | undefined
-		form: FormController<
-			z.output<typeof accountFormSchema>,
-			Account,
-			{ organizationId: string | null }
-		>
+		onopen: () => void
+		onsubmit: (event: SubmitEvent) => void
+		onreset: (event: Event) => void
+		onRetryReadiness: () => void
 	} = $props()
 	const formId = $props.id()
+	const explanations: Record<AccountCreationReason, () => string> = {
+		sessionUnavailable: () => m['accounts.create_session_unavailable'](),
+		selectWorkspace: () => m['workspace.select_workspace'](),
+		loadFailed: () => m['errors.load']({ subject: m['labels.accounts']() }),
+		loading: () => m['status.loading']({ subject: m['labels.accounts']() }),
+		readOnly: () => m['accounts.create_restricted']()
+	}
 </script>
 
+<FormFeedback
+	{view}
+	subject={m['labels.account']()}
+	reasonText={(reason) => explanations[reason]()}
+	invalidMessage={m['accounts.validation_error']()}
+	section="readiness"
+	{onRetryReadiness}
+/>
 <FormModal
 	{scope}
 	{trigger}
+	{view}
+	{onopen}
+	{onsubmit}
+	{onreset}
 	label={m['actions.add']({ name: m['labels.account']() })}
-	savingLabel={m['status.saving']({ subject: m['labels.account']() })}
-	disabled={form.view.disabled}
-	view={form.view}
-	onopen={form.open}
-	onsubmit={form.submit}
-	onreset={form.reset}
 >
 	{#snippet fields(form)}
-		{#if !form.state.matches('success')}
-			<InputText
-				label={m['labels.account_name']()}
-				id={`${formId}-name`}
-				name="name"
-				required
-				disabled={form.disabled}
-			/>
-
-			<Select
-				label={m['labels.account_type']()}
-				id={`${formId}-kind`}
-				name="kind"
-				required
-				disabled={form.disabled}
-				defaultValue=""
-			>
-				<option value="" disabled>{m['labels.account_type']()}</option>
-				<option value="cash">{m['accounts.type.cash']()}</option>
-				<option value="bank">{m['accounts.type.bank']()}</option>
-				<option value="card">{m['accounts.type.card']()}</option>
-			</Select>
-
-			<p>{m['accounts.currency_usd']()}</p>
-		{/if}
+		<InputText
+			label={m['labels.account_name']()}
+			id={`${formId}-name`}
+			name="name"
+			required
+			disabled={!form.fieldsEditable}
+		/>
+		<Select
+			label={m['labels.account_type']()}
+			id={`${formId}-kind`}
+			name="kind"
+			required
+			disabled={!form.fieldsEditable}
+			defaultValue=""
+		>
+			<option value="" disabled>{m['labels.account_type']()}</option>
+			<option value="cash">{m['accounts.type.cash']()}</option>
+			<option value="bank">{m['accounts.type.bank']()}</option>
+			<option value="card">{m['accounts.type.card']()}</option>
+		</Select>
+		<p>{m['accounts.currency_usd']()}</p>
 	{/snippet}
-	{#snippet feedback(form)}
-		{#if form.state.matches('success') && form.state.context.result}
-			<p role="status">
-				{m['actions.saved']({
-					subject: m['labels.account'](),
-					name: form.state.context.result.name
-				})}
-			</p>
-		{:else if form.state.matches('invalid')}
-			<p role="alert">{m['accounts.validation_error']()}</p>
-		{:else if form.state.matches('error')}
-			<p role="alert">{m['errors.save']({ subject: m['labels.account']() })}</p>
-		{/if}
+	{#snippet feedback(view)}
+		<FormFeedback
+			{view}
+			subject={m['labels.account']()}
+			reasonText={(reason) => explanations[reason]()}
+			invalidMessage={m['accounts.validation_error']()}
+			successMessage={(value) =>
+				m['actions.saved']({ subject: m['labels.account'](), name: value.name })}
+		/>
 	{/snippet}
 </FormModal>

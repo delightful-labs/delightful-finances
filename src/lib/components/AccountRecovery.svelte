@@ -2,19 +2,14 @@
 	import { Button, Textarea, Checkbox, Dialog } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 
+	import type { RecoveryPhraseView } from '#lib/recovery-phrase-contract.js'
 	let {
-		phrase,
-		revealed,
-		savedConfirmed,
-		loadError,
+		view,
 		onReveal,
 		onHide,
 		onConfirm
 	}: {
-		phrase: string
-		revealed: boolean
-		savedConfirmed: boolean
-		loadError: boolean
+		view: RecoveryPhraseView
 		onReveal: () => void
 		onHide: () => void
 		onConfirm: (value: boolean) => void
@@ -23,17 +18,21 @@
 
 <p>{m['recovery.description']()}</p>
 
-<Button type="button" onclick={onReveal}>{m['recovery.show']()}</Button>
+<Button
+	type="button"
+	disabled={view.kind === 'revealing' || view.kind === 'closed'}
+	onclick={onReveal}>{m['recovery.show']()}</Button
+>
 
 <Dialog
 	heading={m['recovery.heading']()}
 	aria-describedby="recovery-warning"
-	open={revealed}
+	open={view.kind === 'revealed'}
 	closedby="any"
 	oncancel={onHide}
 	onclose={onHide}
 >
-	{#if revealed}
+	{#if view.kind === 'revealed'}
 		<div class="recovery-content">
 			<p id="recovery-warning">{m['recovery.warning']()}</p>
 			<Textarea
@@ -41,15 +40,15 @@
 				id="account-recovery-phrase"
 				rows={4}
 				readonly
-				value={phrase}
+				value={view.phrase}
 			></Textarea>
 			<Checkbox
 				label={m['recovery.confirm']()}
-				checked={savedConfirmed}
+				checked={view.confirmation === 'confirmed'}
 				onchange={(event) => onConfirm(event.currentTarget.checked)}
 			/>
 			<div class="recovery-controls">
-				<Button type="button" disabled={!savedConfirmed} onclick={onHide}>
+				<Button type="button" disabled={view.confirmation !== 'confirmed'} onclick={onHide}>
 					{m['recovery.hide']()}
 				</Button>
 				<Button type="button" onclick={onHide}>{m['recovery.close']()}</Button>
@@ -58,7 +57,7 @@
 	{/if}
 </Dialog>
 
-{#if loadError}
+{#if view.kind === 'failed'}
 	<p role="alert">{m['recovery.error']()}</p>
 {/if}
 

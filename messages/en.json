@@ -5,6 +5,22 @@
 		"short_name": "Delightful",
 		"description": "A local-first personal finance tracker."
 	},
+	"forms": {
+		"session_unavailable": "Editing is unavailable until your session is ready. If your session changed, reopen this page.",
+		"loading": "Loading editing permissions and records…",
+		"load_failed": "Editing information could not be loaded.",
+		"read_only": "You do not have permission to make this change.",
+		"unavailable_reference": "A selected record is no longer available in this workspace. Select an available record and try again.",
+		"protected_record": "System categories cannot be archived.",
+		"profile_unavailable": "Your profile is unavailable for editing.",
+		"no_categories": "No applicable category is available for this transaction.",
+		"settling": "Finishing an issued save before ending this request.",
+		"scope_changed": "The workspace, identity, record or your access changed before this request completed.",
+		"cancelled": "The request was cancelled.",
+		"closed": "The form was closed.",
+		"interrupted_saved": "The change was saved locally before the request ended. Check the original record before trying again.",
+		"unknown": "The save result is unknown. Check your records before trying again."
+	},
 	"workspace": {
 		"loading": "Getting your private workspace ready…",
 		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
@@ -111,6 +127,8 @@
 			"up": "Move {name} up",
 			"down": "Move {name} down"
 		},
+		"create_session_unavailable": "Account creation is unavailable until your session is ready. If your session changed, reopen this page.",
+		"create_restricted": "Only workspace owners and admins can add accounts.",
 		"validation_error": "Enter an account name and select an account type.",
 		"empty": {
 			"title": "Start with one place you keep money."
@@ -222,6 +240,7 @@
 		"avatar_description": "PNG, JPEG, or WebP, up to 10 MB. Images are resized for your avatar."
 	},
 	"bank": {
+		"add_provider_account": "Add account “{name}”",
 		"title": "Bank sync",
 		"setup_progress": "Bank connection setup progress",
 		"step_token": "Enter setup token",

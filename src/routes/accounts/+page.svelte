@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { observeRow, observeRows } from '#lib/observations.js'
 	import {
 		createAccountArchiveMachine,
 		selectAccountArchiveView
@@ -47,9 +48,9 @@
 			sessionReady: session.current.status === 'ready' && session.current.client?.db === db,
 			loading: accounts.isLoading || membership.isLoading || grants.isLoading,
 			failed: accounts.error != null || membership.error != null || grants.error != null,
-			accounts: accounts.current ?? [],
-			membership: membership.current,
-			grants: grants.current ?? []
+			accounts: observeRows(accounts.current),
+			membership: observeRow(membership.current),
+			grants: observeRows(grants.current)
 		}
 	}
 	const actor = createActor(

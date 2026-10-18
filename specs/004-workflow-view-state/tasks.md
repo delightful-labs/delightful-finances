@@ -360,3 +360,145 @@ runs; the manual preview is restored afterward.
 Shared forms slice 2 (2a–2d) is now verified for its reviewed scope. This evidence
 is presented for review before the next domain adoption; the overall feature
 still has the remaining surfaces listed in delivery.md.
+
+## Account creation model: slice 3a
+
+- [x] T034 Accept the prior verification through user continuation; audit AccountCreation, AccountForm, existing access actor, persistence/SDK policy and first-account lifecycle. Propose the six-file model in account-creation.md.
+- [x] T035 Obtain review of account-creation.md, including reuse of the existing access actor, scope/revision adapter, opaque modal scope keys and blocked-form inspection, before implementation effects.
+
+T034: user instructed "continue" after 76 unit tests/nine browser scenarios were
+presented. Inspection confirmed an existing owner/admin policy actor worth reusing,
+legacy controller/save branching, a non-abortable local insert, and empty-account
+views that can unmount creation on its own optimistic insert. The proposal composes
+the existing actor through an adapter and uses the verified shared create-mode
+owner/submission/single-write lifecycle. No application changes or tests in this
+model cycle; implementation tasks follow T035 review.
+
+- [x] T036 Implement the approved six-file account-creation adoption; format affected files and check application types. Present for implementation review.
+- [x] T037 After implementation approval, add and run focused account readiness/composition and browser coverage described in account-creation.md.
+
+T035–T036: user continuation approved the concrete model. AccountCreation now
+binds observations/effect to one scoped create owner; AccountForm is props-only.
+The revision-aware adapter invokes the existing owner/admin policy actor and the
+operation composes the shared single-write base. Policy initialization accepts
+optional revisioned input (existing OBSERVE/no-input usage remains supported),
+avoiding a startup send race. Older capability revisions remain older while the
+replacement child assesses. Modal scope accepts opaque keys; blocked inspection,
+stable Add labels and localized conservative settlement messages follow the model.
+
+`pnpm check` passed with zero Svelte errors/warnings and service-worker types.
+Prettier applied only to the six implementation files. No tests added or run;
+this is static validation, not runtime evidence. T037 awaits implementation review.
+
+## Authorized completion while user is away
+
+User: "can you finish this Xstate work including tests? I will review it all
+together when I'm back". This authorizes implementation and test work across the
+remaining slices without intermediate review pauses. See remaining-work.md for
+statecharts, file batches and verification plan. No commit is authorized.
+
+- [x] T038 Complete category management policy, shared form adoption and archive outcomes; verify.
+- [x] T039 Complete tag management policy, shared form adoption and archive outcomes; verify.
+- [x] T040 Complete profile name/avatar edit-mode adoption and ownership; verify.
+- [x] T041 Complete transaction readiness/access/reference assessment and scoped create form; verify.
+- [x] T042 Complete discriminated bank presentation with independent history; verify.
+- [x] T043 Complete identity-bound recovery phrase lifecycle/cleanup; verify.
+- [x] T044 Run relevant integration/regression checks, reconcile spec/task evidence and restore preview for combined review.
+
+## Completion verification: shared and domain units
+
+The latest user authorization replaces the earlier per-slice approval/test pauses.
+All model/file batches are recorded in remaining-work.md. Implementation and
+model review are pending the combined review; execution/testing were authorized.
+
+Final unit command:
+
+```sh
+pnpm test:unit --run src/lib/observations.test.ts src/lib/machines/account-creation.test.ts src/lib/machines/account-creation-access.test.ts src/lib/machines/management.test.ts src/lib/machines/profile.test.ts src/lib/machines/profile-avatar.test.ts src/lib/machines/transaction-entry.test.ts src/lib/machines/recovery-phrase.test.ts src/lib/machines/scoped-form-write.test.ts src/lib/machines/scoped-form.test.ts src/lib/machines/scoped-form-submission.test.ts src/lib/machines/workspace-rename.test.ts src/lib/machines/bank-sync src/lib/machines/account-archive.test.ts src/lib/machines/form.test.ts src/lib/machines/form-presentation.test.ts src/lib/validation src/lib/forms.test.ts
+```
+
+389 passed in 28 files. This includes domain blocked reasons, exact request
+references and fresh permission checks, raw-file success cleanup, legacy/shared
+form regressions, bank lifecycle/history/view regressions and canonical validation.
+Recovery tests use synthetic values and cover confirmation gating, failure/retry,
+hide, identity/binding replacement, shutdown and discarded late reveals.
+
+`pnpm check` passed (zero Svelte errors/warnings and service-worker types),
+`pnpm check:tests` passed and `pnpm exec tsc --project tsconfig.json --noEmit`
+passed. Changed files use repository Prettier formatting; diff whitespace checks
+pass. Unit/type generation finishes before browser servers start.
+
+Corrections made during browser verification:
+
+- Controlled avatar input reports actual selection via a callback. Shared
+  resetOnSuccess releases draft Files and rebuilds native controls while retaining
+  success feedback. Scalar derived revisions prevent ordinary actor views from
+  resetting a new file selection or payment disclosure.
+- Jazz merges query rows/arrays in place. Observation adapters now copy row fields
+  inside integration effects before untracked actor delivery. This fixed first
+  account readiness offline and makes same-row permission changes observable.
+- Transaction fields now mount after readiness so native Select defaults initialize
+  with loaded options. The owner remains mounted through unavailable/settling
+  states, with typed feedback outside the fields.
+- Existing browser selectors were updated to current app labels and Manage accounts
+  navigation. Success-modal tests now Close/reopen instead of pressing a submit
+  button on a success panel. Read-only creation dialogs are inspectable but their
+  fields/submit remain disabled; SDK rejection checks remain.
+- The rejected transaction-tag scenario expects both generic failure and honest
+  unknown settlement feedback, and still checks that the actual transaction left
+  no partial rows before explicit correction/retry.
+
+Focused interim runs passed all account, category, tag, profile and recovery
+scenarios. The final full workflow and remaining bank/shared/archive regressions
+are recorded separately below once complete. Real Jazz permission checks and
+local offline/reload writes are browser-covered; deliberately delayed permission/
+shutdown races remain controlled machine tests. No claim of remote acceptance,
+physical-device passkey compatibility or interrupted-write rollback is made.
+
+## Final workflow browser verification
+
+`pnpm exec playwright test --config playwright.workflow-completion.config.ts --max-failures=1`:
+**37 passed** in the final uninterrupted run. The config owns a fresh isolated
+in-memory Jazz server at port 5180; recovery-containing scenarios disable traces,
+screenshots and video. No live provider credentials or user preview database is used.
+
+Coverage includes account cash/bank/card validation/reopen/scope, offline first
+account readiness and reload, admin creation plus live same-row role revocation,
+member/viewer blocked inspection and SDK denial; category/tag creation, history,
+counts, protected categories, all roles and offline archives; expense/income and
+check details, defaults/override/reset/workspace references, tag atomic failure/
+correction and offline creation; own-profile editing/offline attribution, dirty
+name behavior, avatar size/type/decode/retry/resources/offline handling; and
+recovery phrase confirmation plus Close/Escape/backdrop/reopen clearing.
+
+Initial failures/interrupted runs were corrected as described above. The final
+37-pass run followed all implementation and assertion corrections. The final
+unknown-settlement assertion also checks actual absence of partial transaction
+rows and successful explicit retry. Remaining regression suites are recorded next.
+
+`pnpm exec playwright test --config playwright.bank-sync.config.ts`: **7 passed**.
+Covers offline setup/connected views, no reconnect-triggered provider operation,
+explicit passkey setup/discovery/mapping/sync, idempotent imports and history,
+provider failure/retry, rejected relay destinations, lock startup failure, late
+passkey cancellation and application startup recovery. Provider and passkey
+adapters are synthetic browser fixtures; physical-device compatibility remains
+outside this behavior-preserving presentation work.
+
+## Final regression evidence
+
+- `pnpm exec playwright test --config playwright.form-presentation.config.ts`: **5 passed** (shared reset/capability, stable labels, dismissal/reopen, scope isolation, actual account creation and workspace edit/offline behavior).
+- `pnpm exec playwright test --config playwright.workspace-rename.config.ts`: **4 passed** (owner/admin/member/viewer UI and SDK access).
+- `pnpm exec playwright test --config playwright.account-archive.config.ts`: **1 passed** (local offline archive, other-account preservation and reload).
+
+Together with workflow completion (37) and bank/readiness (7), **54 browser
+scenarios passed in the final successful runs**. No application changes followed
+these runs; subsequent work only reconciles documentation and restores preview.
+The normal Vite preview is restored at http://127.0.0.1:5173 for combined review.
+No commits, deployments, dependency changes or schema changes were made.
+No implementation extension hooks are configured (.specify/extensions.yml absent).
+
+T044 completed: restored the regular preview at http://127.0.0.1:5173 after all
+checks, forced Vite dependency refresh, and confirmed HTTP 200 for /account,
+/settings/categories and /expenses/new. Final documentation links model, changes,
+verification and combined-review status. All task checkboxes are complete; user
+review remains pending by their instruction. Changes remain uncommitted.
