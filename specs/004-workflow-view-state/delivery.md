@@ -1,6 +1,6 @@
 # Incremental delivery: workflow and view state
 
-Status: proposed for review. No implementation or verification completed.
+Status: account-archiving implementation approved and focused verification passed. General forms work remains pending.
 
 ## Architectural direction
 
@@ -21,12 +21,13 @@ These illustrate explicit eligibility, typed views, child composition, and issue
 
 ## Proposed slices and progress
 
-All rows are pending. Later order may change through review. Split rows into focused
+Slice 1 model and implementation reviews are approved; focused verification passed. Later slices
+remain pending and their order may change through review. Split rows into focused
 cycles, normally 4–6 implementation files. Discuss larger batches before editing.
 
 | Slice | Scope                                                                                                                                                                                                  | Requirements           | Model reviewed | Implementation reviewed | Verified |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------------- | ----------------------- | -------- |
-| 1     | Account archiving: readiness/access, per-account capability, scoped request, persistence result, teardown.                                                                                             | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
+| 1     | Account archiving: readiness/access, per-account capability, scoped request, persistence result, teardown.                                                                                             | FR-001–007, FR-009     | Approved       | Approved                | Passed   |
 | 2     | General forms refactor: shared machine/controller/view contract, domain-child composition, submission guards, typed feedback, reset/reopen/close and teardown semantics. See detailed subcycles below. | FR-002–006, FR-009–012 | Pending        | Pending                 | Pending  |
 | 3     | Account creation: audit existing account-creation-access ownership and close demonstrated gaps.                                                                                                        | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
 | 4     | Category management, then tag management as separate cycles: permission, protected entities, create/archive outcomes.                                                                                  | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
@@ -96,3 +97,11 @@ that persistence is abortable.
 A detailed `tasks.md` follows reviewed design. This roadmap tracks pending work
 without implying implementation approval. No application code, tests, branch,
 commit, schema migration, server, or provider operation is part of this documentation cycle.
+
+## Slice 1 verification
+
+See [tasks.md](tasks.md#approved-verification) for commands, environment workarounds,
+and coverage limits. Thirteen machine tests, one offline/reload browser scenario,
+application/test type checks, and focused formatting checks passed. No application
+changes were needed during the approved test cycle. Review this evidence before
+starting slice 2a (general forms model).

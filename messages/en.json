@@ -106,7 +106,11 @@
 		"validation_error": "Enter an account name and select an account type.",
 		"empty": {
 			"title": "Start with one place you keep money."
-		}
+		},
+		"archive_restricted": "You do not have permission to archive this account.",
+		"archive_scope_changed": "The workspace or access changed before archiving completed.",
+		"archive_interrupted_saved": "The archive was saved locally before the operation ended.",
+		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
 	},
 	"transactions": {
 		"empty": {
