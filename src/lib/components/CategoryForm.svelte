@@ -66,7 +66,7 @@
 			reasonText={(reason) => formReasonText[reason]()}
 			invalidMessage={m['categories.validation_error']()}
 			successMessage={(value) =>
-				m['actions.saved']({ subject: m['labels.category'](), name: value.name })}
+				m['actions.saved_with_name']({ subject: m['labels.category'](), name: value.name })}
 			section="all"
 		/>
 	{/snippet}

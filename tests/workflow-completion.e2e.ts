@@ -17,7 +17,7 @@ test('scoped workflow profile edit mode keeps pristine fields editable and uncha
 	await expect(save).toBeDisabled()
 	await name.fill('Changed profile')
 	await save.click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Display name saved.')
+	await expect(page.getByRole('main').getByRole('status')).toHaveText('Profile Display name saved.')
 	await expect(save).toBeDisabled()
 	await expect(name).toBeEditable()
 	await name.fill('Another profile')

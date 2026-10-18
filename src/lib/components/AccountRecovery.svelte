@@ -51,7 +51,7 @@
 				<Button type="button" disabled={view.confirmation !== 'confirmed'} onclick={onHide}>
 					{m['recovery.hide']()}
 				</Button>
-				<Button type="button" onclick={onHide}>{m['recovery.close']()}</Button>
+				<Button type="button" onclick={onHide}>{m['actions.close']()}</Button>
 			</div>
 		</div>
 	{/if}

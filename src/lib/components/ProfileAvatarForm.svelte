@@ -114,7 +114,11 @@
 				subject={m['labels.profile']()}
 				reasonText={(reason) => formReasonText[reason]()}
 				invalidMessage={m['profile.avatar_invalid']()}
-				successMessage={() => m['profile.avatar_saved']()}
+				successMessage={() =>
+					m['actions.saved_with_name']({
+						subject: m['labels.profile'](),
+						name: m['labels.avatar']()
+					})}
 				section="result"
 			/>
 		{/snippet}

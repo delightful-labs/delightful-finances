@@ -45,7 +45,10 @@
 			>
 		</dd>
 		<dt>{m['labels.account']()}</dt>
-		<dd>{transaction.account?.name ?? m['transactions.account_unavailable']()}</dd>
+		<dd>
+			{transaction.account?.name ??
+				m['transactions.unavailable_item']({ subject: m['labels.account']() })}
+		</dd>
 		<dt>{m['labels.category']()}</dt>
 		<dd>
 			{transaction.category?.name ??
@@ -56,7 +59,9 @@
 			<dd>
 				<ul>
 					{#each transaction.tags as link (link.id)}
-						<li>{link.tag?.name ?? m['transactions.tag_unavailable']()}</li>
+						<li>
+							{link.tag?.name ?? m['transactions.unavailable_item']({ subject: m['labels.tag']() })}
+						</li>
 					{/each}
 				</ul>
 			</dd>

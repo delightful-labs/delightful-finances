@@ -83,7 +83,7 @@
 			reasonText={(reason) => explanations[reason]()}
 			invalidMessage={m['accounts.validation_error']()}
 			successMessage={(value) =>
-				m['actions.saved']({ subject: m['labels.account'](), name: value.name })}
+				m['actions.saved_with_name']({ subject: m['labels.account'](), name: value.name })}
 		/>
 	{/snippet}
 </FormModal>

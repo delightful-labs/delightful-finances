@@ -41,7 +41,7 @@
 	{@const result = view.feedback.result}
 	{#if result.outcome === 'succeeded'}
 		<p role="status">
-			{successMessage ? successMessage(result.value) : m['actions.saved_without_name']({ subject })}
+			{successMessage ? successMessage(result.value) : m['actions.saved']({ subject })}
 		</p>
 	{:else if result.outcome === 'invalid' || (result.outcome === 'failed' && result.code === 'validationFailed')}<p
 			role="alert"

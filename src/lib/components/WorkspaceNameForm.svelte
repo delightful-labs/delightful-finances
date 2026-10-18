@@ -70,7 +70,9 @@
 		{#if form.feedback.kind === 'result'}
 			{@const result = form.feedback.result}
 			{#if result.outcome === 'succeeded'}
-				<p role="status">{m['workspace.name_saved']()}</p>
+				<p role="status">
+					{m['actions.saved']({ subject: m['labels.workspace_name']() })}
+				</p>
 			{:else if result.outcome === 'invalid'}
 				<p role="alert">{m['workspace.name_required']()}</p>
 			{:else if result.outcome === 'denied' || result.outcome === 'unavailable'}
