@@ -1,6 +1,6 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; workspace rename adoption (2d) has an approved shared-lifecycle model and a six-file implementation prepared for review. Tests await implementation approval.
+Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; workspace rename adoption (2d), shared create/edit mode and stable submit labels are approved and focused verification passed (76 unit tests, nine browser scenarios).
 
 ## Scope and technical context
 
@@ -103,3 +103,13 @@ pure comparison to current observed saved values and keeps fields editable while
 unchanged; creation has no new prerequisite. Workspace rename is the initial
 edit-mode consumer. forms.md and tasks.md record the expanded related scope and
 remaining approval/verification requirements.
+
+## Workspace adoption and shared edit-mode verification
+
+Approved focused verification passed: 76 unit/adapter tests, five shared/real-form
+browser scenarios and four owner/admin/member/viewer rename scenarios. Application,
+test and final configuration type checks passed. No production fixes were required.
+See tasks.md for exact commands, test-only setup corrections and coverage limits.
+This completes reviewed general forms cycles 2a–2d; review this evidence before
+the next domain adoption. Legacy profile/category/tag/transaction consumers still
+migrate in their own planned cycles.

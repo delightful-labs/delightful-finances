@@ -82,7 +82,7 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await page.reload()
 	await expect(name).toHaveValue('Household')
 	await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
-	await expect(save).toBeEnabled()
+	await expect(save).toBeDisabled()
 })
 
 test('sidebar navigation preserves the selected workspace and database session', async ({
@@ -1102,7 +1102,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 			}
 			await selectWorkspace(selector, ownWorkspaceId)
 			await expect(name).toBeEditable()
-			await expect(save).toBeEnabled()
+			await expect(save).toBeDisabled()
 			await expect(name).not.toHaveValue('Shared workspace')
 		} finally {
 			await otherContext.close()

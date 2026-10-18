@@ -1,6 +1,6 @@
 # Shared forms: proposed contract (slice 2a)
 
-Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is approved and focused unit/browser verification passed. Workspace rename is now wired as the first scoped domain consumer for implementation review; its runtime verification remains gated on approval.
+Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is approved and focused unit/browser verification passed. Workspace rename, shared create/edit mode and stable submit labels are approved and focused verification passed; see tasks.md for results and limits.
 
 ## Inventory and concrete gaps
 
@@ -365,3 +365,15 @@ by mode/baseline comparison -> existing submission/settlement states`. Create
 mode bypasses only the comparison, never readiness or duplicate protection.
 No new effect lifecycle or domain authorization states are added. Implementation
 approval is still required before adding/running comparison and label tests.
+
+## Approved adoption/edit-mode verification
+
+The user approved the revised implementation with "continue". Seventy-six unit/
+adapter tests and nine browser scenarios passed, along with application/test type
+checks and focused formatting/diff checks. No production fixes were needed.
+Shared create/edit comparison and direct-event protection were verified through
+workspace rename, the first production adoption. Real owner/admin/member/viewer
+access checks and offline rename/reload passed. Stable modal labeling was checked
+while its synthetic write remained pending. Other domain forms retain their legacy
+controllers until their scheduled migration; no broader edit-mode adoption is
+implied. Exact commands and controlled-race/browser limits are in tasks.md.

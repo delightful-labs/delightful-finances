@@ -1,8 +1,8 @@
 # Workspace rename: first scoped domain adoption (slice 2d)
 
-Status: revised shared-lifecycle model approved by user continuation; the six-file
-implementation is prepared for review. Runtime verification awaits approval of
-the exact implementation.
+Status: revised model and implementation, including shared create/edit mode and
+stable labels, approved. Focused unit/browser verification passed; see tasks.md
+for commands and coverage boundaries.
 Maps FR-001–007 and FR-009–012 and the rename portion of delivery slice 5.
 
 ## Inspected behavior and guarantees
@@ -283,3 +283,13 @@ The user also requested stable submit action labels across forms. The correspond
 presentation changes are recorded with their expanded related file scope in
 forms.md/tasks.md. These refinements remain part of the pending implementation
 review; no tests for the revised implementation have been added or run.
+
+## Approved verification
+
+The user's continuation approved the revised implementation for tests. Forty-one
+new policy/edit-mode/shared-write tests and 35 relevant regressions passed. Five
+shared/form browser scenarios and four focused workspace access scenarios passed.
+These include real local offline rename/reload, disabled unchanged Save, shared
+admin rename and SDK denial for members/viewers. No production fixes were needed.
+Type/format checks passed. See tasks.md for exact results, test setup corrections
+and the distinction between controlled lifecycle tests and real browser effects.

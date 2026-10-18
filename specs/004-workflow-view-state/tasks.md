@@ -238,9 +238,9 @@ base machines with only domain-specific actors/actions, the user instructed
 - [x] T025 Implement reusable single-write lifecycle in src/lib/machines/scoped-form-write.ts, composing the supplied readiness actor and focused write adapter, with explicit freshness/scope, denial/unavailability, interruption and settlement states.
 - [x] T026 Add workspace contracts/policy composition, wire the page to the scoped controller, and render typed readiness/results in WorkspaceNameForm.svelte; add only required localized messages. T025/T026 form one six-file implementation review batch.
 - [x] T027 Format and statically check the exact implementation, then present it for review.
-- [ ] T028 Obtain approval of the exact 2d-b implementation before adding/running tests.
-- [ ] T029 After T028, add/run focused shared-write/domain tests and workspace Playwright coverage for access, validation, scope/freshness, offline local persistence, issued-write settlement, child failures and teardown.
-- [ ] T030 Show verified 2d evidence before starting the next form adoption.
+- [x] T028 Obtain approval of the exact 2d-b implementation before adding/running tests.
+- [x] T029 After T028, add/run focused shared-write/domain tests and workspace Playwright coverage for access, validation, scope/freshness, offline local persistence, issued-write settlement, child failures and teardown.
+- [x] T030 Show verified 2d evidence before starting the next form adoption.
 
 T025/T026 implementation: one generic shared write base handles refreshing,
 request scope, supervised policy projection, write invocation, interruption
@@ -300,3 +300,63 @@ messages and service-worker TypeScript checking. Focused Prettier and
 `git diff --check` passed. The revised create/edit mode and stable-label
 implementation is presented for review; T028 approval remains pending.
 No tests were added, changed or run for this refinement.
+
+## Approved slice 2d verification, including shared edit mode
+
+T028: the user instructed "continue" after reviewing the shared create/edit mode,
+stable submit labels and workspace rename implementation. This approved the
+revised implementation and its focused tests.
+
+T029/T030: added workspace policy/edit-mode tests and shared single-write tests,
+with a typed fixture; updated the shared presentation browser suite and relevant
+workspace expectations; added playwright.workspace-rename.config.ts to select
+only rename access scenarios using an owned isolated server. Six related test/
+configuration files changed. No production fixes were needed during verification.
+
+- `pnpm test:unit --run src/lib/machines/workspace-rename.test.ts src/lib/machines/scoped-form-write.test.ts src/lib/machines/scoped-form.test.ts src/lib/machines/scoped-form-submission.test.ts src/lib/machines/form.test.ts src/lib/machines/form-presentation.test.ts src/lib/forms.test.ts`: 76 passed (41 new, 35 relevant regressions).
+- `pnpm check`: passed; zero Svelte errors/warnings, including service-worker TypeScript checking.
+- `pnpm check:tests`: passed.
+- `pnpm exec tsc --project tsconfig.json --noEmit`: passed after the final test-server configuration adjustment.
+- `pnpm exec playwright test --config playwright.form-presentation.config.ts`: five passed.
+- `pnpm exec playwright test --config playwright.workspace-rename.config.ts`: four passed (owner/admin/member/viewer).
+- Focused Prettier checks and `git diff --check`: passed.
+
+Unit coverage includes all domain blocked reasons and direct-event denial,
+owner/admin eligibility, pristine fields remaining editable, changed/reverted and
+trimmed-name comparisons, reset/scope/shutdown draft cleanup, changed saved
+baselines, create-mode regression, direct-submit validation/correction, fresh
+permission checks before effect issue, and permission loss during an issued write.
+The shared base tests cover observation/projection failure, stale refresh reports,
+pre-write cancellation/invalidation/shutdown, unavailable versus denied outcomes,
+issued-write settlement, unknown outcome after rejection, interruption priority,
+replacement binding and terminal payload cleanup.
+
+Browser coverage retains the four shared/legacy presentation regressions, with
+stable modal submit labels while an operation is deliberately pending. The new
+real workspace scenario verifies changed/reverted/whitespace states, correction,
+offline local persistence, unchanged Save after success/reload, and subsequent
+editing. The focused existing workspace suite verifies owner rename/validation/
+reload, shared-admin rename, and member/viewer read-only UI plus authoritative
+SDK rejection of forbidden writes. Return-to-own-workspace expectations now
+require editable fields and disabled Save until changed.
+
+Coverage boundaries: delayed real-write permission/navigation races remain
+machine-controlled tests; the real browser update is deliberately fast. The
+existing shared controller teardown tests also remain relevant. Separate delayed
+profile/avatar/transaction browser fixtures were not added for the simple stable
+label changes. Those domain forms retain legacy controllers until their planned
+adoptions; only workspace rename currently opts into the shared edit mode. No
+remote-acceptance claim is inferred from the local offline save result.
+
+Initial test setup corrections: parent snapshots do not report every descendant
+write-start transition, so the fixture now observes the write spy directly;
+TypeScript required an explicit create-mode literal in the fixture. Initial
+browser access checks retained old enabled-Save expectations for unchanged
+content; these were updated. A retry briefly reused a shutting-down test server;
+the dedicated rename config now owns a fresh isolated server. Successful results
+above followed these test-only corrections. Unit/type checks preceded browser
+runs; the manual preview is restored afterward.
+
+Shared forms slice 2 (2a–2d) is now verified for its reviewed scope. This evidence
+is presented for review before the next domain adoption; the overall feature
+still has the remaining surfaces listed in delivery.md.

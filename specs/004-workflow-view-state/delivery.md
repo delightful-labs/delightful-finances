@@ -1,6 +1,6 @@
 # Incremental delivery: workflow and view state
 
-Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; 2c evidence was accepted; the revised workspace rename model (2d-a) is approved and its six-file implementation (2d-b) is prepared for review.
+Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; 2c evidence was accepted; workspace rename (2d), shared create/edit mode and stable submit labels are approved and focused verification passed. General forms cycles 2a–2d are complete for their reviewed scope.
 
 ## Architectural direction
 
@@ -25,16 +25,16 @@ Slice 1 model and implementation reviews are approved; focused verification pass
 remain pending and their order may change through review. Split rows into focused
 cycles, normally 4–6 implementation files. Discuss larger batches before editing.
 
-| Slice | Scope                                                                                                                                                                                                  | Requirements           | Model reviewed | Implementation reviewed | Verified |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------------- | ----------------------- | -------- |
-| 1     | Account archiving: readiness/access, per-account capability, scoped request, persistence result, teardown.                                                                                             | FR-001–007, FR-009     | Approved       | Approved                | Passed   |
-| 2     | General forms refactor: shared machine/controller/view contract, domain-child composition, submission guards, typed feedback, reset/reopen/close and teardown semantics. See detailed subcycles below. | FR-002–006, FR-009–012 | Approved       | Pending                 | Pending  |
-| 3     | Account creation: audit existing account-creation-access ownership and close demonstrated gaps.                                                                                                        | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
-| 4     | Category management, then tag management as separate cycles: permission, protected entities, create/archive outcomes.                                                                                  | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
-| 5     | Workspace rename (first adoption in 2d), then profile editing as separate cycles: ownership, record binding, scope changes.                                                                            | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
-| 6     | Transaction entry: explicit prerequisites/access, ready/blocked views, scoped submission, changing references.                                                                                         | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
-| 7     | Bank presentation: typed mutually exclusive modes, independent history, unchanged provider policy. Split setup and operation views if needed.                                                          | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
-| 8     | Recovery phrase lifecycle: reveal/confirmation/failure and clearing on identity changes and teardown.                                                                                                  | FR-003–009             | Pending        | Pending                 | Pending  |
+| Slice | Scope                                                                                                                                                                                                  | Requirements           | Model reviewed                   | Implementation reviewed          | Verified                       |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------------------------------- | -------------------------------- | ------------------------------ |
+| 1     | Account archiving: readiness/access, per-account capability, scoped request, persistence result, teardown.                                                                                             | FR-001–007, FR-009     | Approved                         | Approved                         | Passed                         |
+| 2     | General forms refactor: shared machine/controller/view contract, domain-child composition, submission guards, typed feedback, reset/reopen/close and teardown semantics. See detailed subcycles below. | FR-002–006, FR-009–012 | Approved                         | Approved                         | Passed                         |
+| 3     | Account creation: audit existing account-creation-access ownership and close demonstrated gaps.                                                                                                        | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
+| 4     | Category management, then tag management as separate cycles: permission, protected entities, create/archive outcomes.                                                                                  | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
+| 5     | Workspace rename (first adoption in 2d), then profile editing as separate cycles: ownership, record binding, scope changes.                                                                            | FR-001–007, FR-009     | Rename approved; profile pending | Rename approved; profile pending | Rename passed; profile pending |
+| 6     | Transaction entry: explicit prerequisites/access, ready/blocked views, scoped submission, changing references.                                                                                         | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
+| 7     | Bank presentation: typed mutually exclusive modes, independent history, unchanged provider policy. Split setup and operation views if needed.                                                          | FR-001–007, FR-009     | Pending                          | Pending                          | Pending                        |
+| 8     | Recovery phrase lifecycle: reveal/confirmation/failure and clearing on identity changes and teardown.                                                                                                  | FR-003–009             | Pending                          | Pending                          | Pending                        |
 
 ## General forms work: slice 2
 
@@ -45,7 +45,7 @@ concrete. Review and verify each subcycle before beginning the next.
 - [x] **2a — Model the shared contract:** inventory `form.ts`, `forms.svelte.ts`, `FormContent.svelte`, `FormModal.svelte`, and representative consumers. Define shared events, observed capabilities, domain-child ownership, typed view/results, reset/reopen behavior, and error boundaries. Map FR-010–012 to the model. Approved model: [forms.md](forms.md).
 - [x] **2b — Implement machine/controller ownership:** move submission policy out of controller-only `disabled || busy` checks and into guarded event acceptance. Forward current observations; define scope replacement, cancellation, and issued-effect settlement explicitly. Keep DOM/FormData adaptation in integration and pure input validation reusable. Four-file implementation approved; 27 new unit/adapter tests plus five legacy regressions and application type checks passed. Browser integration limits remain for 2c/2d.
 - [x] **2c — Implement shared presentation:** give form components typed feedback/capabilities instead of requiring repeated `matches('error') || matches('invalid')`, raw-error interpretation, or independent busy/disabled policy. Preserve field issues, localization, accessibility, and simple local dialog visibility; explicitly define close-during-save behavior. Five-file implementation approved; 35 relevant unit/adapter tests and four focused browser scenarios passed. Domain adoption remains for 2d and later slices.
-- [ ] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view. Concrete workspace rename model and six-file scope are prepared in [workspace-rename.md](workspace-rename.md); the revised shared-lifecycle model is approved and implementation is prepared for review; domain verification awaits implementation approval.
+- [x] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view. Concrete workspace rename model and six-file scope are prepared in [workspace-rename.md](workspace-rename.md); the revised shared-lifecycle model/implementation and edit-mode refinements are approved; 76 relevant unit tests and nine browser scenarios passed.
 
 Each checkbox represents a focused review cycle with model review, implementation
 review, and approved unit/Playwright verification recorded separately. Split again
@@ -143,3 +143,19 @@ controlled operation actors; a real account-modal regression also passed through
 the legacy adapter. These results establish shared presentation behavior, not
 new domain authorization or Jazz settlement guarantees. Review this evidence
 before workspace rename adoption (2d).
+
+## Slice 2d and shared edit-mode verification
+
+The user approved the implementation and refinements with "continue". Seventy-six
+unit tests and nine focused browser scenarios passed, along with application/test
+and configuration type checks plus focused formatting/diff checks. No production
+fixes were needed during verification. See [tasks.md](tasks.md#approved-slice-2d-verification-including-shared-edit-mode)
+for commands, test-only corrections and coverage limits.
+
+Workspace rename is the first production consumer of the scoped owner/submission
+and reusable single-write base. It opts into edit mode; creation retains its
+existing behavior, and stable submit labels apply across existing form components.
+Domain permission/navigation races are covered by controlled machines, while real
+browser scenarios cover local offline save/reload and owner/admin/member/viewer
+access. Other domain forms still need their separate adoption cycles. Review this
+verified cycle before starting the account-creation slice.
