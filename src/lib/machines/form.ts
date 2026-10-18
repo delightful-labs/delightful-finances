@@ -1,5 +1,6 @@
 import { assign, fromPromise, setup, type SnapshotFrom } from 'xstate'
-import type { z } from 'zod'
+import { z } from 'zod'
+import type { FormPresentation } from '#lib/form-contract.js'
 
 export type FormSave<Values, Result, Context> = (
 	values: Values,
@@ -89,9 +90,37 @@ export function createFormMachine<Values, Result, Context>(
 	})
 }
 
-export type FormView<Values, Result, Context> = {
+export type FormView<Values, Result, Context> = FormPresentation & {
 	state: SnapshotFrom<ReturnType<typeof createFormMachine<Values, Result, Context>>>
 	busy: boolean
 	disabled: boolean
 	issues: readonly z.core.$ZodIssue[]
+}
+
+/** Compatibility projection only: legacy permissions and effect semantics remain unchanged. */
+export function selectLegacyFormView<Values, Result, Context>(
+	state: SnapshotFrom<ReturnType<typeof createFormMachine<Values, Result, Context>>>,
+	disabled: boolean
+): FormView<Values, Result, Context> {
+	const busy = state.hasTag('busy')
+	return {
+		state,
+		busy,
+		disabled: disabled || busy,
+		issues: state.context.error instanceof z.ZodError ? state.context.error.issues : [],
+		activity: state.matches('validating')
+			? { kind: 'validating' }
+			: state.matches('saving')
+				? { kind: 'operating' }
+				: { kind: 'idle' },
+		content: state.matches('success')
+			? { kind: 'success', value: state.context.result }
+			: { kind: 'fields' },
+		canSubmit: !disabled && !busy,
+		canReset: !disabled && !busy,
+		canOpen: !disabled,
+		fieldsEditable: !disabled && !busy,
+		// Legacy callers still own native reset and keyed local component state.
+		draftRevision: undefined
+	}
 }

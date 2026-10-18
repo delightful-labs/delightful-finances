@@ -1,6 +1,6 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) has not started.
+Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is implemented for review; tests await approval.
 
 ## Scope and technical context
 
@@ -50,3 +50,13 @@ presentation compatibility; slice 2d adopts workspace rename as the first domain
 consumer and satisfies that portion of slice 5. Account creation is the first
 modal adoption in its own later cycle. Existing exports remain until their
 consumers migrate; no broad replacement of legacy callbacks is planned.
+
+## Shared presentation implementation (slice 2c)
+
+The five-file scope and compatibility limits are recorded in forms.md and tasks.md.
+Both shared components consume props-only presentation choices; the legacy adapter
+projects its old actor without changing its transitions or persistence guarantees.
+Native fields are disabled by the view and keyed by accepted scoped draft revision.
+Modal close preserves active work and uses the existing Close label while busy.
+Review the exact implementation before adding/running tests; no production domain
+consumer is migrated until 2d or its later dedicated slice.

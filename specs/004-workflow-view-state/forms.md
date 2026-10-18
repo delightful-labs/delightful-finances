@@ -1,6 +1,6 @@
 # Shared forms: proposed contract (slice 2a)
 
-Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). No production consumers migrated; browser integration verification remains for adoption.
+Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is implemented for review. No domain consumers migrated; browser integration verification remains gated on approval.
 
 ## Inventory and concrete gaps
 
@@ -260,3 +260,32 @@ before stopping. Slice 2c still needs to adopt the view/revision in presentation
 
 `pnpm check` passed with zero Svelte errors/warnings. No tests were added/run
 before implementation review; no production behavior is claimed verified yet.
+
+## Slice 2c implementation notes
+
+Concrete implementation files: `src/lib/form-contract.ts`,
+`src/lib/machines/form.ts`, `src/lib/forms.svelte.ts`,
+`src/lib/components/FormContent.svelte`, and `src/lib/components/FormModal.svelte`.
+The approved presentation model is unchanged; no domain adoption is included.
+
+FormPresentation is a props-only structural subset of the scoped view. Shared
+components preserve the incoming view type in snippet props, so scoped callers
+receive typed outcomes/capabilities and existing callers retain their original
+legacy snapshot fields. Only the legacy adapter imports/interprets the old form
+machine; neither shared component imports an actor or machine definition.
+Compatibility does not add domain readiness, cancellation, or settlement claims.
+
+Scoped draftRevision keys the fields subtree. A native fieldset disables field
+controls according to fieldsEditable, with default border/padding/margin removed
+to preserve the existing layout. Control and feedback snippets remain mounted.
+Legacy draft revision is explicitly unmanaged (undefined), preserving native reset.
+Parent-owned presentation state must still be reset during individual adoption;
+keying the shared field subtree cannot reset an ancestor's local variables.
+
+Modal content branches on the explicit content choice, so void success is shown.
+Dismissal remains local and emits no workflow command; busy dismissal uses the
+existing localized Close label. Scoped callers rely on canOpen and can reopen
+active work. The disabled prop remains solely for legacy trigger compatibility;
+existing callers still supply their disabled view until their migration slice.
+No new strings or styling direction are introduced. Implementation review and
+approved automated/browser verification are still pending.

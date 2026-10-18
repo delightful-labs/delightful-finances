@@ -124,3 +124,45 @@ only that exact vendored archive and its local dependency links in ignored
 node_modules, then reran successfully. No tracked dependency changes.
 
 Slice 2b verification evidence is presented for review before starting 2c.
+
+## Shared presentation: slice 2c
+
+- [x] T016 Review the approved forms.md presentation model and concrete five-file scope; accept 2b verification via the user's "continue" instruction.
+- [x] T017 Add a props-only shared rendering contract and a narrow legacy view projection in src/lib/form-contract.ts and src/lib/machines/form.ts; bind it in src/lib/forms.svelte.ts without changing legacy machine transitions.
+- [x] T018 Update FormContent.svelte and FormModal.svelte to consume typed content/activity/capabilities, rebuild scoped fields by accepted draft revision, and distinguish busy Close from workflow cancellation. Keep legacy snippets and call sites compatible.
+- [x] T019 Format and statically check the five-file implementation, then present it for review.
+- [ ] T020 Obtain approval of the exact 2c implementation before adding/running tests.
+- [ ] T021 After T020, verify legacy projection and shared presentation, including field disabling, accepted/rejected reset, void success, and modal close/reopen behavior. Record browser limits separately from later domain adoption.
+- [ ] T022 Show verified 2c evidence before beginning workspace rename adoption (2d).
+
+T016: user accepted the prior verification and authorized continuation: "continue".
+The five implementation paths were shown before edits; the approved forms.md
+model supplies the behavior policy. No new workflow machine or domain migration.
+
+T017/T018: shared components now require only FormPresentation and preserve the
+specific caller's view type in their snippets. ScopedFormView satisfies this
+contract directly. Legacy FormView retains its snapshot/busy/disabled/issues
+fields through selectLegacyFormView, and gains a rendering-only projection.
+It deliberately reports no persistence settlement or new authorization guarantee.
+
+FormContent keys only the fields subtree by draftRevision and uses an unstyled
+native disabled fieldset to apply fieldsEditable consistently. Scoped accepted
+reset/reopen/scope replacement can rebuild native controls; rejected reset does
+not change the key. Legacy revision remains undefined so its native reset and
+parent component state are not implicitly remounted. Parent-owned local state
+such as avatar selection/payment disclosures still needs explicit adoption.
+
+FormModal consumes the typed content choice (including void success), submit/open
+capabilities, and activity. Closing uses existing localized Close while busy,
+preserves mounted draft controls, and emits no cancellation/reset. Scope changes
+still close and key-replace the modal's contents. Scoped callers omit the legacy
+disabled prop and use canOpen, so busy reopening is supported by the owner. Existing
+legacy callers retain their explicit disabled-trigger behavior until migration.
+
+No tests added/run or development server started for this unapproved implementation.
+
+T019: `pnpm check` passed with zero Svelte errors/warnings, including generated
+messages and service-worker TypeScript checking. Focused Prettier checks and
+`git diff --check` passed. These static checks do not establish runtime or browser
+correctness. The exact five-file implementation is presented for review; T020
+remains pending. No tests were added or run for slice 2c.

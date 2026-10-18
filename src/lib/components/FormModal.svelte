@@ -1,7 +1,7 @@
-<script lang="ts" generics="Values, Result, Context">
+<script lang="ts" generics="View extends FormPresentation">
 	import { Button, Dialog } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
-	import type { FormView } from '#lib/machines/form.js'
+	import type { FormPresentation } from '#lib/form-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
 	import Icon from './AppIcon.svelte'
@@ -26,16 +26,21 @@
 		label: string
 		savingLabel: string
 		disabled?: boolean
-		view: FormView<Values, Result, Context>
+		view: View
 		onopen: () => void
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
-		fields: Snippet<[FormView<Values, Result, Context>]>
-		feedback: Snippet<[FormView<Values, Result, Context>]>
+		fields: Snippet<[View]>
+		feedback: Snippet<[View]>
 		trigger?: Snippet<[() => void, boolean]> | undefined
 	} = $props()
 
+	// The optional disabled prop is retained for legacy callers only. Scoped
+	// consumers use the owner-projected canOpen capability, including while busy.
+	const triggerDisabled = $derived(disabled || !view.canOpen)
+
 	function openModal() {
+		if (triggerDisabled) return
 		onopen()
 		open = true
 	}
@@ -48,16 +53,16 @@
 </script>
 
 {#if trigger}
-	{@render trigger(openModal, disabled)}
+	{@render trigger(openModal, triggerDisabled)}
 {:else}
-	<Button type="button" {disabled} onclick={openModal}>
+	<Button type="button" disabled={triggerDisabled} onclick={openModal}>
 		<span class="button-content"><Icon icon={AddIcon} />{label}</span>
 	</Button>
 {/if}
 
 <Dialog heading={label} bind:open closedby="any">
 	{#key scope}
-		{#if view.state.matches('success')}
+		{#if view.content.kind === 'success'}
 			{@render feedback(view)}
 			<Button type="button" variant="primary" onclick={() => (open = false)}>
 				<span class="button-content"><Icon icon={CloseIcon} />{m['actions.close']()}</span>
@@ -66,11 +71,15 @@
 			<FormContent controlsFill {view} {onsubmit} {onreset} {fields} {feedback}>
 				{#snippet controls(form)}
 					<Button type="button" onclick={() => (open = false)}>
-						<span class="button-content"><Icon icon={CloseIcon} />{m['actions.cancel']()}</span>
-					</Button>
-					<Button type="submit" variant="primary" disabled={form.disabled}>
 						<span class="button-content"
-							><Icon icon={SaveIcon} />{form.busy ? savingLabel : label}</span
+							><Icon icon={CloseIcon} />{form.activity.kind === 'idle'
+								? m['actions.cancel']()
+								: m['actions.close']()}</span
+						>
+					</Button>
+					<Button type="submit" variant="primary" disabled={!form.canSubmit}>
+						<span class="button-content"
+							><Icon icon={SaveIcon} />{form.activity.kind !== 'idle' ? savingLabel : label}</span
 						>
 					</Button>
 				{/snippet}

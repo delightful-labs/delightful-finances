@@ -1,7 +1,7 @@
 import { onMount, untrack } from 'svelte'
 import { createActor, type Snapshot } from 'xstate'
-import { z } from 'zod'
-import { createFormMachine, type FormSave, type FormView } from '#lib/machines/form.js'
+import type { z } from 'zod'
+import { createFormMachine, selectLegacyFormView, type FormSave } from '#lib/machines/form.js'
 import {
 	createScopedFormMachine,
 	selectScopedFormView,
@@ -24,12 +24,7 @@ export function createFormController<Values, Result, Context>(options: {
 	const key = $derived(options.key?.())
 	const disabled = $derived(options.disabled?.() ?? false)
 	const busy = $derived(state.hasTag('busy'))
-	const view: FormView<Values, Result, Context> = $derived({
-		state,
-		busy,
-		disabled: disabled || busy,
-		issues: state.context.error instanceof z.ZodError ? state.context.error.issues : []
-	})
+	const view = $derived(selectLegacyFormView<Values, Result, Context>(state, disabled))
 
 	// Recreate only when the record/workspace key changes. Stop invokes and
 	// unsubscribe on key changes and when the owning page unmounts.

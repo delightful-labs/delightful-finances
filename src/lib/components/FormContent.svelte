@@ -1,6 +1,6 @@
-<script lang="ts" generics="Values, Result, Context">
+<script lang="ts" generics="View extends FormPresentation">
 	import type { Snippet } from 'svelte'
-	import type { FormView } from '#lib/machines/form.js'
+	import type { FormPresentation } from '#lib/form-contract.js'
 
 	let {
 		view,
@@ -11,18 +11,22 @@
 		controlsFill = false,
 		feedback
 	}: {
-		view: FormView<Values, Result, Context>
+		view: View
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
-		fields: Snippet<[FormView<Values, Result, Context>]>
-		controls?: Snippet<[FormView<Values, Result, Context>]> | undefined
+		fields: Snippet<[View]>
+		controls?: Snippet<[View]> | undefined
 		controlsFill?: boolean
-		feedback?: Snippet<[FormView<Values, Result, Context>]> | undefined
+		feedback?: Snippet<[View]> | undefined
 	} = $props()
 </script>
 
-<form {onsubmit} {onreset} aria-busy={view.busy}>
-	<div class="form-fields">{@render fields(view)}</div>
+<form {onsubmit} {onreset} aria-busy={view.activity.kind !== 'idle'}>
+	{#key view.draftRevision}
+		<fieldset class="form-fields" disabled={!view.fieldsEditable}>
+			{@render fields(view)}
+		</fieldset>
+	{/key}
 	{#if controls}
 		<div class="form-controls" class:fill={controlsFill}>{@render controls(view)}</div>
 	{/if}
@@ -43,6 +47,12 @@
 		display: grid;
 		gap: var(--dui-spacing-xs);
 		min-width: 0;
+	}
+
+	.form-fields {
+		border: 0;
+		padding: 0;
+		margin: 0;
 	}
 
 	.form-controls {
