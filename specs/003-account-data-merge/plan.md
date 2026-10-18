@@ -215,3 +215,20 @@ binding: read -> validate -> captured, with failure, invalid, cancel and shutdow
 outcomes. Present captured counts before switching. Save using the existing journal;
 then wire session replacement and dependency-ordered inserts in following review
 cycles. Tests follow approval of each implementation under repository rules.
+
+### Source extraction implementation (awaiting review)
+
+`capture.ts` now owns source extraction through waiting-for-session, scoped reads,
+attachment reads, validation and explicit captured/invalid/failed/cancelled/closed
+outcomes. All reads have a shared 30-second budget. Identity, workspace or exact
+Db binding changes invalidate capture. Invoked readers dispose on exit; terminal
+states clear intermediate observations and retain only the typed result.
+
+`AccountMergeCaptureIntegration.svelte` binds ordinary `local-first` subscriptions
+and projects fields from the existing snapshot schema, normalizing timestamps and
+absent nullable columns. Queries include archived records. Attachment reads use
+captured transaction IDs; connection queries select IDs only for exclusion counts.
+No source writes, identity replacement, journal writes or page mounting are included
+in this focused extraction change. TypeScript and svelte-check pass with zero
+diagnostics; tests await implementation approval. Next: approved extraction coverage,
+then connect capture and durable saving to the dedicated route.
