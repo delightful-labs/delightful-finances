@@ -1,6 +1,6 @@
 # Incremental delivery: workflow and view state
 
-Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is ready for review, with tests pending approval.
+Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Verification evidence is ready for review before 2c.
 
 ## Architectural direction
 
@@ -43,7 +43,7 @@ an integration contract. Use evidence from account archiving to keep the design
 concrete. Review and verify each subcycle before beginning the next.
 
 - [x] **2a — Model the shared contract:** inventory `form.ts`, `forms.svelte.ts`, `FormContent.svelte`, `FormModal.svelte`, and representative consumers. Define shared events, observed capabilities, domain-child ownership, typed view/results, reset/reopen behavior, and error boundaries. Map FR-010–012 to the model. Approved model: [forms.md](forms.md).
-- [ ] **2b — Implement machine/controller ownership:** move submission policy out of controller-only `disabled || busy` checks and into guarded event acceptance. Forward current observations; define scope replacement, cancellation, and issued-effect settlement explicitly. Keep DOM/FormData adaptation in integration and pure input validation reusable. Four-file implementation prepared; implementation review and approved verification pending.
+- [x] **2b — Implement machine/controller ownership:** move submission policy out of controller-only `disabled || busy` checks and into guarded event acceptance. Forward current observations; define scope replacement, cancellation, and issued-effect settlement explicitly. Keep DOM/FormData adaptation in integration and pure input validation reusable. Four-file implementation approved; 27 new unit/adapter tests plus five legacy regressions and application type checks passed. Browser integration limits remain for 2c/2d.
 - [ ] **2c — Implement shared presentation:** give form components typed feedback/capabilities instead of requiring repeated `matches('error') || matches('invalid')`, raw-error interpretation, or independent busy/disabled policy. Preserve field issues, localization, accessibility, and simple local dialog visibility; explicitly define close-during-save behavior.
 - [ ] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view.
 
@@ -113,3 +113,19 @@ migration, domain availability/operation composition, guarded events, typed
 presentation, draft revisions, close-versus-cancel semantics, and settlement of
 issued effects. Workspace rename is proposed for 2d and is not repeated in slice 5. Completing 2a means the model is written; the model-review column for slice 2
 is approved by user continuation. Slice 2b adds a scoped API beside the legacy path; production consumers remain unchanged.
+
+## Slice 2b verification
+
+The user explicitly approved implementation with "I approve. continue". Focused
+verification passed: 27 new tests cover owner/submission transitions, interruption
+and issued-effect settlement, payload cleanup, and controller adapters; five legacy
+form regressions also passed. Application checking passed with zero errors/warnings.
+No production implementation changes were needed. An older installed UI package
+was restored to the exact archive already selected by the committed lockfile;
+no tracked dependency files changed.
+
+See [tasks.md](tasks.md#approved-slice-2b-verification) for commands and limits.
+Controller tests exercise the compiled server adapter with explicit mount hooks;
+client reactive effects, DOM reset/rebuilds, and actual modal behavior still require
+the scheduled browser adoption checks. No server or Playwright run was needed in
+this additive cycle. Review this evidence before beginning slice 2c.

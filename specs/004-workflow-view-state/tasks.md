@@ -68,9 +68,9 @@ T009: user approved continuation after the shared model was presented.
 - [x] T010 Add props-only contracts in src/lib/form-contract.ts and the submission child in src/lib/machines/scoped-form-submission.ts, composing supplied domain operation logic with validation and explicit settlement.
 - [x] T011 Add the owner and supervised availability integration in src/lib/machines/scoped-form.ts, plus additive createScopedFormController in src/lib/forms.svelte.ts. Keep legacy exports/consumers unchanged.
 - [x] T012 Format the four-file implementation and run static checking; present for implementation review.
-- [ ] T013 Obtain approval of the exact slice 2b implementation before adding/running its tests.
-- [ ] T014 After T013, add focused machine/controller coverage for revisions, direct-event submission guards, reset/reopen, validation/operation cancellation, scope changes, child failures, and teardown. Record actual results and remaining browser integration limits.
-- [ ] T015 Show verified 2b evidence before beginning shared presentation slice 2c.
+- [x] T013 Obtain approval of the exact slice 2b implementation before adding/running its tests.
+- [x] T014 After T013, add focused machine/controller coverage for revisions, direct-event submission guards, reset/reopen, validation/operation cancellation, scope changes, child failures, and teardown. Record actual results and remaining browser integration limits.
+- [x] T015 Show verified 2b evidence before beginning shared presentation slice 2c.
 
 T010–T012: implemented the reviewed four-file batch. `pnpm check` passed with
 zero Svelte errors/warnings, including generated messages and service-worker
@@ -85,3 +85,42 @@ completions; the child retains validation and domain-operation invocations until
 settlement. Context payload cleanup uses terminal entries rather than relying on
 actor stopping or machine-root exit. Controller reset emits a draft revision;
 actual field rebuilding belongs to presentation adoption in 2c.
+
+## Approved slice 2b verification
+
+T013: user explicitly approved the exact four-file implementation: "I approve. continue".
+
+T014/T015: added `src/lib/machines/scoped-form.test.ts`,
+`src/lib/machines/scoped-form-submission.test.ts`, shared typed test fixtures in
+`src/lib/machines/scoped-form.fixture.ts`, and `src/lib/forms.test.ts`.
+No production code changes were needed.
+
+- `pnpm test:unit --run src/lib/forms.test.ts src/lib/machines/scoped-form.test.ts src/lib/machines/scoped-form-submission.test.ts src/lib/machines/form.test.ts`: 32 passed (27 new, five legacy regressions).
+- `pnpm check`: passed; zero Svelte errors/warnings, including service-worker TypeScript checking.
+- Focused Prettier checks and `git diff --check`: passed.
+
+Coverage includes capability/direct-event agreement, stale observation revisions
+and mismatched scopes, duplicate/reset/reopen guards, child-driven view updates,
+void success, validation issues versus unexpected errors, validation settlement
+before cancellation/shutdown, operation error supervision, committed/rejected
+settlement after permission loss, scope replacement away and back, availability
+projection failure/retry, interruption priority, and terminal payload cleanup.
+Controller adapter coverage checks synchronous observation refresh, FormData
+Files/repeated fields, native event prevention, and unmount shutdown without
+prematurely aborting issued work.
+
+Controller tests compile the server adapter and explicitly invoke mocked Svelte
+mount hooks. They do not verify client reactive effects, actual DOM field rebuilds,
+framework hook ordering, or dialog close/reopen rendering. No Playwright test or
+server was started because this additive API has no production consumer yet.
+Those browser integration limits remain assigned to presentation/adoption slices
+2c/2d and the later modal adoption; 2b passing does not establish them.
+
+The initial application check found ten missing-export errors from an installed
+`delightful-ui` pointing to the older caret-position archive. The repository's
+package.json/lockfile already select the typography-primitives archive. Offline
+pnpm installation declined module-directory replacement without a TTY; restored
+only that exact vendored archive and its local dependency links in ignored
+node_modules, then reran successfully. No tracked dependency changes.
+
+Slice 2b verification evidence is presented for review before starting 2c.

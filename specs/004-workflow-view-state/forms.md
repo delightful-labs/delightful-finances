@@ -1,6 +1,6 @@
 # Shared forms: proposed contract (slice 2a)
 
-Status: model approved by user continuation; slice 2b implemented for review. No production consumers migrated; runtime verification awaits implementation approval.
+Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). No production consumers migrated; browser integration verification remains for adoption.
 
 ## Inventory and concrete gaps
 
