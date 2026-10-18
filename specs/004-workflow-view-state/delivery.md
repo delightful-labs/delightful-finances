@@ -1,6 +1,6 @@
 # Incremental delivery: workflow and view state
 
-Status: account-archiving implementation approved and focused verification passed. General forms work remains pending.
+Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is prepared for review; shared-form implementation remains pending.
 
 ## Architectural direction
 
@@ -31,7 +31,7 @@ cycles, normally 4–6 implementation files. Discuss larger batches before editi
 | 2     | General forms refactor: shared machine/controller/view contract, domain-child composition, submission guards, typed feedback, reset/reopen/close and teardown semantics. See detailed subcycles below. | FR-002–006, FR-009–012 | Pending        | Pending                 | Pending  |
 | 3     | Account creation: audit existing account-creation-access ownership and close demonstrated gaps.                                                                                                        | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
 | 4     | Category management, then tag management as separate cycles: permission, protected entities, create/archive outcomes.                                                                                  | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
-| 5     | Workspace rename, then profile editing as separate cycles: ownership, record binding, scope changes.                                                                                                   | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
+| 5     | Workspace rename (first adoption in 2d), then profile editing as separate cycles: ownership, record binding, scope changes.                                                                            | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
 | 6     | Transaction entry: explicit prerequisites/access, ready/blocked views, scoped submission, changing references.                                                                                         | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
 | 7     | Bank presentation: typed mutually exclusive modes, independent history, unchanged provider policy. Split setup and operation views if needed.                                                          | FR-001–007, FR-009     | Pending        | Pending                 | Pending  |
 | 8     | Recovery phrase lifecycle: reveal/confirmation/failure and clearing on identity changes and teardown.                                                                                                  | FR-003–009             | Pending        | Pending                 | Pending  |
@@ -42,7 +42,7 @@ This is implementation work on the shared forms layer, not just documentation of
 an integration contract. Use evidence from account archiving to keep the design
 concrete. Review and verify each subcycle before beginning the next.
 
-- [ ] **2a — Model the shared contract:** inventory `form.ts`, `forms.svelte.ts`, `FormContent.svelte`, `FormModal.svelte`, and representative consumers. Define shared events, observed capabilities, domain-child ownership, typed view/results, reset/reopen behavior, and error boundaries. Map FR-010–012 to the model.
+- [x] **2a — Model the shared contract:** inventory `form.ts`, `forms.svelte.ts`, `FormContent.svelte`, `FormModal.svelte`, and representative consumers. Define shared events, observed capabilities, domain-child ownership, typed view/results, reset/reopen behavior, and error boundaries. Map FR-010–012 to the model. Proposed model: [forms.md](forms.md); review pending.
 - [ ] **2b — Implement machine/controller ownership:** move submission policy out of controller-only `disabled || busy` checks and into guarded event acceptance. Forward current observations; define scope replacement, cancellation, and issued-effect settlement explicitly. Keep DOM/FormData adaptation in integration and pure input validation reusable.
 - [ ] **2c — Implement shared presentation:** give form components typed feedback/capabilities instead of requiring repeated `matches('error') || matches('invalid')`, raw-error interpretation, or independent busy/disabled policy. Preserve field issues, localization, accessibility, and simple local dialog visibility; explicitly define close-during-save behavior.
 - [ ] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view.
@@ -105,3 +105,11 @@ and coverage limits. Thirteen machine tests, one offline/reload browser scenario
 application/test type checks, and focused formatting checks passed. No application
 changes were needed during the approved test cycle. Review this evidence before
 starting slice 2a (general forms model).
+
+## Slice 2a review
+
+The shared contract is proposed in [forms.md](forms.md). It defines additive
+migration, domain availability/operation composition, guarded events, typed
+presentation, draft revisions, close-versus-cancel semantics, and settlement of
+issued effects. Workspace rename is proposed for 2d and is not repeated in slice 5. Completing 2a means the model is written; the model-review column for slice 2
+remains pending until user review. No shared-form runtime behavior changed.

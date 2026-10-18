@@ -1,7 +1,7 @@
 # Tasks: workflow and view state
 
-First slice only. Later slices remain tracked in delivery.md and receive their
-own detailed tasks after the current slice is reviewed. No parallel tasks.
+Focused cycles only. Later slices remain tracked in delivery.md and receive
+their detailed tasks after the preceding cycle is reviewed. No parallel tasks.
 
 - [x] T001 Inspect account archiving, permissions, and persistence semantics; document first-slice model in account-archive.md and planning boundaries in plan.md.
 - [x] T002 Obtain review of account-archive.md model and file scope; record review reference here. This gates effects.
@@ -51,3 +51,16 @@ machine tests rather than a multi-user browser scenario. These checks do not
 establish remote acceptance or cross-device synchronization; archive success is
 local persistence. General forms work has not started; this cycle is ready for
 review of its verification evidence.
+
+## Shared forms model: slice 2a
+
+- [x] T008 Inspect shared form machine/controller/components, representative consumers, and persistence/resource semantics; propose the model in forms.md. Maps FR-010–012.
+- [ ] T009 Review forms.md: approve ownership, close/reset/reopen policy, additive migration strategy, first adoption, and proposed slice 2b file scope. This gates shared-form effects.
+
+T008 evidence: static inventory of account/category/tag forms, workspace/profile
+editing, transaction entry, and avatar transformation; no application changes,
+test additions/runs, or server startup. Model is ready for review, not approved.
+
+After T009, detail slice 2b implementation tasks for the agreed four-file batch,
+including separate implementation review and subsequent test approval. Do not
+start 2c or migrate consumers before 2b is shown and reviewed.

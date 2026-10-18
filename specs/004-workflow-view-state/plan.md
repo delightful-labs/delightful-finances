@@ -1,6 +1,6 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: first slice model and implementation approved; focused verification passed. See tasks.md for evidence and limits. Later slices remain pending.
+Status: first slice verified; slice 2a shared forms model prepared for review. See tasks.md for evidence and review gates.
 
 ## Scope and technical context
 
@@ -35,3 +35,18 @@ and settlement of issued writes. Add relevant account-page Playwright coverage
 for visible actions and results. Run only relevant checks; type checks alone do
 not prove lifecycle or persistence correctness. Record actual commands/results
 in tasks.md and delivery.md rather than claiming validation from this plan.
+
+## Shared forms design (slice 2a)
+
+See [forms.md](forms.md) for the consumer inventory, proposed actor composition,
+event/view contracts, lifecycle policy, and additive migration path.
+FR-010 maps to guarded submission/reset/lifecycle, FR-011 to supplied domain
+availability/operation machines, and FR-012 to props-only typed views.
+
+Slice 2b proposes four implementation files: new scoped owner/submission machine
+modules, a props-only form contract module, and additive integration in
+forms.svelte.ts. Review concrete paths before effects. Slice 2c handles shared
+presentation compatibility; slice 2d adopts workspace rename as the first domain
+consumer and satisfies that portion of slice 5. Account creation is the first
+modal adoption in its own later cycle. Existing exports remain until their
+consumers migrate; no broad replacement of legacy callbacks is planned.
