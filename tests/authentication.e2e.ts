@@ -150,9 +150,7 @@ async function saveDisplayName(page: Page, name: string) {
 	await expect(page.getByLabel('Display name', { exact: true })).toBeEnabled()
 	await page.getByLabel('Display name', { exact: true }).fill(name)
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText(
-		'Display name saved on this device.'
-	)
+	await expect(page.getByRole('main').getByRole('status')).toHaveText('Display name saved.')
 }
 
 test('profile name trims, survives reload, and can be cleared', async ({ page }) => {
@@ -162,9 +160,7 @@ test('profile name trims, survives reload, and can be cleared', async ({ page })
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
 	await page.getByLabel('Display name', { exact: true }).fill('  ')
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText(
-		'Display name saved on this device.'
-	)
+	await expect(page.getByRole('main').getByRole('status')).toHaveText('Display name saved.')
 	await page.reload()
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
 })
@@ -288,7 +284,7 @@ async function uploadAvatar(
 	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
 	await page.getByRole('button', { name: 'Save avatar', exact: true }).click()
 	await expect(
-		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved on this device.' })
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved.' })
 	).toHaveCount(1)
 }
 

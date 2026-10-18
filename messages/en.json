@@ -27,7 +27,7 @@
 		"label": "Workspace",
 		"current": "Current workspace",
 		"select_workspace": "Select a workspace.",
-		"name_saved": "Workspace name saved on this device.",
+		"name_saved": "Workspace name saved.",
 		"name_required": "Enter a workspace name.",
 		"rename_restricted": "Only workspace owners and admins can change the name.",
 		"rename_session_unavailable": "Workspace editing is unavailable until your session is ready. If your session changed, reopen this page.",
@@ -36,7 +36,7 @@
 		"rename_cancelled": "Renaming was cancelled.",
 		"rename_closed": "Renaming ended when the page closed.",
 		"rename_settling": "Waiting for the issued rename to finish. Closing the page does not undo an issued change.",
-		"rename_interrupted_saved": "The name was saved on this device before the operation ended.",
+		"rename_interrupted_saved": "The name was saved before the operation ended.",
 		"rename_unknown": "The final save result could not be confirmed. Check the workspace name before trying again."
 	},
 	"defaults": {
@@ -231,11 +231,11 @@
 		}
 	},
 	"profile": {
-		"name_saved": "Display name saved on this device.",
+		"name_saved": "Display name saved.",
 		"name_invalid": "Enter a valid display name.",
 		"name_description": "Leave the name blank to use your account ID.",
 		"avatar_alt": "Your avatar",
-		"avatar_saved": "Avatar saved on this device.",
+		"avatar_saved": "Avatar saved.",
 		"avatar_invalid": "Choose a valid PNG, JPEG, or WebP image up to 10 MB.",
 		"avatar_description": "PNG, JPEG, or WebP, up to 10 MB. Images are resized for your avatar."
 	},

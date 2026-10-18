@@ -73,9 +73,7 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await expect(page.getByRole('alert')).toHaveText('Enter a workspace name.')
 	await name.fill('  Household  ')
 	await save.click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText(
-		'Workspace name saved on this device.'
-	)
+	await expect(page.getByRole('main').getByRole('status')).toHaveText('Workspace name saved.')
 	await expect(
 		page.getByLabel('Current workspace', { exact: true }).locator('option:checked')
 	).toHaveText('Household')
@@ -1072,7 +1070,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await name.fill('Admin renamed workspace')
 				await save.click()
 				await expect(subject.getByRole('main').getByRole('status')).toHaveText(
-					'Workspace name saved on this device.'
+					'Workspace name saved.'
 				)
 				await expect(page.getByLabel('Workspace name')).toHaveValue('Admin renamed workspace')
 			} else {
@@ -2652,7 +2650,7 @@ test('profile name saves offline, follows workspace selection, and supplies tran
 	try {
 		await main.getByLabel('Display name', { exact: true }).fill('Offline profile owner')
 		await main.getByRole('button', { name: 'Save', exact: true }).click()
-		await expect(main.getByRole('status')).toHaveText('Display name saved on this device.')
+		await expect(main.getByRole('status')).toHaveText('Display name saved.')
 		await expect
 			.poll(() =>
 				page.evaluate(async () => {
@@ -2684,7 +2682,7 @@ test('profile name saves offline, follows workspace selection, and supplies tran
 	await navigateSidebar(page, 'Account')
 	await main.getByLabel('Display name', { exact: true }).fill('')
 	await main.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(main.getByRole('status')).toHaveText('Display name saved on this device.')
+	await expect(main.getByRole('status')).toHaveText('Display name saved.')
 	await page.goto(`/transactions/${fixture.transactionId}`)
 	await expect(main.getByText(fixture.userId, { exact: true })).toHaveCount(2)
 	await expect(main.getByText('Offline profile owner', { exact: true })).toHaveCount(0)
@@ -2732,9 +2730,7 @@ test('profile name edits are owner-only even for members of a shared workspace',
 		await expect(subject).toHaveURL('/account')
 		await subject.getByLabel('Display name', { exact: true }).fill('Shared workspace member')
 		await subject.getByRole('button', { name: 'Save', exact: true }).click()
-		await expect(subject.getByRole('main').getByRole('status')).toHaveText(
-			'Display name saved on this device.'
-		)
+		await expect(subject.getByRole('main').getByRole('status')).toHaveText('Display name saved.')
 		const outcome = await subject.evaluate(async (owner) => {
 			const { app, db, userId } = window.workspaceSettingsTest
 			const own = await db.one(app.profiles.where({ userId }), { tier: 'remote' })

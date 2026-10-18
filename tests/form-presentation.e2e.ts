@@ -160,9 +160,7 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 	await expect(save).toBeEnabled()
 	await context.setOffline(true)
 	await save.click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText(
-		'Workspace name saved on this device.'
-	)
+	await expect(page.getByRole('main').getByRole('status')).toHaveText('Workspace name saved.')
 	await expect(save).toHaveText('Save')
 	await expect(save).toBeDisabled()
 	await expect(name).toBeEditable()
