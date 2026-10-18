@@ -1,6 +1,6 @@
 # Incremental delivery: workflow and view state
 
-Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; evidence is ready for review before 2d.
+Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; 2c evidence was accepted; the revised workspace rename model (2d-a) is approved and its six-file implementation (2d-b) is prepared for review.
 
 ## Architectural direction
 
@@ -45,7 +45,7 @@ concrete. Review and verify each subcycle before beginning the next.
 - [x] **2a — Model the shared contract:** inventory `form.ts`, `forms.svelte.ts`, `FormContent.svelte`, `FormModal.svelte`, and representative consumers. Define shared events, observed capabilities, domain-child ownership, typed view/results, reset/reopen behavior, and error boundaries. Map FR-010–012 to the model. Approved model: [forms.md](forms.md).
 - [x] **2b — Implement machine/controller ownership:** move submission policy out of controller-only `disabled || busy` checks and into guarded event acceptance. Forward current observations; define scope replacement, cancellation, and issued-effect settlement explicitly. Keep DOM/FormData adaptation in integration and pure input validation reusable. Four-file implementation approved; 27 new unit/adapter tests plus five legacy regressions and application type checks passed. Browser integration limits remain for 2c/2d.
 - [x] **2c — Implement shared presentation:** give form components typed feedback/capabilities instead of requiring repeated `matches('error') || matches('invalid')`, raw-error interpretation, or independent busy/disabled policy. Preserve field issues, localization, accessibility, and simple local dialog visibility; explicitly define close-during-save behavior. Five-file implementation approved; 35 relevant unit/adapter tests and four focused browser scenarios passed. Domain adoption remains for 2d and later slices.
-- [ ] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view.
+- [ ] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view. Concrete workspace rename model and six-file scope are prepared in [workspace-rename.md](workspace-rename.md); the revised shared-lifecycle model is approved and implementation is prepared for review; domain verification awaits implementation approval.
 
 Each checkbox represents a focused review cycle with model review, implementation
 review, and approved unit/Playwright verification recorded separately. Split again

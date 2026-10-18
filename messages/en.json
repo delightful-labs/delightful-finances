@@ -13,7 +13,15 @@
 		"select_workspace": "Select a workspace.",
 		"name_saved": "Workspace name saved on this device.",
 		"name_required": "Enter a workspace name.",
-		"rename_restricted": "Only workspace owners and admins can change the name."
+		"rename_restricted": "Only workspace owners and admins can change the name.",
+		"rename_session_unavailable": "Workspace editing is unavailable until your session is ready. If your session changed, reopen this page.",
+		"rename_unavailable": "This workspace is unavailable. Select an available workspace.",
+		"rename_scope_changed": "The workspace or your access changed before renaming completed.",
+		"rename_cancelled": "Renaming was cancelled.",
+		"rename_closed": "Renaming ended when the page closed.",
+		"rename_settling": "Waiting for the issued rename to finish. Closing the page does not undo an issued change.",
+		"rename_interrupted_saved": "The name was saved on this device before the operation ended.",
+		"rename_unknown": "The final save result could not be confirmed. Check the workspace name before trying again."
 	},
 	"defaults": {
 		"workspace": "Personal workspace",

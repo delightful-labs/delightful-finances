@@ -12,7 +12,6 @@
 	let {
 		scope,
 		label,
-		savingLabel,
 		disabled = false,
 		view,
 		onopen,
@@ -24,7 +23,8 @@
 	}: {
 		scope: string | null
 		label: string
-		savingLabel: string
+		/** @deprecated Submit labels remain stable; accepted for existing callers. */
+		savingLabel?: string
 		disabled?: boolean
 		view: View
 		onopen: () => void
@@ -78,9 +78,7 @@
 						>
 					</Button>
 					<Button type="submit" variant="primary" disabled={!form.canSubmit}>
-						<span class="button-content"
-							><Icon icon={SaveIcon} />{form.activity.kind !== 'idle' ? savingLabel : label}</span
-						>
+						<span class="button-content"><Icon icon={SaveIcon} />{label}</span>
 					</Button>
 				{/snippet}
 			</FormContent>

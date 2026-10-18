@@ -206,3 +206,97 @@ that directory's modules. Playwright now supplies a test-only document and loads
 the harness from the existing allowed source directory. No production route or
 broader filesystem allowlist was added. Browser checks ran after unit/type checks.
 Slice 2c verification is presented for review before beginning 2d.
+
+## Workspace rename domain model: slice 2d-a
+
+- [x] T023 Inspect workspace subscriptions, rename validation/helper, authoritative Jazz permissions and actor binding lifecycle; document the concrete domain statechart, result guarantees and six-file scope in workspace-rename.md.
+- [x] T024 Obtain review of workspace-rename.md before implementing domain effects. Shared form approval alone does not establish the concrete domain implementation.
+
+T023: the user accepted 2c verification and requested continuation. Inspection
+confirmed owner/admin SDK organization-update permissions, a local wait with no
+abort API, and page-only policy/save branching. The proposed model composes one
+readiness assessment in availability and operation authorization, binds requests
+to identity/workspace/database, and retains issued writes through settlement.
+No application code changed and no tests were added/run in this model cycle.
+Detailed implementation tasks follow review of T024; the six proposed paths are
+recorded in workspace-rename.md.
+
+T024 model refinement: the user clarified that forms must share base form machines
+and add special actors only for their unique actions. Revised workspace-rename.md
+to replace the proposed workspace-specific operation lifecycle with reusable
+`scoped-form-write.ts`. Workspace-specific actors own readiness/authorization and
+the rename action; shared bases own preparation orchestration, interruption,
+cleanup and issued-write settlement. The implementation scope remains six files.
+No implementation or test changes were made for this refinement.
+
+T024 approval: after reviewing the proposed model and clarifying that forms share
+base machines with only domain-specific actors/actions, the user instructed
+"continue". The revised six-file model was authorized before implementation.
+
+## Shared write base and workspace adoption: slice 2d-b
+
+- [x] T025 Implement reusable single-write lifecycle in src/lib/machines/scoped-form-write.ts, composing the supplied readiness actor and focused write adapter, with explicit freshness/scope, denial/unavailability, interruption and settlement states.
+- [x] T026 Add workspace contracts/policy composition, wire the page to the scoped controller, and render typed readiness/results in WorkspaceNameForm.svelte; add only required localized messages. T025/T026 form one six-file implementation review batch.
+- [x] T027 Format and statically check the exact implementation, then present it for review.
+- [ ] T028 Obtain approval of the exact 2d-b implementation before adding/running tests.
+- [ ] T029 After T028, add/run focused shared-write/domain tests and workspace Playwright coverage for access, validation, scope/freshness, offline local persistence, issued-write settlement, child failures and teardown.
+- [ ] T030 Show verified 2d evidence before starting the next form adoption.
+
+T025/T026 implementation: one generic shared write base handles refreshing,
+request scope, supervised policy projection, write invocation, interruption
+priority, actual settlement and terminal payload cleanup. Its focused write
+callback runs in a promise actor and contains no business workflow. The existing
+shared owner/submission continue owning validation, duplicate protection,
+capabilities, reset/reopen and parent lifecycle.
+
+Workspace code supplies a resource-free policy chart, pure scope identity
+functions, the existing name schema and a single rename update. The same chart
+is used for availability and pre-write authorization. There is no workspace-specific
+write-settlement machine. SDK permissions and renameWorkspace remain unchanged.
+Rejected waits conservatively yield unknown settlement; they do not claim that
+an optimistic local update was rolled back.
+
+The page binds observations and dependencies; the presentation receives name,
+WorkspaceRenameView and callbacks without actor/controller imports. Loading,
+read-only, missing workspace, read failure, session/binding unavailability,
+validation, local success and interrupted/uncertain outcomes are localized.
+No tests added/run for this implementation; runtime verification awaits T028.
+
+T027: `pnpm check` passed with zero Svelte errors/warnings, including generated
+messages and service-worker TypeScript checking. Focused Prettier checks and
+`git diff --check` passed. Static checking does not establish runtime correctness.
+The exact six-file implementation is presented for review before T028/T029.
+The existing local preview is restarted after generated-environment checks for
+manual review; automated unit/Playwright verification has not started.
+
+## Requested review refinements: shared form mode and stable labels
+
+The user requested unchanged edits disable Save, all submit labels stay stable,
+and create/edit behavior be configured on the shared machine. This steers the
+pending 2d implementation review; T028 remains pending for the revised result.
+The eleven-file related refinement scope was explained before editing. See forms.md
+for the common mode model and exact paths; no new domain consumer was migrated.
+
+- [x] T031 Add shared create/edit startup configuration and CHANGE observations; guard edit submission against the observed baseline without disabling pristine fields. Keep create mode as the default.
+- [x] T032 Wire workspace rename to edit mode and shared input observation; keep modal/workspace/profile/avatar/transaction submit labels stable while preserving busy disabling and accessibility.
+- [x] T033 Format/type-check the refined implementation and present it together with the pending 2d batch for approval. Do not add/run tests before approval.
+
+Edit mode requires initialValues and valuesEqual; create mode requires neither.
+The shared owner keeps raw draft data only for editing. Direct SUBMIT checks its
+actual values against the current saved baseline, and view.canSubmit probes the
+same guard with the observed draft. fieldsEditable probes CHANGE independently.
+Workspace comparison uses trimmed names; resetting, changing scope or shutting
+down clears tracked drafts. The modal savingLabel prop remains accepted for
+compatibility, but submit labels no longer render a saving variant.
+
+The revised tests must cover pristine edits remaining editable, changed/reverted
+values, unchanged direct SUBMIT, reset/scope/baseline updates, create-mode regression
+and stable labels while pending. Existing browser fixture assertions expecting
+"Saving draft" will need updating after implementation approval; no tests were
+added, changed or run for this unapproved refinement.
+
+T033: `pnpm check` passed with zero Svelte errors/warnings, including generated
+messages and service-worker TypeScript checking. Focused Prettier and
+`git diff --check` passed. The revised create/edit mode and stable-label
+implementation is presented for review; T028 approval remains pending.
+No tests were added, changed or run for this refinement.

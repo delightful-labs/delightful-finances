@@ -6,6 +6,7 @@
 		view,
 		onsubmit,
 		onreset,
+		oninput,
 		fields,
 		controls,
 		controlsFill = false,
@@ -13,6 +14,7 @@
 	}: {
 		view: View
 		onsubmit: (event: SubmitEvent) => void
+		oninput?: ((event: Event) => void) | undefined
 		onreset: (event: Event) => void
 		fields: Snippet<[View]>
 		controls?: Snippet<[View]> | undefined
@@ -21,7 +23,7 @@
 	} = $props()
 </script>
 
-<form {onsubmit} {onreset} aria-busy={view.activity.kind !== 'idle'}>
+<form {onsubmit} {onreset} {oninput} aria-busy={view.activity.kind !== 'idle'}>
 	{#key view.draftRevision}
 		<fieldset class="form-fields" disabled={!view.fieldsEditable}>
 			{@render fields(view)}

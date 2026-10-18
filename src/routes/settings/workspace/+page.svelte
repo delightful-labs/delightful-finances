@@ -1,19 +1,21 @@
 <script lang="ts">
-	import { createFormController } from '#lib/forms.svelte.js'
-	import { workspaceNameFormSchema } from '#lib/validation/identity.js'
-	import type { FormSave } from '#lib/machines/form.js'
+	import { createScopedFormController } from '#lib/forms.svelte.js'
+	import { createWorkspaceRenameFormOptions } from '#lib/machines/workspace-rename.js'
+	import type {
+		WorkspaceRenameObservation,
+		WorkspaceRenameReason,
+		WorkspaceRenameScope
+	} from '#lib/workspace-rename-contract.js'
+	import type { SnapshotFrom } from 'xstate'
 	import { renameWorkspace } from '#lib/data.js'
-	import { app, type Organization } from '#lib/schema.js'
-	import type { z } from 'zod'
+	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import PageHeader from '#lib/components/PageHeader.svelte'
-	import QueryContent from '#lib/components/QueryContent.svelte'
 	import WorkspaceNameForm from '#lib/components/WorkspaceNameForm.svelte'
-	import Message from '#lib/components/Message.svelte'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -31,39 +33,43 @@
 		return organizationMembershipQuery(organizationId, userId)
 	})
 	const workspace = $derived(workspaceQuery.current)
-	const canRename = $derived(
-		membershipQuery.current?.organizationId === filters.activeOrganizationId &&
-			(membershipQuery.current?.role === 'owner' || membershipQuery.current?.role === 'admin')
-	)
-	const save: FormSave<
-		z.output<typeof workspaceNameFormSchema>,
-		void,
-		Pick<Organization, 'id'>
-	> = async (values, { context, signal }) => {
-		signal.throwIfAborted()
-		if (!canRename || context.id !== filters.activeOrganizationId || workspace?.id !== context.id)
-			throw new Error('The workspace is not editable.')
-		await renameWorkspace(db, context.id, values.name)
+	function observe(): WorkspaceRenameObservation {
+		return {
+			identityId: session.current.account?.id ?? null,
+			organizationId: filters.activeOrganizationId,
+			binding: session.current.client?.db ?? null,
+			sessionReady: session.current.status === 'ready',
+			workspaceLoading: workspaceQuery.isLoading,
+			membershipLoading: membershipQuery.isLoading,
+			workspaceError: workspaceQuery.error != null,
+			membershipError: membershipQuery.error != null,
+			workspace: workspaceQuery.current,
+			membership: membershipQuery.current
+		}
 	}
-	const form = createFormController({
-		schema: workspaceNameFormSchema,
-		save,
-		context: () => ({ id: filters.activeOrganizationId ?? '' }),
-		key: () => filters.activeOrganizationId,
-		disabled: () => !workspace || !canRename
+	const options = createWorkspaceRenameFormOptions({
+		binding: db,
+		observe,
+		rename: (id, name) => renameWorkspace(db, id, name)
 	})
+	const form = createScopedFormController<
+		{ name: string },
+		void,
+		WorkspaceRenameReason,
+		WorkspaceRenameScope,
+		WorkspaceRenameObservation,
+		SnapshotFrom<typeof options.availability>,
+		SnapshotFrom<typeof options.operation>
+	>(options)
 </script>
 
 <svelte:head><title>{m['workspace.label']()} · {m['app.name']()}</title></svelte:head>
 <PageHeader title={m['workspace.label']()} />
-<QueryContent
-	queries={[workspaceQuery, membershipQuery]}
-	loadingMessage={m['status.loading']({ subject: m['labels.workspace_settings']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.workspace_settings']() })}
->
-	{#if workspace}
-		<WorkspaceNameForm {workspace} {canRename} {form} />
-	{:else}
-		<Message message={m['workspace.select_workspace']()} />
-	{/if}
-</QueryContent>
+<WorkspaceNameForm
+	name={workspace?.name ?? ''}
+	view={form.view}
+	onsubmit={form.submit}
+	onreset={form.reset}
+	oninput={form.input}
+	onRetryReadiness={form.retryReadiness}
+/>

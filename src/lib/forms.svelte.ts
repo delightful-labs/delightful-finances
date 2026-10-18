@@ -163,6 +163,13 @@ export function createScopedFormController<
 			}
 		}
 	})
+	function formValues(form: HTMLFormElement) {
+		const data = new FormData(form)
+		const arrays = Object.fromEntries(
+			(bound.arrayFields?.() ?? []).map((name) => [name, data.getAll(name)])
+		)
+		return { ...Object.fromEntries(data), ...arrays }
+	}
 	function submitValues(values: unknown) {
 		actor.send({ type: 'OBSERVE', observation: bound.observe() })
 		actor.send({ type: 'SUBMIT', values })
@@ -170,11 +177,12 @@ export function createScopedFormController<
 	function submit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const data = new FormData(event.currentTarget)
-		const arrays = Object.fromEntries(
-			(bound.arrayFields?.() ?? []).map((name) => [name, data.getAll(name)])
-		)
-		submitValues({ ...Object.fromEntries(data), ...arrays })
+		submitValues(formValues(event.currentTarget))
+	}
+	function input(event: Event) {
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		actor.send({ type: 'OBSERVE', observation: bound.observe() })
+		actor.send({ type: 'CHANGE', values: formValues(event.currentTarget) })
 	}
 	function reset(event: Event) {
 		event.preventDefault()
@@ -182,6 +190,7 @@ export function createScopedFormController<
 		actor.send({ type: 'RESET' })
 	}
 	return {
+		input,
 		submitValues,
 		submit,
 		reset,

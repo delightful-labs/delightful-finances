@@ -209,9 +209,7 @@
 				<Button type="reset">{m['transactions.add_another']()}</Button>
 			{:else}
 				<Button type="submit" disabled={form.disabled}>
-					{form.busy
-						? m['status.saving']({ subject: m['labels.transaction']() })
-						: m['transactions.save']()}
+					{m['transactions.save']()}
 				</Button>
 			{/if}
 		{/snippet}

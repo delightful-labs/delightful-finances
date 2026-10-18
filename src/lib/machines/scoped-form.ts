@@ -12,6 +12,7 @@ import {
 import type { z } from 'zod'
 import type {
 	FormCapability,
+	FormMode,
 	FormChildEvent,
 	FormObservation,
 	FormOperationInput,
@@ -46,7 +47,7 @@ export type ScopedFormOptions<
 	scopeOf: (observation: Observation) => Scope
 	sameScope: (left: Scope, right: Scope) => boolean
 	successContent?: 'replace' | 'retain'
-}
+} & FormMode<Values, Observation>
 
 export function createScopedFormMachine<
 	Values,
@@ -86,10 +87,12 @@ export function createScopedFormMachine<
 		result: FormResult<Result, Reason> | undefined
 		submission: SubmissionSnapshot | undefined
 		draftRevision: number
+		draft: unknown
 	}
 	type Event =
 		| { type: 'OBSERVE'; observation: Observation }
 		| { type: 'SUBMIT'; values: unknown }
+		| { type: 'CHANGE'; values: unknown }
 		| {
 				type:
 					| 'RESET'
@@ -157,6 +160,11 @@ export function createScopedFormMachine<
 	const editable = (context: Context) =>
 		ready(context) &&
 		(options.successContent === 'retain' || context.result?.outcome !== 'succeeded')
+	const hasChanges = (context: Context, values: unknown) =>
+		options.mode !== 'edit' ||
+		(values !== undefined &&
+			context.observation !== undefined &&
+			!options.valuesEqual(values, options.initialValues(context.observation.facts)))
 	const workflow = setup<
 		Context,
 		Event,
@@ -198,6 +206,7 @@ export function createScopedFormMachine<
 			if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type })
 		})
 	const clearDraft = workflow.assign({
+		draft: undefined,
 		result: undefined,
 		draftRevision: ({ context }) => context.draftRevision + 1
 	})
@@ -217,7 +226,8 @@ export function createScopedFormMachine<
 			sequence: 0,
 			result: undefined,
 			submission: undefined,
-			draftRevision: 0
+			draftRevision: 0,
+			draft: undefined
 		}),
 		states: {
 			open: {
@@ -239,6 +249,7 @@ export function createScopedFormMachine<
 									scope: ({ event }) => ({ value: options.scopeOf(event.observation) }),
 									scopeRevision: ({ context }) => context.scopeRevision + 1,
 									draftRevision: ({ context }) => context.draftRevision + 1,
+									draft: undefined,
 									result: undefined
 								}),
 								raise({ type: 'INVALIDATE' }),
@@ -323,7 +334,10 @@ export function createScopedFormMachine<
 								tags: 'can-open',
 								on: {
 									SUBMIT: {
-										guard: and(['availabilityWatching', ({ context }) => editable(context)]),
+										guard: and([
+											'availabilityWatching',
+											({ context, event }) => editable(context) && hasChanges(context, event.values)
+										]),
 										target: 'active',
 										actions: assign({
 											request: ({ context, event }) => {
@@ -336,7 +350,16 @@ export function createScopedFormMachine<
 												}
 											},
 											sequence: ({ context }) => context.sequence + 1,
+											draft: ({ event }) => (options.mode === 'edit' ? event.values : undefined),
 											result: undefined
+										})
+									},
+									CHANGE: {
+										guard: and(['availabilityWatching', ({ context }) => editable(context)]),
+										actions: assign({
+											draft: ({ event }) => (options.mode === 'edit' ? event.values : undefined),
+											result: ({ context }) =>
+												context.result?.outcome === 'succeeded' ? undefined : context.result
 										})
 									},
 									RESET: { actions: clearDraft },
@@ -476,7 +499,8 @@ export function createScopedFormMachine<
 					capability: undefined,
 					request: undefined,
 					result: undefined,
-					submission: undefined
+					submission: undefined,
+					draft: undefined
 				})
 			}
 		}
@@ -532,7 +556,7 @@ export function selectScopedFormView<
 			: snapshot.matches({ open: { availability: { watching: 'current' } } }) && capability
 				? capability.readiness
 				: { kind: 'observing' }
-	const canSubmit = !failed && snapshot.can({ type: 'SUBMIT', values: undefined })
+	const canSubmit = !failed && snapshot.can({ type: 'SUBMIT', values: snapshot.context.draft })
 	return {
 		readiness,
 		content:
@@ -553,7 +577,7 @@ export function selectScopedFormView<
 						: { kind: 'idle' },
 		feedback: result ? { kind: 'result', result } : { kind: 'none' },
 		canSubmit,
-		fieldsEditable: canSubmit,
+		fieldsEditable: !failed && snapshot.can({ type: 'CHANGE', values: undefined }),
 		canReset: !failed && snapshot.can({ type: 'RESET' }),
 		canOpen: !failed && snapshot.hasTag('can-open'),
 		canCancel: !failed && snapshot.matches({ open: { workflow: { active: 'pending' } } }),

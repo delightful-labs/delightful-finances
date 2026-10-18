@@ -1,6 +1,6 @@
 # Shared forms: proposed contract (slice 2a)
 
-Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is approved and focused unit/browser verification passed. No domain consumers migrated; domain adoption verification remains for 2d and later slices.
+Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is approved and focused unit/browser verification passed. Workspace rename is now wired as the first scoped domain consumer for implementation review; its runtime verification remains gated on approval.
 
 ## Inventory and concrete gaps
 
@@ -303,3 +303,65 @@ Playwright supplies its document without introducing a production route.
 See tasks.md for exact commands, setup corrections and coverage boundaries.
 Synthetic operation actors verify shared presentation integration, not domain
 write authorization/settlement. The first production scoped adoption remains 2d.
+
+## First production adoption prepared (slice 2d-b)
+
+Workspace rename now composes the existing scoped owner/submission and new shared
+single-write base. Only the policy chart, schema, scope facts and rename action
+are domain-specific. The six-file implementation is prepared for review; it is
+not yet runtime-verified. See workspace-rename.md and tasks.md for the exact scope
+and guarantees. No other domain forms are migrated by this change.
+
+## Shared create/edit mode and stable labels (user review refinement)
+
+The user requested a reusable machine-start property: create forms keep their
+existing behavior; edit forms cannot submit unchanged content. The user also
+requested stable submit labels across all forms, including while saving.
+
+The current reviewed implementation batch expands by eleven related paths,
+shown before edits: form-contract.ts, scoped-form.ts, forms.svelte.ts,
+FormContent.svelte, workspace-rename.ts, the workspace page,
+WorkspaceNameForm.svelte, FormModal.svelte, ProfileNameForm.svelte,
+ProfileAvatarForm.svelte and TransactionForm.svelte. The existing six-file domain
+adoption remains pending implementation approval; these are requested refinements
+to that same review cycle, not a new domain adoption.
+
+Configuration uses a discriminated union:
+
+- `mode: 'create'` (also the default): no change-tracking prerequisite. Existing
+  callers retain submission behavior and do not retain a draft payload merely
+  to support editing.
+- `mode: 'edit'`: requires `initialValues(observation)` and a total pure
+  `valuesEqual(rawDraft, initialValues)` comparison. Supplying saved values and
+  equality is domain data/comparison, not another workflow actor. Async schema
+  transformations are not run on every keystroke.
+
+The shared owner receives raw values through CHANGE. Context stores draft data,
+not a duplicate dirty boolean. While idle, fields remain editable whenever the
+existing capability allows editing, independently of canSubmit. Submission uses
+the existing readiness/idle guards plus comparison against the current observed
+saved values. Its direct SUBMIT path compares the actual supplied values too;
+a disabled button is not the sole protection. Reverting to the baseline disables
+submission again. Reset, successful reopen and scope replacement clear tracked
+draft data; shutdown releases it. Successful saves become unchanged as the saved
+observation updates. Editing after success clears stale success feedback.
+
+The controller reuses FormData extraction for submit and input observations,
+including repeated fields/Files. FormContent forwards an optional oninput callback.
+Workspace rename opts into edit mode, compares the submitted name after trimming
+to its saved value, and forwards form input through the scoped controller.
+Other existing domain editing consumers still use their legacy controllers until
+their planned migrations; this change provides the shared mode rather than hiding
+new domain policy in their page callbacks.
+
+Modal, workspace, profile name, avatar and transaction submit labels remain their
+normal action text while busy. Busy disabling, aria-busy, explicit interruption
+feedback and the modal's busy Close wording are retained. The modal's savingLabel
+prop is deprecated and accepted for source compatibility, but is no longer rendered.
+No new strings or visual design are required for this refinement.
+
+The model is `idle + permitted editing -> CHANGE stores draft -> SUBMIT guarded
+by mode/baseline comparison -> existing submission/settlement states`. Create
+mode bypasses only the comparison, never readiness or duplicate protection.
+No new effect lifecycle or domain authorization states are added. Implementation
+approval is still required before adding/running comparison and label tests.

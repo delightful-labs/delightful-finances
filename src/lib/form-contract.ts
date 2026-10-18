@@ -62,3 +62,12 @@ export type FormOperationInput<Values, Scope, Observation> = {
 	request: Omit<FormRequest<Scope>, 'values'> & { values: Values }
 	observation: FormObservation<Observation>
 }
+
+/** Creation accepts drafts as before; editing requires a domain baseline comparison. */
+export type FormMode<Values, Observation> =
+	| { mode?: 'create' }
+	| {
+			mode: 'edit'
+			initialValues: (observation: Observation) => Values
+			valuesEqual: (draft: unknown, initialValues: Values) => boolean
+	  }

@@ -35,11 +35,7 @@
 			/>
 		{/snippet}
 		{#snippet controls(view)}
-			<Button type="submit" disabled={view.disabled}
-				>{view.busy
-					? m['status.saving']({ subject: m['labels.profile']() })
-					: m['actions.save']()}</Button
-			>
+			<Button type="submit" disabled={view.disabled}>{m['actions.save']()}</Button>
 		{/snippet}
 		{#snippet feedback(view)}
 			{#if view.state.matches('success')}

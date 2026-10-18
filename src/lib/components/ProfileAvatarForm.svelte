@@ -74,9 +74,7 @@
 		{#snippet controls(view)}
 			{#if selectedFile}
 				<Button type="submit" disabled={view.disabled}>
-					{view.busy
-						? m['status.saving']({ subject: m['labels.avatar']() })
-						: m['actions.save_avatar']()}
+					{m['actions.save_avatar']()}
 				</Button>
 			{/if}
 			{#if avatarData}

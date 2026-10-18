@@ -1,6 +1,6 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; workspace rename adoption (2d) has not started.
+Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; workspace rename adoption (2d) has an approved shared-lifecycle model and a six-file implementation prepared for review. Tests await implementation approval.
 
 ## Scope and technical context
 
@@ -70,3 +70,36 @@ capability, close/reopen, scope replacement and void-success presentation checks
 No production changes were required during verification. The scoped harness does
 not establish domain authorization or Jazz persistence guarantees for 2d or later
 modal adoption. Show this evidence before beginning the next focused cycle.
+
+## Workspace rename domain design (slice 2d-a)
+
+See [workspace-rename.md](workspace-rename.md) for the inspected SDK guarantees,
+readiness/operation statecharts, ownership, observation freshness, typed results,
+cleanup, presentation boundaries and proposed six-file implementation scope.
+This concrete domain review precedes effects; implementation review and approved
+unit/browser verification remain separate subsequent cycles. The existing SDK
+permission policy and rename persistence helper remain unchanged.
+
+Shared reuse clarification: the first domain adoption adds a reusable single-write
+operation base (`scoped-form-write.ts`), not a workspace-specific copy of generic
+preparation/interruption/settlement states. Workspace-specific actors supply
+readiness/authorization and the rename action. Existing shared submission,
+validation, capabilities, reset/reopen and view mechanics remain the foundation.
+See the responsibility table and revised six-file scope in workspace-rename.md.
+
+## Workspace rename implementation review (slice 2d-b)
+
+The six-file implementation is prepared: a generic scoped-form-write base,
+workspace-specific props/observation contracts and readiness policy, scoped page
+integration, pure WorkspaceNameForm and localized outcome messages. The domain
+reuses its readiness chart for displayed capability and pre-write authorization;
+it does not duplicate generic write settlement. The existing scoped owner and
+submission remain the form foundation. See workspace-rename.md and tasks.md for
+exact guarantees and review/verification gates.
+
+The pending implementation review also includes the user's shared create/edit
+mode and stable-submit-label refinements. The common owner gates editing on a
+pure comparison to current observed saved values and keeps fields editable while
+unchanged; creation has no new prerequisite. Workspace rename is the initial
+edit-mode consumer. forms.md and tasks.md record the expanded related scope and
+remaining approval/verification requirements.
