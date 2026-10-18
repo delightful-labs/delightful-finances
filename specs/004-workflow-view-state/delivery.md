@@ -1,6 +1,6 @@
 # Incremental delivery: workflow and view state
 
-Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. The user accepted 2b verification; shared presentation (2c) is now implemented for review.
+Status: account-archiving implementation approved and focused verification passed. General forms model (2a) is approved; ownership/controller implementation (2b) is approved, with focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; evidence is ready for review before 2d.
 
 ## Architectural direction
 
@@ -44,7 +44,7 @@ concrete. Review and verify each subcycle before beginning the next.
 
 - [x] **2a — Model the shared contract:** inventory `form.ts`, `forms.svelte.ts`, `FormContent.svelte`, `FormModal.svelte`, and representative consumers. Define shared events, observed capabilities, domain-child ownership, typed view/results, reset/reopen behavior, and error boundaries. Map FR-010–012 to the model. Approved model: [forms.md](forms.md).
 - [x] **2b — Implement machine/controller ownership:** move submission policy out of controller-only `disabled || busy` checks and into guarded event acceptance. Forward current observations; define scope replacement, cancellation, and issued-effect settlement explicitly. Keep DOM/FormData adaptation in integration and pure input validation reusable. Four-file implementation approved; 27 new unit/adapter tests plus five legacy regressions and application type checks passed. Browser integration limits remain for 2c/2d.
-- [ ] **2c — Implement shared presentation:** give form components typed feedback/capabilities instead of requiring repeated `matches('error') || matches('invalid')`, raw-error interpretation, or independent busy/disabled policy. Preserve field issues, localization, accessibility, and simple local dialog visibility; explicitly define close-during-save behavior. Five-file implementation prepared for review; tests await approval.
+- [x] **2c — Implement shared presentation:** give form components typed feedback/capabilities instead of requiring repeated `matches('error') || matches('invalid')`, raw-error interpretation, or independent busy/disabled policy. Preserve field issues, localization, accessibility, and simple local dialog visibility; explicitly define close-during-save behavior. Five-file implementation approved; 35 relevant unit/adapter tests and four focused browser scenarios passed. Domain adoption remains for 2d and later slices.
 - [ ] **2d — Adopt in one representative form:** demonstrate composition with domain authorization/preparation/persistence children and accurate outcomes. Move business branches out of its save callback while retaining atomic write-time invariants. Verify child transitions reach the view.
 
 Each checkbox represents a focused review cycle with model review, implementation
@@ -129,3 +129,17 @@ Controller tests exercise the compiled server adapter with explicit mount hooks;
 client reactive effects, DOM reset/rebuilds, and actual modal behavior still require
 the scheduled browser adoption checks. No server or Playwright run was needed in
 this additive cycle. Review this evidence before beginning slice 2c.
+
+## Slice 2c verification
+
+The user approved continuation after reviewing the implementation and manual
+preview. Thirty-five relevant unit/adapter tests, four browser scenarios,
+application/test type checks, and focused formatting/diff checks passed. No
+production code changes were needed. See [tasks.md](tasks.md#approved-slice-2c-verification)
+for commands, fixture setup corrections and limits.
+
+The browser harness exercises the real scoped controller/shared components with
+controlled operation actors; a real account-modal regression also passed through
+the legacy adapter. These results establish shared presentation behavior, not
+new domain authorization or Jazz settlement guarantees. Review this evidence
+before workspace rename adoption (2d).

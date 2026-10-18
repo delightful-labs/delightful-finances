@@ -1,6 +1,6 @@
 # Shared forms: proposed contract (slice 2a)
 
-Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is implemented for review. No domain consumers migrated; browser integration verification remains gated on approval.
+Status: model and slice 2b implementation approved; focused machine/controller adapter verification passed (see tasks.md). Slice 2c shared presentation is approved and focused unit/browser verification passed. No domain consumers migrated; domain adoption verification remains for 2d and later slices.
 
 ## Inventory and concrete gaps
 
@@ -289,3 +289,17 @@ active work. The disabled prop remains solely for legacy trigger compatibility;
 existing callers still supply their disabled view until their migration slice.
 No new strings or styling direction are introduced. Implementation review and
 approved automated/browser verification are still pending.
+
+## Slice 2c approved verification
+
+The user authorized verification with "continue" after implementation review and
+manual preview. Three new legacy projection tests and 32 relevant regressions
+passed. Four browser scenarios passed with the actual shared components and
+controller, covering scoped readiness, reset/field rebuilds, busy Close/reopen,
+void success and scope replacement, plus a real legacy account-modal regression.
+The source-directory fixture is included in ordinary Svelte/TypeScript checks;
+Playwright supplies its document without introducing a production route.
+
+See tasks.md for exact commands, setup corrections and coverage boundaries.
+Synthetic operation actors verify shared presentation integration, not domain
+write authorization/settlement. The first production scoped adoption remains 2d.

@@ -131,9 +131,9 @@ Slice 2b verification evidence is presented for review before starting 2c.
 - [x] T017 Add a props-only shared rendering contract and a narrow legacy view projection in src/lib/form-contract.ts and src/lib/machines/form.ts; bind it in src/lib/forms.svelte.ts without changing legacy machine transitions.
 - [x] T018 Update FormContent.svelte and FormModal.svelte to consume typed content/activity/capabilities, rebuild scoped fields by accepted draft revision, and distinguish busy Close from workflow cancellation. Keep legacy snippets and call sites compatible.
 - [x] T019 Format and statically check the five-file implementation, then present it for review.
-- [ ] T020 Obtain approval of the exact 2c implementation before adding/running tests.
-- [ ] T021 After T020, verify legacy projection and shared presentation, including field disabling, accepted/rejected reset, void success, and modal close/reopen behavior. Record browser limits separately from later domain adoption.
-- [ ] T022 Show verified 2c evidence before beginning workspace rename adoption (2d).
+- [x] T020 Obtain approval of the exact 2c implementation before adding/running tests.
+- [x] T021 After T020, verify legacy projection and shared presentation, including field disabling, accepted/rejected reset, void success, and modal close/reopen behavior. Record browser limits separately from later domain adoption.
+- [x] T022 Show verified 2c evidence before beginning workspace rename adoption (2d).
 
 T016: user accepted the prior verification and authorized continuation: "continue".
 The five implementation paths were shown before edits; the approved forms.md
@@ -166,3 +166,43 @@ messages and service-worker TypeScript checking. Focused Prettier checks and
 `git diff --check` passed. These static checks do not establish runtime or browser
 correctness. The exact five-file implementation is presented for review; T020
 remains pending. No tests were added or run for slice 2c.
+
+## Approved slice 2c verification
+
+T020: following the implementation review and manual-preview dependency-cache
+fix, the user instructed "continue". This approved the exact shared presentation
+implementation for focused verification.
+
+T021/T022: added three legacy adapter unit tests, the test-only scoped harness
+under `src/lib/testing/form-presentation/`, four focused browser scenarios in
+`tests/form-presentation.e2e.ts`, and `playwright.form-presentation.config.ts`.
+No production implementation changes were needed during verification.
+
+- `pnpm test:unit --run src/lib/machines/form-presentation.test.ts src/lib/machines/form.test.ts src/lib/forms.test.ts src/lib/machines/scoped-form.test.ts src/lib/machines/scoped-form-submission.test.ts`: 35 passed (three new adapter tests and 32 relevant regressions).
+- `pnpm check`: passed; zero Svelte errors/warnings, including the source-directory Svelte harness and service-worker TypeScript checking.
+- `pnpm check:tests`: passed.
+- `pnpm exec playwright test --config playwright.form-presentation.config.ts`: four passed, using the existing isolated in-memory Jazz configuration on port 5180.
+- Focused Prettier checks and `git diff --check`: passed.
+
+Browser checks cover reactive access observations, disabled fieldsets/submit,
+accepted native reset rebuilding fields, rejected reset retaining the same busy
+field node/value/revision, child-driven activity/aria-busy updates, Escape and
+backdrop draft preservation, busy Close/reopen retaining one operation without
+cancellation, void success presentation, fresh successful reopen, and scope
+replacement closing/resetting a modal. A real account-modal regression covers
+legacy validation, draft dismissal, local save feedback and fresh reopen.
+
+The deterministic scoped harness supplies controlled observation and persistence
+actors; it uses the real scoped controller and shared components. Its operations
+are synthetic and do not establish domain authorization or real Jazz write
+settlement for a migrated scoped consumer. Workspace rename adoption (2d) and
+the later modal domain adoption still require their own coverage. Parent-owned
+avatar/payment disclosure state and domain teardown races remain in their planned
+adoption slices; no broader domain migration is implied by these passing checks.
+
+Initial browser attempts exposed fixture setup issues only: SvelteKit did not
+serve a standalone tests-directory HTML entry, and its Vite allowlist excluded
+that directory's modules. Playwright now supplies a test-only document and loads
+the harness from the existing allowed source directory. No production route or
+broader filesystem allowlist was added. Browser checks ran after unit/type checks.
+Slice 2c verification is presented for review before beginning 2d.

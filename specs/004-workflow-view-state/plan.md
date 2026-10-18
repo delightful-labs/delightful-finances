@@ -1,6 +1,6 @@
 # Implementation Plan: Explicit workflow and view state
 
-Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is implemented for review; tests await approval.
+Status: account archiving verified; shared forms model approved; slice 2b ownership/controller implementation approved and focused verification passed. Shared presentation (2c) is approved and focused unit/browser verification passed; workspace rename adoption (2d) has not started.
 
 ## Scope and technical context
 
@@ -60,3 +60,13 @@ Native fields are disabled by the view and keyed by accepted scoped draft revisi
 Modal close preserves active work and uses the existing Close label while busy.
 Review the exact implementation before adding/running tests; no production domain
 consumer is migrated until 2d or its later dedicated slice.
+
+## Shared presentation verification (slice 2c)
+
+Implementation approval and actual commands/results are recorded in tasks.md.
+Thirty-five relevant unit/adapter tests and four browser scenarios passed,
+including a real legacy account-modal regression and deterministic scoped reset,
+capability, close/reopen, scope replacement and void-success presentation checks.
+No production changes were required during verification. The scoped harness does
+not establish domain authorization or Jazz persistence guarantees for 2d or later
+modal adoption. Show this evidence before beginning the next focused cycle.
