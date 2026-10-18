@@ -259,3 +259,37 @@ installed-source feasibility evidence before feature implementation. This focuse
 journal consolidation uses existing browser IndexedDB actors and introduces no
 Jazz APIs or assumptions. The merge uses the ordinary local-copy contract; no SDK
 patch or global snapshot primitive is a dependency.
+
+### Journal consolidation verification
+
+After implementation approval, all 26 focused journal unit scenarios and the
+expanded native IndexedDB Playwright scenario pass. Unit coverage exercises the
+public commands through the production storage statechart with controlled native
+adapters: command conflicts, local settlement, startup errors, cancellation and
+shutdown priority, and commits racing cancellation. Browser coverage verifies real
+competing creates, immutable source/destination, repeated binding, discard,
+owner cancellation/shutdown persistence and connection release. Application and
+browser TypeScript checks and focused formatting pass. No production fixes were
+needed. The next consolidation remains allocation/reference preparation.
+
+### Combined preparation implementation (awaiting review)
+
+One `preparation.ts` statechart now validates, allocates IDs and rewrites references.
+The former `mapping.ts` machine and `references.ts` wrapper are removed. Preview
+invokes preparation directly. The pure mapping/reference helpers and existing input
+validator are reused; the obsolete allocation lifecycle result is replaced by
+plain intermediate `MergeAllocation` data. Public preparation outcomes and ID rules
+are preserved. Existing test references were mechanically adapted, with obsolete
+child-supervision coverage retired; no tests were added or run for this slice.
+No Jazz API or SDK assumption changed. Verification follows implementation review.
+
+### Combined preparation verification
+
+After approval, all 172 tests across the five affected allocation, reference,
+conflict, preview and preview-lifecycle suites pass. They exercise the combined
+preparation owner through preserved ID/reference rules, failures, cancellation,
+terminal cleanup and preview composition. No production fixes were needed.
+Application/browser TypeScript and focused formatting passed during implementation.
+This slice changes no mounted browser flow; end-to-end copy coverage remains part
+of coordinator/import integration. Unit tooling's generated public Jazz URL was
+restored for the existing development server after verification.

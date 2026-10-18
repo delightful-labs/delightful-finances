@@ -12,10 +12,10 @@ import type {
 	AccountMergeMappingInput,
 	MergeRecordMapping
 } from '#lib/schema/account-merge-mapping.js'
-import { accountMergeMappingMachine } from './mapping.js'
+import { accountMergePreparationMachine } from './preparation.js'
 import { fixture, id, providerId } from './mapping.fixtures.js'
 
-function cleared(actor: ActorRefFrom<typeof accountMergeMappingMachine>) {
+function cleared(actor: ActorRefFrom<typeof accountMergePreparationMachine>) {
 	expect(actor.getSnapshot().context).toMatchObject({
 		input: undefined,
 		records: [],
@@ -25,12 +25,14 @@ function cleared(actor: ActorRefFrom<typeof accountMergeMappingMachine>) {
 	})
 }
 async function mapped(input: AccountMergeMappingInput) {
-	const actor = createActor(accountMergeMappingMachine, { input }).start()
+	const actor = createActor(accountMergePreparationMachine, { input }).start()
 	const output = await toPromise(actor)
-	expect(output.outcome).toBe('mapped')
-	if (output.outcome !== 'mapped') throw new Error('Expected mappings')
+	expect(output.outcome).toBe('prepared')
+	if (output.outcome !== 'prepared') throw new Error('Expected mappings')
 	cleared(actor)
-	return output.records
+	return Object.values(output.plan.candidates)
+		.flat()
+		.map((candidate) => candidate.mapping)
 }
 function find(
 	records: readonly MergeRecordMapping[],
@@ -161,14 +163,14 @@ describe('merge identity allocation', () => {
 		})
 		const allocate = vi.fn(async () => ({ destinationId: id(30), originId: id(31) }))
 		const actor = createActor(
-			accountMergeMappingMachine.provide({ actors: { identities: fromPromise(allocate) } }),
+			accountMergePreparationMachine.provide({ actors: { identities: fromPromise(allocate) } }),
 			{ input }
 		).start()
-		await expect(toPromise(actor)).resolves.toEqual({
-			outcome: 'mapped',
-			destination: input.destination,
-			records: []
-		})
+		const output = await toPromise(actor)
+		expect(output.outcome).toBe('prepared')
+		if (output.outcome !== 'prepared') throw new Error('Expected prepared graph')
+		expect(output.plan.destination).toEqual(input.destination)
+		expect(Object.values(output.plan.candidates).flat()).toEqual([])
 		expect(allocate).not.toHaveBeenCalled()
 		cleared(actor)
 	})
@@ -243,7 +245,7 @@ describe('merge identity allocation', () => {
 			})
 		}
 	])('returns $code and clears transient state', async ({ code, change }) => {
-		const actor = createActor(accountMergeMappingMachine, { input: change(fixture()) }).start()
+		const actor = createActor(accountMergePreparationMachine, { input: change(fixture()) }).start()
 		await expect(toPromise(actor)).resolves.toEqual({ outcome: 'failed', code })
 		cleared(actor)
 	})
@@ -251,13 +253,13 @@ describe('merge identity allocation', () => {
 	it.each(['identities', 'receipt'] satisfies ('identities' | 'receipt')[])(
 		'classifies rejected %s allocation without retaining raw errors',
 		async (stage) => {
-			const machine = accountMergeMappingMachine.provide({
+			const machine = accountMergePreparationMachine.provide({
 				actors:
 					stage === 'identities'
 						? {
 								identities: fromPromise<
 									{ destinationId: string; originId: string },
-									InputFrom<typeof accountMergeMappingMachine.implementations.actors.identities>
+									InputFrom<typeof accountMergePreparationMachine.implementations.actors.identities>
 								>(async () => {
 									throw new Error('private error')
 								})
@@ -283,7 +285,7 @@ describe('merge identity allocation', () => {
 			const pending = Promise.withResolvers<string>()
 			const receipt = vi.fn(() => pending.promise)
 			const actor = createActor(
-				accountMergeMappingMachine.provide({ actors: { receipt: fromPromise(receipt) } }),
+				accountMergePreparationMachine.provide({ actors: { receipt: fromPromise(receipt) } }),
 				{ input: fixture() }
 			).start()
 			await waitFor(actor, (state) => state.matches('allocatingSystemOrigin'))
@@ -308,7 +310,7 @@ describe('merge identity allocation', () => {
 		async ({ command, late, outcome }) => {
 			const pending = Promise.withResolvers<{ destinationId: string; originId: string }>()
 			const allocate = vi.fn(() => pending.promise)
-			const machine = accountMergeMappingMachine.provide({
+			const machine = accountMergePreparationMachine.provide({
 				actors: { identities: fromPromise(allocate) }
 			})
 			const actor = createActor(machine, { input: fixture() }).start()

@@ -11,13 +11,12 @@ import {
 import { mergePreviewGraph } from '#lib/account-merge/preview.js'
 import type { MergeConflictInput } from '#lib/schema/account-merge-conflict.js'
 import { id } from './mapping.fixtures.js'
-import { accountMergeMappingMachine } from './mapping.js'
+import { accountMergePreparationMachine } from './preparation.js'
 import { previewFixture } from './preview.fixtures.js'
 import { accountMergePreviewMachine } from './preview.js'
-import { accountMergeReferencesMachine } from './references.js'
 
 type Graph = typeof accountMergePreviewMachine.implementations.actors.graph
-type Identities = typeof accountMergeMappingMachine.implementations.actors.identities
+type Identities = typeof accountMergePreparationMachine.implementations.actors.identities
 function cleared(actor: ActorRefFrom<typeof accountMergePreviewMachine>) {
 	expect(actor.getSnapshot().context).toMatchObject({
 		input: undefined,
@@ -131,17 +130,17 @@ describe('preview supervision and lifecycle', () => {
 				const identities = Promise.withResolvers<OutputFrom<Identities>>()
 				const graphPending = Promise.withResolvers<OutputFrom<Graph>>()
 				const graph = vi.fn(() => graphPending.promise)
-				const allocation = accountMergeMappingMachine.provide({
+				const allocation = accountMergePreparationMachine.provide({
 					actors: {
 						identities: fromPromise<OutputFrom<Identities>, InputFrom<Identities>>(
 							() => identities.promise
 						)
 					}
 				})
-				const references = accountMergeReferencesMachine.provide({ actors: { allocation } })
+				const preparation = allocation
 				const machine = accountMergePreviewMachine.provide({
 					actors: {
-						...(stage === 'references' ? { references } : {}),
+						...(stage === 'references' ? { preparation } : {}),
 						graph: fromPromise<OutputFrom<Graph>, InputFrom<Graph>>(graph)
 					}
 				})

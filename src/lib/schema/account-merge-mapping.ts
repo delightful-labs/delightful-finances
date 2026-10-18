@@ -24,11 +24,8 @@ export type MergeMappingError =
 	| 'ambiguous-system-category'
 	| 'identity-allocation-failed'
 
-export type MergeMappingResult =
-	| {
-			outcome: 'mapped'
-			destination: AccountMergeMappingInput['destination']
-			records: readonly MergeRecordMapping[]
-	  }
-	| { outcome: 'failed'; code: MergeMappingError }
-	| { outcome: 'cancelled' | 'closed' }
+// Pure allocation data consumed by reference rewriting, not a separate workflow result.
+export type MergeAllocation = {
+	destination: AccountMergeMappingInput['destination']
+	records: readonly MergeRecordMapping[]
+}

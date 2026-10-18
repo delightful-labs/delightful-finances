@@ -91,6 +91,23 @@ test('journal actors settle native IndexedDB races and cancellation before relea
 			operationId: winner.operationId,
 			destination: { identityId: crypto.randomUUID(), organizationId: crypto.randomUUID() }
 		})
+		if (bound.outcome !== 'completed' || !bound.journal?.destination)
+			throw new Error('Expected bound journal')
+		const rebound = await run({
+			type: 'BIND',
+			operationId: winner.operationId,
+			destination: bound.journal.destination
+		})
+		const retargeted = await run({
+			type: 'BIND',
+			operationId: winner.operationId,
+			destination: { ...bound.journal.destination, identityId: crypto.randomUUID() }
+		})
+		const replacedSource = await run({
+			type: 'CREATE',
+			journal: { ...winner, snapshot: { ...winner.snapshot, excludedConnectionCount: 1 } }
+		})
+		const afterRejectedChanges = await run({ type: 'LOAD' })
 		const wrongOperation = await run({ type: 'DISCARD', operationId: crypto.randomUUID() })
 		const discarded = await run({ type: 'DISCARD', operationId: winner.operationId })
 		const cancelled = createActor(journalStorageActor, { input: storage })
@@ -101,6 +118,23 @@ test('journal actors settle native IndexedDB races and cancellation before relea
 		cancelled.send({ type: 'REPLACE', expected: null, journal })
 		const cancellation = await toPromise(cancelled)
 		const afterCancellation = await run({ type: 'LOAD' })
+		const preboundCreation = await run({ type: 'CREATE', journal: bound.journal })
+		const ownerStops = []
+		for (const stop of ['CANCEL', 'SHUTDOWN'] satisfies ('CANCEL' | 'SHUTDOWN')[]) {
+			const owner = createActor(createMergeJournalMachine(storage), {
+				input: { command: { type: 'CREATE', journal } }
+			})
+			owner.subscribe((snapshot) => {
+				if (snapshot.matches({ writing: 'replacing' })) owner.send({ type: stop })
+			})
+			owner.start()
+			const outcome = await toPromise(owner)
+			const persisted = await run({ type: 'LOAD' })
+			ownerStops.push({ stop, outcome, persisted })
+			// If commit won the native race, the copy must remain recoverable.
+			if (persisted.outcome === 'completed' && persisted.journal)
+				await run({ type: 'DISCARD', operationId: persisted.journal.operationId })
+		}
 		// Deletion also proves that every actor released its database connection.
 		await new Promise<void>((resolve, reject) => {
 			const request = indexedDB.deleteDatabase(`delightful-finances:account-merge:${appId}`)
@@ -111,6 +145,12 @@ test('journal actors settle native IndexedDB races and cancellation before relea
 		return {
 			outcomes: competing.map((value) => value.outcome).sort(),
 			bound,
+			rebound,
+			retargeted,
+			replacedSource,
+			afterRejectedChanges,
+			preboundCreation,
+			ownerStops,
 			wrongOperation,
 			discarded,
 			cancellation,
@@ -119,6 +159,21 @@ test('journal actors settle native IndexedDB races and cancellation before relea
 	})
 	expect(result.outcomes).toEqual(['completed', 'conflict'])
 	expect(result.bound.outcome).toBe('completed')
+	expect(result.rebound).toEqual(result.bound)
+	expect(result.retargeted).toEqual({ outcome: 'conflict', code: 'conflict' })
+	expect(result.replacedSource).toEqual({ outcome: 'conflict', code: 'conflict' })
+	expect(result.afterRejectedChanges).toEqual(result.bound)
+	expect(result.preboundCreation).toEqual({ outcome: 'conflict', code: 'conflict' })
+	for (const { stop, outcome, persisted } of result.ownerStops) {
+		if (outcome.outcome === 'partial') {
+			expect(outcome.reason).toBe(stop === 'CANCEL' ? 'cancelled' : 'shutdown')
+			expect(persisted).toEqual({ outcome: 'completed', journal: outcome.journal })
+		} else {
+			expect(outcome).toEqual({ outcome: stop === 'CANCEL' ? 'cancelled' : 'closed' })
+			expect(persisted).toEqual({ outcome: 'completed', journal: null })
+		}
+	}
+
 	expect(result.wrongOperation.outcome).toBe('conflict')
 	expect(result.discarded).toEqual({ outcome: 'completed', journal: null })
 	expect(result.cancellation).toEqual({ type: 'ERROR', code: 'cancelled' })

@@ -1,9 +1,13 @@
 import { assign, fromPromise, setup } from 'xstate'
+import { mergeReferencePlan } from '#lib/account-merge/references.js'
+import type {
+	MergeReferencePlan,
+	MergeReferenceResult
+} from '#lib/schema/account-merge-references.js'
+import type { MergeAllocation } from '#lib/schema/account-merge-mapping.js'
 import { stableUuid } from '#lib/data.js'
 import type {
 	AccountMergeMappingInput,
-	MergeMappingError,
-	MergeMappingResult,
 	MergeRecordMapping
 } from '#lib/schema/account-merge-mapping.js'
 import { accountMergeMappingInputSchema } from '#lib/validation/account-merge-mapping.js'
@@ -16,6 +20,7 @@ import {
 } from '#lib/account-merge/mapping.js'
 import { required } from '../bank-sync/identity.js'
 
+type PreparationError = Extract<MergeReferenceResult, { outcome: 'failed' }>['code']
 type Category = AccountMergeMappingInput['categories'][number]
 type Context = {
 	input: AccountMergeMappingInput | undefined
@@ -23,13 +28,21 @@ type Context = {
 	index: number
 	categories: Category[]
 	mappings: MergeRecordMapping[]
-	error: MergeMappingError
-	result: MergeMappingResult | undefined
+	plan: MergeReferencePlan | undefined
+	error: PreparationError
+	result: MergeReferenceResult | undefined
 }
 type Event = { type: 'CANCEL' | 'SHUTDOWN' }
 type IdentityInput = { namespace: string; name: string; originName: string }
 
 const actors = {
+	references: fromPromise(
+		({
+			input
+		}: {
+			input: { snapshot: AccountMergeMappingInput['snapshot']; allocation: MergeAllocation }
+		}) => Promise.resolve(mergeReferencePlan(input.snapshot, input.allocation))
+	),
 	identities: fromPromise(async ({ input }: { input: IdentityInput }) => {
 		const [destinationId, originId] = await Promise.all([
 			stableUuid(input.namespace, input.name),
@@ -46,16 +59,16 @@ const workflow = setup<
 	Event,
 	typeof actors,
 	{},
-	{ fail: { code: MergeMappingError } },
+	{ fail: { code: PreparationError } },
 	{},
 	never,
 	string,
 	unknown,
-	MergeMappingResult
+	MergeReferenceResult
 >({
 	actors,
 	actions: {
-		fail: assign((_, params: { code: MergeMappingError }) => ({ error: params.code }))
+		fail: assign((_, params: { code: PreparationError }) => ({ error: params.code }))
 	}
 })
 const clear = workflow.assign({
@@ -63,12 +76,14 @@ const clear = workflow.assign({
 	records: [],
 	categories: [],
 	mappings: [],
-	index: 0
+	index: 0,
+	plan: undefined
 })
-const failure = (
-	code: MergeMappingError
-): { type: 'fail'; params: { code: MergeMappingError } } => ({ type: 'fail', params: { code } })
-const finish = (result: (context: Context) => MergeMappingResult) =>
+const failure = (code: PreparationError): { type: 'fail'; params: { code: PreparationError } } => ({
+	type: 'fail',
+	params: { code }
+})
+const finish = (result: (context: Context) => MergeReferenceResult) =>
 	workflow.createStateConfig({
 		type: 'final',
 		entry: [workflow.assign({ result: ({ context }) => result(context) }), clear]
@@ -98,10 +113,10 @@ const allocating = (kind: 'origin' | 'provider-transaction', name: (context: Con
 		}
 	})
 
-// Allocation only: destination authorization, hydration, collision decisions and writes
-// remain the responsibility of later preview/import actors.
-export const accountMergeMappingMachine = workflow.createMachine({
-	id: 'account-merge-mapping',
+// Prepare new IDs and rewrite references in one lifecycle. Destination authorization,
+// collision decisions and writes remain the responsibility of preview/import owners.
+export const accountMergePreparationMachine = workflow.createMachine({
+	id: 'account-merge-preparation',
 	initial: 'validating',
 	context: ({ input }) => {
 		const parsed = accountMergeMappingInputSchema.safeParse(input)
@@ -111,6 +126,7 @@ export const accountMergeMappingMachine = workflow.createMachine({
 			index: 0,
 			categories: [],
 			mappings: [],
+			plan: undefined,
 			error: 'invalid-input',
 			result: undefined
 		}
@@ -174,7 +190,7 @@ export const accountMergeMappingMachine = workflow.createMachine({
 		},
 		nextRecord: {
 			always: [
-				{ guard: ({ context }) => context.index >= context.records.length, target: 'mapped' },
+				{ guard: ({ context }) => context.index >= context.records.length, target: 'rewriting' },
 				{ target: 'routingRecord' }
 			]
 		},
@@ -266,11 +282,22 @@ export const accountMergeMappingMachine = workflow.createMachine({
 			entry: workflow.assign({ index: ({ context }) => context.index + 1, categories: [] }),
 			always: 'nextRecord'
 		},
-		mapped: finish((context) => ({
-			outcome: 'mapped',
-			destination: required(context.input).destination,
-			records: context.mappings
-		})),
+		rewriting: {
+			invoke: {
+				src: 'references',
+				input: ({ context }) => ({
+					snapshot: required(context.input).snapshot,
+					allocation: {
+						destination: required(context.input).destination,
+						records: context.mappings
+					}
+				}),
+				onDone: { target: 'prepared', actions: assign({ plan: ({ event }) => event.output }) },
+				onError: { target: 'failed', actions: failure('reference-mapping-failed') }
+			}
+		},
+		prepared: finish((context) => ({ outcome: 'prepared', plan: required(context.plan) })),
+
 		failed: finish((context) => ({ outcome: 'failed', code: context.error })),
 		cancelled: finish(() => ({ outcome: 'cancelled' })),
 		closed: finish(() => ({ outcome: 'closed' }))

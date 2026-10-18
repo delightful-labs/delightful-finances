@@ -1,3 +1,4 @@
+import { accountMergePreparationMachine } from './preparation.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createActor, toPromise } from 'xstate'
 import type { MergeConflictInput } from '#lib/schema/account-merge-conflict.js'
@@ -7,13 +8,13 @@ import { accountMergeConflictInputSchema } from '#lib/validation/account-merge-c
 import { mergeEntitySchema } from '#lib/validation/account-merge-origins.js'
 import { sameMergeValues } from '#lib/account-merge/conflict.js'
 import { fixture, id } from './mapping.fixtures.js'
-import { accountMergeReferencesMachine } from './references.js'
+
 import { accountMergeConflictMachine } from './conflict.js'
 
 let plan: MergeReferencePlan
 beforeAll(async () => {
 	const output = await toPromise(
-		createActor(accountMergeReferencesMachine, { input: fixture() }).start()
+		createActor(accountMergePreparationMachine, { input: fixture() }).start()
 	)
 	if (output.outcome !== 'prepared') throw new Error('Expected prepared fixture')
 	plan = output.plan

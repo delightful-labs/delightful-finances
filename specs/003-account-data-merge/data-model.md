@@ -198,19 +198,19 @@ honor receipts after target edits/deletion, including canonical/reused targets.
 - Attachments: detect and stop unsupported graphs before import; current file permissions cannot support lossless copying.
 - Credentials/connections/memberships/profile: excluded with explicit connection reconnection notice. Preserve provider account identity as non-secret provenance for later reconnect decisions; do not create active links to absent connections.
 
-## Identity allocation slice (reviewed and unit-verified)
+## Combined preparation (awaiting implementation review)
 
-`validation/account-merge-mapping.ts` reuses the complete snapshot and destination
-validators and canonical category fields. Destination category observations require
-explicit system/archive values; form defaults are removed with `unwrap()`. These
-transient observations do not prove complete hydration or destination authority.
-The matching schema module defines typed allocation results and fixed error codes.
+`machines/account-merge/preparation.ts` now owns validation, identity allocation
+and reference rewriting in one statechart. It replaces the former `mapping.ts`
+machine and `references.ts` wrapper. Preview invokes preparation directly; there
+is no allocation child lifecycle or second copy of input validation.
 
-`machines/account-merge/mapping.ts` owns input/scope checks, record routing,
-system-category selection, ID allocation and terminal cleanup. Shared state
-configuration handles ordinary/provider allocation without duplicating their
-invocation/error transitions. `account-merge/mapping.ts` contains pure projections
-and identity-name formatting; it makes no database queries or writes.
+`validation/account-merge-mapping.ts` still reuses the snapshot/destination
+validators and canonical category fields, with form defaults removed using
+`unwrap()`. Pure helpers remain in `account-merge/mapping.ts` and
+`account-merge/references.ts`; they make no Jazz reads or writes. `MergeAllocation`
+is intermediate data containing the destination and ID mappings, rather than a
+separate machine result. The public result remains prepared/failed/cancelled/closed.
 
 ```mermaid
 stateDiagram-v2
@@ -228,103 +228,44 @@ stateDiagram-v2
     allocatingProviderIdentity --> advance
     allocatingOriginIdentity --> advance
     advance --> nextRecord
-    nextRecord --> mapped: all identities allocated
+    nextRecord --> rewriting: all identities allocated
+    rewriting --> prepared: reference projection succeeded
+    rewriting --> failed: reference projection failed
 ```
 
 Invalid input, same identity/workspace, cross-scope/duplicate destination category
-IDs, missing/ambiguous active system categories, and rejected UUID allocation have
-explicit failure transitions. Cancel and shutdown terminate allocation, clear source
-payloads and discard late digest results. UUID calculation has no persisted effect
-requiring a commit/abort handshake. No partial import is reported for allocation.
+IDs, missing/ambiguous active system categories, and rejected UUID allocation retain
+explicit failure transitions. Every active stage accepts cancel/shutdown, clears
+source/mapping/plan context and ignores late digest/projection outcomes. Projection
+remains an invoked pure calculation with an error transition; no fallible work is
+moved into an entry action. UUID calculation and projection have no persisted effect.
 
-All hashes use the destination organization as namespace. Ordinary destination IDs
-use `account-merge:` followed by the JSON tuple `[sourceOrganizationId, entity,
-sourceRecordId]`; origin receipt IDs use the same tuple with `account-merge-origin:`.
-SimpleFIN transaction IDs retain the bank importer's exact
-`simplefin-transaction:${externalId}` name. System categories reuse exactly one
-active destination system category of the same income/expense kind. Ordinary
+All hashes retain the destination organization namespace. Ordinary record IDs use
+`account-merge:` followed by `[sourceOrganizationId, entity, sourceRecordId]` as
+JSON; receipt IDs use the same tuple prefixed by `account-merge-origin:`. SimpleFIN
+IDs retain `simplefin-transaction:${externalId}`. System categories reuse exactly
+one active destination system category of the same income/expense kind. Ordinary
 records are never combined by label, date or amount.
 
-The result contains source/destination IDs and origin receipt IDs for accounts,
-categories, tags, transactions, check details, transaction-tag links, batches and
-templates. It does not create origin receipts, rewrite references or decide target
-row collisions. Multiple source provider transactions can resolve to one canonical
-ID; preview/import must still compare their values and account mappings rather than
-silently skip differences. Source bank-account links remain snapshot provenance;
-this allocator does not plan active links to absent connections.
+The result groups candidates across all eight supported entities. Each candidate
+contains its ID mapping and a projected wire-format value. Finance row IDs,
+organization IDs and account/category/check/batch/tag references are rewritten;
+nullable references remain null. Integer money, currencies, user dates, notes,
+archives, labels and provider external IDs are preserved. Source bank links remain
+attribution, never active destination connections or insertion requests.
 
-The typed provenance reference correction is implemented for review; see the
-additive provenance section for the original server rejection and verification gate.
-Transactional
-receipt writes, archive/check sequencing and preview/import effects remain separate
-work. Source capture remains
-gated by [capture-contract.md](capture-contract.md). After implementation review,
-25 focused unit tests pass for supported-graph allocation, source preservation,
-manual-record separation, stable retry/order/scope identities, canonical provider
-IDs with distinct origin receipts, active system-category selection, empty graphs,
-strict required input fields, invalid scope/graphs, missing/ambiguous categories,
-allocation rejection and cancellation/shutdown racing late resolution/rejection.
-Assertions also verify terminal payload cleanup. TypeScript and focused formatting
-checks pass. This verifies allocation independently of capture, authorization,
-preview conflict decisions or finance writes.
+Candidates remain advisory: archives are ISO strings and canonical provider peers
+remain distinct candidates. Conflict/dependency checks and origin receipts still
+protect destination edits and deletions. Preparation does not authorize a
+workspace, query Jazz or insert records. This consolidation adds no SDK dependency;
+the existing UUID and pure projection seams are unchanged.
 
-## Reference preparation (current review slice)
-
-`accountMergeReferencesMachine` invokes the reviewed identity allocator as a child,
-then invokes a pure reference projection. It takes the existing strict mapping
-input; no new capture API, destination observation contract or validation copy is
-introduced. Parent-level cancellation/shutdown terminate the child invocation and
-clear transient source/allocation context. Late allocation/projection results are
-ignored after terminal transitions. All invoked failures have explicit routes;
-allocation domain errors remain typed and projection failures use
-`reference-mapping-failed` without raw payloads or exception text.
-
-```mermaid
-stateDiagram-v2
-    [*] --> validating
-    validating --> failed: invalid input
-    validating --> allocating: valid input
-    allocating --> rewriting: child mapped
-    allocating --> failed: typed allocation failure or actor error
-    allocating --> cancelled: child cancelled
-    allocating --> closed: child closed
-    rewriting --> prepared: pure projection completed
-    rewriting --> failed: projection rejected
-    allocating --> cancelled: CANCEL
-    rewriting --> cancelled: CANCEL
-    allocating --> closed: SHUTDOWN
-    rewriting --> closed: SHUTDOWN
-```
-
-The result groups candidates by all eight supported entities. Each candidate keeps
-its source/destination/origin identity mapping and a projected wire-format value.
-Every finance row ID and organization ID is replaced with the allocated destination;
-tags reference mapped categories, transactions reference mapped accounts/categories,
-checks/batches, check details reference mapped accounts/transactions, and tag links
-reference mapped tags/transactions. Nullable references remain null. Labels, integer
-money, currencies, dates, notes, archives and provider external IDs are preserved.
-No canonical form adapter is applied to captured values. Original bank-link rows
-are copied separately as source provenance, never destination insertion requests.
-
-Candidates are not executable writes. Archives remain ISO strings; system-category
-reuse retains its allocation kind; multiple source provider transactions resolving
-to one canonical ID remain separate candidates. Conflict preview must examine them
-rather than collapse them in a destination-ID map. Preview must also honor existing
-receipts after target deletion, reject unmatched existing-row collisions, and check
-dependency compatibility before any importer consumes a candidate. Destination
-hydration/authorization observations and atomic rechecks remain separate work.
-
-After implementation approval, 22 focused reference-preparation tests pass alongside
-all 25 allocation tests. Coverage includes every entity/foreign key, null references,
-exact whitespace/archive/check values, source immutability and bank attribution,
-canonical provider collisions with distinct account/value candidates and tag links,
-shared source UUIDs across tables, empty graphs, invalid input, allocation domain
-failures and unexpected child errors, missing allocated references, projection
-failure, and late resolution/rejection after cancel/shutdown in either invocation.
-Terminal assertions verify source/allocation cleanup. The suites share the existing
-allocation fixture. TypeScript and focused formatting checks pass. No production
-changes were needed during verification. Workflow-level Playwright coverage awaits
-integration; live capture, conflict classification and writes remain separate work.
+Existing test imports, output access and injected actor references were adapted to
+the consolidated owner; the test of an allocation-child action failure was retired
+because that child no longer exists. No tests were added or run for this slice.
+Earlier allocation/reference coverage is historical evidence only; after approval,
+verify preserved ID/reference behavior, projection and allocation failures,
+cancellation in both stages, terminal cleanup, and preview composition.
 
 ## Per-record conflict classification (current review slice)
 

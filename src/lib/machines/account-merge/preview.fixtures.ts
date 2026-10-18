@@ -1,12 +1,12 @@
+import { accountMergePreparationMachine } from './preparation.js'
 import { createActor, toPromise } from 'xstate'
 import type { MergeEntity } from '#lib/schema/account-merge-mapping.js'
 import { accountMergePreviewInputSchema } from '#lib/validation/account-merge-preview.js'
 import { fixture } from './mapping.fixtures.js'
-import { accountMergeReferencesMachine } from './references.js'
 
 export async function previewFixture(mapping = fixture()) {
 	const prepared = await toPromise(
-		createActor(accountMergeReferencesMachine, { input: mapping }).start()
+		createActor(accountMergePreparationMachine, { input: mapping }).start()
 	)
 	if (prepared.outcome !== 'prepared') throw new Error('Expected prepared fixture')
 	const plan = prepared.plan

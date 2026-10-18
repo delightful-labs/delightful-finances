@@ -9,7 +9,7 @@ import type {
 } from '#lib/schema/account-merge-preview.js'
 import { accountMergePreviewInputSchema } from '#lib/validation/account-merge-preview.js'
 import { required } from '../bank-sync/identity.js'
-import { accountMergeReferencesMachine } from './references.js'
+import { accountMergePreparationMachine } from './preparation.js'
 import { accountMergeConflictMachine } from './conflict.js'
 import { accountMergePreviewDependencyMachine } from './preview-dependency.js'
 
@@ -26,7 +26,7 @@ type Context = {
 }
 type Event = { type: 'CANCEL' | 'SHUTDOWN' }
 const actors = {
-	references: accountMergeReferencesMachine,
+	preparation: accountMergePreparationMachine,
 	graph: fromPromise(
 		({ input }: { input: { observations: MergePreviewInput; plan: MergeReferencePlan } }) =>
 			Promise.resolve(mergePreviewGraph(input.observations, input.plan))
@@ -101,7 +101,7 @@ export const accountMergePreviewMachine = workflow.createMachine({
 		},
 		preparing: {
 			invoke: {
-				src: 'references',
+				src: 'preparation',
 				input: ({ context }: { context: Context }) => required(context.input).mapping,
 				onDone: [
 					{

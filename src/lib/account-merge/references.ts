@@ -1,14 +1,12 @@
 import type { AccountMergeSnapshot } from '#lib/schema/account-merge.js'
-import type { MergeEntity, MergeMappingResult } from '#lib/schema/account-merge-mapping.js'
+import type { MergeEntity, MergeAllocation } from '#lib/schema/account-merge-mapping.js'
 import type { MergeReferencePlan } from '#lib/schema/account-merge-references.js'
-
-type Allocation = Extract<MergeMappingResult, { outcome: 'mapped' }>
 
 // Pure projection after the allocation machine has validated scope and the graph.
 // Keep every source candidate, even when canonical provider IDs coincide.
 export function mergeReferencePlan(
 	snapshot: AccountMergeSnapshot,
-	allocation: Allocation
+	allocation: MergeAllocation
 ): MergeReferencePlan {
 	const mappings = new Map(
 		allocation.records.map((mapping) => [

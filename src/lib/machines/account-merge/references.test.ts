@@ -11,17 +11,20 @@ import {
 import { mergeReferencePlan } from '#lib/account-merge/references.js'
 import type { AccountMergeMappingInput } from '#lib/schema/account-merge-mapping.js'
 import { mergeEntitySchema } from '#lib/validation/account-merge-origins.js'
-import { accountMergeMappingMachine } from './mapping.js'
+import { accountMergePreparationMachine } from './preparation.js'
 import { fixture, id } from './mapping.fixtures.js'
-import { accountMergeReferencesMachine } from './references.js'
 
-type Identities = typeof accountMergeMappingMachine.implementations.actors.identities
-type References = typeof accountMergeReferencesMachine.implementations.actors.references
-function cleared(actor: ActorRefFrom<typeof accountMergeReferencesMachine>) {
-	expect(actor.getSnapshot().context).toMatchObject({ input: undefined, allocation: undefined })
+type Identities = typeof accountMergePreparationMachine.implementations.actors.identities
+type References = typeof accountMergePreparationMachine.implementations.actors.references
+function cleared(actor: ActorRefFrom<typeof accountMergePreparationMachine>) {
+	expect(actor.getSnapshot().context).toMatchObject({
+		input: undefined,
+		mappings: [],
+		plan: undefined
+	})
 }
 async function prepared(input = fixture()) {
-	const actor = createActor(accountMergeReferencesMachine, { input }).start()
+	const actor = createActor(accountMergePreparationMachine, { input }).start()
 	const result = await toPromise(actor)
 	expect(result.outcome).toBe('prepared')
 	if (result.outcome !== 'prepared') throw new Error('Expected prepared graph')
@@ -215,39 +218,21 @@ describe('merge reference preparation', () => {
 			change: (input: AccountMergeMappingInput) => ({ ...input, categories: [] })
 		}
 	])('propagates $code and clears preparation data', async ({ code, change }) => {
-		const actor = createActor(accountMergeReferencesMachine, { input: change(fixture()) }).start()
+		const actor = createActor(accountMergePreparationMachine, { input: change(fixture()) }).start()
 		await expect(toPromise(actor)).resolves.toEqual({ outcome: 'failed', code })
 		cleared(actor)
 	})
 
 	it('handles child allocation rejection without exposing private errors', async () => {
-		const allocation = accountMergeMappingMachine.provide({
+		const allocation = accountMergePreparationMachine.provide({
 			actors: {
 				identities: fromPromise<OutputFrom<Identities>, InputFrom<Identities>>(async () => {
 					throw new Error('private allocation failure')
 				})
 			}
 		})
-		const actor = createActor(accountMergeReferencesMachine.provide({ actors: { allocation } }), {
+		const actor = createActor(allocation, {
 			input: fixture()
-		}).start()
-		await expect(toPromise(actor)).resolves.toEqual({
-			outcome: 'failed',
-			code: 'identity-allocation-failed'
-		})
-		cleared(actor)
-	})
-
-	it('supervises an unexpected allocation child failure', async () => {
-		const allocation = accountMergeMappingMachine.provide({
-			actions: {
-				fail: () => {
-					throw new Error('private child action failure')
-				}
-			}
-		})
-		const actor = createActor(accountMergeReferencesMachine.provide({ actors: { allocation } }), {
-			input: { ...fixture(), categories: [] }
 		}).start()
 		await expect(toPromise(actor)).resolves.toEqual({
 			outcome: 'failed',
@@ -260,7 +245,6 @@ describe('merge reference preparation', () => {
 		const input = fixture()
 		expect(() =>
 			mergeReferencePlan(input.snapshot, {
-				outcome: 'mapped',
 				destination: input.destination,
 				records: []
 			})
@@ -271,7 +255,7 @@ describe('merge reference preparation', () => {
 		const references = fromPromise<OutputFrom<References>, InputFrom<References>>(async () => {
 			throw new Error('private projection failure')
 		})
-		const actor = createActor(accountMergeReferencesMachine.provide({ actors: { references } }), {
+		const actor = createActor(accountMergePreparationMachine.provide({ actors: { references } }), {
 			input: fixture()
 		}).start()
 		await expect(toPromise(actor)).resolves.toEqual({
@@ -290,18 +274,17 @@ describe('merge reference preparation', () => {
 				}>()
 				const referencePending = Promise.withResolvers<OutputFrom<References>>()
 				const projection = vi.fn(() => referencePending.promise)
-				const allocation = accountMergeMappingMachine.provide({
-					actors: { identities: fromPromise(() => allocationPending.promise) }
-				})
-				const machine = accountMergeReferencesMachine.provide({
+				const machine = accountMergePreparationMachine.provide({
 					actors: {
-						...(stage === 'allocation' ? { allocation } : {}),
+						...(stage === 'allocation'
+							? { identities: fromPromise(() => allocationPending.promise) }
+							: {}),
 						references: fromPromise<OutputFrom<References>, InputFrom<References>>(projection)
 					}
 				})
 				const actor = createActor(machine, { input: fixture() }).start()
 				await waitFor(actor, (state) =>
-					state.matches(stage === 'allocation' ? 'allocating' : 'rewriting')
+					state.matches(stage === 'allocation' ? 'allocatingOriginIdentity' : 'rewriting')
 				)
 				actor.send({ type: command })
 				const outcome = command === 'CANCEL' ? 'cancelled' : 'closed'
