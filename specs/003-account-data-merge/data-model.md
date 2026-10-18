@@ -596,6 +596,47 @@ synchronous initial callback cleanup. TypeScript and formatting pass; no
 production fixes were needed. These tests validate the callback contract and actor,
 not actual Jazz read tiers. Adapter/Playwright coverage awaits concrete integration.
 
+## Concrete destination integration (current review slice)
+
+`AccountMergeDestinationIntegration.svelte` now implements the eligibility
+bindings against real Jazz APIs. It is a task-scoped integration component with
+no presentation template. Props supply the exact bound Db/session, requested
+destination, reactive selected organization ID and result callback. It captures
+one client/request per mount; a coordinator must key/remount for a new request.
+The exported root actor permits explicit CANCEL/SHUTDOWN from that coordinator.
+The component is not mounted in the login route yet and makes no automatic
+startup reads in the application.
+
+The session binding subscribes to SDK notifications, publishes an initial snapshot,
+and forwards reactive workspace selection changes. Facts include current ready
+status, account ID and current client's Db object, so the reviewed child detects
+client replacement. A narrow native-callback handler bridges snapshot-reading
+failures to the child's session-error event. The binding removes its workspace
+listener and unsubscribes the SDK session when disposed.
+
+Organization reads use `app.organizations.where({ id })`; membership reads use
+`app.organizationMembers.where({ organizationId, userId })`. Both use the public
+object callback form of `db.subscribe` with `tier: 'remote'`; complete updates and
+terminal errors are forwarded without substituting local data or empty defaults.
+The SDK unsubscribe is returned directly to the owning callback actor. Query
+subscription startup errors remain the child invocation's responsibility.
+
+The root starts in onMount with completion delivery already subscribed. Unmount
+sends SHUTDOWN, allowing the child's synchronous terminal subscription cleanup to
+finish before unsubscribing completion and stopping the root. This deliberately
+avoids automatic framework actor-stop hooks that could bypass domain cleanup.
+The future persistent coordinator must explicitly cancel on navigation/scope
+lifecycle events and recheck eligibility before writes; result delivery is not a
+standing permission grant. No session switching, finance/receipt reads, provider
+operations or destination writes are performed here.
+
+TypeScript, focused formatting and svelte-check (zero errors/warnings) pass.
+The new component awaits review before unit/Playwright tests of actual remote
+openings, eligibility/denial, offline waits, session/workspace changes and unmount
+cleanup. Existing actor unit tests do not establish behavior of this concrete SDK
+binding. Future browser coverage can mount this production component with a real
+Jazz session without adding an unfinished merge flow to the login page.
+
 ## Invariants
 
 All references stay within the destination organization. Currency and transaction kind match referenced account/category. No implicit authorization transfer, no unrelated destination overwrites. A committed target row and its origin receipt must be consistent atomically. A retry skips already imported origin even after the user edits the target. A canonical provider collision without matching provenance is existing/conflict, never replacement. Import conflicts result in partial completion until explicitly resolved; unsupported graph errors block before any writes.

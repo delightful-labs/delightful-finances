@@ -154,6 +154,17 @@ subscription bindings remain in the future integration component; no finance
 queries, provider calls, session switching or writes were added. See the detailed
 contract/statechart in [data-model.md](data-model.md).
 
+Concrete destination bindings are now implemented for review in
+`AccountMergeDestinationIntegration.svelte`. This task-scoped component owns the
+real SDK session observer and scoped organization/membership subscriptions using
+`tier: 'remote'`, forwards errors and workspace changes, starts the eligibility
+root on mount, and finishes shutdown before stopping on unmount. It exposes the
+root for future coordinator commands and delivers typed outcomes. TypeScript,
+formatting and svelte-check pass with zero diagnostics; tests await approval.
+It remains unmounted in login pending coordinator/capture integration. Actual SDK
+browser verification is the next focused test slice; finance/receipt observations
+and writes remain separate.
+
 ## Project structure
 
 Documentation: this directory's spec.md, research.md, data-model.md, contracts/merge-ui.md and quickstart.md.
