@@ -26,9 +26,7 @@
 	const session = fromStore(getJazzSession())
 	const categories = new QuerySubscription(() =>
 		filters.activeOrganizationId
-			? app.categories
-					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
-					.orderBy('name')
+			? app.categories.where({ organizationId: filters.activeOrganizationId }).orderBy('name')
 			: undefined
 	)
 	// Count all readable history, regardless of sidebar account selection or tag archive state.

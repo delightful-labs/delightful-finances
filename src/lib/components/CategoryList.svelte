@@ -7,6 +7,7 @@
 	import type { ManagementView } from '#lib/management-contract.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormFeedback from './FormFeedback.svelte'
+	import ArchiveFilter, { type ArchiveFilterValue } from './ArchiveFilter.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
@@ -23,6 +24,14 @@
 		onArchive: (categoryId: string) => void
 	} = $props()
 	const numbers = $derived(new Intl.NumberFormat(getLocale()))
+	let archiveFilter = $state<ArchiveFilterValue>('active')
+	const visibleCategories = $derived(
+		categories.filter(
+			(row) =>
+				archiveFilter === 'all' ||
+				(archiveFilter === 'archived' ? !!row.archivedAt : !row.archivedAt)
+		)
+	)
 </script>
 
 <FormFeedback
@@ -35,7 +44,9 @@
 	section="result"
 />
 
-{#if categories.length}
+<ArchiveFilter bind:value={archiveFilter} />
+
+{#if visibleCategories.length}
 	<Table caption={m['labels.categories']()}>
 		<thead
 			><tr>
@@ -47,7 +58,7 @@
 			</tr></thead
 		>
 		<tbody>
-			{#each categories as category (category.id)}
+			{#each visibleCategories as category (category.id)}
 				<tr>
 					<th scope="row">{category.name}</th>
 					<td>{category.kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}</td>

@@ -4,6 +4,7 @@
 	import type { ManagementView } from '#lib/management-contract.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormFeedback from './FormFeedback.svelte'
+	import ArchiveFilter, { type ArchiveFilterValue } from './ArchiveFilter.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
@@ -19,6 +20,14 @@
 		archiveView: ManagementView<string>
 		onArchive: (tagId: string) => void
 	} = $props()
+	let archiveFilter = $state<ArchiveFilterValue>('active')
+	const visibleTags = $derived(
+		tags.filter(
+			(row) =>
+				archiveFilter === 'all' ||
+				(archiveFilter === 'archived' ? !!row.archivedAt : !row.archivedAt)
+		)
+	)
 </script>
 
 <FormFeedback
@@ -32,6 +41,10 @@
 />
 
 {#if tags.length}
+	<ArchiveFilter bind:value={archiveFilter} />
+{/if}
+
+{#if visibleTags.length}
 	<Table caption={m['labels.tags']()}>
 		<thead
 			><tr>
@@ -42,7 +55,7 @@
 			</tr></thead
 		>
 		<tbody>
-			{#each tags as tag (tag.id)}
+			{#each visibleTags as tag (tag.id)}
 				<tr>
 					<th scope="row">{tag.name}</th>
 					<td

@@ -365,3 +365,11 @@ not prove cross-device uniqueness or perform the deferred existing-tag migration
 Description verification: 116 focused unit tests pass across transaction validation, persistence, import decisions, and date grouping. All four browser scenarios in `playwright.transaction-description.config.ts` pass for income/expense entry, single-line description, multiline memo, list/detail separation, and reload persistence. Application and browser-test type checks pass. The stale installed UI dependency was refreshed from the existing vendored archive. Existing XState assign warnings remain in browser logs. The additive migration remains local and undeployed.
 
 Merge integration with editable transactions: preserve the editable details form, populate description in the edit adapter and initial values, include it in change detection, and save or clear it on updates. Verification: 149 focused unit tests and all four description browser scenarios pass, including description edits with memo preserved after reload. Application type checking passed during integration.
+
+### Category and tag archive filters
+
+- [x] Add localized default/archived/all radios to category and tag lists and include archived records in workspace subscriptions.
+- [x] Obtain implementation review.
+- [x] After approval, add and run focused coverage for default selection, archived-only/all filtering, live archive updates, and workspace isolation.
+
+Verification: both focused Playwright scenarios pass in `tests/duplicate-names.e2e.ts` using the isolated in-memory Jazz configuration. Coverage includes both pages, native keyboard radio selection, alphabetical order, empty filtered results, live offline archiving in all/default views, retained archived records after reload, workspace isolation, and hiding the tag filter only when there are no tags. Browser-test TypeScript checks pass. Initial failures were test setup issues (startup dialog timing and empty-message capitalization), corrected without production changes. Existing XState assign warnings remain. No separate unit tests were added for this presentation-only change.

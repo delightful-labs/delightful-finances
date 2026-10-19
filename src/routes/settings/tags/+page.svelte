@@ -25,9 +25,7 @@
 	const db = getDb()
 	const tags = new QuerySubscription(() =>
 		filters.activeOrganizationId
-			? app.tags
-					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
-					.orderBy('name')
+			? app.tags.where({ organizationId: filters.activeOrganizationId }).orderBy('name')
 			: undefined
 	)
 	// Archived categories retain their labels in tag history.

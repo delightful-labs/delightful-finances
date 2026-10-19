@@ -341,3 +341,7 @@ unit/Playwright coverage only after implementation approval.
 ### Transaction description implementation
 
 Add an optional Jazz string column through a local additive migration, preserving existing data. Extend canonical transaction validation, the form adapter, and persistence. Use the existing InputText component for Description, keep Memo as Textarea, and localize labels. Update list/detail presentation, SimpleFIN mapping, and sample generation without changing workflow states. Review implementation before adding or running focused unit and Playwright coverage; migration deployment is separate.
+
+### Category and tag archive filters
+
+Subscribe to all workspace categories/tags in their existing integration pages. Keep the three-way filter as simple local presentation state in CategoryList and TagList, using a shared ArchiveFilter presentation component for localized native radios and derived visible rows in each list. The shared control exposes a typed bound value and uses a unique radio group name per instance. Preserve complete observations for management authorization and duplicate-name guards. Review implementation before adding or running focused tests.

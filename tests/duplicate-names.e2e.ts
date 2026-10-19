@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openCreationModal } from './helpers/ui.js'
+import { openCreationModal, selectWorkspace } from './helpers/ui.js'
 
 const duplicateMessage = 'An active item with this name already exists. Choose another name.'
 
@@ -246,3 +246,115 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 		expect(tag.categoryId).toBe(transaction?.categoryId)
 	}
 })
+
+for (const entity of ['Category', 'Tag'] satisfies readonly ('Category' | 'Tag')[]) {
+	const plural = entity === 'Category' ? 'Categories' : 'Tags'
+	test(`archive filters: ${plural} default, empty results, keyboard selection and live offline archives`, async ({
+		page,
+		context
+	}) => {
+		await page.goto(`/settings/${plural.toLowerCase()}`)
+		const main = page.getByRole('main')
+		const group = main.getByRole('group', { name: 'Archive status', exact: true })
+		if (entity === 'Tag') {
+			await expect(main.getByText('No Tags yet.', { exact: true })).toBeVisible()
+			await expect(group).toHaveCount(0)
+		}
+		await expect(main.getByRole('button', { name: `Add ${entity}`, exact: true })).toBeEnabled()
+		const secondId = await page.evaluate(async (entity) => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+				sessionPath
+			)
+			const session = getCurrentJazzSession()?.getSnapshot()
+			const db = session?.client?.db
+			const userId = session?.account?.id
+			if (!db || !userId) throw new Error('Missing session')
+			const [organization] = await db.all(app.organizations)
+			if (!organization) throw new Error('Missing workspace')
+			for (const name of ['Alpha active', 'Zulu history']) {
+				const values = { organizationId: organization.id, name, kind: 'expense' } satisfies {
+					organizationId: string
+					name: string
+					kind: 'expense'
+				}
+				if (entity === 'Category')
+					await db.insert(app.categories, { ...values, isSystem: false }).wait({ tier: 'local' })
+				else await db.insert(app.tags, values).wait({ tier: 'local' })
+			}
+			const second = await db
+				.insert(app.organizations, {
+					name: 'Empty filter workspace',
+					kind: 'business',
+					defaultCurrency: 'USD',
+					ownerId: userId
+				})
+				.wait({ tier: 'local' })
+			await db
+				.insert(app.organizationMembers, {
+					organizationId: second.id,
+					userId,
+					role: 'owner',
+					accountAccessMode: 'all'
+				})
+				.wait({ tier: 'local' })
+			return second.id
+		}, entity)
+		const active = group.getByRole('radio', { name: 'Default (not archived)', exact: true })
+		const archived = group.getByRole('radio', { name: 'Archived only', exact: true })
+		const all = group.getByRole('radio', { name: 'All', exact: true })
+		const table = main.getByRole('table', { name: plural, exact: true })
+		const alpha = main.getByRole('rowheader', { name: 'Alpha active', exact: true })
+		const zulu = main.getByRole('rowheader', { name: 'Zulu history', exact: true })
+		await expect(active).toBeChecked()
+		await archived.check()
+		await expect(alpha).toHaveCount(0)
+		await expect(zulu).toHaveCount(0)
+		await expect(group).toBeVisible()
+		await archived.press('ArrowRight')
+		await expect(all).toBeChecked()
+		await expect(alpha).toBeVisible()
+		await expect(zulu).toBeVisible()
+		await context.setOffline(true)
+		await main.getByRole('button', { name: 'Archive Zulu history', exact: true }).click()
+		await expect(
+			main.getByRole('button', { name: 'Archive Zulu history', exact: true })
+		).toHaveCount(0)
+		await expect(zulu).toBeVisible()
+		await active.check()
+		await expect(alpha).toBeVisible()
+		await expect(zulu).toHaveCount(0)
+		await archived.check()
+		await expect(alpha).toHaveCount(0)
+		await expect(zulu).toBeVisible()
+		await all.check()
+		const names = await table.getByRole('rowheader').allTextContents()
+		expect(names.indexOf('Alpha active')).toBeLessThan(names.indexOf('Zulu history'))
+		await active.check()
+		await main.getByRole('button', { name: 'Archive Alpha active', exact: true }).click()
+		await expect(alpha).toHaveCount(0)
+		await expect(group).toBeVisible()
+		await archived.check()
+		await expect(alpha).toBeVisible()
+		await expect(zulu).toBeVisible()
+		await context.setOffline(false)
+		await page.reload()
+		await expect(active).toBeChecked()
+		await expect(alpha).toHaveCount(0)
+		await all.check()
+		await expect(alpha).toBeVisible()
+		await expect(zulu).toBeVisible()
+		const selector = page.getByLabel('Current workspace', { exact: true })
+		const firstId = await selector.inputValue()
+		await selectWorkspace(selector, secondId)
+		await expect(alpha).toHaveCount(0)
+		await expect(zulu).toHaveCount(0)
+		if (entity === 'Tag') await expect(group).toHaveCount(0)
+		await selectWorkspace(selector, firstId)
+		await all.check()
+		await expect(alpha).toBeVisible()
+		await expect(zulu).toBeVisible()
+	})
+}

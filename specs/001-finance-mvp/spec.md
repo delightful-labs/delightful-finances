@@ -291,3 +291,7 @@ in [tag-kinds.md](tag-kinds.md). No remote schema deployment is included in this
 ### Transaction description
 
 Transactions have an optional primary description alongside memo for additional notes. Manual entry uses a single-line Description input and a Memo textarea. Both values are trimmed and blank values are omitted. Lists show description; details show description and memo separately. New SimpleFIN imports store provider descriptions in description, and sample transactions populate description. Existing rows remain valid without a description and existing memos are preserved without copying or backfilling.
+
+### Category and tag archive filters
+
+Category and tag settings each offer a native radio group with Default (not archived), Archived only, and All. Default is selected on page entry. Hide the tag archive filter when the workspace has no tags; retain it when only the filtered result is empty. Filtering retains workspace scoping, alphabetical order, historical counts and category labels, and existing archive authorization.
