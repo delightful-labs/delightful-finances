@@ -15,7 +15,14 @@ export default defineConfig({
 			preprocess: vitePreprocess(),
 			prerender: { entries: ['*'] }
 		}),
-		...(previewing ? [] : [jazzSvelteKit({ server: process.env.npm_lifecycle_event === 'dev' })]),
+		...(previewing
+			? []
+			: [
+					jazzSvelteKit({
+						// Jazz scopes browser identity to the server URL; keep it stable across restarts.
+						server: process.env.npm_lifecycle_event === 'dev' ? { port: 5174 } : false
+					})
+				]),
 		svg(),
 		paraglideVitePlugin({
 			project: './project.inlang',
