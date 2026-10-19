@@ -113,7 +113,7 @@ test('serves a saved transaction detail directly and after reload in production'
 		.selectOption({ label: 'Production detail checking' })
 	await page.getByLabel('Amount', { exact: true }).fill('12.34')
 	await page.getByLabel('Date', { exact: true }).fill('2026-03-10')
-	await page.getByLabel('Memo', { exact: true }).fill('Production detail verification')
+	await page.getByLabel('Description', { exact: true }).fill('Production detail verification')
 	await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
 	await expect(page.getByRole('main').getByRole('status')).toHaveText('Transaction saved.')
 	await page.goto('/expenses')

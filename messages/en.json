@@ -76,7 +76,8 @@
 		"currency": "Currency",
 		"date": "Date",
 		"amount": "Amount",
-		"memo": "Memo",
+		"description": "Description",
+		"memo": "Memo (additional notes)",
 		"account": "Account",
 		"category": "Category",
 		"income": "Income",
@@ -151,7 +152,7 @@
 			"description": "Development tool: saves real sample transactions to the first selected writable account in this workspace.",
 			"saved": "Saved {count} of 25 sample transactions.",
 			"failed": "Stopped after saving {count} of 25. Select a writable active account and make sure a category is available before trying again.",
-			"memo": "Sample transaction {number}"
+			"transaction_description": "Sample transaction {number}"
 		},
 		"pagination": {
 			"label": "Transaction pages",

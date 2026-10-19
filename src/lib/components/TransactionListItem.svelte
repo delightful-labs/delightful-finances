@@ -40,7 +40,7 @@
 				>
 			{/snippet}
 		</SplitRow>
-		{#if transaction.memo}<Text>{transaction.memo}</Text>{/if}
+		{#if transaction.description}<Text>{transaction.description}</Text>{/if}
 		<Text size="sm">
 			{accountName ?? m['transactions.unavailable_item']({ subject: m['labels.account']() })}
 		</Text>

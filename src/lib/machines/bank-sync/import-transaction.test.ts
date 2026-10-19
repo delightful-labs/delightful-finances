@@ -98,13 +98,14 @@ describe('transaction import decisions', () => {
 		const { actor, persist } = start()
 		await expect(toPromise(actor)).resolves.toEqual({ kind: 'imported' })
 		expect(persist).toHaveBeenCalledTimes(1)
+		expect(actor.getSnapshot().context.values).not.toHaveProperty('memo')
 		expect(actor.getSnapshot().context.values).toMatchObject({
 			amountMinor: 1234,
 			kind: 'expense',
 			accountId: account.id,
 			organizationId: id(2),
 			source: 'simplefin',
-			memo: 'Imported expense'
+			description: 'Imported expense'
 		})
 	})
 
@@ -118,7 +119,8 @@ describe('transaction import decisions', () => {
 			bookedOn: '2026-10-14',
 			amountMinor: 1234,
 			currency: 'USD',
-			memo: 'Imported expense',
+			memo: null,
+			description: 'Imported expense',
 			source: 'simplefin',
 			externalId: 'external',
 			paymentMethod: null,

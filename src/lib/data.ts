@@ -242,6 +242,7 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 				currency: transaction.money.currency,
 				kind: transaction.kind,
 				bookedOn: transaction.bookedOn,
+				...(transaction.description ? { description: transaction.description } : {}),
 				...(transaction.memo ? { memo: transaction.memo } : {}),
 				source: transaction.source.source,
 				...(transaction.source.source === 'simplefin'

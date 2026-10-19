@@ -35,7 +35,7 @@ Account management uses the shared sidebar and existing account list/create form
 
 ### User Story 3 — Record and review transactions (P1)
 
-As a user, I can create and review income and expense transactions for an account with amount, date, category, memo, and tags.
+As a user, I can create and review income and expense transactions for an account with amount, date, category, description, memo, and tags.
 
 **Acceptance Scenarios**
 
@@ -43,7 +43,7 @@ As a user, I can create and review income and expense transactions for an accoun
 2. **Given** I record income paid by check, **When** I save it, **Then** check number and a valid check date are required and stored in a related check-details record; other income methods do not require those fields.
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
-5. **Given** an income or expense view, **When** I review transactions, **Then** entries are grouped by calendar date newest first, with daily totals reflecting selected account filters and kept separate by currency. Each entry shows category, tags, account, amount, and its memo when present.
+5. **Given** an income or expense view, **When** I review transactions, **Then** entries are grouped by calendar date newest first, with daily totals reflecting selected account filters and kept separate by currency. Each entry shows category, tags, account, amount, and its description when present.
 
 ### User Story 6 — Maintain a login profile (P2)
 
@@ -139,7 +139,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **Account Membership**: explicit read/write grant to an account for an org member in `selected` access mode.
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
 - **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
-- **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional memo/provider id/batch, and tags.
+- **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional description/memo/provider id/batch, and tags.
 - **Check Details**: one-to-one transaction record for check income.
 - **SimpleFIN Connection / Account Link**: org-scoped connection credential/status and mapping to local accounts.
 - **Transaction Attachment / Batch**: schema-ready relationships for later features.
@@ -287,3 +287,7 @@ rows. Preserve all historical links; exclude untyped tags from new assignment
 until a separately reviewed migration assigns or splits them. Show their unassigned
 status in tag settings. The compatibility policy and machine ownership are detailed
 in [tag-kinds.md](tag-kinds.md). No remote schema deployment is included in this work.
+
+### Transaction description
+
+Transactions have an optional primary description alongside memo for additional notes. Manual entry uses a single-line Description input and a Memo textarea. Both values are trimmed and blank values are omitted. Lists show description; details show description and memo separately. New SimpleFIN imports store provider descriptions in description, and sample transactions populate description. Existing rows remain valid without a description and existing memos are preserved without copying or backfilling.

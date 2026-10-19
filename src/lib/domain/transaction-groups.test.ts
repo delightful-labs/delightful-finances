@@ -13,6 +13,7 @@ function row(id: string, bookedOn: string, amountMinor: number, currency = 'USD'
 		categoryId: 'category',
 		kind: 'expense',
 		source: 'manual',
+		description: null,
 		memo: null,
 		paymentMethod: null,
 		checkDetailsId: null,

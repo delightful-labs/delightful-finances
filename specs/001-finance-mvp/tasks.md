@@ -354,3 +354,10 @@ Application/service-worker and browser-test type checks, focused Prettier checks
 and whitespace checks pass. Existing XState assign warnings remain in browser logs.
 The schema migration is prepared locally and remains undeployed. These checks do
 not prove cross-device uniqueness or perform the deferred existing-tag migration.
+
+### Transaction description
+
+- [x] Add optional description through schema, validation, persistence, entry, list/details, imports, samples, and localization.
+- [x] Prepare the local additive description migration (not deployed).
+- [ ] Obtain implementation review before adding or running tests.
+- [ ] After approval, add and run focused validation/persistence/import unit coverage and Playwright coverage for single-line description entry and separate memo details.

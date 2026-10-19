@@ -43,7 +43,7 @@ async function seed(page: Page, count = 0) {
 					currency: 'USD',
 					kind: 'expense',
 					bookedOn: '2026-10-19',
-					memo: `Pagination fixture ${index + 1}`,
+					description: `Pagination fixture ${index + 1}`,
 					source: 'manual'
 				})
 			}

@@ -66,6 +66,8 @@
 				</ul>
 			</dd>
 		{/if}
+		{#if transaction.description}<dt>{m['labels.description']()}</dt>
+			<dd>{transaction.description}</dd>{/if}
 		{#if transaction.memo}<dt>{m['labels.memo']()}</dt>
 			<dd>{transaction.memo}</dd>{/if}
 		{#if transaction.paymentMethod}

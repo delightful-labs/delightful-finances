@@ -28,6 +28,7 @@ export const transactionsSchema = {
 			organizationId: s.uuid(),
 			// ISO 8601 calendar date (YYYY-MM-DD), not a timestamp.
 			bookedOn: bookedOnColumn.column,
+			description: s.string().optional(),
 			memo: s.string().optional(),
 			paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 			checkDetailsId: s.uuid().optional(),

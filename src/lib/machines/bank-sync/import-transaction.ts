@@ -32,7 +32,7 @@ type Values = {
 	bookedOn: string
 	amountMinor: number
 	currency: string
-	memo: string
+	description: string
 	source: 'simplefin'
 	externalId: string
 }
@@ -210,7 +210,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 								),
 								currency: context.provider.currency
 							},
-							memo: required(context.transaction).description,
+							description: required(context.transaction).description,
 							source: { source: 'simplefin', externalId: externalId(context) }
 						})
 				}),
@@ -232,7 +232,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 							context.amount?.kind === 'valid' ? context.amount.amountMinor : undefined
 						),
 						currency: context.provider.currency,
-						memo: required(context.transaction).description,
+						description: required(context.transaction).description,
 						source: 'simplefin',
 						externalId: externalId(context)
 					})

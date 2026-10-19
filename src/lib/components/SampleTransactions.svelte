@@ -95,7 +95,7 @@
 					bookedOn,
 					amount: `${Math.floor((100 + index * 137) / 100)}.${String((100 + index * 137) % 100).padStart(2, '0')}`,
 					paymentMethod: 'cash',
-					memo: m['transactions.samples.memo']({ number: index + 1 }),
+					description: m['transactions.samples.transaction_description']({ number: index + 1 }),
 					tags: []
 				})
 				const result = await createTransaction(db, transaction)

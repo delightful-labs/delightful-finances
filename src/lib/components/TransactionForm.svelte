@@ -212,6 +212,11 @@
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
+				<InputText
+					label={m['labels.description']()}
+					id="transaction-description"
+					name="description"
+				/>
 				<Textarea label={m['labels.memo']()} id="transaction-memo" name="memo"></Textarea>
 			{/if}
 		{/snippet}
