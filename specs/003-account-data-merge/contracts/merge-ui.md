@@ -17,34 +17,43 @@ Outcomes: completed locally, partial with committed/skipped/conflict counts, can
 
 On reload, detect a pending journal and offer resume/discard before another merge. Resume requires the journal's exact target identity and destination. Prevent overlapping operations across tabs and state clearly when another tab owns the operation.
 
-## Isolated route delivery
+## Current route delivery: source copy (awaiting review)
 
-The first route slice is read-only: localized introduction, capture/reconnection
-explanations, unavailable import action, and an explicit check of the currently
-selected destination workspace. It collects no recovery phrase and performs no
-identity replacement, finance mutation or provider operation. It does not claim a
-source summary before coherent capture is supported and does not display sample
-finance data. Destination eligibility is advisory; import remains unavailable.
+The temporary Check-this-workspace panel, capture-unavailable message and separate
+presentation machine have been removed. `/account-merge` now composes the merge
+coordinator integration and pure `AccountMerge` presentation. Opening the route
+loads the device-local journal without capturing source records or changing
+finance data or identity.
 
-`AccountMerge.svelte` is pure presentation receiving the machine's view and
-callbacks. The route binds session/selected-workspace facts to its presentation
-machine and mounts the concrete destination integration only for an explicit
-request. The view owns waiting, session unavailable, workspace selection,
-available/checking/eligible/denied outcomes. Each check has a distinct request
-object; stale callbacks from cancelled/replaced checks cannot update a newer view.
-Navigation/cancel closes active destination checks; teardown closes the child
-before stopping the presentation owner. The integration avoids sending shutdown
-to already-completed actors. Subsequent feature panels remain on this route.
+When no saved copy exists, Prepare a source copy invokes ordinary local-first
+reads through the existing capture actor. Show the captured workspace name and
+account, transaction, category, tag and excluded-bank-connection counts. Explain
+that this copies records currently available on this device; unsynchronized remote
+records and later edits are outside this copy. Validation failures and unavailable
+sessions/storage expose explicit retry actions.
 
-The page uses existing controls and Paraglide strings with no added styling.
-After approval, 19 presentation-machine tests and five Playwright scenarios pass.
-Unit cases cover explicit checks, readiness gates, unchanged/changed observations,
-eligible/denied results, explicit retry, stale-result rejection, child cancellation
-and shutdown cleanup. Browser cases exercise this route with real Jazz remote
-subscriptions: owned-personal eligibility, repeated checks, business rejection,
-unchanged sign-in, disabled import/no phrase collection, no finance writes/provider
-calls, pending remote openings despite cached local data, cancellation/navigation
-cleanup and workspace changes while a check is pending. Public subscribe/dispose
-instrumentation verifies the remote tier and subscription release independently of
-SDK inspector mode. These checks establish read-only destination behavior, not
-source capture or importing.
+Save copy for merge creates the journal only after explicit confirmation. A saved
+copy is shown after reload; another capture cannot replace it. Discard saved copy
+explicitly removes only the journal, with explanatory text before the action.
+Concurrent changes are rejected by the existing atomic journal comparison.
+
+State ownership: recovering journal -> assessing source -> available -> capturing
+-> review -> preparing journal -> saving -> saved. Journal access also handles
+explicit discard. Cancel/shutdown during journal access remain nested under its
+owner until the journal actor settles. A commit racing cancellation remains a
+saved recoverable copy. Shutdown takes precedence and finishes child cleanup
+before the root is stopped. Capture owns subscription cleanup on cancellation or
+scope changes. One native SDK session subscription fans observations out to the
+coordinator and capture actors, and is released after the last actor detaches.
+
+This source-only coordinator is currently route-owned. Before enabling account
+restoration it must move outside the SDK's identity-bound workspace subtree and
+integrate workspace/bank shutdown. This slice collects no recovery phrase, switches
+no identity, inserts no destination data and makes no provider requests. The saved
+view explicitly says that the copy has not been imported. `/login` and navigation
+are unchanged.
+
+The old presentation-machine tests were retired with that machine. After review,
+add coordinator/capture unit coverage and replace the old Check-oriented browser
+scenarios with capture/counts, save/reload/discard, scope/error/cancellation and
+read-only finance behavior. No tests were added or run for this implementation.

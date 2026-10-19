@@ -1,36 +1,54 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte'
 	import { createActor } from 'xstate'
+	import { fromStore, readable } from 'svelte/store'
+	import { PUBLIC_JAZZ_APP_ID } from '$app/env/public'
+	import AccountMerge from './AccountMerge.svelte'
+	import { createMergeJournalStore } from '#lib/account-merge/journal.js'
 	import type { QueryBuilder } from 'jazz-tools'
 	import type { getDb, JazzClient, JazzSession } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
 	import { accountMergeSnapshotSchema } from '#lib/validation/account-merge.js'
-	import { createAccountMergeCaptureMachine } from '#lib/machines/account-merge/capture.js'
+	import {
+		createAccountMergeMachine,
+		selectAccountMergeView
+	} from '#lib/machines/account-merge/coordinator.js'
 	import type {
 		MergeCaptureDependencies,
-		MergeCaptureResult,
 		MergeCaptureScope
 	} from '#lib/schema/account-merge-capture.js'
 	import type {
-		MergeDestination,
-		MergeObservationCallbacks
+		MergeObservationCallbacks,
+		MergeDestinationSession
 	} from '#lib/schema/account-merge-destination.js'
 
 	let {
 		db,
 		session,
-		source,
-		organizationId,
-		onResult
+		organizationId
 	}: {
 		db: ReturnType<typeof getDb>
 		session: JazzSession<JazzClient>
-		source: MergeDestination
 		organizationId: string | null
-		onResult: (result: MergeCaptureResult) => void
 	} = $props()
-	const bound = untrack(() => ({ db, session, source }))
-	const workspaceObservers = new Set<() => void>()
+	const bound = untrack(() => ({ db, session }))
+	const sessionObservers = new Set<MergeObservationCallbacks<MergeDestinationSession>>()
+	let unsubscribeSession: (() => void) | undefined
+	function publish() {
+		try {
+			const current = bound.session.getSnapshot()
+			const observation = {
+				ready: current.status === 'ready',
+				identityId: current.account?.id ?? null,
+				organizationId,
+				binding: current.client?.db ?? null
+			}
+			sessionObservers.forEach((callbacks) => callbacks.next(observation))
+		} catch {
+			sessionObservers.forEach((callbacks) => callbacks.error())
+		}
+	}
+
 	const shape = accountMergeSnapshotSchema.shape
 	// The wire schema is the field allowlist. No audit columns or credentials enter
 	// the actor. Jazz timestamps become the snapshot's ISO strings; absent nullable
@@ -132,25 +150,24 @@
 	const dependencies: MergeCaptureDependencies = {
 		binding: bound.db,
 		session: (callbacks) => {
-			const publish = () => {
+			sessionObservers.add(callbacks)
+			// The first actor acquires the SDK observer; subsequent children share
+			// it. Startup failures propagate to the invoking actor's onError.
+			if (sessionObservers.size === 1) {
 				try {
-					const current = bound.session.getSnapshot()
-					callbacks.next({
-						ready: current.status === 'ready',
-						identityId: current.account?.id ?? null,
-						organizationId,
-						binding: current.client?.db ?? null
-					})
-				} catch {
-					callbacks.error()
+					unsubscribeSession = bound.session.subscribe(publish)
+				} catch (error) {
+					sessionObservers.delete(callbacks)
+					throw error
 				}
 			}
-			const unsubscribe = bound.session.subscribe(publish)
-			workspaceObservers.add(publish)
 			publish()
 			return () => {
-				workspaceObservers.delete(publish)
-				unsubscribe()
+				sessionObservers.delete(callbacks)
+				if (sessionObservers.size === 0) {
+					unsubscribeSession?.()
+					unsubscribeSession = undefined
+				}
 			}
 		},
 		read: (requested, scope, callbacks) => reads[scope](requested.organizationId, callbacks),
@@ -166,25 +183,37 @@
 			)
 		}
 	}
-	export const actor = createActor(createAccountMergeCaptureMachine(dependencies), {
-		input: bound.source
-	})
+	const actor = createActor(
+		createAccountMergeMachine(dependencies, createMergeJournalStore(PUBLIC_JAZZ_APP_ID))
+	)
+	const snapshot = fromStore(
+		readable(actor.getSnapshot(), (set) => {
+			const subscription = actor.subscribe(set)
+			return () => subscription.unsubscribe()
+		})
+	)
+	const view = $derived(selectAccountMergeView(snapshot.current))
 	$effect(() => {
 		void organizationId
-		untrack(() => workspaceObservers.forEach((publish) => publish()))
+		untrack(publish)
 	})
 	onMount(() => {
-		const completion = actor.subscribe({
-			complete: () => {
-				const result = actor.getSnapshot().output
-				if (result) onResult(result)
-			}
-		})
+		actor.subscribe({ complete: () => actor.stop() })
 		actor.start()
+		publish()
 		return () => {
-			if (actor.getSnapshot().status === 'active') actor.send({ type: 'SHUTDOWN' })
-			completion.unsubscribe()
-			actor.stop()
+			// Let journal cancellation settle even after navigation removes this
+			// component. Final completion releases children before stopping root.
+			actor.send({ type: 'SHUTDOWN' })
 		}
 	})
 </script>
+
+<AccountMerge
+	{view}
+	onCapture={() => actor.send({ type: 'CAPTURE' })}
+	onSave={() => actor.send({ type: 'SAVE' })}
+	onDiscard={() => actor.send({ type: 'DISCARD' })}
+	onRetry={() => actor.send({ type: 'RETRY' })}
+	onCancel={() => actor.send({ type: 'CANCEL' })}
+/>

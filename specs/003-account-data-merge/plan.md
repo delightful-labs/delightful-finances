@@ -165,7 +165,7 @@ It remains unmounted in login pending coordinator/capture integration. Actual SD
 browser verification is the next focused test slice; finance/receipt observations
 and writes remain separate.
 
-### Isolated presentation route (reviewed and verified)
+### Earlier isolated presentation route (superseded)
 
 Per the user's routing decision, all merge-facing presentation now targets
 `/account-merge`, independently of `/login`. The first slice implements the route,
@@ -190,7 +190,7 @@ cleanup, explicit/repeated eligibility checks, business denial, unchanged login,
 read-only behavior and no provider calls, held remote responses despite cached
 local records, cancellation/navigation and workspace changes. TypeScript and
 focused formatting pass; no production fixes were needed. Earlier Paraglide and
-svelte-check diagnostics were clean. The capture gate still prevents actual merging. The existing development server's
+svelte-check diagnostics were clean. This check-only scaffolding is superseded by the source-copy integration below. The existing development server's
 review path is `http://localhost:5173/account-merge`.
 
 ## Project structure
@@ -293,3 +293,25 @@ Application/browser TypeScript and focused formatting passed during implementati
 This slice changes no mounted browser flow; end-to-end copy coverage remains part
 of coordinator/import integration. Unit tooling's generated public Jazz URL was
 restored for the existing development server after verification.
+
+### Source-copy route integration (awaiting review)
+
+`coordinator.ts` replaces the CHECK-only `presentation.ts` root and composes the
+existing capture/journal machines. The capture integration becomes
+`AccountMergeIntegration.svelte`, sharing one native session observer between
+actors and rendering pure presentation. The route now supports explicit capture,
+count review, durable save, saved-copy recovery on reload, retry and explicit
+discard. It removes obsolete destination-check UI/messages and presentation tests.
+No identity switch, destination writes, provider requests or login/navigation
+changes are included. The prior Check-oriented page tests need replacement after
+implementation review; they do not verify this new behavior.
+
+Installed Jazz 2.0.0-alpha.59 evidence: `dist/runtime/client.d.ts` defines
+`local-first` as local knowledge plus pending writes; `dist/runtime/db.js`
+subscription teardown retires native queries/readiness;
+`dist/session/state.js` `perform` detaches consumers and calls client shutdown
+with `waitForSync: true` before restoring identity. This slice uses ordinary source
+queries and the existing IndexedDB adapter, with no SDK changes. Move coordinator
+ownership above the identity-bound subtree before adding account replacement.
+See the current [interaction contract](contracts/merge-ui.md) for state ownership
+and cancellation settlement. Tests await review; no runtime verification claimed.

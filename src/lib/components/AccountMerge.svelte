@@ -1,54 +1,68 @@
 <script lang="ts">
 	import { Button } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
-	import type { AccountMergePresentation } from '#lib/machines/account-merge/presentation.js'
-	import type { MergeDestinationError } from '#lib/schema/account-merge-destination.js'
+	import type { AccountMergeView } from '#lib/machines/account-merge/coordinator.js'
 	let {
 		view,
-		onCheck,
+		onCapture,
+		onSave,
+		onDiscard,
+		onRetry,
 		onCancel
 	}: {
-		view: AccountMergePresentation
-		onCheck: () => void
+		view: AccountMergeView
+		onCapture: () => void
+		onSave: () => void
+		onDiscard: () => void
+		onRetry: () => void
 		onCancel: () => void
 	} = $props()
 	const errors = {
-		'invalid-input': () => m['account_merge.check_failed'](),
-		'session-unavailable': () => m['account_merge.session_unavailable'](),
-		'identity-changed': () => m['account_merge.session_changed'](),
-		'workspace-changed': () => m['account_merge.session_changed'](),
-		'binding-changed': () => m['account_merge.session_changed'](),
-		'not-owned-personal': () => m['account_merge.owned_personal_required'](),
-		'membership-required': () => m['account_merge.admin_required'](),
-		'invalid-observation': () => m['account_merge.check_failed'](),
-		'remote-read-failed': () => m['account_merge.remote_failed'](),
-		'session-observation-failed': () => m['account_merge.check_failed'](),
-		timeout: () => m['account_merge.check_timeout']()
-	} satisfies Record<MergeDestinationError, () => string>
+		capture: () => m['account_merge.capture_failed'](),
+		'invalid-source': () => m['account_merge.invalid_source'](),
+		storage: () => m['account_merge.storage_failed'](),
+		conflict: () => m['account_merge.copy_conflict']()
+	}
 </script>
 
 <p>{m['account_merge.description']()}</p>
-<p>{m['account_merge.capture_unavailable']()}</p>
+<p>{m['account_merge.copy_scope']()}</p>
 <p>{m['account_merge.reconnection_notice']()}</p>
-<Button disabled>{m['account_merge.merge_action']()}</Button>
-
-<h2>{m['account_merge.destination_heading']()}</h2>
-<p>{m['account_merge.destination_description']()}</p>
-{#if view.kind === 'waiting'}
-	<p role="status">{m['account_merge.waiting']()}</p>
-{:else if view.kind === 'session-unavailable'}
+{#if view.kind === 'available'}
+	<Button onclick={onCapture}>{m['account_merge.capture_action']()}</Button>
+{:else if view.kind === 'unavailable'}
 	<p role="status">{m['account_merge.session_unavailable']()}</p>
-{:else if view.kind === 'select-workspace'}
-	<p role="status">{m['workspace.select_workspace']()}</p>
-{:else if view.kind === 'checking'}
-	<p role="status">{m['account_merge.checking']()}</p>
+	<Button onclick={onRetry}>{m['account_merge.retry_action']()}</Button>
+{:else if view.kind === 'capturing' || view.kind === 'working'}
+	<p role="status">
+		{view.kind === 'capturing' ? m['account_merge.capturing']() : m['account_merge.working']()}
+	</p>
 	<Button onclick={onCancel}>{m['actions.cancel']()}</Button>
-{:else if view.kind === 'available'}
-	<Button onclick={onCheck}>{m['account_merge.check_destination']()}</Button>
-{:else if view.kind === 'eligible'}
-	<p role="status">{m['account_merge.destination_eligible']()}</p>
-	<Button onclick={onCheck}>{m['account_merge.check_again']()}</Button>
-{:else if view.kind === 'denied'}
-	<p role="alert">{errors[view.code]()}</p>
-	<Button onclick={onCheck}>{m['account_merge.check_again']()}</Button>
+{:else if view.kind === 'review' || view.kind === 'saved'}
+	<h2>{view.snapshot.sourceOrganization.name}</h2>
+	<dl>
+		<dt>{m['account_merge.accounts_count']()}</dt>
+		<dd>{view.snapshot.accounts.length}</dd>
+		<dt>{m['account_merge.transactions_count']()}</dt>
+		<dd>{view.snapshot.transactions.length}</dd>
+		<dt>{m['account_merge.categories_count']()}</dt>
+		<dd>{view.snapshot.categories.length}</dd>
+		<dt>{m['account_merge.tags_count']()}</dt>
+		<dd>{view.snapshot.tags.length}</dd>
+		<dt>{m['account_merge.connections_count']()}</dt>
+		<dd>{view.snapshot.excludedConnectionCount}</dd>
+	</dl>
+	{#if view.kind === 'review'}
+		<p>{m['account_merge.review_copy']()}</p>
+		<Button onclick={onSave}>{m['account_merge.save_action']()}</Button>
+		<Button onclick={onCancel}>{m['actions.cancel']()}</Button>
+	{:else}
+		<p role="status">{m['account_merge.copy_saved']()}</p>
+		<p>{m['account_merge.import_pending']()}</p>
+		<p>{m['account_merge.discard_notice']()}</p>
+		<Button onclick={onDiscard}>{m['account_merge.discard_action']()}</Button>
+	{/if}
+{:else if view.kind === 'failed'}
+	<p role="alert">{errors[view.problem]()}</p>
+	<Button onclick={onRetry}>{m['account_merge.retry_action']()}</Button>
 {/if}
