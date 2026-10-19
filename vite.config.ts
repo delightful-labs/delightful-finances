@@ -9,6 +9,8 @@ import { jazzSvelteKit } from 'jazz-tools/dev/sveltekit'
 const previewing = process.env.FINANCE_PREVIEW === 'true'
 
 export default defineConfig({
+	// A different page origin has different browser storage. Never silently change ports.
+	server: { port: 5173, strictPort: true },
 	plugins: [
 		sveltekit({
 			adapter: adapter(),

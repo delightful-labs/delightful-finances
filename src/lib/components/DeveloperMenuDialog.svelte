@@ -4,7 +4,19 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import PageContent from './PageContent.svelte'
 
-	let { children }: { children: Snippet } = $props()
+	let {
+		children,
+		appId,
+		serverUrl,
+		browserOrigin,
+		accountId
+	}: {
+		children: Snippet
+		appId: string
+		serverUrl: string
+		browserOrigin?: string
+		accountId?: string
+	} = $props()
 	let open = $state(false)
 	const dialogId = $props.id()
 </script>
@@ -21,6 +33,16 @@
 
 <Dialog id={dialogId} heading={m['developer.menu']()} bind:open closedby="any">
 	<PageContent>
+		<dl>
+			<dt>{m['developer.browser_origin']()}</dt>
+			<dd><code>{browserOrigin || m['developer.unavailable']()}</code></dd>
+			<dt>{m['developer.jazz_app_id']()}</dt>
+			<dd><code>{appId || m['developer.unavailable']()}</code></dd>
+			<dt>{m['developer.jazz_server_url']()}</dt>
+			<dd><code>{serverUrl || m['developer.unavailable']()}</code></dd>
+			<dt>{m['developer.account_id']()}</dt>
+			<dd><code>{accountId || m['developer.unavailable']()}</code></dd>
+		</dl>
 		{@render children()}
 		<Button type="button" onclick={() => (open = false)}>{m['developer.close']()}</Button>
 	</PageContent>

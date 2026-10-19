@@ -6,6 +6,10 @@ Delightful Finance is a local-first personal finance app using Jazz, Svelte 5, a
 
 Use Node 22.17 or newer and pnpm. Start the shared development server with `pnpm dev`; its URL is printed by Vite. `pnpm check` checks application and service-worker types without starting another Jazz server. `pnpm build` produces the production app and native service worker.
 
+`pnpm dev` keeps the app at `http://localhost:5173` and Jazz on port 5174, with Jazz's persistent project storage. An occupied port causes startup to fail. Always use the same browser profile and hostname (`localhost` and `127.0.0.1` have separate browser storage).
+
+Agents should use `pnpm dev:agent` at `http://localhost:5180`. This uses the existing isolated configuration with an in-memory Jazz server on an automatically assigned port; its data is disposable across restarts. Concurrent agents can choose separate page ports with `pnpm dev:agent --port 5181`. Keep the user's persistent server and storage untouched. The default and authentication Playwright configurations also start isolated servers rather than reusing the user's server.
+
 Set `PUBLIC_JAZZ_APP_ID` and `PUBLIC_JAZZ_SERVER_URL` for the production deployment before building. These public settings are declared in `src/env.ts` and included in the build. The Jazz development plugin supplies them for the local development server.
 
 ## Netlify deployment
@@ -34,7 +38,7 @@ Workspace, account-list, and transaction-list checks run with `pnpm test:workspa
 
 ## Project documents
 
-Account restoration checks run with `pnpm test:auth`. The dedicated suite uses two isolated browser profiles and reuses the development server at `http://127.0.0.1:5173`, or starts one there if needed. It checks recovered accounts, workspace reuse, repeated restoration, reloads, and starter category counts. Trace, screenshot, and video capture are disabled for this recovery-phrase workflow. Workspace initialization reads existing records before opening its write transaction and waits for local persistence. This prevents cold reloads from recreating protected records and leaving rejected writes that block account restoration. Eight consecutive restoration runs passed after the fix; the final three also checked starter category counts. The account creation/expense entry regression passed as well.
+Account restoration checks run with `pnpm test:auth`. The dedicated suite uses two isolated browser profiles and starts its own disposable development server at `http://127.0.0.1:5180`. It checks recovered accounts, workspace reuse, repeated restoration, reloads, and starter category counts. Trace, screenshot, and video capture are disabled for this recovery-phrase workflow. Workspace initialization reads existing records before opening its write transaction and waits for local persistence. This prevents cold reloads from recreating protected records and leaving rejected writes that block account restoration. Eight consecutive restoration runs passed after the fix; the final three also checked starter category counts. The account creation/expense entry regression passed as well.
 
 - [Constitution](.specify/memory/constitution.md): architecture and implementation rules.
 - [MVP specification](specs/001-finance-mvp/spec.md): product requirements and acceptance criteria.

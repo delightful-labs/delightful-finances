@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { setContext } from 'svelte'
+	import { onMount, setContext } from 'svelte'
 	import { fromStore } from 'svelte/store'
-	import { JazzSessionProvider } from 'jazz-tools/svelte'
+	import { JazzSessionProvider, type JazzClient, type JazzSession } from 'jazz-tools/svelte'
 	import { getReadiness } from '#lib/bank-sync.js'
 	import {
 		developerMenuKey,
@@ -12,6 +12,13 @@
 	import SampleTransactionControls from './SampleTransactionControls.svelte'
 	import SampleTransactions from './SampleTransactions.svelte'
 
+	let { appId, serverUrl }: { appId: string; serverUrl: string } = $props()
+	let browserOrigin = $state<string>()
+	let sessionSnapshot = $state<ReturnType<JazzSession<JazzClient>['getSnapshot']>>()
+	onMount(() => {
+		browserOrigin = window.location.origin
+	})
+
 	const controls = $state<DeveloperMenuContent>({
 		income: unavailableSampleControls(),
 		expense: unavailableSampleControls()
@@ -19,10 +26,17 @@
 	setContext(developerMenuKey, controls)
 	const startup = fromStore(getReadiness().snapshot)
 	const session = $derived(startup.current.context.session)
+	$effect(() => {
+		const current = session
+		sessionSnapshot = current?.getSnapshot()
+		return current?.subscribe(() => {
+			sessionSnapshot = current.getSnapshot()
+		})
+	})
 </script>
 
 {#if import.meta.env.DEV}
-	<DeveloperMenuDialog>
+	<DeveloperMenuDialog {appId} {serverUrl} {browserOrigin} accountId={sessionSnapshot?.account?.id}>
 		<SampleTransactionControls kind="income" {...controls.income} />
 		<SampleTransactionControls kind="expense" {...controls.expense} />
 	</DeveloperMenuDialog>

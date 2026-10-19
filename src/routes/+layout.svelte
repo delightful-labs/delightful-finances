@@ -52,7 +52,7 @@
 	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
 </script>
 
-<DeveloperMenu />
+<DeveloperMenu appId={jazzConfig.appId} serverUrl={jazzConfig.serverUrl} />
 
 <DemoViewport enabled={PUBLIC_SIMPLEFIN_DEMO === 'true'} />
 

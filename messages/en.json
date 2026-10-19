@@ -10,6 +10,11 @@
 	"forms.duplicate_name": "An active item with this name already exists. Choose another name.",
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"developer": {
+		"browser_origin": "Browser origin",
+		"jazz_app_id": "Jazz app ID",
+		"jazz_server_url": "Jazz server URL",
+		"account_id": "Current account ID",
+		"unavailable": "Unavailable",
 		"menu": "Developer menu",
 		"close": "Close"
 	},
