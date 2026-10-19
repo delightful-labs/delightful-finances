@@ -1,30 +1,23 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte'
 	import type { TransactionDetail } from '#lib/schema.js'
-	import { formatMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
 		transaction,
+		form,
 		creatorName,
 		editorName
 	}: {
 		transaction: TransactionDetail | undefined | null
+		form: Snippet
 		creatorName: string | undefined
 		editorName: string | undefined
 	} = $props()
-	const dates = $derived(
-		new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeZone: 'UTC' })
-	)
 	const timestamps = $derived(
 		new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 	)
-	const paymentLabels = $derived({
-		cash: m['transactions.payment.cash'](),
-		check: m['transactions.payment.check'](),
-		transfer: m['transactions.payment.transfer'](),
-		electronic: m['transactions.payment.electronic']()
-	})
 </script>
 
 {#if transaction}
@@ -33,58 +26,8 @@
 			{transaction.kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}
 		</a>
 	</p>
+	{@render form()}
 	<dl>
-		<dt>{m['labels.transaction_type']()}</dt>
-		<dd>{transaction.kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}</dd>
-		<dt>{m['labels.amount']()}</dt>
-		<dd>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</dd>
-		<dt>{m['labels.date']()}</dt>
-		<dd>
-			<time datetime={transaction.bookedOn}
-				>{dates.format(new Date(`${transaction.bookedOn}T00:00:00Z`))}</time
-			>
-		</dd>
-		<dt>{m['labels.account']()}</dt>
-		<dd>
-			{transaction.account?.name ??
-				m['transactions.unavailable_item']({ subject: m['labels.account']() })}
-		</dd>
-		<dt>{m['labels.category']()}</dt>
-		<dd>
-			{transaction.category?.name ??
-				m['transactions.unavailable_item']({ subject: m['labels.category']() })}
-		</dd>
-		{#if transaction.tags?.length}
-			<dt>{m['labels.tags']()}</dt>
-			<dd>
-				<ul>
-					{#each transaction.tags as link (link.id)}
-						<li>
-							{link.tag?.name ?? m['transactions.unavailable_item']({ subject: m['labels.tag']() })}
-						</li>
-					{/each}
-				</ul>
-			</dd>
-		{/if}
-		{#if transaction.memo}<dt>{m['labels.memo']()}</dt>
-			<dd>{transaction.memo}</dd>{/if}
-		{#if transaction.paymentMethod}
-			<dt>{m['transactions.payment.method']()}</dt>
-			<dd>{paymentLabels[transaction.paymentMethod]}</dd>
-		{/if}
-		{#if transaction.paymentMethod === 'check' && transaction.checkDetails}
-			{@const check = transaction.checkDetails}
-			<dt>{m['transactions.check.number']()}</dt>
-			<dd>{check.checkNumber}</dd>
-			{#if check.checkDate}
-				<dt>{m['transactions.check.date']()}</dt>
-				<dd>
-					<time datetime={check.checkDate}
-						>{dates.format(new Date(`${check.checkDate}T00:00:00Z`))}</time
-					>
-				</dd>
-			{/if}
-		{/if}
 		<dt>{m['transactions.created_by']()}</dt>
 		<dd>{creatorName ?? transaction.$createdBy.account}</dd>
 		<dt>{m['transactions.created_at']()}</dt>

@@ -9,9 +9,11 @@ import {
 	selectTransactionEntryAvailability,
 	createTransactionEntryFormOptions,
 	transactionEntryScope,
+	sameTransactionEntryScope,
 	applicableTransactionTags
 } from './transaction-entry.js'
 import type { AppTransaction } from '#lib/domain/transaction.js'
+import type { TransactionDetail } from '#lib/schema.js'
 const binding = {}
 const id = '00000000-0000-4000-8000-000000000001'
 function facts(): TransactionEntryObservation {
@@ -104,6 +106,146 @@ describe('transaction tag name policy', () => {
 		expect(policy(f)).toEqual({ kind: 'ready' })
 	})
 })
+
+describe('transaction edit policy and scope', () => {
+	const transactionId = 'transaction-id'
+	const detail = {
+		id: transactionId,
+		organizationId: id,
+		accountId: 'account',
+		categoryId: 'category',
+		amountMinor: 100,
+		currency: 'USD',
+		kind: 'expense',
+		bookedOn: '2026-10-18',
+		source: 'manual',
+		externalId: null,
+		memo: null,
+		paymentMethod: null,
+		checkDetailsId: null,
+		batchId: null,
+		$createdBy: { account: 'user', identity: { issuer: 'test', subject: 'user' } },
+		$createdAt: new Date(),
+		$updatedBy: { account: 'user', identity: { issuer: 'test', subject: 'user' } },
+		$updatedAt: new Date(),
+		account: null,
+		category: null,
+		checkDetails: null,
+		tags: []
+	} satisfies TransactionDetail
+
+	it.each(['expense', 'income'] satisfies TransactionDetail['kind'][])(
+		'compares changed and reverted %s drafts using only applicable fields',
+		(kind) => {
+			const f = {
+				...facts(),
+				kind,
+				transactionId,
+				transaction: { ...detail, kind, paymentMethod: kind === 'income' ? 'cash' : null }
+			} satisfies TransactionEntryObservation
+			const options = createTransactionEntryFormOptions({
+				binding,
+				observe: () => f,
+				create: vi.fn(),
+				save: vi.fn()
+			})
+			if (options.mode !== 'edit') throw new Error('Expected edit mode')
+			const initial = options.initialValues(f)
+			const draft = {
+				accountId: 'account',
+				categoryId: 'category',
+				amount: '1.00',
+				bookedOn: detail.bookedOn,
+				memo: '',
+				tags: [],
+				...(kind === 'income' ? { paymentMethod: 'cash' } : {})
+			}
+			expect(options.valuesEqual(draft, initial)).toBe(true)
+			expect(options.valuesEqual({ ...draft, amount: '2' }, initial)).toBe(false)
+			expect(options.valuesEqual({ ...draft, amount: '1', memo: '  ' }, initial)).toBe(true)
+			expect(options.valuesEqual({ ...draft, tags: ['New'] }, initial)).toBe(false)
+			expect(options.successContent).toBe('retain')
+		}
+	)
+
+	it('blocks missing transactions and payment-type changes before writing', async () => {
+		expect(policy({ ...facts(), transactionId, transaction: null })).toEqual({
+			kind: 'blocked',
+			reason: 'unavailableReference'
+		})
+		const f = {
+			...facts(),
+			kind: 'income',
+			categories: facts().categories.map((category) => ({
+				...category,
+				kind: 'income' satisfies TransactionDetail['kind']
+			})),
+			transactionId,
+			transaction: { ...detail, kind: 'income', paymentMethod: 'cash' }
+		} satisfies TransactionEntryObservation
+		const save = vi.fn()
+		const options = createTransactionEntryFormOptions({
+			binding,
+			observe: () => f,
+			create: vi.fn(),
+			save
+		})
+		const values: AppTransaction = {
+			...transaction,
+			source: { source: 'manual' },
+			kind: 'income',
+			paymentMethod: 'check',
+			checkDetails: { checkNumber: '100', checkDate: detail.bookedOn }
+		}
+		const actor = createActor(options.operation, {
+			input: {
+				request: { id: 1, scope: transactionEntryScope(f), scopeRevision: 0, values },
+				observation: { revision: 0, facts: f }
+			}
+		}).start()
+		await waitFor(actor, (snapshot) => snapshot.status === 'done')
+		expect(actor.getSnapshot().output).toMatchObject({
+			outcome: 'unavailable',
+			reason: 'unavailableReference'
+		})
+		expect(save).not.toHaveBeenCalled()
+		actor.stop()
+	})
+
+	it('includes transaction identity in scoped form equality', () => {
+		const original = transactionEntryScope({ ...facts(), transactionId })
+		expect(
+			sameTransactionEntryScope(original, transactionEntryScope({ ...facts(), transactionId }))
+		).toBe(true)
+		expect(
+			sameTransactionEntryScope(
+				original,
+				transactionEntryScope({ ...facts(), transactionId: 'other' })
+			)
+		).toBe(false)
+	})
+
+	it.each([
+		{ ...detail, source: 'simplefin' },
+		{ ...detail, organizationId: 'other' },
+		{ ...detail, id: 'other' },
+		{ ...detail, accountId: 'other' },
+		{ ...detail, categoryId: 'other' }
+	] satisfies TransactionDetail[])(
+		'blocks transaction edits when existing row is unavailable or not writable: %j',
+		(row) => {
+			expect(policy({ ...facts(), transactionId, transaction: row })).toEqual({
+				kind: 'blocked',
+				reason: 'unavailableReference'
+			})
+		}
+	)
+
+	it('allows an editable manual transaction within its authorized references', () => {
+		expect(policy({ ...facts(), transactionId, transaction: detail })).toEqual({ kind: 'ready' })
+	})
+})
+
 describe('transaction entry prerequisites and authorization', () => {
 	it.each([
 		[{ sessionReady: false }, 'sessionUnavailable'],

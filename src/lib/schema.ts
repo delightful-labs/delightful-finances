@@ -24,6 +24,7 @@ export const app = s.defineApp(schema)
 
 export type Organization = s.RowOf<typeof app.organizations>
 export type OrganizationMember = s.RowOf<typeof app.organizationMembers>
+export type AccountMembership = s.RowOf<typeof app.accountMemberships>
 export type Account = s.RowOf<typeof app.accounts>
 export type Category = s.RowOf<typeof app.categories>
 export type Tag = s.RowOf<typeof app.tags>

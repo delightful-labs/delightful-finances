@@ -11,7 +11,7 @@
 	} from 'delightful-ui'
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
-	import type { Account, Category } from '#lib/schema.js'
+	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
 	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -21,6 +21,8 @@
 
 	let {
 		kind,
+		mode = 'create',
+		initialTransaction,
 		organizationId,
 		accounts,
 		defaultAccountId,
@@ -29,27 +31,44 @@
 		tagSuggestions,
 		view,
 		onsubmit,
-		onreset
+		onreset,
+		oninput
 	}: {
-		kind: 'expense' | 'income'
-		organizationId: string | null
+		kind: TransactionDetail['kind']
+		mode?: 'create' | 'edit'
+		initialTransaction?: Pick<
+			TransactionDetail,
+			'accountId' | 'categoryId' | 'amountMinor' | 'currency' | 'bookedOn'
+		> &
+			Partial<Pick<TransactionDetail, 'memo' | 'paymentMethod'>> & {
+				accountName?: Account['name'] | undefined
+				categoryName?: Category['name'] | undefined
+				checkDetails?: Pick<
+					NonNullable<TransactionDetail['checkDetails']>,
+					'checkNumber' | 'checkDate'
+				>
+				tags: readonly Tag['name'][]
+			}
+		organizationId: TransactionDetail['organizationId'] | null
 		accounts: readonly Account[]
-		defaultAccountId: string | undefined
+		defaultAccountId: Account['id'] | undefined
 		categories: readonly Category[]
-		defaultCategoryId: string | undefined
-		tagSuggestions: readonly string[]
+		defaultCategoryId: Category['id'] | undefined
+		tagSuggestions: readonly Tag['name'][]
 		view: TransactionEntryView
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
+		oninput?: (event: Event) => void
 	} = $props()
-	let showCheckFields = $state(false)
+
 	const resetRevision = $derived(view.draftRevision)
+	let activeCheckFieldsKey = $state('')
 	$effect(() => {
 		void resetRevision
-		showCheckFields = false
+		activeCheckFieldsKey = initialTransaction?.paymentMethod === 'check' ? 'check' : ''
 	})
 	function syncPaymentMethod(element: HTMLSelectElement) {
-		showCheckFields = element.value === 'check'
+		activeCheckFieldsKey = element.value === 'check' ? 'check' : ''
 	}
 	const issues = $derived(
 		view.feedback.kind === 'result' && view.feedback.result.outcome === 'invalid'
@@ -68,7 +87,7 @@
 </script>
 
 {#key `${organizationId}:${kind}`}
-	<FormContent {view} {onsubmit} {onreset}>
+	<FormContent {view} {onsubmit} {onreset} {oninput}>
 		{#snippet fields(form)}
 			{#if form.content.kind !== 'success'}
 				<Select
@@ -78,11 +97,22 @@
 					aria-invalid={fieldInvalid(issues, 'accountId') || undefined}
 					name="accountId"
 					required
-					defaultValue={defaultAccountId ?? ''}
+					defaultValue={initialTransaction?.accountId ?? defaultAccountId ?? ''}
 				>
 					<option value="" disabled>{m['transactions.select_account']()}</option>
+					{#if initialTransaction && !accounts.some((account) => account.id === initialTransaction?.accountId)}
+						<option value={initialTransaction.accountId} disabled
+							>{initialTransaction.accountName ??
+								m['transactions.unavailable_item']({ subject: m['labels.account']() })}</option
+						>
+					{/if}
 					{#each accounts as account (account.id)}
-						<option value={account.id}>{account.name}</option>
+						<option
+							value={account.id}
+							disabled={mode === 'edit' &&
+								initialTransaction?.paymentMethod === 'check' &&
+								account.id !== initialTransaction.accountId}>{account.name}</option
+						>
 					{/each}
 				</Select>
 				<FieldFeedback
@@ -99,11 +129,17 @@
 					aria-invalid={fieldInvalid(issues, 'categoryId') || undefined}
 					name="categoryId"
 					required
-					defaultValue={defaultCategoryId ?? ''}
+					defaultValue={initialTransaction?.categoryId ?? defaultCategoryId ?? ''}
 				>
 					<option value="" disabled>
 						{m['transactions.select_category']()}
 					</option>
+					{#if initialTransaction && !categories.some((category) => category.id === initialTransaction?.categoryId)}
+						<option value={initialTransaction.categoryId} disabled
+							>{initialTransaction.categoryName ??
+								m['transactions.unavailable_item']({ subject: m['labels.category']() })}</option
+						>
+					{/if}
 					{#each categories as category (category.id)}
 						<option value={category.id}>
 							{category.name}
@@ -119,7 +155,7 @@
 
 				<InputCurrency
 					label={m['labels.amount']()}
-					currencyLabel="USD"
+					currencyLabel={initialTransaction?.currency ?? 'USD'}
 					id="transaction-amount"
 					aria-describedby="transaction-amount-feedback"
 					aria-invalid={fieldInvalid(issues, 'amount') || undefined}
@@ -127,6 +163,7 @@
 					inputmode="decimal"
 					autocomplete="off"
 					pattern={AMOUNT_INPUT_PATTERN}
+					defaultValue={initialTransaction ? (initialTransaction.amountMinor / 100).toFixed(2) : ''}
 					required
 				/>
 				<FieldFeedback
@@ -140,7 +177,7 @@
 					aria-describedby="transaction-date-feedback"
 					aria-invalid={fieldInvalid(issues, 'bookedOn') || undefined}
 					name="bookedOn"
-					defaultValue={todayDateOnly()}
+					defaultValue={initialTransaction?.bookedOn ?? todayDateOnly()}
 					required
 				/>
 				<FieldFeedback
@@ -148,7 +185,7 @@
 					errorMessage={fieldInvalid(issues, 'bookedOn') ? m['transactions.date_invalid']() : ''}
 				/>
 
-				{#if kind === 'income'}
+				{#if kind === 'income' && (mode === 'create' || initialTransaction?.paymentMethod)}
 					<Select
 						label={m['transactions.payment.method']()}
 						id="transaction-payment-method"
@@ -156,14 +193,30 @@
 						aria-invalid={fieldInvalid(issues, 'paymentMethod') || undefined}
 						name="paymentMethod"
 						required
-						defaultValue="cash"
+						defaultValue={initialTransaction?.paymentMethod ?? 'cash'}
 						{@attach syncPaymentMethod}
 						onchange={(event) => syncPaymentMethod(event.currentTarget)}
 					>
-						<option value="cash">{m['transactions.payment.cash']()}</option>
-						<option value="check">{m['transactions.payment.check']()}</option>
-						<option value="transfer">{m['transactions.payment.transfer']()}</option>
-						<option value="electronic">{m['transactions.payment.electronic']()}</option>
+						<option
+							value="cash"
+							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
+							>{m['transactions.payment.cash']()}</option
+						>
+						<option
+							value="check"
+							disabled={mode === 'edit' && initialTransaction?.paymentMethod !== 'check'}
+							>{m['transactions.payment.check']()}</option
+						>
+						<option
+							value="transfer"
+							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
+							>{m['transactions.payment.transfer']()}</option
+						>
+						<option
+							value="electronic"
+							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
+							>{m['transactions.payment.electronic']()}</option
+						>
 					</Select>
 					<FieldFeedback
 						id="transaction-payment-method-feedback"
@@ -172,13 +225,14 @@
 							: ''}
 					/>
 
-					{#if showCheckFields}
+					{#if activeCheckFieldsKey === 'check'}
 						<InputText
 							label={m['transactions.check.number']()}
 							id="check-number"
 							aria-describedby="check-number-feedback"
 							aria-invalid={fieldInvalid(issues, 'checkNumber') || undefined}
 							name="checkNumber"
+							defaultValue={initialTransaction?.checkDetails?.checkNumber ?? ''}
 							required
 						/>
 						<FieldFeedback
@@ -194,6 +248,7 @@
 							aria-describedby="check-date-feedback"
 							aria-invalid={fieldInvalid(issues, 'checkDate') || undefined}
 							name="checkDate"
+							defaultValue={initialTransaction?.checkDetails?.checkDate ?? todayDateOnly()}
 							required
 						/>
 						<FieldFeedback
@@ -209,16 +264,22 @@
 					<TransactionTagInput
 						{organizationId}
 						suggestions={tagSuggestions}
+						initialTags={initialTransaction?.tags ?? []}
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
-				<Textarea label={m['labels.memo']()} id="transaction-memo" name="memo"></Textarea>
+				<Textarea
+					label={m['labels.memo']()}
+					id="transaction-memo"
+					name="memo"
+					defaultValue={initialTransaction?.memo ?? ''}
+				></Textarea>
 			{/if}
 		{/snippet}
 		{#snippet controls(form)}
-			{#if form.content.kind === 'success'}
+			{#if form.content.kind === 'success' && mode === 'create'}
 				<Button type="reset">{m['transactions.add_another']()}</Button>
-			{:else}
+			{:else if mode === 'create' || view.readiness.kind === 'ready'}
 				<Button type="submit" disabled={!form.canSubmit}>
 					{m['transactions.save']()}
 				</Button>

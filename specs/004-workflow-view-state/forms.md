@@ -399,3 +399,47 @@ DOM form input and controlled selection both forward observations and CHANGE to
 the same guarded owner. Pure components receive a selection callback, never a
 controller. Presentation resets track derived scalar draft revisions so unrelated
 view snapshots cannot clear the user's selection or payment disclosure.
+
+## Transaction editing review corrections
+
+The user authorized one combined correction cycle for the uncommitted transaction
+editor. Read access to transaction details is independent of edit availability:
+viewers, imports, and archived account/category history retain their details view.
+The transaction form is always displayed for a loaded transaction. The shared
+form machine enables editing only when authorized and ready; otherwise the same
+fields display saved values disabled. Successful saves retain the form for further
+edits. Historical account/category labels remain visible even when absent from
+writable choices, and attribution remains below the form. The scoped form owner
+owns availability, validation, writing, settlement, and success/failure outcomes.
+Identity, workspace, and transaction changes remount the form while the owner
+applies its existing scope invalidation and shutdown rules.
+
+Edit eligibility and submitted-reference checks remain in transaction-entry.ts.
+Missing transactions cannot become ready. Existing check transactions retain their
+account and check payment type; other income can switch among cash, transfer, and
+electronic. The form disables unsupported choices and the machine and atomic write
+recheck these constraints. This preserves the current check-detail permission
+policy without expanding authorization. Existing check-detail identities survive
+updates; unavailable or inconsistent details fail without replacement.
+
+Unchanged comparison uses integer amounts, trimmed memo/check number, normalized
+unordered tag names, and only the fields applicable to the transaction kind and
+payment type. The tag picker notifies the form after its hidden fields update.
+Saving retains existing tag assignments whose names remain selected, including
+archived tags; only removed assignments are deleted and new selections resolved.
+Unresolved historical links are retained rather than inferred to be removals.
+
+The user approved testing after reviewing the always-visible form. Verification:
+
+- Transaction-entry, transaction validation, and data unit suites: 127 passed;
+  after adding five update persistence cases, the data suite rerun passed all 54
+  tests (132 distinct tests across those three suites).
+- `pnpm exec playwright test --config playwright.transaction-edit.config.ts`:
+  six passed, covering repeated offline saves, reverted drafts, persisted reload,
+  archived-tag identity retention, tag-only removal, viewer/imported/archived
+  read-only forms, and check-detail editing with payment conversion disabled.
+- Browser test TypeScript checking passed. The prior edit-button browser scenario
+  was replaced by the dedicated transaction-edit suite.
+
+Dynamic permission/scope changes and injected failed writes are not covered by
+this focused browser suite.

@@ -10,6 +10,7 @@ import {
 	createCategory,
 	createAccount,
 	createTransaction,
+	updateTransaction,
 	ensurePersonalWorkspace,
 	saveProfileName,
 	saveProfileAvatar
@@ -687,5 +688,59 @@ describe('saveProfileAvatar', () => {
 		const rejection = expect(result).rejects.toThrow('Avatar write failed')
 		pending.reject(new Error('Avatar write failed'))
 		await rejection
+	})
+})
+
+describe('updateTransaction', () => {
+	const input: AppTransaction = {
+		organizationId,
+		accountId: userId,
+		categoryId: profileId,
+		kind: 'expense',
+		source: { source: 'manual' },
+		money: { amountMinor: 100, currency: 'USD' },
+		bookedOn: '2026-10-18',
+		tags: ['Historical']
+	}
+	const existing = {
+		id: profileId,
+		organizationId,
+		accountId: userId,
+		kind: 'expense',
+		source: 'manual',
+		paymentMethod: null
+	}
+	it.each([true, false])(
+		'preserves or removes archived assignments according to selection: %s',
+		async (retained) => {
+			const { db, transaction, insert, wait } = setup()
+			const update = vi.spyOn(transaction, 'update').mockReturnValue(undefined)
+			const remove = vi.spyOn(transaction, 'delete').mockReturnValue(undefined)
+			vi.spyOn(transaction, 'all')
+				.mockResolvedValueOnce([existing])
+				.mockResolvedValueOnce([{ id: 'link', tagId: 'archived-tag' }])
+				.mockResolvedValueOnce([{ id: 'archived-tag', name: 'Historical', archivedAt: new Date() }])
+				.mockResolvedValueOnce([])
+			await expect(
+				updateTransaction(db, profileId, { ...input, tags: retained ? ['Historical'] : [] })
+			).resolves.toEqual({ value: profileId })
+			expect(update).toHaveBeenCalledOnce()
+			expect(insert).not.toHaveBeenCalled()
+			if (retained) expect(remove).not.toHaveBeenCalled()
+			else expect(remove).toHaveBeenCalledExactlyOnceWith(app.transactionTags, 'link')
+			expect(wait).toHaveBeenCalledWith({ tier: 'local' })
+		}
+	)
+	it.each([
+		{ rows: [] },
+		{ rows: [{ ...existing, source: 'simplefin' }] },
+		{ rows: [{ ...existing, organizationId: 'other' }] }
+	])('rejects missing or incompatible existing rows before mutation', async ({ rows }) => {
+		const { db, transaction, insert } = setup()
+		const update = vi.spyOn(transaction, 'update').mockReturnValue(undefined)
+		vi.spyOn(transaction, 'all').mockResolvedValue(rows)
+		await expect(updateTransaction(db, profileId, input)).rejects.toThrow()
+		expect(update).not.toHaveBeenCalled()
+		expect(insert).not.toHaveBeenCalled()
 	})
 })

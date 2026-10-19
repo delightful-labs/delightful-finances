@@ -1,11 +1,20 @@
-import type { Account, Category, Tag, OrganizationMember } from './schema.js'
+import type {
+	Account,
+	AccountMembership,
+	Category,
+	Tag,
+	OrganizationMember,
+	TransactionDetail
+} from './schema.js'
 import type { AppTransaction } from './domain/transaction.js'
 import type { ScopedFormView } from './form-contract.js'
+
 export type TransactionEntryScope = {
-	identityId: string | null
-	organizationId: string | null
+	identityId: OrganizationMember['userId'] | null
+	organizationId: TransactionDetail['organizationId'] | null
 	binding: object | null
-	kind: 'income' | 'expense'
+	kind: TransactionDetail['kind']
+	transactionId?: TransactionDetail['id'] | null
 }
 export type TransactionEntryReason =
 	| 'sessionUnavailable'
@@ -22,10 +31,11 @@ export type TransactionEntryObservation = TransactionEntryScope & {
 	loading: boolean
 	failed: boolean
 	membership: OrganizationMember | null | undefined
-	grants: readonly { accountId: string; access: 'read' | 'write' }[]
+	grants: readonly Pick<AccountMembership, 'accountId' | 'access'>[]
 	accounts: readonly Account[]
 	categories: readonly Category[]
 	tags: readonly Tag[]
 	intent?: AppTransaction
+	transaction?: TransactionDetail | null
 }
 export type TransactionEntryView = ScopedFormView<void, TransactionEntryReason>
