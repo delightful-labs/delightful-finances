@@ -1,5 +1,9 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"developer": {
+		"menu": "Developer menu",
+		"close": "Close"
+	},
 	"app": {
 		"name": "Delightful Finance",
 		"short_name": "Delightful",
@@ -138,6 +142,22 @@
 		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
 	},
 	"transactions": {
+		"samples": {
+			"add_income": "Add 25 sample income transactions",
+			"add_expenses": "Add 25 sample expense transactions",
+			"description": "Development tool: saves real sample transactions to the first selected writable account in this workspace.",
+			"saved": "Saved {count} of 25 sample transactions.",
+			"failed": "Stopped after saving {count} of 25. Select a writable active account and make sure a category is available before trying again.",
+			"memo": "Sample transaction {number}"
+		},
+		"pagination": {
+			"label": "Transaction pages",
+			"previous": "Previous page",
+			"next": "Next page",
+			"more": "More pages",
+			"page": "Page {page}",
+			"status": "Page {page} of {pages}"
+		},
 		"empty": {
 			"title": "Your recent activity will appear here."
 		},

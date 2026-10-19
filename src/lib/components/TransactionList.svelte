@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Heading, Text } from 'delightful-ui'
+	import { Heading, Pagination, PaginationItem, Text } from 'delightful-ui'
 	import PageContent from './PageContent.svelte'
 	import SplitRow from './SplitRow.svelte'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -13,14 +13,44 @@
 		accountNames,
 		categoryNames,
 		tagNamesByTransaction,
-		noAccountsSelected
+		noAccountsSelected,
+		requestedPage,
+		pageHref
 	}: {
 		groups: readonly TransactionDay[]
 		accountNames: ReadonlyMap<string, string>
 		categoryNames: ReadonlyMap<string, string>
 		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
 		noAccountsSelected: boolean
+		requestedPage: number
+		pageHref: (page: number) => string
 	} = $props()
+	const pageSize = 25
+	const transactionCount = $derived(
+		groups.reduce((count, group) => count + group.transactions.length, 0)
+	)
+	const pageCount = $derived(Math.max(1, Math.ceil(transactionCount / pageSize)))
+	const page = $derived(Math.min(requestedPage, pageCount))
+	const visibleGroups = $derived.by(() => {
+		let offset = 0
+		const start = (page - 1) * pageSize
+		return groups.flatMap((group) => {
+			const transactions = group.transactions.slice(
+				Math.max(0, start - offset),
+				Math.max(0, start + pageSize - offset)
+			)
+			offset += group.transactions.length
+			return transactions.length ? [{ ...group, transactions }] : []
+		})
+	})
+	const pageNumbers = $derived.by(() => {
+		// Five slots, including ellipses. Near either boundary, use the spare
+		// slots for page numbers so navigation never shrinks as the page changes.
+		if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1)
+		const start = page <= 3 ? 2 : page >= pageCount - 2 ? pageCount - 2 : page
+		const end = page <= 3 ? 3 : page >= pageCount - 2 ? pageCount - 1 : page
+		return [1, ...Array.from({ length: end - start + 1 }, (_, index) => start + index), pageCount]
+	})
 	const listId = $props.id()
 	const dateFormatter = $derived(
 		new Intl.DateTimeFormat(getLocale(), {
@@ -39,7 +69,7 @@
 	<Text>{m['transactions.empty.title']()}</Text>
 {:else}
 	<PageContent>
-		{#each groups as group (group.bookedOn)}
+		{#each visibleGroups as group (group.bookedOn)}
 			<section aria-labelledby={`${listId}-${group.bookedOn}`}>
 				<header>
 					<SplitRow>
@@ -77,6 +107,31 @@
 				</ul>
 			</section>
 		{/each}
+		{#if pageCount > 1}
+			<Text role="status">{m['transactions.pagination.status']({ page, pages: pageCount })}</Text>
+			<Pagination label={m['transactions.pagination.label']()}>
+				<PaginationItem
+					label={m['transactions.pagination.previous']()}
+					href={pageHref(page - 1)}
+					disabled={page === 1}>‹</PaginationItem
+				>
+				{#each pageNumbers as number, index (number)}
+					{#if index > 0 && number - (pageNumbers[index - 1] ?? number) > 1}
+						<PaginationItem label={m['transactions.pagination.more']()} ellipsis>…</PaginationItem>
+					{/if}
+					<PaginationItem
+						label={m['transactions.pagination.page']({ page: number })}
+						href={pageHref(number)}
+						current={page === number}>{number}</PaginationItem
+					>
+				{/each}
+				<PaginationItem
+					label={m['transactions.pagination.next']()}
+					href={pageHref(page + 1)}
+					disabled={page === pageCount}>›</PaginationItem
+				>
+			</Pagination>
+		{/if}
 	</PageContent>
 {/if}
 

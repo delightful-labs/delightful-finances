@@ -2,7 +2,9 @@
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
 	import { app } from '#lib/schema.js'
 	import { QuerySubscription } from 'jazz-tools/svelte'
-	import { getContext } from 'svelte'
+	import { getContext, untrack } from 'svelte'
+	import { page } from '$app/state'
+	import { replaceState } from '$app/navigation'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import AccountCreation from '#lib/components/AccountCreation.svelte'
@@ -14,6 +16,37 @@
 
 	let { kind }: { kind: 'income' | 'expense' } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+
+	const requestedPage = $derived.by(() => {
+		const value = page.url.searchParams.get('page') ?? '1'
+		const number = Number(value)
+		return /^\d+$/.test(value) && Number.isSafeInteger(number) && number > 0 ? number : 1
+	})
+	function pageHref(number: number) {
+		const url = new URL(page.url.href)
+		if (number <= 1) url.searchParams.delete('page')
+		else url.searchParams.set('page', String(number))
+		return `${url.pathname}${url.search}${url.hash}`
+	}
+	let previousPaginationScope:
+		{ organizationId: string | null; pathname: string; key: string } | undefined
+	$effect(() => {
+		const scope = {
+			organizationId: filters.activeOrganizationId,
+			pathname: page.url.pathname,
+			key: JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])
+		}
+		const previous = previousPaginationScope
+		previousPaginationScope = scope
+		// Preserve a direct page link while the initial workspace is loading.
+		if (
+			previous?.organizationId &&
+			previous.pathname === scope.pathname &&
+			previous.key !== scope.key
+		) {
+			untrack(() => replaceState(pageHref(1), page.state))
+		}
+	})
 
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
@@ -92,13 +125,17 @@
 			<Message message={m['transactions.no_accounts']()} />
 			<AccountCreation />
 		{/if}
-		<TransactionList
-			{groups}
-			{accountNames}
-			{categoryNames}
-			{tagNamesByTransaction}
-			noAccountsSelected={filters.selectedAccountIds !== null &&
-				filters.selectedAccountIds.length === 0}
-		/>
+		{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
+			<TransactionList
+				{groups}
+				{requestedPage}
+				{pageHref}
+				{accountNames}
+				{categoryNames}
+				{tagNamesByTransaction}
+				noAccountsSelected={filters.selectedAccountIds !== null &&
+					filters.selectedAccountIds.length === 0}
+			/>
+		{/key}
 	</QueryContent>
 </PageContent>

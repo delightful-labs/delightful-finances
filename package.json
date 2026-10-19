@@ -48,7 +48,7 @@
 	},
 	"dependencies": {
 		"@xstate/svelte": "^5.0.0",
-		"delightful-ui": "file:vendor/delightful-ui-0.0.24-typography-primitives.tgz",
+		"delightful-ui": "file:vendor/delightful-ui-0.0.24-pagination.tgz",
 		"jazz-tools": "2.0.0-alpha.59",
 		"pica": "^10.0.3",
 		"tdesign-icons-svg": "^0.4.7",

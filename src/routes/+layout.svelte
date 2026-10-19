@@ -11,6 +11,7 @@
 	import { createApplicationReadinessMachine } from '#lib/machines/application-readiness.js'
 	import { readinessKey, type ReadinessContext } from '#lib/bank-sync.js'
 	import { JazzSessionProvider, type JazzSessionConfig } from 'jazz-tools/svelte'
+	import DeveloperMenu from '#lib/components/DeveloperMenu.svelte'
 	import DemoViewport from '#lib/components/DemoViewport.svelte'
 	import JazzStartup from '#lib/components/JazzStartup.svelte'
 	import SessionStartup from '#lib/components/SessionStartup.svelte'
@@ -50,6 +51,8 @@
 	// The machine completes only after its workspace/bank children finish cleanup.
 	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
 </script>
+
+<DeveloperMenu />
 
 <DemoViewport enabled={PUBLIC_SIMPLEFIN_DEMO === 'true'} />
 

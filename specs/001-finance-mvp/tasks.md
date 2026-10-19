@@ -281,3 +281,38 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 - [x] Share drawer navigation links across top-level and Details sections using AppNavigationLink.
 - [ ] Review shared-link implementation before running relevant navigation tests.
+
+### Transaction pagination
+
+- [x] Bundle and install local DUI with Pagination and PaginationItem.
+- [x] Paginate the shared transaction list at 25 entries, preserving daily totals and filter resets, with localized accessible controls.
+- [ ] Review the pagination implementation.
+- [ ] After approval, add and run focused pagination unit and browser coverage for boundaries, date splits, filter resets, and shrinking results.
+
+- [x] Add a development-only button for 25 persisted sample transactions per explicit click, with sequential write states and localized progress.
+- [ ] Review the sample creation implementation before adding or running its tests.
+
+- [x] Keep pagination controls at a consistent slot count and omit truncation for five or fewer pages.
+- [ ] Review the pagination range adjustment before adding or running its tests.
+
+- [x] Drive transaction pagination from the URL `page` parameter with real links and filter reset behavior.
+- [ ] Review URL pagination before adding or running focused link, reload, history, invalid-page and filter-reset coverage.
+
+- [x] Move development sample controls into a developer dialog with a focus-revealed opener at the top of every page.
+- [ ] Review developer menu before adding or running keyboard visibility, modal dismissal/focus, and batch-preservation coverage.
+
+- [x] Move the developer menu to the root layout with identical income/expense actions on every page; move sample actors/subscriptions out of TransactionView.
+- [ ] Review global developer menu before adding or running route availability, session-disabled controls and navigation-progress coverage.
+
+- [x] Encapsulate content, control context, development gating and sample session binding inside DeveloperMenu; simplify shared layout to one mount.
+- [ ] Review developer menu encapsulation before its focused checks.
+
+### Pagination and developer menu verification
+
+- [x] User approved implementation testing.
+- [x] Add sample-batch unit coverage: sequential writes, ignored duplicate clicks, complete/partial/failure outcomes, new-batch retry and cancellation with late completion.
+- [x] Run focused unit checks: 8 passing tests across sample-transactions and transaction-groups.
+- [x] Add and run 3 isolated browser scenarios: keyboard opener/Escape/Close focus, income and expense sample writes from the global menu, progress across client navigation and menu availability on Login; 25-row pages/full daily totals, five-slot truncation, URL parameter preservation/history/reload/invalid and out-of-range pages, account filter reset; five-page mobile controls without truncation.
+- [x] Browser-test TypeScript and focused Prettier/whitespace checks pass.
+
+Runtime logs include XState assign warnings and a SvelteKit replaceState deprecation warning. No production changes were made in this testing cycle. These focused scenarios do not establish offline behavior, startup-disabled controls, workspace replacement during an in-flight batch, or result-shrink races.
