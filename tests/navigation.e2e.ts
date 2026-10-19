@@ -54,7 +54,7 @@ test('resizing preserves disclosure state and navigation uses the current viewpo
 	await expect(toggle).toHaveAttribute('aria-expanded', 'false')
 	await toggle.click()
 	await drawer.locator('summary', { hasText: 'Accounts' }).click()
-	await drawer.getByRole('link', { name: 'Accounts', exact: true }).click()
+	await drawer.getByRole('link', { name: 'Manage Accounts', exact: true }).click()
 	await expect(page).toHaveURL('/accounts')
 	await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 })

@@ -502,3 +502,48 @@ checks, forced Vite dependency refresh, and confirmed HTTP 200 for /account,
 /settings/categories and /expenses/new. Final documentation links model, changes,
 verification and combined-review status. All task checkboxes are complete; user
 review remains pending by their instruction. Changes remain uncommitted.
+
+## Follow-up reuse cleanup (user-authorized batch)
+
+The prior final evidence describes the pre-cleanup implementation. The user's
+"Do all these" instruction authorizes all seven proposed simplifications together.
+This batch changes composition, type inference and presentation reuse; existing
+domain policy, actor ownership and settlement statecharts are retained.
+
+- [x] T045 Implement all seven reuse/simplification items; map the resulting
+      changes in review.md and remove obsolete legacy-only tests with their machine.
+- [x] T046 After user review of T045, add any needed focused regression coverage
+      and run the relevant scoped form, domain form, management and bank unit/browser
+      checks. Earlier passing counts do not establish runtime verification of T045.
+
+Static verification for T045 passed:
+
+- `pnpm check`: zero Svelte errors/warnings; service-worker types passed.
+- `pnpm check:tests`: browser-test types passed; no test execution.
+- `pnpm exec tsc --project tsconfig.json --noEmit`: application/configuration/unit-test types passed.
+- Repository Prettier formatting and `git diff --check` passed for the changed files.
+
+The user's subsequent "run tests" instruction approved cleanup verification.
+Existing regression coverage exercises the refactored compositions and consumers;
+no additional tests were necessary for these behavior-preserving changes.
+
+T046 verification passed:
+
+- Relevant unit command: `pnpm test:unit --run src/lib/observations.test.ts src/lib/machines/account-creation.test.ts src/lib/machines/account-creation-access.test.ts src/lib/machines/management.test.ts src/lib/machines/profile.test.ts src/lib/machines/profile-avatar.test.ts src/lib/machines/transaction-entry.test.ts src/lib/machines/recovery-phrase.test.ts src/lib/machines/scoped-form-write.test.ts src/lib/machines/scoped-form.test.ts src/lib/machines/scoped-form-submission.test.ts src/lib/machines/workspace-rename.test.ts src/lib/machines/bank-sync src/lib/machines/account-archive.test.ts src/lib/validation src/lib/forms.test.ts`: **381 tests in 26 files passed**.
+- Workflow completion browser configuration: **37 passed**.
+- Bank/readiness browser configuration: **7 passed**.
+- Shared form presentation browser configuration: **5 passed**.
+- Workspace rename browser configuration: **4 passed**.
+- Account archive browser configuration: **1 passed**.
+
+The **54 browser scenarios** ran sequentially after unit tests against a dedicated
+in-memory Jazz server on http://127.0.0.1:5181. Temporary root-level configuration
+wrappers imported each existing `playwright.<suite>.config.ts`, omitted its
+`webServer`, and overrode only `use.baseURL` to that server. Commands used
+`pnpm exec playwright test --config .xstate-cleanup-<suite>.config.ts --max-failures=1`.
+The server command was `pnpm exec vite dev --config vite.e2e.config.ts --host 127.0.0.1 --port 5181 --strictPort`.
+Sandbox listener/localhost restrictions required elevated local execution; the
+initial sandboxed browser attempt was interrupted and rerun successfully. No
+application regression failed. The temporary wrappers were removed and the
+isolated server stopped afterward. Existing servers on 5173/5180 were retained.
+Changes are uncommitted.

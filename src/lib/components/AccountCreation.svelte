@@ -3,13 +3,7 @@
 	import { getContext, type Snippet } from 'svelte'
 	import { fromStore } from 'svelte/store'
 	import { getDb, getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
-	import type { SnapshotFrom } from 'xstate'
-	import type { Account } from '#lib/schema.js'
-	import type {
-		AccountCreationObservation,
-		AccountCreationReason,
-		AccountCreationScope
-	} from '#lib/account-creation-contract.js'
+	import type { AccountCreationObservation } from '#lib/account-creation-contract.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { createAccountCreationFormOptions } from '#lib/machines/account-creation-access.js'
 	import { createAccount } from '#lib/data.js'
@@ -44,15 +38,7 @@
 		observe,
 		create: (id, values) => createAccount(db, id, values.name, values.kind)
 	})
-	const form = createScopedFormController<
-		{ name: string; kind: 'cash' | 'bank' | 'card' },
-		Account,
-		AccountCreationReason,
-		AccountCreationScope,
-		AccountCreationObservation,
-		SnapshotFrom<typeof options.availability>,
-		SnapshotFrom<typeof options.operation>
-	>(options)
+	const form = createScopedFormController(options)
 </script>
 
 <AccountForm

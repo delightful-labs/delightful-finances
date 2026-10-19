@@ -9,17 +9,11 @@
 		writableTransactionAccounts,
 		applicableTransactionCategories
 	} from '#lib/machines/transaction-entry.js'
-	import type {
-		TransactionEntryObservation,
-		TransactionEntryReason,
-		TransactionEntryScope
-	} from '#lib/transaction-entry-contract.js'
-	import type { SnapshotFrom } from 'xstate'
+	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
-	import type { AppTransaction } from '#lib/domain/transaction.js'
 	import { createTransaction } from '#lib/data.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
@@ -119,15 +113,7 @@
 			if ('error' in result) throw new Error(result.error)
 		}
 	})
-	const form = createScopedFormController<
-		AppTransaction,
-		void,
-		TransactionEntryReason,
-		TransactionEntryScope,
-		TransactionEntryObservation,
-		SnapshotFrom<typeof options.availability>,
-		SnapshotFrom<typeof options.operation>
-	>({ ...options, arrayFields: () => ['tags'] })
+	const form = createScopedFormController({ ...options, arrayFields: () => ['tags'] })
 </script>
 
 <svelte:head

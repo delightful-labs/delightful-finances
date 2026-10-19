@@ -121,7 +121,12 @@ test('sidebar navigation preserves the selected workspace and database session',
 	await expect(page).toHaveURL('/settings/workspace')
 	await expect(selector).toHaveValue(workspaceId)
 	await expect(page.getByLabel('Workspace name')).toHaveValue('Navigation workspace')
-	await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
+	const save = page.getByRole('button', { name: 'Save', exact: true })
+	await expect(save).toBeDisabled()
+	await page.getByLabel('Workspace name').fill('Navigation workspace edited')
+	await expect(save).toBeEnabled()
+	await page.getByLabel('Workspace name').fill('Navigation workspace')
+	await expect(save).toBeDisabled()
 	// The binding survives only client navigation and still points to the active client.
 	expect(
 		await page.evaluate(async () => {
@@ -988,9 +993,12 @@ for (const scenario of archiveScenarios) {
 			if (scenario.write) {
 				await expect(archive).toBeEnabled()
 				await archive.click()
-				await expect(subject.getByRole('main').getByRole('status')).toHaveText(
-					'Account Permission checking archived.'
-				)
+				await expect(
+					subject
+						.getByRole('main')
+						.getByRole('status')
+						.filter({ hasText: 'Account Permission checking archived.' })
+				).toHaveText('Account Permission checking archived.')
 				await expect(row).toHaveCount(0)
 			} else {
 				await expect(archive).toHaveCount(0)

@@ -205,15 +205,25 @@ test.describe('active application locale', () => {
 							organizationId: 'workspace',
 							name: 'User-owned category',
 							kind: 'expense',
-							isSystem: false
+							isSystem: false,
+							archivedAt: null
 						}
 					],
 					counts: new Map([['category', { transactions: 1234, tags: 0 }]]),
 					archivableCategoryIds: [],
-					archiving: false,
-					archivingCategoryId: undefined,
-					archivedName: undefined,
-					archiveFailed: false,
+					archiveView: {
+						readiness: { kind: 'ready' },
+						content: { kind: 'fields' },
+						activity: { kind: 'idle' },
+						feedback: { kind: 'none' },
+						canSubmit: true,
+						canReset: true,
+						canOpen: true,
+						canCancel: false,
+						fieldsEditable: true,
+						canRetryReadiness: false,
+						draftRevision: 0
+					} satisfies import('../src/lib/management-contract.js').ManagementView<string>,
 					onArchive: () => {}
 				}
 			})

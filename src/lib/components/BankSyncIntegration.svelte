@@ -100,7 +100,9 @@
 	function dispatch(event: BankSyncEvent) {
 		workflowTrace.log('event', {
 			event: event.type,
-			state: view.setupView ?? (bankState.current.matches('running') ? 'running' : 'idle')
+			state:
+				(view.mode.kind === 'setup' ? view.mode.stage : null) ??
+				(bankState.current.matches('running') ? 'running' : 'idle')
 		})
 		send(event)
 	}
@@ -132,13 +134,13 @@
 			return view.status
 		},
 		get outcome() {
-			return view.outcome
+			return view.history
 		},
 		get visible() {
-			return view.showSync
+			return view.mode.kind === 'connected'
 		},
 		get disabled() {
-			return view.busy
+			return view.activity.kind === 'working'
 		},
 		sync: () => dispatch({ type: 'SYNC' }),
 		cancel: () => dispatch({ type: 'CANCEL' }),

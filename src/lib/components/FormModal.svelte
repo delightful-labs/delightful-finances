@@ -12,7 +12,6 @@
 	let {
 		scope,
 		label,
-		disabled = false,
 		view,
 		onopen,
 		onsubmit,
@@ -23,9 +22,6 @@
 	}: {
 		scope: unknown
 		label: string
-		/** @deprecated Submit labels remain stable; accepted for existing callers. */
-		savingLabel?: string
-		disabled?: boolean
 		view: View
 		onopen: () => void
 		onsubmit: (event: SubmitEvent) => void
@@ -35,9 +31,7 @@
 		trigger?: Snippet<[() => void, boolean]> | undefined
 	} = $props()
 
-	// The optional disabled prop is retained for legacy callers only. Scoped
-	// consumers use the owner-projected canOpen capability, including while busy.
-	const triggerDisabled = $derived(disabled || !view.canOpen)
+	const triggerDisabled = $derived(!view.canOpen)
 
 	function openModal() {
 		if (triggerDisabled) return

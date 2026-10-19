@@ -54,7 +54,6 @@
 	<FormModal
 		scope={facts.scope}
 		label="Save draft"
-		savingLabel="Saving draft"
 		view={form.view}
 		onopen={form.open}
 		onsubmit={form.submit}

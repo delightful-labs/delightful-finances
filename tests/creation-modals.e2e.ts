@@ -46,7 +46,7 @@ for (const entity of ['category', 'tag']) {
 		await dialog.getByRole('button', { name: label, exact: true }).click()
 		await expect(dialog.getByRole('alert')).toHaveText(error)
 		await name.fill('Unsaved draft')
-		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 		await expect(dialog).not.toBeVisible()
 		await expect(trigger).toBeFocused()
 		await trigger.click()
@@ -67,7 +67,7 @@ for (const entity of ['category', 'tag']) {
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 		await trigger.click()
 		await expect(name).toHaveValue('')
-		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 		const table = page.getByRole('main').getByRole('table', { name: caption, exact: true })
 		await expect(table.getByRole('rowheader', { name: savedName, exact: true })).toBeVisible()
 		const tableBox = await bounds(table)
@@ -129,7 +129,7 @@ test('account management reuses the modal and the removed account route is unava
 	await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
 	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(dialog.getByRole('status')).toContainText('Modal checking')
-	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 	await expect(
 		page.getByRole('main').getByRole('cell', { name: 'Modal checking', exact: true })
 	).toBeVisible()
@@ -146,7 +146,9 @@ test('sidebar icons align and Details child content retains padding', async ({ p
 	await accounts.locator('summary').click()
 	const topIcon = sidebar.getByRole('link', { name: 'Expenses', exact: true }).locator('svg')
 	const summaryIcon = accounts.locator('summary .menu-icon')
-	const nestedIcon = accounts.getByRole('link', { name: 'Accounts', exact: true }).locator('svg')
+	const nestedIcon = accounts
+		.getByRole('link', { name: 'Manage Accounts', exact: true })
+		.locator('svg')
 	const positions = await Promise.all([bounds(topIcon), bounds(summaryIcon), bounds(nestedIcon)])
 	expect(
 		Math.max(...positions.map((box) => box.x)) - Math.min(...positions.map((box) => box.x))
@@ -155,7 +157,7 @@ test('sidebar icons align and Details child content retains padding', async ({ p
 	expect(await accounts.evaluate((node) => getComputedStyle(node).borderWidth)).toBe('0px')
 	expect(
 		await accounts
-			.locator('.details-content')
+			.locator('.details-content-section')
 			.evaluate((node) => getComputedStyle(node).paddingLeft)
 	).toBe('16px')
 	expect(
@@ -171,7 +173,8 @@ for (const entity of ['category', 'tag', 'account']) {
 			entity === 'account'
 				? '/accounts'
 				: `/settings/${entity === 'category' ? 'categories' : 'tags'}`
-		const label = entity === 'account' ? 'Add Account' : `Add ${entity}`
+		const label =
+			entity === 'account' ? 'Add Account' : entity === 'category' ? 'Add Category' : 'Add Tag'
 		const field = `${entity[0]?.toUpperCase()}${entity.slice(1)} name`
 		const { dialog } = await openCreation(page, route, label)
 		await dialog.getByLabel(field, { exact: true }).fill('Old workspace draft')

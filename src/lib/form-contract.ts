@@ -36,11 +36,11 @@ export type ScopedFormView<Result, Reason> = {
 	canRetryReadiness: boolean
 	draftRevision: number
 }
-/** Shared rendering surface. Legacy adapters leave draft revision unmanaged. */
+/** Shared rendering surface for form components. */
 export type FormPresentation = Pick<
 	ScopedFormView<unknown, unknown>,
-	'activity' | 'content' | 'canSubmit' | 'canReset' | 'canOpen' | 'fieldsEditable'
-> & { draftRevision: number | undefined }
+	'activity' | 'content' | 'canSubmit' | 'canReset' | 'canOpen' | 'fieldsEditable' | 'draftRevision'
+>
 
 /** Revision is assigned by the owner; domain availability must echo it. */
 export type FormObservation<Observation> = { revision: number; facts: Observation }

@@ -2,23 +2,13 @@
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { tagArchiveSchema, tagFormSchema } from '#lib/validation/tags.js'
-	import { createSingleWriteFormOptions } from '#lib/machines/scoped-form-policy.js'
 	import {
-		createManagementAvailability,
-		selectManagementAvailability,
-		managementScope,
-		sameManagementScope,
+		createManagementFormOptions,
 		selectManagementArchiveIds
 	} from '#lib/machines/management.js'
-	import type {
-		ManagementObservation,
-		ManagementReason,
-		ManagementScope
-	} from '#lib/management-contract.js'
-	import type { SnapshotFrom } from 'xstate'
+	import type { ManagementObservation } from '#lib/management-contract.js'
 	import { archiveTag, createTag } from '#lib/data.js'
-	import { app, type Tag } from '#lib/schema.js'
-	import type { z } from 'zod'
+	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
@@ -78,28 +68,10 @@
 			tags: observeRows(tags.current)
 		}
 	}
-	const availability = createManagementAvailability(db)
-	const common = {
-		availability,
-		selectAvailability: selectManagementAvailability,
-		scopeOf: managementScope,
-		sameScope: sameManagementScope,
-		observe,
-		classifyBlocked: (reason: ManagementReason): 'denied' | 'unavailable' =>
-			reason === 'readOnly' || reason === 'protectedRecord' ? 'denied' : 'unavailable'
-	}
+	const formOptions = createManagementFormOptions({ binding: db, observe })
 
-	const options = createSingleWriteFormOptions<
-		z.output<typeof tagFormSchema>,
-		Tag,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>
-	>({
-		...common,
+	const options = formOptions({
 		schema: tagFormSchema,
-		mode: 'create',
 		successContent: 'replace',
 		assessmentObservation: ({ request, observation }) => ({
 			...observation.facts,
@@ -111,26 +83,9 @@
 			return createTag(db, id, request.values.name, request.values.categoryId)
 		}
 	})
-	const form = createScopedFormController<
-		z.output<typeof tagFormSchema>,
-		Tag,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>,
-		SnapshotFrom<typeof options.operation>
-	>(options)
-	const archiveOptions = createSingleWriteFormOptions<
-		z.output<typeof tagArchiveSchema>,
-		string,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>
-	>({
-		...common,
+	const form = createScopedFormController(options)
+	const archiveOptions = formOptions({
 		schema: tagArchiveSchema,
-		mode: 'create',
 		successContent: 'retain',
 		assessmentObservation: ({ request, observation }) => ({
 			...observation.facts,
@@ -147,15 +102,7 @@
 			return row.name
 		}
 	})
-	const archive = createScopedFormController<
-		z.output<typeof tagArchiveSchema>,
-		string,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>,
-		SnapshotFrom<typeof archiveOptions.operation>
-	>(archiveOptions)
+	const archive = createScopedFormController(archiveOptions)
 	const archivableIds = $derived(selectManagementArchiveIds(observe(), db, 'archiveTag'))
 	function onArchive(id: string) {
 		archive.submitValues({ tagId: id, organizationId: filters.activeOrganizationId })

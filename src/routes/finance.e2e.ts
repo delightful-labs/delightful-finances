@@ -9,7 +9,7 @@ test('creates a workspace account and records an expense', async ({ page }) => {
 	await dialog.getByLabel('Account type').selectOption('bank')
 	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(dialog.getByRole('status')).toContainText('Everyday checking')
-	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 
 	await page.goto('/expenses/new')
 	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Everyday checking' })

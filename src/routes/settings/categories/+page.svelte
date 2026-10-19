@@ -1,24 +1,14 @@
 <script lang="ts">
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
-	import { createSingleWriteFormOptions } from '#lib/machines/scoped-form-policy.js'
 	import {
-		createManagementAvailability,
-		selectManagementAvailability,
-		managementScope,
-		sameManagementScope,
+		createManagementFormOptions,
 		selectManagementArchiveIds
 	} from '#lib/machines/management.js'
-	import type {
-		ManagementObservation,
-		ManagementReason,
-		ManagementScope
-	} from '#lib/management-contract.js'
-	import type { SnapshotFrom } from 'xstate'
+	import type { ManagementObservation } from '#lib/management-contract.js'
 	import { categoryArchiveSchema, categoryFormSchema } from '#lib/validation/categories.js'
 	import { archiveCategory, createCategory } from '#lib/data.js'
-	import { app, type Category } from '#lib/schema.js'
-	import type { z } from 'zod'
+	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
@@ -89,28 +79,10 @@
 			tags: observeRows(tags.current)
 		}
 	}
-	const availability = createManagementAvailability(db)
-	const common = {
-		availability,
-		selectAvailability: selectManagementAvailability,
-		scopeOf: managementScope,
-		sameScope: sameManagementScope,
-		observe,
-		classifyBlocked: (reason: ManagementReason): 'denied' | 'unavailable' =>
-			reason === 'readOnly' || reason === 'protectedRecord' ? 'denied' : 'unavailable'
-	}
+	const formOptions = createManagementFormOptions({ binding: db, observe })
 
-	const options = createSingleWriteFormOptions<
-		z.output<typeof categoryFormSchema>,
-		Category,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>
-	>({
-		...common,
+	const options = formOptions({
 		schema: categoryFormSchema,
-		mode: 'create',
 		successContent: 'replace',
 		write: async ({ request }) => {
 			const id = request.scope.organizationId
@@ -118,26 +90,9 @@
 			return createCategory(db, id, request.values.name, request.values.kind)
 		}
 	})
-	const form = createScopedFormController<
-		z.output<typeof categoryFormSchema>,
-		Category,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>,
-		SnapshotFrom<typeof options.operation>
-	>(options)
-	const archiveOptions = createSingleWriteFormOptions<
-		z.output<typeof categoryArchiveSchema>,
-		string,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>
-	>({
-		...common,
+	const form = createScopedFormController(options)
+	const archiveOptions = formOptions({
 		schema: categoryArchiveSchema,
-		mode: 'create',
 		successContent: 'retain',
 		assessmentObservation: ({ request, observation }) => ({
 			...observation.facts,
@@ -154,15 +109,7 @@
 			return row.name
 		}
 	})
-	const archive = createScopedFormController<
-		z.output<typeof categoryArchiveSchema>,
-		string,
-		ManagementReason,
-		ManagementScope,
-		ManagementObservation,
-		SnapshotFrom<typeof availability>,
-		SnapshotFrom<typeof archiveOptions.operation>
-	>(archiveOptions)
+	const archive = createScopedFormController(archiveOptions)
 	const archivableIds = $derived(selectManagementArchiveIds(observe(), db, 'archiveCategory'))
 	function onArchive(id: string) {
 		archive.submitValues({ categoryId: id, organizationId: filters.activeOrganizationId })

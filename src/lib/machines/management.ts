@@ -1,5 +1,12 @@
 import { assign, getInitialSnapshot, setup, type SnapshotFrom } from 'xstate'
-import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
+import type { z } from 'zod'
+import { createSingleWriteFormOptions } from './scoped-form-policy.js'
+import type {
+	FormOperationInput,
+	FormCapability,
+	FormChildEvent,
+	FormObservation
+} from '#lib/form-contract.js'
 import type {
 	ManagementObservation,
 	ManagementReason,
@@ -201,4 +208,41 @@ function archiveIntentId(f: ManagementObservation) {
 }
 function tagCategoryId(f: ManagementObservation) {
 	return f.intent?.kind === 'createTag' ? f.intent.categoryId : undefined
+}
+
+/** Shared management policy binding; integrations supply each form's unique write and intent. */
+export function createManagementFormOptions(dependencies: {
+	binding: object
+	observe: () => ManagementObservation
+}) {
+	const availability = createManagementAvailability(dependencies.binding)
+	return function formOptions<Values, Result>(options: {
+		schema: z.ZodType<Values>
+		successContent: 'retain' | 'replace'
+		assessmentObservation?: (
+			input: FormOperationInput<Values, ManagementScope, ManagementObservation>
+		) => ManagementObservation
+		write: (
+			input: FormOperationInput<Values, ManagementScope, ManagementObservation>
+		) => Promise<Result>
+	}) {
+		return createSingleWriteFormOptions<
+			Values,
+			Result,
+			ManagementReason,
+			ManagementScope,
+			ManagementObservation,
+			SnapshotFrom<typeof availability>
+		>({
+			...options,
+			mode: 'create',
+			availability,
+			selectAvailability: selectManagementAvailability,
+			scopeOf: managementScope,
+			sameScope: sameManagementScope,
+			observe: dependencies.observe,
+			classifyBlocked: (reason) =>
+				reason === 'readOnly' || reason === 'protectedRecord' ? 'denied' : 'unavailable'
+		})
+	}
 }

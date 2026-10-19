@@ -16,13 +16,13 @@ test.beforeEach(async ({ page }) => {
 
 test('loads an unvisited page and reloads its shell offline', async ({ page, context }) => {
 	await page.goto('/accounts')
-	await openCreationModal(page, 'Add an account')
-	await creationDialog(page, 'Add an account').getByLabel('Account name').fill('Offline checking')
-	await creationDialog(page, 'Add an account').getByLabel('Account type').selectOption('bank')
-	await creationDialog(page, 'Add an account')
-		.getByRole('button', { name: 'Add an account', exact: true })
+	await openCreationModal(page, 'Add Account')
+	await creationDialog(page, 'Add Account').getByLabel('Account name').fill('Offline checking')
+	await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
+	await creationDialog(page, 'Add Account')
+		.getByRole('button', { name: 'Add Account', exact: true })
 		.click()
-	await expect(creationDialog(page, 'Add an account').getByRole('status')).toContainText(
+	await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
 		'Offline checking'
 	)
 	await context.setOffline(true)
@@ -54,8 +54,8 @@ test('caches only same-origin public shells and build assets', async ({ page }) 
 
 test('a worker update waits without replacing or reloading the open page', async ({ page }) => {
 	await page.goto('/accounts')
-	await openCreationModal(page, 'Add an account')
-	await creationDialog(page, 'Add an account').getByLabel('Account name').fill('Unsaved account')
+	await openCreationModal(page, 'Add Account')
+	await creationDialog(page, 'Add Account').getByLabel('Account name').fill('Unsaved account')
 	const workerPath = '.svelte-kit/output/client/service-worker.js'
 	const original = await readFile(workerPath, 'utf8')
 	let navigations = 0
@@ -78,7 +78,7 @@ test('a worker update waits without replacing or reloading the open page', async
 			)
 			.toBe('installed')
 		expect(navigations).toBe(0)
-		await expect(creationDialog(page, 'Add an account').getByLabel('Account name')).toHaveValue(
+		await expect(creationDialog(page, 'Add Account').getByLabel('Account name')).toHaveValue(
 			'Unsaved account'
 		)
 		expect(
@@ -96,15 +96,15 @@ test('serves a saved transaction detail directly and after reload in production'
 	page
 }) => {
 	await page.goto('/accounts')
-	await openCreationModal(page, 'Add an account')
-	await creationDialog(page, 'Add an account')
+	await openCreationModal(page, 'Add Account')
+	await creationDialog(page, 'Add Account')
 		.getByLabel('Account name')
 		.fill('Production detail checking')
-	await creationDialog(page, 'Add an account').getByLabel('Account type').selectOption('bank')
-	await creationDialog(page, 'Add an account')
-		.getByRole('button', { name: 'Add an account', exact: true })
+	await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
+	await creationDialog(page, 'Add Account')
+		.getByRole('button', { name: 'Add Account', exact: true })
 		.click()
-	await expect(creationDialog(page, 'Add an account').getByRole('status')).toContainText(
+	await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
 		'Production detail checking'
 	)
 	await page.goto('/expenses/new')
@@ -180,12 +180,12 @@ test('a worker update preserves drafts in two tabs and activates after both clos
 	context
 }) => {
 	await page.goto('/accounts')
-	await openCreationModal(page, 'Add an account')
-	await creationDialog(page, 'Add an account').getByLabel('Account name').fill('First tab draft')
+	await openCreationModal(page, 'Add Account')
+	await creationDialog(page, 'Add Account').getByLabel('Account name').fill('First tab draft')
 	const second = await context.newPage()
 	await second.goto('/accounts')
-	await openCreationModal(second, 'Add an account')
-	await creationDialog(second, 'Add an account').getByLabel('Account name').fill('Second tab draft')
+	await openCreationModal(second, 'Add Account')
+	await creationDialog(second, 'Add Account').getByLabel('Account name').fill('Second tab draft')
 	await expect
 		.poll(() => second.evaluate(() => Boolean(navigator.serviceWorker.controller)))
 		.toBe(true)
@@ -221,10 +221,10 @@ test('a worker update preserves drafts in two tabs and activates after both clos
 		expect(
 			await second.evaluate((old) => navigator.serviceWorker.controller === old, secondController)
 		).toBe(true)
-		await expect(creationDialog(page, 'Add an account').getByLabel('Account name')).toHaveValue(
+		await expect(creationDialog(page, 'Add Account').getByLabel('Account name')).toHaveValue(
 			'First tab draft'
 		)
-		await expect(creationDialog(second, 'Add an account').getByLabel('Account name')).toHaveValue(
+		await expect(creationDialog(second, 'Add Account').getByLabel('Account name')).toHaveValue(
 			'Second tab draft'
 		)
 		expect(firstNavigations).toBe(0)
@@ -237,7 +237,7 @@ test('a worker update preserves drafts in two tabs and activates after both clos
 		expect(
 			await second.evaluate((old) => navigator.serviceWorker.controller === old, secondController)
 		).toBe(true)
-		await expect(creationDialog(second, 'Add an account').getByLabel('Account name')).toHaveValue(
+		await expect(creationDialog(second, 'Add Account').getByLabel('Account name')).toHaveValue(
 			'Second tab draft'
 		)
 		expect(secondNavigations).toBe(0)
@@ -253,10 +253,8 @@ test('a worker update preserves drafts in two tabs and activates after both clos
 			.toBe(true)
 		const reopened = await context.newPage()
 		await reopened.goto('/accounts')
-		await openCreationModal(reopened, 'Add an account')
-		await expect(
-			creationDialog(reopened, 'Add an account').getByLabel('Account name')
-		).toBeVisible()
+		await openCreationModal(reopened, 'Add Account')
+		await expect(creationDialog(reopened, 'Add Account').getByLabel('Account name')).toBeVisible()
 		await expect
 			.poll(() =>
 				reopened.evaluate(async () => {

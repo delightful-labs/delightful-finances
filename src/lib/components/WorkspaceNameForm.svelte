@@ -6,6 +6,7 @@
 	} from '#lib/workspace-rename-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
+	import FormFeedback from './FormFeedback.svelte'
 
 	let {
 		name,
@@ -32,23 +33,30 @@
 	}
 </script>
 
-{#if view.readiness.kind === 'observing'}
-	<p role="status">{explanations.loading()}</p>
-{:else if view.readiness.kind === 'blocked'}
-	<p role={view.readiness.reason === 'loadFailed' ? 'alert' : 'status'}>
-		{explanations[view.readiness.reason]()}
-	</p>
-{:else if view.readiness.kind === 'failed'}
-	<p role="alert">{m['errors.load']({ subject: m['labels.workspace_settings']() })}</p>
-{:else if view.readiness.kind === 'closed'}
-	<p role="status">{explanations.sessionUnavailable()}</p>
-{/if}
-{#if view.canRetryReadiness}
-	<Button type="button" onclick={onRetryReadiness}>{m['actions.retry']()}</Button>
-{/if}
-{#if view.activity.kind === 'settling'}
-	<p role="status">{m['workspace.rename_settling']()}</p>
-{/if}
+{#snippet formFeedback(section: 'readiness' | 'result')}
+	<FormFeedback
+		{view}
+		{section}
+		subject={section === 'readiness'
+			? m['labels.workspace_settings']()
+			: m['labels.workspace_name']()}
+		reasonText={(reason) => explanations[reason]()}
+		invalidMessage={m['workspace.name_required']()}
+		successMessage={() => m['actions.saved']({ subject: m['labels.workspace_name']() })}
+		{onRetryReadiness}
+		blockedRole={(reason) => (reason === 'loadFailed' ? 'alert' : 'status')}
+		messages={{
+			sessionUnavailable: explanations.sessionUnavailable(),
+			settling: m['workspace.rename_settling'](),
+			scopeChanged: m['workspace.rename_scope_changed'](),
+			cancelled: m['workspace.rename_cancelled'](),
+			closed: m['workspace.rename_closed'](),
+			interruptedSaved: m['workspace.rename_interrupted_saved'](),
+			unknown: m['workspace.rename_unknown']()
+		}}
+	/>
+{/snippet}
+{@render formFeedback('readiness')}
 
 <FormContent {view} {onsubmit} {onreset} {oninput}>
 	{#snippet fields(form)}
@@ -66,36 +74,7 @@
 			{m['actions.save']()}
 		</Button>
 	{/snippet}
-	{#snippet feedback(form)}
-		{#if form.feedback.kind === 'result'}
-			{@const result = form.feedback.result}
-			{#if result.outcome === 'succeeded'}
-				<p role="status">
-					{m['actions.saved']({ subject: m['labels.workspace_name']() })}
-				</p>
-			{:else if result.outcome === 'invalid'}
-				<p role="alert">{m['workspace.name_required']()}</p>
-			{:else if result.outcome === 'denied' || result.outcome === 'unavailable'}
-				<p role="alert">{explanations[result.reason]()}</p>
-			{:else if result.outcome === 'scopeChanged' || result.outcome === 'cancelled' || result.outcome === 'closed'}
-				<p role="status">
-					{result.outcome === 'scopeChanged'
-						? m['workspace.rename_scope_changed']()
-						: result.outcome === 'cancelled'
-							? m['workspace.rename_cancelled']()
-							: m['workspace.rename_closed']()}
-				</p>
-				{#if result.settlement === 'locallyPersisted'}
-					<p role="status">{m['workspace.rename_interrupted_saved']()}</p>
-				{:else if result.settlement === 'unknown'}
-					<p role="alert">{m['workspace.rename_unknown']()}</p>
-				{/if}
-			{:else}
-				<p role="alert">{m['errors.save']({ subject: m['labels.workspace_name']() })}</p>
-				{#if result.settlement === 'unknown'}
-					<p role="alert">{m['workspace.rename_unknown']()}</p>
-				{/if}
-			{/if}
-		{/if}
+	{#snippet feedback()}
+		{@render formFeedback('result')}
 	{/snippet}
 </FormContent>

@@ -109,7 +109,7 @@ test('cannot move a category into an unrelated workspace', async ({ page, browse
 	const targetOrganizationId = await page
 		.getByLabel('Current workspace', { exact: true })
 		.inputValue()
-	const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+	const subjectContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 	try {
 		const subject = await subjectContext.newPage()
 		await start(subject)
@@ -154,7 +154,7 @@ test('cannot move a category into an unrelated workspace', async ({ page, browse
 for (const scenario of scenarios) {
 	test(`workspace access: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
-		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const subjectContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await subjectContext.newPage()
 			await start(subject)
@@ -433,7 +433,7 @@ for (const scenario of scenarios) {
 	test(`transaction tag permissions: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
 		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-		const subjectContext = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const subjectContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await subjectContext.newPage()
 			await start(subject)
@@ -900,7 +900,7 @@ for (const scenario of scenarios) {
 	test(`check detail access: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
 		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-		const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+		const context = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await context.newPage()
 			await start(subject)

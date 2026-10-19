@@ -574,14 +574,6 @@ export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBa
 		snapshot.children.operation?.getSnapshot()
 	)
 	return {
-		...metadata,
-		setupView: snapshot.matches('setup') ? (metadata.setupView ?? null) : null,
-		setupStep: metadata.setupStep ?? 0,
-		loadingProvider: metadata.loadingProvider ?? false,
-		busy: snapshot.hasTag('busy'),
-		allowed: snapshot.context.environment.allowed,
-		connected: snapshot.context.environment.connected,
-		showSync: snapshot.context.availability.hasTag('show-sync'),
 		mode: snapshot.context.availability.hasTag('show-restricted')
 			? { kind: 'restricted' }
 			: snapshot.context.availability.hasTag('show-setup')
@@ -609,7 +601,6 @@ export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBa
 					showExisting: row.hasTag('show-existing')
 				}
 			}
-		),
-		outcome: snapshot.context.lastSync
-	} satisfies BankPresentation & Record<string, unknown>
+		)
+	} satisfies BankPresentation
 }

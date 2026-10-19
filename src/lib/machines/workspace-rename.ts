@@ -6,8 +6,7 @@ import type {
 	WorkspaceRenameScope
 } from '#lib/workspace-rename-contract.js'
 import { workspaceNameFormSchema } from '#lib/validation/identity.js'
-import { createScopedFormWriteMachine } from './scoped-form-write.js'
-import type { ScopedFormOptions } from './scoped-form.js'
+import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 
 type Values = { name: string }
 
@@ -134,7 +133,7 @@ export function createWorkspaceRenameFormOptions(dependencies: {
 	rename: (organizationId: string, name: string) => Promise<unknown>
 }) {
 	const availability = createWorkspaceRenameAvailability(dependencies.binding)
-	const operation = createScopedFormWriteMachine<
+	return createSingleWriteFormOptions<
 		Values,
 		void,
 		WorkspaceRenameReason,
@@ -142,21 +141,6 @@ export function createWorkspaceRenameFormOptions(dependencies: {
 		WorkspaceRenameObservation,
 		SnapshotFrom<typeof availability>
 	>({
-		availability,
-		selectAvailability: selectWorkspaceRenameAvailability,
-		scopeOf: workspaceRenameScope,
-		sameScope: sameWorkspaceRenameScope,
-		observe: dependencies.observe,
-		classifyBlocked: (reason) => (reason === 'readOnly' ? 'denied' : 'unavailable'),
-		settlement: 'locallyPersisted',
-		write: async ({ request }) => {
-			// Defensive type invariant; eligibility is decided by the shared policy chart.
-			const id = request.scope.organizationId
-			if (id === null) throw new Error('Missing authorized workspace')
-			await dependencies.rename(id, request.values.name)
-		}
-	})
-	return {
 		schema: workspaceNameFormSchema,
 		mode: 'edit',
 		initialValues: (facts: WorkspaceRenameObservation): Values => ({
@@ -171,18 +155,16 @@ export function createWorkspaceRenameFormOptions(dependencies: {
 
 		availability,
 		selectAvailability: selectWorkspaceRenameAvailability,
-		operation,
 		scopeOf: workspaceRenameScope,
 		sameScope: sameWorkspaceRenameScope,
 		observe: dependencies.observe,
-		successContent: 'retain'
-	} satisfies ScopedFormOptions<
-		Values,
-		void,
-		WorkspaceRenameReason,
-		WorkspaceRenameScope,
-		WorkspaceRenameObservation,
-		SnapshotFrom<typeof availability>,
-		SnapshotFrom<typeof operation>
-	> & { observe: () => WorkspaceRenameObservation }
+		classifyBlocked: (reason) => (reason === 'readOnly' ? 'denied' : 'unavailable'),
+		successContent: 'retain',
+		write: async ({ request }) => {
+			// Defensive type invariant; eligibility is decided by the shared policy chart.
+			const id = request.scope.organizationId
+			if (id === null) throw new Error('Missing authorized workspace')
+			await dependencies.rename(id, request.values.name)
+		}
+	})
 }

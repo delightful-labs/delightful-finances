@@ -7,8 +7,7 @@ import type {
 } from '#lib/account-creation-contract.js'
 import { accountFormSchema } from '#lib/validation/accounts.js'
 import type { Account } from '#lib/schema.js'
-import { createScopedFormWriteMachine } from './scoped-form-write.js'
-import type { ScopedFormOptions } from './scoped-form.js'
+import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 import type { OrganizationMember } from '#lib/schema.js'
 
 type Observation = {
@@ -249,7 +248,7 @@ export function createAccountCreationFormOptions(dependencies: {
 	create: (organizationId: string, values: Values) => Promise<Account>
 }) {
 	const availability = createAccountCreationAvailability(dependencies.binding)
-	const operation = createScopedFormWriteMachine<
+	return createSingleWriteFormOptions<
 		Values,
 		Account,
 		AccountCreationReason,
@@ -257,36 +256,19 @@ export function createAccountCreationFormOptions(dependencies: {
 		AccountCreationObservation,
 		SnapshotFrom<typeof availability>
 	>({
+		schema: accountFormSchema,
+		mode: 'create',
 		availability,
 		selectAvailability: selectAccountCreationAvailability,
 		scopeOf: accountCreationScope,
 		sameScope: sameAccountCreationScope,
 		observe: dependencies.observe,
 		classifyBlocked: (reason) => (reason === 'readOnly' ? 'denied' : 'unavailable'),
-		settlement: 'locallyPersisted',
+		successContent: 'replace',
 		write: async ({ request }) => {
 			const id = request.scope.organizationId
 			if (id === null) throw new Error('Missing authorized workspace')
 			return dependencies.create(id, request.values)
 		}
 	})
-	return {
-		schema: accountFormSchema,
-		mode: 'create',
-		availability,
-		selectAvailability: selectAccountCreationAvailability,
-		operation,
-		scopeOf: accountCreationScope,
-		sameScope: sameAccountCreationScope,
-		observe: dependencies.observe,
-		successContent: 'replace'
-	} satisfies ScopedFormOptions<
-		Values,
-		Account,
-		AccountCreationReason,
-		AccountCreationScope,
-		AccountCreationObservation,
-		SnapshotFrom<typeof availability>,
-		SnapshotFrom<typeof operation>
-	> & { observe: () => AccountCreationObservation }
 }

@@ -44,3 +44,37 @@ of completed implementation review. Final unit suite: 389 tests in 28 files pass
 54 browser scenarios passed across workflow (37), bank/readiness (7), shared forms
 (5), workspace access (4) and archive (1). Application, test and configuration types
 pass. Commands and coverage limits are recorded in tasks.md.
+
+## Follow-up reuse cleanup
+
+The user authorized all seven items from the follow-up reuse review as one batch.
+The implementation and user-approved regression verification are complete; the
+earlier unit/browser counts above refer to the implementation before this cleanup.
+
+- Account creation and workspace rename now use `createSingleWriteFormOptions`.
+- Removed the unused legacy form controller, machine, projection, compatibility
+  props and tests of that retired implementation. Scoped workflow and browser
+  coverage remain.
+- Scoped controller result types are inferred from operation output; integrations
+  no longer repeat seven generic arguments or their supporting imports.
+- Category/tag creation and archive forms share a management policy options
+  factory. Jazz subscriptions, dependency binding, unique writes and actor
+  lifecycle remain in their integrations.
+- Workspace rename uses shared `FormFeedback`, preserving its localized messages
+  and readiness alert semantics through explicit presentation props.
+- Transaction fields share one reactive validation-issues projection.
+- Bank view consumers use `mode`, `activity` and `history`; redundant selector
+  aliases are removed. The context adapter retains its existing public getter
+  names while reading the single view representation.
+
+No domain policy charts or cleanup/settlement transitions changed. Create/edit
+mode and stable submit labels continue through the shared workflow. Review the
+same routes listed above, especially workspace feedback and bank sidebar controls.
+
+The user subsequently approved verification with "run tests". Cleanup regression
+results: **381 unit tests in 26 files and 54 browser scenarios passed**. Existing
+coverage exercised shared form behavior, domain writes, permission changes,
+offline persistence, bank controls and workspace feedback. No additional tests
+were needed. The dedicated in-memory test server on port 5181 was stopped and
+temporary configuration wrappers removed. Commands and static verification are
+recorded in tasks.md. Changes remain uncommitted.

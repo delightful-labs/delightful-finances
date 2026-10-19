@@ -86,7 +86,7 @@ test('account order controls preserve selection and persisted order', async ({ p
 	])
 })
 
-test('single account disables both arrows and storage failure still allows session ordering', async ({
+test('single account hides ordering and storage failure still allows session ordering', async ({
 	page
 }) => {
 	await page.addInitScript(() => {
@@ -99,20 +99,18 @@ test('single account disables both arrows and storage failure still allows sessi
 	})
 	await addAccount(page, 'Alpha')
 	const accounts = await openAccounts(page)
-	await accounts.getByRole('button', { name: 'Edit order', exact: true }).click()
-	await expect(accounts.getByRole('button', { name: 'Move Alpha up', exact: true })).toBeDisabled()
-	await expect(
-		accounts.getByRole('button', { name: 'Move Alpha down', exact: true })
-	).toBeDisabled()
+	await expect(accounts.getByRole('button', { name: 'Edit order', exact: true })).toHaveCount(0)
+	await expect(accounts.getByRole('button', { name: /Move .* (up|down)/ })).toHaveCount(0)
 	// Client navigation keeps the workspace integration and its in-memory preference alive.
-	await accounts.getByRole('link', { name: 'Accounts', exact: true }).click()
-	const modal = await openCreationModal(page, 'Add an account')
+	await accounts.getByRole('link', { name: 'Manage Accounts', exact: true }).click()
+	const modal = await openCreationModal(page, 'Add Account')
 	await modal.getByLabel('Account name', { exact: true }).fill('Bravo')
 	await modal.getByLabel('Account type', { exact: true }).selectOption('bank')
-	await modal.getByRole('button', { name: 'Add an account', exact: true }).click()
+	await modal.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(modal.getByRole('status')).toContainText('Bravo')
 	await closeCreationModal(page)
 	await expect(accounts.getByRole('checkbox', { name: 'Show Bravo', exact: true })).toBeVisible()
+	await accounts.getByRole('button', { name: 'Edit order', exact: true }).click()
 	await accounts.getByRole('button', { name: 'Move Bravo up', exact: true }).click()
 	await expect(accounts.getByRole('button', { name: 'Move Bravo up', exact: true })).toBeDisabled()
 	await expect(accounts.getByRole('checkbox', { name: 'Show Bravo', exact: true })).toBeChecked()
