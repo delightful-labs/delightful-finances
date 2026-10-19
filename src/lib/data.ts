@@ -249,6 +249,7 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 				currency: transaction.money.currency,
 				kind: transaction.kind,
 				bookedOn: transaction.bookedOn,
+				...(transaction.description ? { description: transaction.description } : {}),
 				...(transaction.memo ? { memo: transaction.memo } : {}),
 				source: transaction.source.source,
 				...(transaction.source.source === 'simplefin'
@@ -326,6 +327,7 @@ export async function updateTransaction(
 			amountMinor: transaction.money.amountMinor,
 			currency: transaction.money.currency,
 			bookedOn: transaction.bookedOn,
+			description: transaction.description ?? null,
 			...(transaction.memo ? { memo: transaction.memo } : { memo: null }),
 			...('paymentMethod' in transaction
 				? { paymentMethod: transaction.paymentMethod }

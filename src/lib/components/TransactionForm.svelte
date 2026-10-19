@@ -40,7 +40,7 @@
 			TransactionDetail,
 			'accountId' | 'categoryId' | 'amountMinor' | 'currency' | 'bookedOn'
 		> &
-			Partial<Pick<TransactionDetail, 'memo' | 'paymentMethod'>> & {
+			Partial<Pick<TransactionDetail, 'description' | 'memo' | 'paymentMethod'>> & {
 				accountName?: Account['name'] | undefined
 				categoryName?: Category['name'] | undefined
 				checkDetails?: Pick<
@@ -268,6 +268,12 @@
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
+				<InputText
+					label={m['labels.description']()}
+					id="transaction-description"
+					name="description"
+					defaultValue={initialTransaction?.description ?? ''}
+				/>
 				<Textarea
 					label={m['labels.memo']()}
 					id="transaction-memo"

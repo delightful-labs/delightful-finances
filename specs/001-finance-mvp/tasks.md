@@ -354,3 +354,14 @@ Application/service-worker and browser-test type checks, focused Prettier checks
 and whitespace checks pass. Existing XState assign warnings remain in browser logs.
 The schema migration is prepared locally and remains undeployed. These checks do
 not prove cross-device uniqueness or perform the deferred existing-tag migration.
+
+### Transaction description
+
+- [x] Add optional description through schema, validation, persistence, entry, list/details, imports, samples, and localization.
+- [x] Prepare the local additive description migration (not deployed).
+- [x] Obtain implementation review before adding or running tests.
+- [x] After approval, add and run focused validation/persistence/import unit coverage and Playwright coverage for single-line description entry and separate memo details.
+
+Description verification: 116 focused unit tests pass across transaction validation, persistence, import decisions, and date grouping. All four browser scenarios in `playwright.transaction-description.config.ts` pass for income/expense entry, single-line description, multiline memo, list/detail separation, and reload persistence. Application and browser-test type checks pass. The stale installed UI dependency was refreshed from the existing vendored archive. Existing XState assign warnings remain in browser logs. The additive migration remains local and undeployed.
+
+Merge integration with editable transactions: preserve the editable details form, populate description in the edit adapter and initial values, include it in change detection, and save or clear it on updates. Verification: 149 focused unit tests and all four description browser scenarios pass, including description edits with memo preserved after reload. Application type checking passed during integration.

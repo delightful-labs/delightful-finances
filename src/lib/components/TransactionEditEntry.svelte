@@ -131,6 +131,7 @@
 			accountName: row.account?.name,
 			categoryName: row.category?.name,
 			bookedOn: row.bookedOn,
+			...(row.description ? { description: row.description } : {}),
 			...(row.memo ? { memo: row.memo } : {}),
 			...(row.paymentMethod ? { paymentMethod: row.paymentMethod } : {}),
 			...(row.checkDetails

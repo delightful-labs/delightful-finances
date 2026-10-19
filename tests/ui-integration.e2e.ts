@@ -242,7 +242,7 @@ test.describe('active application locale', () => {
 						currency: 'USD',
 						bookedOn: '2026-03-10',
 						source: 'manual',
-						memo: 'User-owned memo'
+						description: 'User-owned description'
 					},
 					href: '/transactions/transaction',
 					categoryName: 'User-owned category',
@@ -257,7 +257,7 @@ test.describe('active application locale', () => {
 		await expect(cells.nth(2)).toHaveText('0')
 		await expect(fixture.getByRole('listitem')).toContainText('Travel, Client, Project')
 		await expect(fixture.getByRole('link')).toContainText('$1,234.56')
-		await expect(fixture.getByText('User-owned memo', { exact: true })).toBeVisible()
+		await expect(fixture.getByText('User-owned description', { exact: true })).toBeVisible()
 		await expect(fixture.getByText('User-owned account', { exact: true })).toBeVisible()
 	})
 })

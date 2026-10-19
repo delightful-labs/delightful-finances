@@ -287,6 +287,7 @@ export function createTransactionEntryFormOptions(deps: {
 				amount.kind === 'valid' &&
 				amount.amountMinor === original.money.amountMinor &&
 				draft.bookedOn === original.bookedOn &&
+				(draft.description ?? '').trim() === (original.description ?? '') &&
 				(draft.memo ?? '').trim() === (original.memo ?? '') &&
 				JSON.stringify(names(draft.tags ?? [])) === JSON.stringify(names(original.tags ?? [])) &&
 				(original.kind === 'expense' ||
@@ -320,6 +321,7 @@ function transactionAsInput(
 		categoryId: transaction.categoryId,
 		bookedOn: transaction.bookedOn,
 		money: { amountMinor: transaction.amountMinor, currency: transaction.currency },
+		...(transaction.description ? { description: transaction.description } : {}),
 		...(transaction.memo ? { memo: transaction.memo } : {}),
 		source: { source: 'manual' } satisfies AppTransaction['source'],
 		...(tags.length ? { tags } : {})
@@ -341,7 +343,7 @@ function transactionAsInput(
 
 function isTransactionFormDraft(value: unknown): value is Record<string, unknown> &
 	Pick<AppTransaction, 'accountId' | 'categoryId' | 'bookedOn'> &
-	Partial<Pick<AppTransaction, 'memo' | 'tags'>> &
+	Partial<Pick<AppTransaction, 'description' | 'memo' | 'tags'>> &
 	Partial<Pick<NonNullable<TransactionDetail['checkDetails']>, 'checkNumber' | 'checkDate'>> & {
 		amount: string
 		paymentMethod?: IncomePaymentMethod
@@ -357,6 +359,7 @@ function isTransactionFormDraft(value: unknown): value is Record<string, unknown
 		typeof value.amount === 'string' &&
 		'bookedOn' in value &&
 		typeof value.bookedOn === 'string' &&
+		(!('description' in value) || typeof value.description === 'string') &&
 		(!('memo' in value) || typeof value.memo === 'string') &&
 		(!('checkNumber' in value) || typeof value.checkNumber === 'string') &&
 		(!('checkDate' in value) || typeof value.checkDate === 'string') &&

@@ -380,7 +380,7 @@ test('transaction list follows kind, date order, account filters, and workspace 
 				categoryId: expense.id,
 				kind: 'expense',
 				bookedOn: '2026-10-01',
-				memo: 'Older expense'
+				description: 'Older expense'
 			},
 			{
 				organizationId,
@@ -388,7 +388,7 @@ test('transaction list follows kind, date order, account filters, and workspace 
 				categoryId: expense.id,
 				kind: 'expense',
 				bookedOn: '2026-10-12',
-				memo: 'Recent expense'
+				description: 'Recent expense'
 			},
 			{
 				organizationId,
@@ -396,7 +396,7 @@ test('transaction list follows kind, date order, account filters, and workspace 
 				categoryId: income.id,
 				kind: 'income',
 				bookedOn: '2026-10-05',
-				memo: 'Salary'
+				description: 'Salary'
 			},
 			{
 				organizationId: second.id,
@@ -404,11 +404,11 @@ test('transaction list follows kind, date order, account filters, and workspace 
 				categoryId: businessExpense.id,
 				kind: 'expense',
 				bookedOn: '2026-10-13',
-				memo: 'Business expense'
+				description: 'Business expense'
 			}
 		] satisfies Pick<
 			import('../src/lib/schema.js').TransactionRow,
-			'organizationId' | 'accountId' | 'categoryId' | 'kind' | 'bookedOn' | 'memo'
+			'organizationId' | 'accountId' | 'categoryId' | 'kind' | 'bookedOn' | 'description'
 		>[]
 		for (const row of rows)
 			await db
@@ -457,7 +457,7 @@ test('transaction list follows kind, date order, account filters, and workspace 
 					categoryId,
 					kind: 'expense',
 					bookedOn: '2026-10-13',
-					memo: 'Live expense',
+					description: 'Live expense',
 					amountMinor: 100,
 					currency: 'USD',
 					source: 'manual'
@@ -592,7 +592,9 @@ for (const scenario of formScenarios) {
 		await expect(
 			category.getByRole('option', { name: 'Personal category', exact: true })
 		).toHaveCount(1)
-		await page.getByLabel('Memo', { exact: true }).fill('Draft from previous workspace')
+		await page
+			.getByLabel('Memo (additional notes)', { exact: true })
+			.fill('Draft from previous workspace')
 		await expect(page.getByLabel('Check number')).toHaveCount(0)
 		await expect(page.getByLabel('Check date')).toHaveCount(0)
 		if (scenario.kind === 'income') {
@@ -603,12 +605,12 @@ for (const scenario of formScenarios) {
 		await selectWorkspace(page.getByLabel('Current workspace', { exact: true }), secondWorkspaceId)
 		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
 		await expect(category.locator('option')).toHaveText(['Select a category', 'Business category'])
-		await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('')
+		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue('')
 		await account.selectOption({ label: 'Business checking' })
 		await category.selectOption({ label: 'Business category' })
 		await page.getByLabel(/Amount/).fill('42.50')
 		await page.getByLabel('Date', { exact: true }).fill('2026-10-13')
-		await page.getByLabel('Memo', { exact: true }).fill(scenario.memo)
+		await page.getByLabel('Memo (additional notes)', { exact: true }).fill(scenario.memo)
 		if (scenario.kind === 'income') {
 			await expect(page.getByLabel('Payment method')).toHaveValue('cash')
 			await expect(page.getByLabel('Check number')).toHaveCount(0)
@@ -642,7 +644,9 @@ for (const scenario of formScenarios) {
 			await expect(page.getByRole('main').getByRole('alert')).toHaveText(
 				'Check the transaction details and try again.'
 			)
-			await expect(page.getByLabel('Memo', { exact: true })).toHaveValue(scenario.memo)
+			await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
+				scenario.memo
+			)
 			await page.getByLabel('Check number').fill('12345')
 			await page.getByLabel('Check date').fill('2026-10-12')
 		}
@@ -676,7 +680,7 @@ for (const scenario of formScenarios) {
 			expect(saved.checks[0]).toMatchObject({ checkNumber: '12345', checkDate: '2026-10-12' })
 		} else expect(saved.checks).toHaveLength(0)
 		await page.getByRole('button', { name: 'Add another transaction' }).click()
-		await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('')
+		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue('')
 		await expect(account.locator('option')).toHaveText(['Select an account', 'Business checking'])
 		if (scenario.kind === 'income') {
 			await expect(page.getByLabel('Payment method')).toHaveValue('cash')
@@ -785,7 +789,7 @@ for (const scenario of formScenarios) {
 		) {
 			await page.getByLabel('Account', { exact: true }).selectOption(accountId)
 			await page.getByLabel(/Amount/).fill('5.00')
-			await page.getByLabel('Memo', { exact: true }).fill(memo)
+			await page.getByLabel('Memo (additional notes)', { exact: true }).fill(memo)
 			await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
 			await expect(page.getByRole('main').getByRole('status')).toHaveText('Transaction saved.')
 			await expect
@@ -866,7 +870,7 @@ test('account archive works offline, retains history, and excludes new-entry opt
 				currency: 'USD',
 				bookedOn: '2026-10-13',
 				source: 'manual',
-				memo: 'Retained archived history'
+				description: 'Retained archived history'
 			})
 			.wait({ tier: 'global' })
 		return { accountId: account.id, transactionId: transaction.id }
@@ -1219,7 +1223,7 @@ test('category page counts connections, archives offline, protects system catego
 				amountMinor: 100,
 				currency: 'USD',
 				bookedOn: '2026-10-13',
-				memo: 'Category retained history',
+				description: 'Category retained history',
 				source: 'manual'
 			})
 			.wait({ tier: 'global' })
@@ -1840,7 +1844,7 @@ for (const kind of ['expense', 'income']) {
 		await expect(
 			main.getByText('Tag existing tag is already selected.', { exact: true })
 		).toBeVisible()
-		await main.getByLabel('Memo', { exact: true }).fill('Tagged entry')
+		await main.getByLabel('Memo (additional notes)', { exact: true }).fill('Tagged entry')
 		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
 		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
 		await expect
@@ -1886,7 +1890,7 @@ for (const kind of ['expense', 'income']) {
 		await expect(tags).toHaveValue('')
 		await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
 		await main.getByLabel('Amount', { exact: true }).fill('2')
-		await main.getByLabel('Memo', { exact: true }).fill('No tags entry')
+		await main.getByLabel('Memo (additional notes)', { exact: true }).fill('No tags entry')
 		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
 		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
 		await expect
@@ -1935,7 +1939,7 @@ test('transaction tags reject a tag archived after selection without saving part
 	const main = page.getByRole('main')
 	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Retry tag account' })
 	await main.getByLabel('Amount', { exact: true }).fill('5')
-	await main.getByLabel('Memo', { exact: true }).fill('Retry tagged entry')
+	await main.getByLabel('Memo (additional notes)', { exact: true }).fill('Retry tagged entry')
 	const tags = main
 		.getByRole('combobox', { name: 'Tags', exact: true })
 		.or(main.getByRole('textbox', { name: 'Tags', exact: true }))
@@ -2041,7 +2045,7 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 	await main.getByLabel('Account', { exact: true }).selectOption(fixture.accountId)
 	await main.getByLabel('Category', { exact: true }).selectOption(fixture.categoryId)
 	await main.getByLabel('Amount', { exact: true }).fill('3')
-	await main.getByLabel('Memo', { exact: true }).fill('Offline tag entry')
+	await main.getByLabel('Memo (additional notes)', { exact: true }).fill('Offline tag entry')
 	await tags.fill('Offline new tag')
 	await tags.press('Enter')
 	await context.setOffline(true)
@@ -2114,7 +2118,7 @@ test('transaction list groups days, separates currency totals, and displays arch
 				amountMinor: 1000,
 				currency: 'USD',
 				bookedOn: '2026-03-10',
-				memo: 'First daily entry',
+				description: 'First daily entry',
 				source: 'manual'
 			})
 			.wait({ tier: 'global' })
@@ -2142,7 +2146,7 @@ test('transaction list groups days, separates currency totals, and displays arch
 				amountMinor: 300,
 				currency: 'EUR',
 				bookedOn: '2026-03-10',
-				memo: 'Euro daily entry',
+				description: 'Euro daily entry',
 				source: 'manual'
 			})
 			.wait({ tier: 'global' })
@@ -2155,7 +2159,7 @@ test('transaction list groups days, separates currency totals, and displays arch
 				amountMinor: 50,
 				currency: 'USD',
 				bookedOn: '2026-03-09',
-				memo: 'Previous day',
+				description: 'Previous day',
 				source: 'manual'
 			})
 			.wait({ tier: 'global' })
@@ -2270,6 +2274,7 @@ for (const kind of ['expense', 'income']) {
 							amountMinor: 1234,
 							currency: 'USD',
 							bookedOn: '2026-10-14',
+							description: 'Detail description',
 							memo: 'Original detail memo',
 							source: 'manual',
 							...(kind === 'income' ? { paymentMethod: 'check', checkDetailsId: id } : {})
@@ -2299,7 +2304,7 @@ for (const kind of ['expense', 'income']) {
 			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
 			.click()
 		const main = page.getByRole('main')
-		const link = main.getByRole('link').filter({ hasText: 'Original detail memo' })
+		const link = main.getByRole('link').filter({ hasText: 'Detail description' })
 		await expect(link).toHaveAttribute('href', `/transactions/${fixture.id}`)
 		await link.focus()
 		await page.keyboard.press('Enter')
@@ -2338,7 +2343,7 @@ for (const kind of ['expense', 'income']) {
 			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
 			.click()
 		await expect(page).toHaveURL(kind === 'expense' ? '/expenses' : '/incomes')
-		await expect(main.getByRole('link').filter({ hasText: 'Updated detail memo' })).toBeVisible()
+		await expect(main.getByRole('link').filter({ hasText: 'Detail description' })).toBeVisible()
 	})
 }
 

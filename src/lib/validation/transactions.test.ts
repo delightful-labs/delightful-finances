@@ -28,6 +28,7 @@ const fields = {
 	categoryId: category.id,
 	amount: '12.34',
 	bookedOn: '2026-10-13',
+	description: '  Groceries  ',
 	memo: '  Market  '
 }
 
@@ -66,6 +67,20 @@ describe('canonical transaction normalization', () => {
 			}).memo
 		).toBeUndefined()
 	})
+	it.each([undefined, '', '  ', '  Groceries  '])(
+		'normalizes description %j independently of memo',
+		(description) => {
+			const result = appTransactionSchema.parse({
+				...base,
+				kind: 'expense',
+				source: { source: 'manual' },
+				description,
+				memo: '  Additional notes\nSecond line  '
+			})
+			expect(result.description).toBe(description?.trim() || undefined)
+			expect(result.memo).toBe('Additional notes\nSecond line')
+		}
+	)
 	it('defaults manual income to cash', () => {
 		expect(
 			appTransactionSchema.parse({ ...base, kind: 'income', source: { source: 'manual' } })
@@ -166,6 +181,7 @@ describe('transaction form schema', () => {
 			kind: 'expense',
 			money: { amountMinor: 1234, currency: 'USD' },
 			bookedOn: fields.bookedOn,
+			description: 'Groceries',
 			memo: 'Market',
 			source: { source: 'manual' }
 		})
@@ -182,9 +198,10 @@ describe('transaction form schema', () => {
 			...options(),
 			accounts: [{ ...account, currency: 'EUR' }]
 		}))
-		const result = schema.parse({ ...fields, amount: '0', memo: '  ' })
+		const result = schema.parse({ ...fields, amount: '0', description: '  ', memo: '  ' })
 		expect(result.money).toEqual({ amountMinor: 0, currency: 'EUR' })
 		expect(result).not.toHaveProperty('memo')
+		expect(result).not.toHaveProperty('description')
 	})
 
 	it.each(['2026-02-29', '2026-13-01', '10/13/2026', ''])(

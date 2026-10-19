@@ -113,11 +113,34 @@ for (const route of ['/expenses', '/incomes', '/expenses/new', '/incomes/new']) 
 			'First checking'
 		)
 		await main.getByLabel('Amount', { exact: true }).fill('12.34')
-		await main.getByLabel('Memo', { exact: true }).fill('First transaction')
+		const description = main.getByLabel('Description', { exact: true })
+		const memo = main.getByLabel('Memo (additional notes)', { exact: true })
+		await expect(description).toHaveJSProperty('tagName', 'INPUT')
+		await expect(memo).toHaveJSProperty('tagName', 'TEXTAREA')
+		await description.fill('  First transaction  ')
+		await memo.fill('Additional notes\nSecond line')
 		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
-		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+		await expect(
+			main.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
+		).toBeVisible()
 		await page.goto(route.replace('/new', ''))
 		await expect(main.getByText('First transaction', { exact: true })).toBeVisible()
+		await expect(main.getByText('Additional notes', { exact: false })).toHaveCount(0)
+		await main.getByRole('link').filter({ hasText: 'First transaction' }).click()
+		await expect(main.getByLabel('Description', { exact: true })).toHaveValue('First transaction')
+		await expect(main.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
+			'Additional notes\nSecond line'
+		)
+		await main.getByLabel('Description', { exact: true }).fill('Updated description')
+		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await expect(
+			main.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
+		).toBeVisible()
+		await page.reload()
+		await expect(main.getByLabel('Description', { exact: true })).toHaveValue('Updated description')
+		await expect(main.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
+			'Additional notes\nSecond line'
+		)
 	})
 }
 

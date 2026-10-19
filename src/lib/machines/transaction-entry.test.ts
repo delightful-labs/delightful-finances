@@ -120,6 +120,7 @@ describe('transaction edit policy and scope', () => {
 		bookedOn: '2026-10-18',
 		source: 'manual',
 		externalId: null,
+		description: null,
 		memo: null,
 		paymentMethod: null,
 		checkDetailsId: null,
@@ -161,6 +162,8 @@ describe('transaction edit policy and scope', () => {
 				...(kind === 'income' ? { paymentMethod: 'cash' } : {})
 			}
 			expect(options.valuesEqual(draft, initial)).toBe(true)
+			expect(options.valuesEqual({ ...draft, description: 'Changed' }, initial)).toBe(false)
+			expect(options.valuesEqual({ ...draft, description: '  ' }, initial)).toBe(true)
 			expect(options.valuesEqual({ ...draft, amount: '2' }, initial)).toBe(false)
 			expect(options.valuesEqual({ ...draft, amount: '1', memo: '  ' }, initial)).toBe(true)
 			expect(options.valuesEqual({ ...draft, tags: ['New'] }, initial)).toBe(false)

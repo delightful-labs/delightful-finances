@@ -28,6 +28,11 @@ const transactionBaseShape = {
 	categoryId: z.string(),
 	bookedOn: dateOnlyText,
 	money: z.strictObject({ amountMinor: amountMinorValue, currency: currencyText }),
+	description: z
+		.string()
+		.trim()
+		.transform((value) => value || undefined)
+		.optional(),
 	memo: z
 		.string()
 		.trim()
@@ -128,7 +133,7 @@ export function transactionFormSchema(getOptions: () => TransactionFormOptions) 
 		expense.shape.categoryId.default(() => defaultTransactionCategory(getOptions())?.id ?? '')
 	)
 	const fields = expense
-		.pick({ accountId: true, categoryId: true, bookedOn: true, memo: true })
+		.pick({ accountId: true, categoryId: true, bookedOn: true, description: true, memo: true })
 		.extend({ categoryId, amount: amountText, paymentMethod, tags: expense.shape.tags })
 		// Preserve raw check fields until the canonical check-income branch validates them.
 		.loose()
@@ -156,6 +161,7 @@ export function transactionFormSchema(getOptions: () => TransactionFormOptions) 
 				categoryId: category.id,
 				bookedOn: fields.bookedOn,
 				money: { amountMinor: fields.amount, currency: account.currency },
+				...(fields.description === undefined ? {} : { description: fields.description }),
 				...(fields.memo === undefined ? {} : { memo: fields.memo }),
 				source: { source: 'manual' },
 				...(fields.tags === undefined ? {} : { tags: fields.tags })

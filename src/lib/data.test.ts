@@ -126,6 +126,7 @@ describe('createTransaction normalization', () => {
 		categoryId: 'category',
 		bookedOn: '2026-10-13',
 		money: { amountMinor: 100, currency: 'USD' },
+		description: '  Invoice payment  ',
 		memo: '  Payment  ',
 		checkDetails: { checkNumber: ' 123 ', checkDate: '2026-10-12' }
 	}
@@ -134,7 +135,11 @@ describe('createTransaction normalization', () => {
 		await createTransaction(db, input)
 		expect(insert).toHaveBeenCalledWith(
 			app.transactions,
-			expect.objectContaining({ memo: 'Payment', checkDetailsId: organization.id }),
+			expect.objectContaining({
+				description: 'Invoice payment',
+				memo: 'Payment',
+				checkDetailsId: organization.id
+			}),
 			{ id: organization.id }
 		)
 		expect(insert).toHaveBeenCalledWith(
@@ -154,9 +159,10 @@ describe('createTransaction normalization', () => {
 
 	it('omits whitespace-only memos from writes', async () => {
 		const { db, insert } = setup()
-		await createTransaction(db, { ...input, memo: ' ' })
+		await createTransaction(db, { ...input, description: ' ', memo: ' ' })
 		const values = insert.mock.calls.find(([table]) => table === app.transactions)?.[1]
 		expect(values).not.toHaveProperty('memo')
+		expect(values).not.toHaveProperty('description')
 	})
 	it('rejects invalid transactions without opening a write', async () => {
 		const { db } = setup()
