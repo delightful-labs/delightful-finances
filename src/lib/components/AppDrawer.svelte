@@ -156,51 +156,60 @@
 								errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
 							>
 								{#if accounts.length > 0}
-									<ul>
-										<li class="account-filter">
-											<Checkbox
-												checked={selectedAccountIds === null ||
-													accounts.every((account) => selectedAccountIds?.includes(account.id))}
-												label={m['accounts.filters.all']()}
-												onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
-											/>
-										</li>
-										{#each accounts as account (account.id)}
+									<fieldset class="account-filters">
+										<legend>{m['accounts.filters.legend']()}</legend>
+										<ul>
 											<li class="account-filter">
 												<Checkbox
+													name="accountIds"
+													value="all"
 													checked={selectedAccountIds === null ||
-														selectedAccountIds.includes(account.id)}
-													label={account.name}
-													aria-label={m['accounts.filters.toggle']({ name: account.name })}
-													onchange={(event) =>
-														onAccountChange(account.id, event.currentTarget.checked)}
+														accounts.every((account) => selectedAccountIds?.includes(account.id))}
+													label={m['accounts.filters.all']()}
+													onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 												/>
-												{#if editingAccountOrder}
-													<span class="account-order-controls">
-														<Button
-															type="button"
-															appearance="flat"
-															disabled={!canMoveAccount(account.id, 'up')}
-															aria-label={m['accounts.order.up']({ name: account.name })}
-															onclick={() => onMoveAccount(account.id, 'up')}
-															><Icon
-																icon={ExpensesIcon}
-																style="width: 1rem; height: 1rem;"
-															/></Button
-														>
-														<Button
-															type="button"
-															appearance="flat"
-															disabled={!canMoveAccount(account.id, 'down')}
-															aria-label={m['accounts.order.down']({ name: account.name })}
-															onclick={() => onMoveAccount(account.id, 'down')}
-															><Icon icon={IncomeIcon} style="width: 1rem; height: 1rem;" /></Button
-														>
-													</span>
-												{/if}
 											</li>
-										{/each}
-									</ul>
+											{#each accounts as account (account.id)}
+												<li class="account-filter">
+													<Checkbox
+														name="accountIds"
+														value={account.id}
+														checked={selectedAccountIds === null ||
+															selectedAccountIds.includes(account.id)}
+														label={account.name}
+														onchange={(event) =>
+															onAccountChange(account.id, event.currentTarget.checked)}
+													/>
+													{#if editingAccountOrder}
+														<span class="account-order-controls">
+															<Button
+																type="button"
+																appearance="flat"
+																disabled={!canMoveAccount(account.id, 'up')}
+																aria-label={m['accounts.order.up']({ name: account.name })}
+																onclick={() => onMoveAccount(account.id, 'up')}
+																><Icon
+																	icon={ExpensesIcon}
+																	style="width: 1rem; height: 1rem;"
+																/></Button
+															>
+															<Button
+																type="button"
+																appearance="flat"
+																disabled={!canMoveAccount(account.id, 'down')}
+																aria-label={m['accounts.order.down']({ name: account.name })}
+																onclick={() => onMoveAccount(account.id, 'down')}
+																><Icon
+																	icon={IncomeIcon}
+																	style="width: 1rem; height: 1rem;"
+																/></Button
+															>
+														</span>
+													{/if}
+												</li>
+											{/each}
+										</ul>
+									</fieldset>
 									{#if canToggleAccountOrder}
 										<Button
 											type="button"
@@ -412,6 +421,17 @@
 
 	p {
 		margin: 0;
+	}
+
+	.account-filters {
+		margin: 0;
+		padding: 0;
+		border: 0;
+		min-inline-size: 0;
+	}
+
+	.account-filters legend {
+		font-size: var(--dui-font-size-sm, 0.875rem);
 	}
 
 	.account-filter {

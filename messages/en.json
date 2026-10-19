@@ -137,6 +137,7 @@
 		},
 		"currency_usd": "Currency: USD",
 		"filters": {
+			"legend": "Filter Accounts",
 			"all": "All accounts",
 			"toggle": "Show {name}"
 		},
