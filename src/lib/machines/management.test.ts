@@ -1,3 +1,5 @@
+import { tagFormSchema } from '#lib/validation/tags.js'
+import { categoryFormSchema } from '#lib/validation/categories.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createActor, getInitialSnapshot, waitFor } from 'xstate'
 import type { ManagementObservation, ManagementReason } from '#lib/management-contract.js'
@@ -6,7 +8,8 @@ import {
 	managementScope,
 	sameManagementScope,
 	selectManagementArchiveIds,
-	selectManagementAvailability
+	selectManagementAvailability,
+	createManagementFormOptions
 } from './management.js'
 import { createScopedFormWriteMachine } from './scoped-form-write.js'
 
@@ -23,6 +26,7 @@ const tag = {
 	id: 'tag',
 	organizationId: 'org',
 	name: 'Groceries',
+	kind: 'expense',
 	categoryId: 'category',
 	archivedAt: null
 } satisfies ManagementObservation['tags'][number]
@@ -68,7 +72,10 @@ describe('category/tag policy', () => {
 			{ intent: { kind: 'archiveTag', id: 'tag', organizationId: 'other' } },
 			'unavailableReference'
 		],
-		[{ intent: { kind: 'createTag', categoryId: 'missing' } }, 'unavailableReference'],
+		[
+			{ intent: { kind: 'createTag', name: 'New tag', tagKind: 'expense', categoryId: 'missing' } },
+			'unavailableReference'
+		],
 		[
 			{
 				categories: [{ ...category, isSystem: true }],
@@ -99,13 +106,128 @@ describe('category/tag policy', () => {
 			policy({
 				...f,
 				categories: [{ ...category, archivedAt: new Date() }],
-				intent: { kind: 'createTag', categoryId: category.id }
+				intent: { kind: 'createTag', name: 'New tag', tagKind: 'expense', categoryId: category.id }
 			})
 		).toEqual({ kind: 'blocked', reason: 'unavailableReference' })
-		expect(policy({ ...f, intent: { kind: 'createTag', categoryId: null } })).toEqual({
+		expect(
+			policy({
+				...f,
+				intent: { kind: 'createTag', name: 'New tag', tagKind: 'expense', categoryId: null }
+			})
+		).toEqual({
 			kind: 'ready'
 		})
 	})
+	it.each(['category', 'tag'])(
+		'compares normalized active %s names within organization and kind',
+		(entity) => {
+			const f = facts()
+			const intent: NonNullable<ManagementObservation['intent']> =
+				entity === 'category'
+					? { kind: 'createCategory', name: ' FOOD ', categoryKind: 'expense' }
+					: { kind: 'createTag', name: ' GROCERIES ', tagKind: 'expense', categoryId: null }
+			expect(policy({ ...f, intent })).toEqual({ kind: 'blocked', reason: 'duplicateName' })
+			const outside =
+				entity === 'category'
+					? { categories: [{ ...category, organizationId: 'other' }] }
+					: { tags: [{ ...tag, organizationId: 'other' }] }
+			const archived =
+				entity === 'category'
+					? { categories: [{ ...category, archivedAt: new Date() }] }
+					: { tags: [{ ...tag, archivedAt: new Date() }] }
+			const otherKind =
+				entity === 'category'
+					? {
+							categories: [
+								{ ...category, kind: 'income' }
+							] satisfies ManagementObservation['categories']
+						}
+					: { tags: [{ ...tag, kind: 'income' }] satisfies ManagementObservation['tags'] }
+			for (const patch of [outside, archived, otherKind])
+				expect(policy({ ...f, ...patch, intent })).toEqual({ kind: 'ready' })
+		}
+	)
+	it('rejects an active but mismatched-kind tag category', () => {
+		expect(
+			policy({
+				...facts(),
+				intent: { kind: 'createTag', name: 'Salary', tagKind: 'income', categoryId: category.id }
+			})
+		).toEqual({ kind: 'blocked', reason: 'unavailableReference' })
+	})
+	it('does not reserve names for legacy untyped tags', () => {
+		expect(
+			policy({
+				...facts(),
+				tags: [{ ...tag, kind: null }],
+				intent: { kind: 'createTag', name: tag.name, tagKind: 'expense', categoryId: null }
+			})
+		).toEqual({ kind: 'ready' })
+	})
+	it.each(['category', 'tag'])(
+		'blocks a %s duplicate that appears after the form observation',
+		async (entity) => {
+			const initial = { ...facts(), categories: [], tags: [] }
+			const write = vi.fn(async () => 'saved')
+			const formOptions = createManagementFormOptions({ binding, observe: facts })
+			const options =
+				entity === 'category'
+					? formOptions({
+							schema: categoryFormSchema,
+							successContent: 'replace',
+							write,
+							assessmentObservation: ({ request, observation }) => ({
+								...observation.facts,
+								intent: {
+									kind: 'createCategory',
+									name: request.values.name,
+									categoryKind: request.values.kind
+								}
+							})
+						})
+					: formOptions({
+							schema: tagFormSchema,
+							successContent: 'replace',
+							write,
+							assessmentObservation: ({ request, observation }) => ({
+								...observation.facts,
+								intent: {
+									kind: 'createTag',
+									name: request.values.name,
+									tagKind: request.values.kind,
+									categoryId: request.values.categoryId
+								}
+							})
+						})
+			// Both schemas accept the same shape here; category strips categoryId.
+			const actor = createActor(options.operation, {
+				input: {
+					request: {
+						id: 1,
+						scope: managementScope(initial),
+						scopeRevision: 0,
+						values: {
+							name: entity === 'category' ? ' food ' : ' groceries ',
+							kind: 'expense',
+							categoryId: null
+						}
+					},
+					observation: { revision: 0, facts: initial }
+				}
+			}).start()
+			try {
+				await waitFor(actor, (snapshot) => snapshot.status === 'done')
+				expect(actor.getSnapshot().output).toMatchObject({
+					outcome: 'unavailable',
+					reason: 'duplicateName',
+					settlement: 'notStarted'
+				})
+				expect(write).not.toHaveBeenCalled()
+			} finally {
+				actor.stop()
+			}
+		}
+	)
 	it('projects archive row capabilities through the same assessment', () => {
 		const f = facts()
 		f.categories = [

@@ -316,3 +316,41 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [x] Browser-test TypeScript and focused Prettier/whitespace checks pass.
 
 Runtime logs include XState assign warnings and a SvelteKit replaceState deprecation warning. No production changes were made in this testing cycle. These focused scenarios do not establish offline behavior, startup-disabled controls, workspace replacement during an in-flight batch, or result-shrink races.
+
+### Kind-scoped names and duplicate validation
+
+- [x] Implement category duplicate-name guards and localized feedback (implementation approved; focused checks passed).
+- [x] Share pure name normalization between category and account guards.
+- [x] Observe active organization accounts and assess duplicate names after authorization before creation (implementation approved; focused checks passed).
+- [x] Review category/account implementation, then add and run focused unit and Playwright coverage.
+- [ ] Review an existing-tag migration policy preserving unlinked and mixed-kind history.
+- [x] Add required kind for new tags, matching-kind categories, settings duplicate guards and legacy unassigned feedback (implementation approved; focused checks passed).
+- [x] Update transaction tag selection, inline creation and ambiguity guards to match transaction kind (implementation approved; focused checks passed).
+- [x] Review tag implementation, then add and run relevant unit and Playwright coverage.
+
+- [x] Accept transitional null kinds for existing tags and retain historical links while excluding them from new assignment.
+- [x] Generate and review the local additive tag-kind migration and snapshot; do not deploy.
+
+### Duplicate-name and tag-kind verification
+
+Implementation review was approved by the user's continuation. All 136 focused
+unit tests pass across account creation, management, transaction entry, canonical
+tag validation and persistence. New coverage checks normalized names, active versus
+archived records, organization/kind boundaries, refreshed pre-write observations,
+editable recovery after duplicate feedback, mismatched tag categories, untyped
+legacy tags and transaction-time ambiguity.
+
+All three isolated Playwright scenarios pass across focused runs using
+`playwright.duplicate-names.config.ts` and the in-memory Jazz server at
+http://127.0.0.1:5184: account duplicates across types and archived-name reuse
+while offline with reload persistence; category/tag kind-scoped settings and
+retained selections; matching-kind transaction suggestions, typed inline creation,
+existing-tag reuse and preserved legacy history/links. Initial browser failures
+were fixture/locator issues (the seeded Salary category, the shared Tags label,
+and matching category text when counting tag names); no production changes were
+needed during verification.
+
+Application/service-worker and browser-test type checks, focused Prettier checks,
+and whitespace checks pass. Existing XState assign warnings remain in browser logs.
+The schema migration is prepared locally and remains undeployed. These checks do
+not prove cross-device uniqueness or perform the deferred existing-tag migration.

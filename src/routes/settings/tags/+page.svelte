@@ -75,12 +75,17 @@
 		successContent: 'replace',
 		assessmentObservation: ({ request, observation }) => ({
 			...observation.facts,
-			intent: { kind: 'createTag', categoryId: request.values.categoryId }
+			intent: {
+				kind: 'createTag',
+				name: request.values.name,
+				tagKind: request.values.kind,
+				categoryId: request.values.categoryId
+			}
 		}),
 		write: async ({ request }) => {
 			const id = request.scope.organizationId
 			if (id === null) throw new Error('Missing authorized workspace')
-			return createTag(db, id, request.values.name, request.values.categoryId)
+			return createTag(db, id, request.values.name, request.values.kind, request.values.categoryId)
 		}
 	})
 	const form = createScopedFormController(options)

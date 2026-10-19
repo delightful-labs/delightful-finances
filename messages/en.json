@@ -1,4 +1,7 @@
 {
+	"tags.kind_unassigned": "Type unassigned; unavailable for new transactions until migration.",
+	"tags.ambiguous_name": "More than one active tag has this name for this transaction type. Resolve the duplicate tags before saving.",
+	"forms.duplicate_name": "An active item with this name already exists. Choose another name.",
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"developer": {
 		"menu": "Developer menu",

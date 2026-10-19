@@ -8,13 +8,15 @@ import {
 	createTransactionEntryAvailability,
 	selectTransactionEntryAvailability,
 	createTransactionEntryFormOptions,
-	transactionEntryScope
+	transactionEntryScope,
+	applicableTransactionTags
 } from './transaction-entry.js'
 import type { AppTransaction } from '#lib/domain/transaction.js'
 const binding = {}
 const id = '00000000-0000-4000-8000-000000000001'
 function facts(): TransactionEntryObservation {
 	return {
+		tags: [],
 		binding,
 		identityId: 'user',
 		organizationId: id,
@@ -68,6 +70,40 @@ const transaction: AppTransaction = {
 	source: { source: 'manual' },
 	tags: []
 }
+const tag = {
+	id: 'tag',
+	organizationId: id,
+	name: 'Salary',
+	kind: 'expense',
+	categoryId: null,
+	archivedAt: null
+} satisfies TransactionEntryObservation['tags'][number]
+
+describe('transaction tag name policy', () => {
+	it('rejects ambiguous normalized active names but allows reuse of one matching tag', () => {
+		const f = { ...facts(), intent: { ...transaction, tags: [' SALARY '] } }
+		expect(policy({ ...f, tags: [tag] })).toEqual({ kind: 'ready' })
+		expect(policy({ ...f, tags: [tag, { ...tag, id: 'duplicate', name: ' salary ' }] })).toEqual({
+			kind: 'blocked',
+			reason: 'ambiguousTagName'
+		})
+	})
+	it('excludes other kinds, organizations, archived and untyped tags from new assignments', () => {
+		const f = {
+			...facts(),
+			intent: { ...transaction, tags: ['Salary'] },
+			tags: [
+				tag,
+				{ ...tag, id: 'income', kind: 'income' },
+				{ ...tag, id: 'legacy', kind: null },
+				{ ...tag, id: 'archived', archivedAt: new Date() },
+				{ ...tag, id: 'other', organizationId: 'other' }
+			] satisfies TransactionEntryObservation['tags']
+		}
+		expect(applicableTransactionTags(f)).toEqual([tag])
+		expect(policy(f)).toEqual({ kind: 'ready' })
+	})
+})
 describe('transaction entry prerequisites and authorization', () => {
 	it.each([
 		[{ sessionReady: false }, 'sessionUnavailable'],

@@ -13,6 +13,7 @@ export type ManagementReason =
 	| 'readOnly'
 	| 'unavailableReference'
 	| 'protectedRecord'
+	| 'duplicateName'
 export type ManagementObservation = ManagementScope & {
 	sessionReady: boolean
 	membership: OrganizationMember | null | undefined
@@ -23,6 +24,7 @@ export type ManagementObservation = ManagementScope & {
 	intent?:
 		| { kind: 'archiveCategory'; id: string; organizationId: string }
 		| { kind: 'archiveTag'; id: string; organizationId: string }
-		| { kind: 'createTag'; categoryId: string | null }
+		| { kind: 'createCategory'; name: string; categoryKind: Category['kind'] }
+		| { kind: 'createTag'; name: string; tagKind: Category['kind']; categoryId: string | null }
 }
 export type ManagementView<Result> = ScopedFormView<Result, ManagementReason>

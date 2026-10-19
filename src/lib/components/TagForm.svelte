@@ -23,6 +23,15 @@
 		onRetryReadiness: () => void
 		categories: readonly Category[]
 	} = $props()
+	let kind = $state('expense')
+	let categoryId = $state('')
+	const draftRevision = $derived(view.draftRevision)
+	$effect(() => {
+		void scope
+		void draftRevision
+		kind = 'expense'
+		categoryId = ''
+	})
 </script>
 
 <FormFeedback
@@ -50,14 +59,30 @@
 			disabled={!form.fieldsEditable}
 		/>
 		<Select
+			label={m['labels.transaction_type']()}
+			id="tag-kind"
+			name="kind"
+			required
+			defaultValue="expense"
+			bind:value={kind}
+			disabled={!form.fieldsEditable}
+			onchange={() => {
+				categoryId = ''
+			}}
+		>
+			<option value="expense">{m['labels.expenses']()}</option>
+			<option value="income">{m['labels.income']()}</option>
+		</Select>
+		<Select
 			label={m['labels.category']()}
 			id="tag-category"
 			name="categoryId"
 			defaultValue=""
+			bind:value={categoryId}
 			disabled={!form.fieldsEditable}
 		>
 			<option value="">{m['tags.no_category']()}</option>
-			{#each categories as category (category.id)}
+			{#each categories.filter((category) => category.kind === kind) as category (category.id)}
 				<option value={category.id}
 					>{category.name} ({category.kind === 'expense'
 						? m['labels.expenses']()

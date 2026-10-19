@@ -64,7 +64,7 @@ As a user, I can manage categories and tags and attach multiple tags to a transa
 
 1. **Given** an expense or income form, **When** I choose a category, **Then** only categories of the matching kind are offered.
 2. **Given** a tag is archived, **When** I search/select tags for a new transaction, **Then** the archived tag is omitted while remaining visible on historical transactions.
-3. **Given** the transaction tag picker supports creating a tag, **When** I save a transaction with a new tag, **Then** the tag is scoped to the current organization and inherits the transaction's selected category. Selecting an existing tag does not change that tag's category. Tags created separately in tag settings may omit a category.
+3. **Given** the transaction tag picker supports creating a tag, **When** I save a transaction with a new tag, **Then** the tag is scoped to the current organization and transaction kind and inherits the transaction's selected category. Selecting an existing tag does not change that tag's category. Tags created separately in tag settings require an income/expense kind and may omit a category. Existing tags may only be selected when their kind matches the transaction.
 4. **Given** category settings, **When** I review a category, **Then** I can see counts of its connected transactions and directly associated tags within my read permissions. Counts include retained history and archived tags and do not change with sidebar account filters.
 
 ### User Story 5 — Prepare for shared workspaces and imports (P3)
@@ -138,7 +138,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **Account**: USD cash/bank/card ledger belonging to an organization; archivable.
 - **Account Membership**: explicit read/write grant to an account for an org member in `selected` access mode.
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
-- **Tag**: org-scoped label with optional category; can be archived.
+- **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
 - **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional memo/provider id/batch, and tags.
 - **Check Details**: one-to-one transaction record for check income.
 - **SimpleFIN Connection / Account Link**: org-scoped connection credential/status and mapping to local accounts.
@@ -235,3 +235,55 @@ The development sample controls live in a global Developer menu dialog on every 
 The root layout mounts one self-contained developer menu and always renders the same income and expense actions, independent of route. Keep actions visible but disabled before a Jazz provider is available. Session-scoped sample integrations own subscriptions and batch actors, exposing presentation data/callbacks through root-owned context. Ordinary navigation preserves progress and active batches; identity/workspace/account-selection changes stop subsequent writes through scope checks. No page-specific menu registration or conditional item visibility.
 
 DeveloperMenu encapsulates all development gating, menu content, disabled defaults, session binding and sample integrations. The shared layout only mounts `<DeveloperMenu />`. A pure DeveloperMenuDialog owns the focus-revealed trigger and modal presentation; sample integrations remain menu descendants and reuse the existing application session without creating another session.
+
+## Category and tag kind/duplicate-name correction
+
+Categories and tags require an income/expense kind. Active names are unique within
+organization + entity type + kind, comparing trimmed, lowercased names. Archived
+items do not reserve names. A tag's optional category must match its kind, and
+transaction tag choices and inline creation must match the transaction kind.
+Duplicate decisions belong to explicit guarded state-machine transitions before
+persistence, using refreshed local observations; presentation renders the machine
+result and retains entered values. Offline creation remains supported. Concurrent
+creation on disconnected devices is not guaranteed globally unique by this check.
+
+Implementation sequence and review gates:
+
+- Implement category duplicate-name assessment in the existing management machine,
+  bind submitted name/kind in the category page, and localize the blocked outcome.
+- Review this implementation before adding or running its unit/Playwright coverage.
+- Add tag kind to schema, validation, settings and transaction workflows; enforce
+  matching-kind category references and machine-owned duplicate checks in both
+  settings and inline transaction creation.
+- Decide and review existing-tag migration before changing stored data: linked,
+  unlinked, and mixed-kind historical usage must retain their associations without
+  guessing a kind or silently dropping history.
+- Review each focused implementation before its tests and the next task.
+
+Category, account, and tag duplicate assessment and new-tag kinds are implemented and approved, with focused verification passed. The additive tag-kind schema migration is prepared locally; assigning kinds to existing untyped tags remains deferred.
+
+### Account-name duplicate validation scope
+
+Account creation must also reject a name already used by an active account in the
+same organization, comparing trimmed, lowercased names across cash, bank, and card
+kinds. Archived accounts do not reserve names. The account creation state machine
+must own the duplicate guard and explicit duplicate outcome, using current local
+account observations after authorization and before issuing the write. Preserve
+entered values and render localized feedback. The same offline concurrency limit
+as category/tag duplicate checks applies.
+
+- [x] Implement account observations, submitted-name assessment, machine guard,
+      duplicate outcome and localized feedback in a separate focused review cycle.
+- [ ] After implementation approval, add and run relevant unit and Playwright
+      coverage for case/whitespace, organization scope, cross-kind duplicates,
+      archived names, and a duplicate appearing while the form is open.
+
+Account duplicate validation and shared name normalization are implemented and approved, with focused verification passed.
+
+### Accepted transitional tag storage policy
+
+Require a kind on every new tag, but retain nullable kind in storage for existing
+rows. Preserve all historical links; exclude untyped tags from new assignment
+until a separately reviewed migration assigns or splits them. Show their unassigned
+status in tag settings. The compatibility policy and machine ownership are detailed
+in [tag-kinds.md](tag-kinds.md). No remote schema deployment is included in this work.

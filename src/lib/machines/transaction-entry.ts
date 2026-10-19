@@ -1,3 +1,4 @@
+import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
 import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
 import type {
@@ -26,7 +27,12 @@ export function sameTransactionEntryScope(a: TransactionEntryScope, b: Transacti
 		a.kind === b.kind
 	)
 }
-export function writableTransactionAccounts(f: TransactionEntryObservation) {
+export function writableTransactionAccounts(
+	f: Pick<
+		TransactionEntryObservation,
+		'accounts' | 'organizationId' | 'membership' | 'identityId' | 'grants'
+	>
+) {
 	return f.accounts.filter(
 		(a) =>
 			a.organizationId === f.organizationId &&
@@ -35,9 +41,17 @@ export function writableTransactionAccounts(f: TransactionEntryObservation) {
 			canWriteAccount(f.membership, f.organizationId, a.id, f.grants)
 	)
 }
-export function applicableTransactionCategories(f: TransactionEntryObservation) {
+export function applicableTransactionCategories(
+	f: Pick<TransactionEntryObservation, 'categories' | 'organizationId' | 'kind'>
+) {
 	return f.categories.filter(
 		(c) => c.organizationId === f.organizationId && c.kind === f.kind && c.archivedAt === null
+	)
+}
+export function applicableTransactionTags(f: TransactionEntryObservation) {
+	return f.tags.filter(
+		(tag) =>
+			tag.organizationId === f.organizationId && tag.kind === f.kind && tag.archivedAt === null
 	)
 }
 export function createTransactionEntryAvailability(binding: object) {
@@ -148,9 +162,29 @@ export function createTransactionEntryAvailability(binding: object) {
 								!applicableTransactionCategories(f).some((c) => c.id === f.intent?.categoryId)),
 						target: 'unavailableReference'
 					},
+					{ target: 'checkingTags' }
+				]
+			},
+			checkingTags: {
+				always: [
+					{
+						guard: ({
+							context: {
+								observation: { facts: f }
+							}
+						}) =>
+							(f.intent?.tags ?? []).some(
+								(name) =>
+									applicableTransactionTags(f).filter(
+										(tag) => normalizedName(tag.name) === normalizedName(name)
+									).length > 1
+							),
+						target: 'ambiguousTagName'
+					},
 					{ target: 'ready' }
 				]
 			},
+			ambiguousTagName: {},
 			sessionUnavailable: {},
 			selectWorkspace: {},
 			loadFailed: {},
@@ -168,7 +202,8 @@ export function selectTransactionEntryAvailability(
 ): FormCapability<TransactionEntryScope, TransactionEntryReason> {
 	const { revision, facts } = s.context.observation
 	const state = s.value
-	if (state === 'checking') throw new Error('Unassessed transaction entry')
+	if (state === 'checking' || state === 'checkingTags')
+		throw new Error('Unassessed transaction entry')
 	return {
 		revision,
 		scope: transactionEntryScope(facts),

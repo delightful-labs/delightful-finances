@@ -1,3 +1,4 @@
+import { normalizedName } from '#lib/domain/names.js'
 import { assign, getInitialSnapshot, setup, type SnapshotFrom } from 'xstate'
 import type { z } from 'zod'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
@@ -143,16 +144,61 @@ export function createManagementAvailability(binding: object) {
 							context: {
 								observation: { facts: f }
 							}
-						}) =>
-							f.intent?.kind === 'createTag' &&
-							f.intent.categoryId !== null &&
-							!f.categories.some(
-								(c) =>
-									c.id === tagCategoryId(f) &&
-									c.organizationId === f.organizationId &&
-									c.archivedAt === null
-							),
+						}) => {
+							const intent = f.intent
+							return (
+								intent?.kind === 'createTag' &&
+								intent.categoryId !== null &&
+								!f.categories.some(
+									(category) =>
+										category.id === intent.categoryId &&
+										category.organizationId === f.organizationId &&
+										category.kind === intent.tagKind &&
+										category.archivedAt === null
+								)
+							)
+						},
 						target: 'unavailableReference'
+					},
+					{
+						guard: ({
+							context: {
+								observation: { facts: f }
+							}
+						}) => {
+							const intent = f.intent
+							return (
+								intent?.kind === 'createTag' &&
+								f.tags.some(
+									(tag) =>
+										tag.organizationId === f.organizationId &&
+										tag.kind === intent.tagKind &&
+										tag.archivedAt === null &&
+										normalizedName(tag.name) === normalizedName(intent.name)
+								)
+							)
+						},
+						target: 'duplicateName'
+					},
+					{
+						guard: ({
+							context: {
+								observation: { facts: f }
+							}
+						}) => {
+							const intent = f.intent
+							return (
+								intent?.kind === 'createCategory' &&
+								f.categories.some(
+									(category) =>
+										category.organizationId === f.organizationId &&
+										category.archivedAt === null &&
+										category.kind === intent.categoryKind &&
+										normalizedName(category.name) === normalizedName(intent.name)
+								)
+							)
+						},
+						target: 'duplicateName'
 					},
 					{ target: 'ready' }
 				]
@@ -164,6 +210,7 @@ export function createManagementAvailability(binding: object) {
 			readOnly: {},
 			protectedRecord: {},
 			unavailableReference: {},
+			duplicateName: {},
 			ready: {}
 		}
 	})
@@ -205,9 +252,6 @@ function archiveIntentId(f: ManagementObservation) {
 	return f.intent?.kind === 'archiveCategory' || f.intent?.kind === 'archiveTag'
 		? f.intent.id
 		: undefined
-}
-function tagCategoryId(f: ManagementObservation) {
-	return f.intent?.kind === 'createTag' ? f.intent.categoryId : undefined
 }
 
 /** Shared management policy binding; integrations supply each form's unique write and intent. */

@@ -7,7 +7,8 @@
 	import {
 		createTransactionEntryFormOptions,
 		writableTransactionAccounts,
-		applicableTransactionCategories
+		applicableTransactionCategories,
+		applicableTransactionTags
 	} from '#lib/machines/transaction-entry.js'
 	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
@@ -39,7 +40,7 @@
 					.orderBy('name')
 			: undefined
 	)
-	const tagSuggestions = $derived((tagQuery.current ?? []).map((tag) => tag.name))
+	const tagSuggestions = $derived(applicableTransactionTags(observe()).map((tag) => tag.name))
 	const accountQuery = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
@@ -82,6 +83,7 @@
 			grants: observeRows(grantQuery.current),
 			accounts: observeRows(accountQuery.current),
 			categories: observeRows(categoryQuery.current),
+			tags: observeRows(tagQuery.current),
 			loading: [membership, grantQuery, accountQuery, categoryQuery, tagQuery].some(
 				(q) => q.isLoading
 			),

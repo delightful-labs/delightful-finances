@@ -84,6 +84,14 @@
 	const options = formOptions({
 		schema: categoryFormSchema,
 		successContent: 'replace',
+		assessmentObservation: ({ request, observation }) => ({
+			...observation.facts,
+			intent: {
+				kind: 'createCategory',
+				name: request.values.name,
+				categoryKind: request.values.kind
+			}
+		}),
 		write: async ({ request }) => {
 			const id = request.scope.organizationId
 			if (id === null) throw new Error('Missing authorized workspace')

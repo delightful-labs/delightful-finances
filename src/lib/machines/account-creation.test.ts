@@ -18,6 +18,7 @@ afterEach(() => cleanups.splice(0).forEach((fn) => fn()))
 function fixture() {
 	const binding = {}
 	let facts: AccountCreationObservation = {
+		accounts: [],
 		binding,
 		identityId: 'user',
 		organizationId: 'workspace',
@@ -167,6 +168,46 @@ describe('account creation scoped adoption', () => {
 			result: { outcome: 'succeeded' }
 		})
 	})
+	it.each(['cash', 'bank', 'card'] satisfies Account['kind'][])(
+		'rejects normalized duplicate names across %s accounts after refreshing observations',
+		async (kind) => {
+			const f = fixture()
+			await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
+			f.patch({ accounts: [{ ...account, kind, name: '  WALLET ' }] }, false)
+			f.actor.send({ type: 'SUBMIT', values: { name: ' wallet ', kind: 'cash' } })
+			await waitFor(f.actor, (s) => s.context.result?.outcome === 'unavailable')
+			expect(f.view().feedback).toMatchObject({
+				kind: 'result',
+				result: { outcome: 'unavailable', reason: 'duplicateName', settlement: 'notStarted' }
+			})
+			expect(f.create).not.toHaveBeenCalled()
+			expect(f.view().fieldsEditable).toBe(true)
+			f.actor.send({ type: 'SUBMIT', values: { name: 'Savings', kind: 'bank' } })
+			await vi.waitFor(() =>
+				expect(f.create).toHaveBeenCalledExactlyOnceWith('workspace', {
+					name: 'Savings',
+					kind: 'bank'
+				})
+			)
+			f.saved.resolve({ ...account, name: 'Savings', kind: 'bank' })
+			await waitFor(f.actor, (s) => s.context.result?.outcome === 'succeeded')
+		}
+	)
+	it.each([
+		{ ...account, organizationId: 'other' },
+		{ ...account, archivedAt: new Date() }
+	])(
+		'allows a name held outside the active organization or by an archived account',
+		async (existing) => {
+			const f = fixture()
+			f.patch({ accounts: [existing] })
+			await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
+			f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash' } })
+			await vi.waitFor(() => expect(f.create).toHaveBeenCalledTimes(1))
+			f.saved.resolve(account)
+			await waitFor(f.actor, (s) => s.context.result?.outcome === 'succeeded')
+		}
+	)
 	it('echoes only assessed current revisions', async () => {
 		const f = fixture()
 		const actor = createActor(createAccountCreationAvailability(f.binding), {

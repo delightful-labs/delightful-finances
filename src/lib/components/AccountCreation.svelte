@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { observeRow } from '#lib/observations.js'
+	import { observeRow, observeRows } from '#lib/observations.js'
 	import { getContext, type Snippet } from 'svelte'
 	import { fromStore } from 'svelte/store'
-	import { getDb, getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import type { AccountCreationObservation } from '#lib/account-creation-contract.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { createAccountCreationFormOptions } from '#lib/machines/account-creation-access.js'
+	import { app } from '#lib/schema.js'
 	import { createAccount } from '#lib/data.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
@@ -22,6 +23,14 @@
 	const membership = new QuerySubscriptionOne(() =>
 		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 	)
+	const accounts = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.accounts.where({
+					organizationId: filters.activeOrganizationId,
+					archivedAt: { isNull: true }
+				})
+			: undefined
+	)
 	function observe(): AccountCreationObservation {
 		return {
 			identityId: session.current.account?.id ?? null,
@@ -29,8 +38,9 @@
 			binding: session.current.client?.db ?? null,
 			sessionReady: session.current.status === 'ready',
 			membership: observeRow(membership.current),
-			loading: membership.isLoading,
-			error: membership.error
+			accounts: observeRows(accounts.current),
+			loading: membership.isLoading || accounts.isLoading,
+			error: membership.error ?? accounts.error
 		}
 	}
 	const options = createAccountCreationFormOptions({

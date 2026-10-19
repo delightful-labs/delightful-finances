@@ -5,6 +5,8 @@ export const tagsSchema = {
 		{
 			organizationId: s.uuid(),
 			name: s.string(),
+			// Nullable only for legacy tags awaiting an explicit kind migration.
+			kind: s.enum('expense', 'income').optional(),
 			categoryId: s.uuid().optional(),
 			archivedAt: s.timestamp().optional()
 		},

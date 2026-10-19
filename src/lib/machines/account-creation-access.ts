@@ -1,3 +1,4 @@
+import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
 import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
 import type {
@@ -200,7 +201,7 @@ export function createAccountCreationAvailability(binding: object) {
 							guard: ({ context, event }) =>
 								event.snapshot.context.revision === context.observation.revision &&
 								event.snapshot.hasTag('can-create'),
-							target: 'ready'
+							target: 'checkingName'
 						},
 						{
 							guard: ({ context, event }) =>
@@ -218,6 +219,27 @@ export function createAccountCreationAvailability(binding: object) {
 					onError: 'loadFailed'
 				}
 			},
+			checkingName: {
+				always: [
+					{
+						guard: ({
+							context: {
+								observation: { facts }
+							}
+						}) =>
+							facts.submittedName !== undefined &&
+							facts.accounts.some(
+								(account) =>
+									account.organizationId === facts.organizationId &&
+									account.archivedAt === null &&
+									normalizedName(account.name) === normalizedName(facts.submittedName ?? '')
+							),
+						target: 'duplicateName'
+					},
+					{ target: 'ready' }
+				]
+			},
+			duplicateName: { entry: blocked('duplicateName') },
 			sessionUnavailable: { entry: blocked('sessionUnavailable') },
 			selectWorkspace: { entry: blocked('selectWorkspace') },
 			loadFailed: { entry: blocked('loadFailed') },
@@ -265,6 +287,10 @@ export function createAccountCreationFormOptions(dependencies: {
 		observe: dependencies.observe,
 		classifyBlocked: (reason) => (reason === 'readOnly' ? 'denied' : 'unavailable'),
 		successContent: 'replace',
+		assessmentObservation: ({ request, observation }) => ({
+			...observation.facts,
+			submittedName: request.values.name
+		}),
 		write: async ({ request }) => {
 			const id = request.scope.organizationId
 			if (id === null) throw new Error('Missing authorized workspace')

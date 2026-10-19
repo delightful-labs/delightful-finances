@@ -36,6 +36,7 @@
 		<thead
 			><tr>
 				<th scope="col">{m['labels.tag_name']()}</th>
+				<th scope="col">{m['labels.transaction_type']()}</th>
 				<th scope="col">{m['labels.category']()}</th>
 				<th scope="col">{m['labels.actions']()}</th>
 			</tr></thead
@@ -44,6 +45,13 @@
 			{#each tags as tag (tag.id)}
 				<tr>
 					<th scope="row">{tag.name}</th>
+					<td
+						>{tag.kind === 'expense'
+							? m['labels.expenses']()
+							: tag.kind === 'income'
+								? m['labels.income']()
+								: m['tags.kind_unassigned']()}</td
+					>
 					<td
 						>{tag.categoryId
 							? (categoryNames.get(tag.categoryId) ??

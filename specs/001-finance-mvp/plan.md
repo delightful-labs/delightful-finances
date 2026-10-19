@@ -320,3 +320,20 @@ Global developer menu: root layout renders the focus-revealed DeveloperMenu befo
 Encapsulate global developer functionality in DeveloperMenu: own controls context/defaults and observe application readiness internally, binding sample integrations to the existing session using a non-owning JazzSessionProvider with automatic devtools attachment disabled. Compose the pure DeveloperMenuDialog and existing sample presentation. Layout retains only one DeveloperMenu import/mount.
 
 Pagination/developer-menu validation: 8 focused unit tests and 3 isolated in-memory Jazz Playwright scenarios pass; browser-test TypeScript passes. Coverage includes sequential/partial/cancelled batch outcomes, keyboard modal access and focus restoration, both persisted sample kinds and progress across navigation, URL/history/reload/filter behavior, retained full-day totals and compact desktop/mobile pagination. No production change was required. Startup-disabled controls, offline behavior and in-flight scope/result-shrink races remain outside this focused run.
+
+## Category, tag and account name validation correction
+
+Share pure name normalization (`trim().toLowerCase()`) across domain machines.
+Management guards compare active category/tag names within organization and
+income/expense kind; account creation authorizes first, then guards active names
+within the organization across account kinds. Integration components own Jazz
+subscriptions and refreshed pre-write observations. Machines own duplicate states;
+presentation localizes the outcome and preserves inputs. These local checks do
+not guarantee uniqueness across disconnected devices.
+
+Category and account guards are implemented and approved, with focused verification passed. Tag kinds, matching
+category/transaction validation, and inline tag ambiguity guards are implemented and approved, with focused verification passed. Existing tags retain null kinds and historical links; untyped tags
+are excluded from new assignment. The generated additive Jazz migration and snapshot
+are prepared locally with no deployment. Existing-tag migration needs a reviewed policy for
+unlinked and mixed-kind usage before stored data is changed. Add and run focused
+unit/Playwright coverage only after implementation approval.

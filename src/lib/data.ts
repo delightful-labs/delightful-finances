@@ -1,3 +1,4 @@
+import { normalizedName } from './domain/names.js'
 import { ReadTier } from 'jazz-tools'
 import { m } from './paraglide/messages.js'
 import type { getDb } from 'jazz-tools/svelte'
@@ -256,21 +257,24 @@ export async function createTransaction(db: Pick<Db, 'transaction'>, input: AppT
 
 		if (transaction.tags?.length) {
 			const existingTags = await tx.all(
-				app.tags.where({ organizationId: transaction.organizationId })
+				app.tags.where({ organizationId: transaction.organizationId, kind: transaction.kind })
 			)
 			for (const name of transaction.tags) {
 				const matches = existingTags.filter(
-					(tag) => tag.name.trim().toLowerCase() === name.toLowerCase()
+					(tag) =>
+						tag.organizationId === transaction.organizationId &&
+						tag.kind === transaction.kind &&
+						normalizedName(tag.name) === normalizedName(name)
 				)
 				const active = matches.filter((tag) => !tag.archivedAt)
 				if (active.length > 1) throw new Error('The selected tag name is ambiguous.')
-				if (matches.length && !active.length) throw new Error('The selected tag has been archived.')
 				const tag =
 					active[0] ??
 					tx.insert(
 						app.tags,
 						appTagSchema.parse({
 							organizationId: transaction.organizationId,
+							kind: transaction.kind,
 							name,
 							categoryId: transaction.categoryId
 						})
@@ -305,9 +309,10 @@ export function createTag(
 	db: Pick<Db, 'insert'>,
 	organizationId: string,
 	name: string,
+	kind: Category['kind'],
 	categoryId: string | null
 ) {
-	const tag = appTagSchema.parse({ organizationId, name, categoryId })
+	const tag = appTagSchema.parse({ organizationId, name, kind, categoryId })
 	return db.insert(app.tags, tag).wait({ tier: 'local' })
 }
 

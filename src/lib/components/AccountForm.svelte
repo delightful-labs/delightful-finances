@@ -32,6 +32,7 @@
 		selectWorkspace: () => m['workspace.select_workspace'](),
 		loadFailed: () => m['errors.load']({ subject: m['labels.accounts']() }),
 		loading: () => m['status.loading']({ subject: m['labels.accounts']() }),
+		duplicateName: () => m['forms.duplicate_name'](),
 		readOnly: () => m['accounts.create_restricted']()
 	}
 </script>
