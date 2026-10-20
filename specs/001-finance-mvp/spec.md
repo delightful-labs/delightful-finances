@@ -43,7 +43,7 @@ As a user, I can create and review income and expense transactions for an accoun
 2. **Given** I record income paid by check, **When** I save it, **Then** check number and a valid check date are required and stored in a related check-details record; other income methods do not require those fields.
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
-5. **Given** an income or expense view, **When** I review transactions, **Then** entries are grouped by calendar date newest first, with daily totals reflecting selected account filters and kept separate by currency. Each entry shows category, tags, account, amount, and its description when present.
+5. **Given** an income or expense view, **When** I review transactions, **Then** entries are grouped by calendar date newest first, with daily totals reflecting selected account filters and kept separate by currency. Each entry shows category, tags, amount, and its description when present; account names are omitted from list items. The add-transaction action is a floating plus link at the bottom right, with a localized accessible name and the existing income/expense creation destination. Date groups use initially expanded Details disclosures with the date and daily totals in their summaries. Entries place category and tags above the description, with the amount and a single chevron navigation link on the right. Only the chevron is a link; its absolutely positioned pseudo-element expands the hit area across the row, and row text has no link underline.
 
 ### User Story 6 — Maintain a login profile (P2)
 
@@ -295,3 +295,13 @@ Transactions have an optional primary description alongside memo for additional 
 ### Category and tag archive filters
 
 Category and tag settings each offer a native radio group with Default (not archived), Archived only, and All. Default is selected on page entry. Hide the tag archive filter when the workspace has no tags; retain it when only the filtered result is empty. Filtering retains workspace scoping, alphabetical order, historical counts and category labels, and existing archive authorization.
+
+### Desktop transaction workspace
+
+Income, expense, new-transaction, and transaction detail routes share a SvelteKit route-group layout using `/income`, `/income/new`, `/income/[id]`, `/expenses`, `/expenses/new`, and `/expenses/[id]`; detail URLs belong to their transaction kind rather than `/transactions/[id]`. Above the existing 48rem mobile breakpoint, the transaction list occupies a right-side Drawer, initially open. The center remains empty on income/expense index routes; new and selected transaction content renders in the center. The drawer can be closed and reopened using accessible controls and reuses the same UI Drawer as main navigation, including Escape and focus-return behavior. Its list remains available while navigating between entries and forms, with the URL determining income/expense list content. Pagination stays in the URL and is preserved when selecting a transaction or opening creation. On mobile, index routes show the list and new/detail routes show only their existing content. Viewport changes must not remount the center form or discard unsaved input.
+
+After successful local transaction creation, navigate from `/income/new` or `/expenses/new` to its section index (`/income` or `/expenses`), replacing the creation history entry. Validation failures, save failures, partial outcomes, and cancellation remain on the form. Editing retains its existing behavior.
+
+Creation keeps the entered form visible until index navigation completes; do not display an intermediate success/add-another screen.
+
+The transaction workflow machine owns navigation after creation. Navigation failure reports that the transaction is already saved and allows retrying navigation without saving again. Form fields remain visible but disabled through navigation; no intermediate success screen appears.

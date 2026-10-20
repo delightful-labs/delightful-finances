@@ -122,7 +122,7 @@ test('always-visible form supports reverted drafts, repeated offline saves and r
 	context
 }) => {
 	const seed = await seedTransaction(page)
-	await page.goto(`/transactions/${seed.id}`)
+	await page.goto(`/expenses/${seed.id}`)
 	const amount = page.getByLabel('Amount', { exact: true })
 	const save = page.getByRole('button', { name: 'Save transaction', exact: true })
 	await expect(amount).toHaveValue('12.34')
@@ -139,7 +139,7 @@ test('always-visible form supports reverted drafts, repeated offline saves and r
 	await expect(page.getByText('Transaction saved.', { exact: true })).toBeVisible()
 	await expect(amount).toBeEnabled()
 	await expect(save).toBeDisabled()
-	await page.getByLabel('Memo', { exact: true }).fill('Second save')
+	await page.getByLabel('Memo (additional notes)', { exact: true }).fill('Second save')
 	await save.click()
 	await expect(save).toBeDisabled()
 	await expect
@@ -152,7 +152,9 @@ test('always-visible form supports reverted drafts, repeated offline saves and r
 	await context.setOffline(false)
 	await page.reload()
 	await expect(amount).toHaveValue('56.78')
-	await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('Second save')
+	await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
+		'Second save'
+	)
 })
 
 for (const scenario of ['viewer', 'imported', 'archived'] satisfies (
@@ -160,10 +162,12 @@ for (const scenario of ['viewer', 'imported', 'archived'] satisfies (
 )[]) {
 	test(`${scenario} transaction remains visible as a non-editable form`, async ({ page }) => {
 		const seed = await seedTransaction(page, scenario)
-		await page.goto(`/transactions/${seed.id}`)
+		await page.goto(`/expenses/${seed.id}`)
 		await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
 		await expect(page.getByLabel('Amount', { exact: true })).toBeDisabled()
-		await expect(page.getByLabel('Memo', { exact: true })).toHaveValue('Original memo')
+		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
+			'Original memo'
+		)
 		await expect(page.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
 			'Editable ledger'
 		)
@@ -173,7 +177,7 @@ for (const scenario of ['viewer', 'imported', 'archived'] satisfies (
 
 test('removing a tag alone enables Save and persists removal', async ({ page }) => {
 	const seed = await seedTransaction(page)
-	await page.goto(`/transactions/${seed.id}`)
+	await page.goto(`/expenses/${seed.id}`)
 	const save = page.getByRole('button', { name: 'Save transaction', exact: true })
 	await expect(save).toBeDisabled()
 	await page.getByRole('button', { name: 'Remove Historical', exact: true }).click()
@@ -184,7 +188,7 @@ test('removing a tag alone enables Save and persists removal', async ({ page }) 
 
 test('check details can be edited while payment conversion is unavailable', async ({ page }) => {
 	const seed = await seedTransaction(page, 'check')
-	await page.goto(`/transactions/${seed.id}`)
+	await page.goto(`/income/${seed.id}`)
 	const payment = page.getByLabel('Payment method', { exact: true })
 	await expect(payment).toHaveValue('check')
 	await expect(payment.locator('option[value="cash"]')).toBeDisabled()

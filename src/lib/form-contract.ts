@@ -10,7 +10,12 @@ export type FormOperationResult<Result, Reason> =
 	| { outcome: FormInterruption; settlement: FormSettlement }
 	| {
 			outcome: 'failed'
-			code: 'validationFailed' | 'operationFailed' | 'availabilityFailed' | 'unexpected'
+			code:
+				| 'validationFailed'
+				| 'operationFailed'
+				| 'availabilityFailed'
+				| 'unexpected'
+				| 'completionFailed'
 			settlement: FormSettlement
 	  }
 	| {

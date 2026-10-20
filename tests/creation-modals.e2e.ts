@@ -95,7 +95,7 @@ for (const entity of ['category', 'tag']) {
 	})
 }
 
-for (const route of ['/expenses', '/incomes', '/expenses/new', '/incomes/new']) {
+for (const route of ['/expenses', '/income', '/expenses/new', '/income/new']) {
 	test(`first account can be created from ${route} and used for a transaction`, async ({
 		page
 	}) => {
@@ -120,13 +120,10 @@ for (const route of ['/expenses', '/incomes', '/expenses/new', '/incomes/new']) 
 		await description.fill('  First transaction  ')
 		await memo.fill('Additional notes\nSecond line')
 		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
-		await expect(
-			main.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
-		).toBeVisible()
-		await page.goto(route.replace('/new', ''))
+		await expect(page).toHaveURL(route.replace('/new', ''))
 		await expect(main.getByText('First transaction', { exact: true })).toBeVisible()
 		await expect(main.getByText('Additional notes', { exact: false })).toHaveCount(0)
-		await main.getByRole('link').filter({ hasText: 'First transaction' }).click()
+		await main.getByRole('link', { name: /Transaction details:.*First transaction/ }).click()
 		await expect(main.getByLabel('Description', { exact: true })).toHaveValue('First transaction')
 		await expect(main.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
 			'Additional notes\nSecond line'

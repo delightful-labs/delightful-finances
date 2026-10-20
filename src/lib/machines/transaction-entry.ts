@@ -228,6 +228,7 @@ export function createTransactionEntryFormOptions(deps: {
 	binding: object
 	observe: () => TransactionEntryObservation
 	create: (value: AppTransaction) => Promise<void>
+	navigate?: (destination: string, signal: AbortSignal) => Promise<void>
 	save?: (transactionId: TransactionDetail['id'], value: AppTransaction) => Promise<void>
 }) {
 	const availability = createTransactionEntryAvailability(deps.binding)
@@ -241,8 +242,8 @@ export function createTransactionEntryFormOptions(deps: {
 			reason === 'readOnly' ? 'denied' : 'unavailable'
 	}
 	const schema = transactionFormSchema(() => deps.observe())
-	const createOptions = () =>
-		createSingleWriteFormOptions<
+	const createOptions = () => {
+		const options = createSingleWriteFormOptions<
 			AppTransaction,
 			void,
 			TransactionEntryReason,
@@ -260,6 +261,16 @@ export function createTransactionEntryFormOptions(deps: {
 			}),
 			write: async ({ request }) => deps.create(request.values)
 		})
+		const navigate = deps.navigate
+		return navigate
+			? {
+					...options,
+					complete: (scope: TransactionEntryScope, signal: AbortSignal) =>
+						navigate(scope.kind === 'income' ? '/income' : '/expenses', signal)
+				}
+			: options
+	}
+
 	if (!deps.save) return createOptions()
 	return createSingleWriteFormOptions<
 		AppTransaction,

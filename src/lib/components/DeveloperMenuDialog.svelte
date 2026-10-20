@@ -14,8 +14,8 @@
 		children: Snippet
 		appId: string
 		serverUrl: string
-		browserOrigin?: string
-		accountId?: string
+		browserOrigin?: string | undefined
+		accountId?: string | undefined
 	} = $props()
 	let open = $state(false)
 	const dialogId = $props.id()

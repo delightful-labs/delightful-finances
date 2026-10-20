@@ -1,0 +1,192 @@
+import { expect, test, type Page } from '@playwright/test'
+
+async function seed(page: Page, count = 0) {
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
+	).toBeEnabled()
+	await page.evaluate(async (count) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const dataPath = '/src/lib/data.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const { createTransaction }: typeof import('../src/lib/data.js') = await import(dataPath)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const [organization] = await db.all(app.organizations)
+		if (!organization) throw new Error('Missing organization')
+		const account = await db
+			.insert(app.accounts, {
+				organizationId: organization.id,
+				name: 'Workspace ledger',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'local' })
+		const categories = await db.all(
+			app.categories.where({ organizationId: organization.id, kind: 'expense' })
+		)
+		const category = categories[0]
+		if (!category) throw new Error('Missing expense category')
+		for (let index = 0; index < count; index++) {
+			const result = await createTransaction(db, {
+				organizationId: organization.id,
+				accountId: account.id,
+				categoryId: category.id,
+				kind: 'expense',
+				money: { amountMinor: 100, currency: 'USD' },
+				bookedOn: '2026-10-19',
+				description: `Seed ${index}`,
+				source: { source: 'manual' },
+				tags: []
+			})
+			if ('error' in result) throw new Error(result.error)
+		}
+	}, count)
+}
+
+async function savedCount(page: Page, description: string) {
+	return page.evaluate(async (description) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		return (await db.all(app.transactions)).filter((row) => row.description === description).length
+	}, description)
+}
+
+for (const desktop of [true, false]) {
+	for (const kind of ['expense', 'income']) {
+		const base = kind === 'income' ? '/income' : '/expenses'
+		const label = kind === 'income' ? 'Add Income' : 'Add Expenses'
+		test(`${desktop ? 'desktop' : 'mobile'} ${kind} goes directly from creation to its section, including offline`, async ({
+			page,
+			context
+		}) => {
+			await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
+			await seed(page)
+			await page.goto(base)
+			const main = page.getByRole('main')
+			const drawer = main.locator('aside[data-side="right"]')
+			if (desktop) {
+				await expect(drawer).toHaveAttribute('data-open', 'true')
+				await expect(main.locator('.transaction-content')).toHaveText('', { useInnerText: true })
+			} else await expect(drawer).toHaveCount(0)
+			await main.getByRole('link', { name: label, exact: true }).click()
+			await expect(page).toHaveURL(`${base}/new`)
+			const amount = main.getByLabel('Amount', { exact: true })
+			await expect(amount).toBeEnabled()
+			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await expect(page).toHaveURL(`${base}/new`)
+			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(0)
+			if (desktop) await expect(drawer).toBeVisible()
+			else await expect(main.locator('.entries')).toHaveCount(0)
+			await amount.fill('12.34')
+			await main.getByLabel('Description', { exact: true }).fill('Saved directly')
+			if (desktop) {
+				await page.setViewportSize({ width: 390, height: 900 })
+				await expect(amount).toHaveValue('12.34')
+				await expect(drawer).toHaveCount(0)
+				await page.setViewportSize({ width: 1440, height: 900 })
+				await expect(amount).toHaveValue('12.34')
+			}
+			await page.evaluate(() => {
+				document.documentElement.dataset.creationFlash = 'no'
+				const observer = new MutationObserver(() => {
+					if (
+						location.pathname.endsWith('/new') &&
+						/Add another transaction|Transaction saved\./.test(
+							document.querySelector('main')?.textContent ?? ''
+						)
+					) {
+						document.documentElement.dataset.creationFlash = 'yes'
+					}
+				})
+				observer.observe(document.body, { childList: true, subtree: true })
+			})
+			await context.setOffline(true)
+			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await expect(page).toHaveURL(base)
+			await expect(main.getByText('Saved directly', { exact: true })).toBeVisible()
+			expect(await page.locator('html').getAttribute('data-creation-flash')).toBe('no')
+			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(1)
+			await context.setOffline(false)
+			await page.goBack()
+			await expect(page).toHaveURL(base)
+			await page.goForward()
+			await expect(page).toHaveURL(base)
+			await main.getByRole('link', { name: /Transaction details:.*Saved directly/ }).click()
+			await expect(page).toHaveURL(new RegExp(`${base}/[^/]+$`))
+			await expect(amount).toHaveValue('12.34')
+			await expect(amount).toBeEnabled()
+			await amount.fill('15.00')
+			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await expect(main.getByText('Transaction saved.', { exact: true })).toBeVisible()
+			await expect(page).not.toHaveURL(base)
+			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(1)
+			await page.reload()
+			await expect(amount).toHaveValue('15.00')
+		})
+	}
+}
+
+test('desktop drawer closes/reopens and preserves pagination through selection, creation and reload', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 })
+	await seed(page, 26)
+	await page.goto('/expenses')
+	const main = page.getByRole('main')
+	const drawer = main.locator('aside[data-side="right"]')
+	await expect(drawer).toHaveAttribute('data-open', 'true')
+	await drawer.getByRole('button', { name: 'Close transaction list', exact: true }).click()
+	await expect(drawer).toHaveAttribute('aria-hidden', 'true')
+	const reopen = main.getByRole('button', { name: 'Open transaction list', exact: true })
+	await reopen.click()
+	await drawer.locator('.entries a').first().focus()
+	await page.keyboard.press('Escape')
+	await expect(drawer).toHaveAttribute('aria-hidden', 'true')
+	await expect(reopen).toBeFocused()
+	await reopen.click()
+	const day = drawer.locator('details').first()
+	await expect(day).toHaveAttribute('open', '')
+	await day.locator('summary').click()
+	await expect(day).not.toHaveAttribute('open', '')
+	await day.locator('summary').click()
+	await drawer.getByRole('link', { name: 'Page 2', exact: true }).click()
+	await expect(page).toHaveURL('/expenses?page=2')
+	await expect(drawer.locator('.entries > li')).toHaveCount(1)
+	const item = drawer.locator('.entries > li').first()
+	await expect(item.getByRole('link')).toHaveCount(1)
+	await expect(item).not.toContainText('Workspace ledger')
+	await item.hover()
+	const colors = await item.evaluate((element) => ({
+		background: getComputedStyle(element).backgroundColor,
+		text: getComputedStyle(element.querySelector('.classification span') ?? element).color,
+		chevron: getComputedStyle(element.querySelector('svg') ?? element).color
+	}))
+	expect(colors).toEqual({
+		background: 'rgb(148, 255, 71)',
+		text: 'rgb(38, 38, 38)',
+		chevron: 'rgb(38, 38, 38)'
+	})
+	await item.getByRole('link').click()
+	await expect(page).toHaveURL(/\/expenses\/[^/]+\?page=2$/)
+	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
+	await expect(drawer.locator('.entries > li')).toHaveCount(1)
+	await page.reload()
+	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
+	await expect(drawer).toHaveAttribute('data-open', 'true')
+	await expect(drawer.locator('.entries > li')).toHaveCount(1)
+	await drawer.getByRole('link', { name: 'Add Expenses', exact: true }).click()
+	await expect(page).toHaveURL('/expenses/new?page=2')
+	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('')
+	await expect(drawer.locator('.entries > li')).toHaveCount(1)
+})

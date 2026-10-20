@@ -1,5 +1,6 @@
 import {
 	assign,
+	fromPromise,
 	raise,
 	sendParent,
 	and,
@@ -47,6 +48,8 @@ export type ScopedFormOptions<
 	scopeOf: (observation: Observation) => Scope
 	sameScope: (left: Scope, right: Scope) => boolean
 	successContent?: 'replace' | 'retain'
+	/** Post-persistence I/O owned by the workflow. */
+	complete?: (scope: Scope, signal: AbortSignal) => Promise<void>
 	/** Release file drafts and rebuild controls after successful inline saves. */
 	resetOnSuccess?: boolean
 } & FormMode<Values, Observation>
@@ -153,7 +156,11 @@ export function createScopedFormMachine<
 			failed: { type: 'final' }
 		}
 	})
-	const actors = { availability, submission }
+	const completion = fromPromise<void, { scope: Scope }>(async ({ input, signal }) => {
+		if (!options.complete) throw new Error('Missing form completion effect')
+		await options.complete(input.scope, signal)
+	})
+	const actors = { availability, submission, completion }
 	const ready = (context: Context) =>
 		context.capability?.revision === context.observation?.revision &&
 		context.capability?.readiness.kind === 'ready' &&
@@ -171,7 +178,7 @@ export function createScopedFormMachine<
 		Context,
 		Event,
 		typeof actors,
-		{},
+		{ availability: 'availability'; submission: 'submission'; completion: 'completion' },
 		{},
 		{
 			closing: undefined
@@ -409,6 +416,18 @@ export function createScopedFormMachine<
 											})
 										},
 										{
+											guard: ({ context, event }) =>
+												options.complete !== undefined &&
+												event.output.outcome === 'succeeded' &&
+												context.request?.scopeRevision === context.scopeRevision,
+											target: 'completion',
+											actions: assign({
+												result: ({ event }) => event.output,
+												request: undefined,
+												submission: undefined
+											})
+										},
+										{
 											target: 'idle',
 											actions: assign({
 												result: ({ context, event }) =>
@@ -496,6 +515,36 @@ export function createScopedFormMachine<
 									}
 								}
 							},
+							completion: {
+								initial: 'navigating',
+								on: {
+									SHUTDOWN: 'closed',
+									INVALIDATE: {
+										// Scope changes clear the result before raising INVALIDATE.
+										// Capability refreshes cannot undo an already persisted success.
+										guard: ({ context }) => context.result === undefined,
+										target: 'idle',
+										actions: clearDraft
+									},
+									CANCEL: { target: 'idle', actions: clearDraft }
+								},
+								states: {
+									navigating: {
+										invoke: {
+											id: 'completion',
+											src: 'completion',
+											input: ({ context }) => {
+												if (!context.scope) throw new Error('Missing saved form scope')
+												return { scope: context.scope.value }
+											},
+											onDone: 'completed',
+											onError: 'failed'
+										}
+									},
+									failed: { on: { SUBMIT: 'navigating' } },
+									completed: {}
+								}
+							},
 							closed: { type: 'final' }
 						}
 					}
@@ -559,18 +608,23 @@ export function selectScopedFormView<
 	const closed =
 		snapshot.status === 'done' || snapshot.matches({ open: { availability: 'closed' } })
 	const failed = snapshot.status === 'error' || snapshot.status === 'stopped'
+	const completing = snapshot.matches({ open: { workflow: 'completion' } })
+	const navigationPending = snapshot.matches({ open: { workflow: { completion: 'navigating' } } })
+	const completionFailed = snapshot.matches({ open: { workflow: { completion: 'failed' } } })
 	const readiness: ScopedFormView<Result, Reason>['readiness'] = closed
 		? { kind: 'closed' }
-		: failed || snapshot.matches({ open: { availability: 'failed' } })
-			? { kind: 'failed' }
-			: snapshot.matches({ open: { availability: { watching: 'current' } } }) && capability
-				? capability.readiness
-				: { kind: 'observing' }
+		: completing
+			? { kind: 'ready' }
+			: failed || snapshot.matches({ open: { availability: 'failed' } })
+				? { kind: 'failed' }
+				: snapshot.matches({ open: { availability: { watching: 'current' } } }) && capability
+					? capability.readiness
+					: { kind: 'observing' }
 	const canSubmit = !failed && snapshot.can({ type: 'SUBMIT', values: snapshot.context.draft })
 	return {
 		readiness,
 		content:
-			result?.outcome === 'succeeded' && options.successContent !== 'retain'
+			!completing && result?.outcome === 'succeeded' && options.successContent !== 'retain'
 				? { kind: 'success', value: result.value }
 				: { kind: 'fields' },
 		activity: failed
@@ -582,10 +636,21 @@ export function selectScopedFormView<
 					}
 				: submission?.hasTag('validating')
 					? { kind: 'validating' }
-					: snapshot.matches({ open: { workflow: 'active' } })
+					: snapshot.matches({ open: { workflow: 'active' } }) || navigationPending
 						? { kind: 'operating' }
 						: { kind: 'idle' },
-		feedback: result ? { kind: 'result', result } : { kind: 'none' },
+		feedback: completionFailed
+			? {
+					kind: 'result',
+					result: {
+						outcome: 'failed',
+						code: 'completionFailed',
+						settlement: result?.settlement ?? 'locallyPersisted'
+					}
+				}
+			: !completing && result
+				? { kind: 'result', result }
+				: { kind: 'none' },
 		canSubmit,
 		fieldsEditable: !failed && snapshot.can({ type: 'CHANGE', values: undefined }),
 		canReset: !failed && snapshot.can({ type: 'RESET' }),

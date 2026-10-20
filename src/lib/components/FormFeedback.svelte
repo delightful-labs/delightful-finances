@@ -57,6 +57,8 @@
 		<p role="status">
 			{successMessage ? successMessage(result.value) : m['actions.saved']({ subject })}
 		</p>
+	{:else if result.outcome === 'failed' && result.code === 'completionFailed'}
+		<p role="alert">{m['forms.completion_failed']()}</p>
 	{:else if result.outcome === 'invalid' || (result.outcome === 'failed' && result.code === 'validationFailed')}<p
 			role="alert"
 		>

@@ -287,7 +287,11 @@
 				<Button type="reset">{m['transactions.add_another']()}</Button>
 			{:else if mode === 'create' || view.readiness.kind === 'ready'}
 				<Button type="submit" disabled={!form.canSubmit}>
-					{m['transactions.save']()}
+					{view.feedback.kind === 'result' &&
+					view.feedback.result.outcome === 'failed' &&
+					view.feedback.result.code === 'completionFailed'
+						? m['actions.retry']()
+						: m['transactions.save']()}
 				</Button>
 			{/if}
 		{/snippet}

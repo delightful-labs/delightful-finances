@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Text } from 'delightful-ui'
-	import SplitRow from './SplitRow.svelte'
+	import Icon from './AppIcon.svelte'
+	import ChevronRight from 'tdesign-icons-svg/src/chevron-right.svg?component'
 	import type { TransactionRow } from '#lib/schema.js'
 	import { formatMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -10,47 +11,100 @@
 		transaction,
 		href,
 		categoryName,
-		accountName,
 		tagNames = []
 	}: {
 		href: string
 		transaction: TransactionRow
 		categoryName: string | undefined
-		accountName: string | undefined
 		tagNames?: readonly string[]
 	} = $props()
+	const labelId = $props.id()
 	const tags = $derived(new Intl.ListFormat(getLocale(), { style: 'short', type: 'unit' }))
 </script>
 
 <li>
-	<a {href}>
-		<SplitRow>
-			<div class="classification">
-				<Text as="span"
-					><strong
-						>{categoryName ??
-							m['transactions.unavailable_item']({ subject: m['labels.category']() })}</strong
-					></Text
-				>
-				{#if tagNames.length}<Text as="span">{tags.format(tagNames)}</Text>{/if}
-			</div>
-			{#snippet trailing()}
-				<Text as="span"
-					>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</Text
-				>
-			{/snippet}
-		</SplitRow>
-		{#if transaction.description}<Text>{transaction.description}</Text>{/if}
-		<Text size="sm">
-			{accountName ?? m['transactions.unavailable_item']({ subject: m['labels.account']() })}
-		</Text>
-	</a>
+	<div class="content">
+		<div class="classification">
+			<Text size="sm" as="span"
+				><strong
+					>{categoryName ??
+						m['transactions.unavailable_item']({ subject: m['labels.category']() })}</strong
+				></Text
+			>
+			{#if tagNames.length}<Text size="sm" as="span">{tags.format(tagNames)}</Text>{/if}
+		</div>
+		{#if transaction.description}<Text size="sm"><em>{transaction.description}</em></Text>{/if}
+	</div>
+	<Text size="sm" as="span"
+		>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</Text
+	>
+	<a {href} aria-labelledby={labelId}><Icon icon={ChevronRight} /></a>
+	<span id={labelId} class="link-label"
+		>{m['transactions.details']()}: {categoryName ??
+			m['transactions.unavailable_item']({ subject: m['labels.category']() })}, {transaction.description
+			? `${transaction.description}, `
+			: ''}{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span
+	>
 </li>
 
 <style>
-	a {
+	li {
+		--dui-text-color: currentColor;
+		font-size: var(--dui-font-size-sm);
+		position: relative;
 		display: grid;
-		gap: var(--dui-spacing-xxs);
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		align-items: baseline;
+		gap: var(--dui-spacing-xs) var(--dui-spacing-md);
+		padding: var(--dui-spacing-xs);
+	}
+
+	.content {
+		display: grid;
+		min-inline-size: 0;
+		overflow-wrap: anywhere;
+	}
+
+	a {
+		color: inherit;
+		display: inline-flex;
+		align-self: start;
+		align-items: center;
+		justify-content: center;
+		min-inline-size: 24px;
+		min-block-size: 24px;
+		text-decoration: none;
+	}
+
+	li:hover {
+		color: var(--dui-color-on-accent);
+		background-color: var(--dui-color-accent);
+	}
+
+	a::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+	}
+
+	a:focus-visible {
+		outline: none;
+	}
+
+	a:focus-visible::after {
+		outline: 2px solid var(--dui-color-focus, currentColor);
+		outline-offset: 2px;
+	}
+
+	.link-label {
+		position: absolute;
+		inline-size: 1px;
+		block-size: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
 	.classification {

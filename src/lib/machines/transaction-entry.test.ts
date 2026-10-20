@@ -12,6 +12,7 @@ import {
 	sameTransactionEntryScope,
 	applicableTransactionTags
 } from './transaction-entry.js'
+import { createScopedFormMachine } from './scoped-form.js'
 import type { AppTransaction } from '#lib/domain/transaction.js'
 import type { TransactionDetail } from '#lib/schema.js'
 const binding = {}
@@ -334,4 +335,62 @@ describe('transaction entry prerequisites and authorization', () => {
 		expect(create).not.toHaveBeenCalled()
 		stale.stop()
 	})
+})
+
+describe('creation navigation', () => {
+	it.each(['expense', 'income'] satisfies TransactionDetail['kind'][])(
+		'navigates a saved %s to its section, without an intermediate idle success',
+		async (kind) => {
+			const observation: TransactionEntryObservation = {
+				...facts(),
+				kind,
+				categories: facts().categories.map((category) => ({ ...category, kind }))
+			}
+			const persisted = Promise.withResolvers<void>()
+			const navigation = Promise.withResolvers<void>()
+			const create = vi.fn(() => persisted.promise)
+			const navigate = vi.fn((_destination: string, _signal: AbortSignal) => navigation.promise)
+			const options = createTransactionEntryFormOptions({
+				binding,
+				observe: () => observation,
+				create,
+				navigate
+			})
+			const actor = createActor(createScopedFormMachine(options), { input: observation }).start()
+			try {
+				actor.send({
+					type: 'SUBMIT',
+					values: {
+						accountId: 'account',
+						categoryId: 'category',
+						amount: '1.00',
+						bookedOn: '2026-10-18',
+						tags: [],
+						...(kind === 'income' ? { paymentMethod: 'cash' } : {})
+					}
+				})
+				await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+				expect(navigate).not.toHaveBeenCalled()
+				persisted.resolve()
+				await waitFor(actor, (snapshot) =>
+					snapshot.matches({ open: { workflow: { completion: 'navigating' } } })
+				)
+				expect(navigate).toHaveBeenCalledExactlyOnceWith(
+					kind === 'income' ? '/income' : '/expenses',
+					expect.any(AbortSignal)
+				)
+				expect(actor.getSnapshot().context.result).toMatchObject({
+					outcome: 'succeeded',
+					settlement: 'locallyPersisted'
+				})
+				navigation.resolve()
+				await waitFor(actor, (snapshot) =>
+					snapshot.matches({ open: { workflow: { completion: 'completed' } } })
+				)
+				expect(create).toHaveBeenCalledTimes(1)
+			} finally {
+				actor.stop()
+			}
+		}
+	)
 })

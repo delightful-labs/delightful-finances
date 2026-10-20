@@ -12,6 +12,6 @@
 <nav aria-label={m['navigation.label']()}>
 	<ul>
 		<li><a href="/expenses">{m['labels.expenses']()}</a></li>
-		<li><a href="/incomes">{m['labels.income']()}</a></li>
+		<li><a href="/income">{m['labels.income']()}</a></li>
 	</ul>
 </nav>

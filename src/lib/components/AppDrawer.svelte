@@ -115,7 +115,7 @@
 			</li>
 			<li>
 				<AppNavigationLink
-					href="/incomes"
+					href="/income"
 					{pathname}
 					icon={IncomeIcon}
 					label={m['labels.income']()}

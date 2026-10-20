@@ -373,3 +373,43 @@ Merge integration with editable transactions: preserve the editable details form
 - [x] After approval, add and run focused coverage for default selection, archived-only/all filtering, live archive updates, and workspace isolation.
 
 Verification: both focused Playwright scenarios pass in `tests/duplicate-names.e2e.ts` using the isolated in-memory Jazz configuration. Coverage includes both pages, native keyboard radio selection, alphabetical order, empty filtered results, live offline archiving in all/default views, retained archived records after reload, workspace isolation, and hiding the tag filter only when there are no tags. Browser-test TypeScript checks pass. Initial failures were test setup issues (startup dialog timing and empty-message capitalization), corrected without production changes. Existing XState assign warnings remain. No separate unit tests were added for this presentation-only change.
+
+### Transaction list layout
+
+- [x] Implement initially expanded date Details and rows with plain text, right-aligned amounts, and a single stretched chevron link.
+- [x] Obtain implementation review.
+- [x] After approval, add and run focused Playwright coverage for disclosure toggling and row navigation.
+
+### Desktop transaction workspace
+
+- [x] Move transaction routes into a shared route group, with income at `/income` and details under `/income/[id]` or `/expenses/[id]`.
+- [x] Compose the existing list integration in an initially open desktop right Drawer and keep the center empty on index routes.
+- [x] Preserve mobile page separation, center form ownership across viewport changes, and drawer pagination in selection/creation links.
+- [x] Reuse delightful-ui Drawer and the shared viewport breakpoint, with localized close/reopen controls.
+- [x] Obtain implementation review.
+- [x] After approval, add and run focused Playwright coverage for drawer default/close/reopen, income/expense selection, pagination, direct links, mobile routing, and unsaved form preservation across resizing.
+
+Implementation reviewed and testing authorized by the user. Focused Prettier and whitespace checks pass. The full application check remains blocked by the existing DeveloperMenu.svelte optional browserOrigin type error; browser-test TypeScript checks pass.
+
+Route revision: income navigation and creation now use `/income` and `/income/new`; detail links use `/income/[id]` and `/expenses/[id]`. The URL selects the drawer kind directly, removing the layout’s redundant record subscription and remembered-kind state.
+
+### Return to list after creation
+
+- [x] Navigate successful income/expense creation to the section index using the machine’s succeeded result, replacing the `/new` history entry.
+- [x] Obtain implementation review.
+- [x] After approval, verify income/expense creation navigation on desktop and mobile, including remaining on the form when validation or persistence fails.
+
+- [x] Keep creation fields visible through successful navigation and suppress the intermediate success/add-another presentation.
+- [x] After implementation approval, include absence of the intermediate success screen in creation navigation coverage.
+
+### Machine-owned creation navigation
+
+- [x] Replace component success effects and visibility flags with an invoked completion workflow after persisted, same-scope success.
+- [x] Model navigation pending, completed, and failed states; retry only navigation without repeating the write.
+- [x] Keep the disabled form visible through navigation and availability refreshes; handle scope invalidation and shutdown before late completion.
+- [x] Obtain implementation review.
+- [x] After approval, add/run focused scoped-form unit coverage for success routing, navigation failure/retry without duplicate writes, scope invalidation, shutdown, and unchanged non-navigation form behavior; update the relevant creation browser coverage.
+
+Verification: 56 focused unit tests pass in `scoped-form.test.ts`, `scoped-form-completion.test.ts`, and `transaction-entry.test.ts`. Coverage includes navigation after accepted local persistence, the income/expense destinations, retained disabled fields without an intermediate success screen, retrying failed navigation without another write, same-scope readiness refreshes, cancellation, scope changes, shutdown, ignored late results, and unchanged forms without completion configured.
+
+All 15 focused browser scenarios pass across the suite and targeted reruns using `playwright.transaction-workspace.config.ts` on disposable in-memory Jazz at port 5181: five workspace scenarios, six existing edit scenarios, and four first-account/creation scenarios. Coverage includes desktop/mobile income and expense creation, native validation, offline writes and redirect, absence of the success-screen flash, replacement of `/new` in browser history, retained form input across resizing, drawer close/reopen and Escape focus return, date disclosure, one link per row, row hover colors, pagination through selection/creation/reload, kind-specific detail URLs, repeated edits, archived tags, check details, and read-only transactions. Browser testing exposed a disconnected opener; it now remains mounted and hidden while the drawer is open so focus can return correctly. The creation adapter uses SvelteKit's current `replace` option. Focused formatting/whitespace and browser-test TypeScript checks pass. Existing XState assign warnings remain in browser logs. The unrelated DeveloperMenu optional-property type error still prevents a clean full application check. The user's persistent development environment was not used or cleared.

@@ -21,11 +21,6 @@
 </script>
 
 {#if transaction}
-	<p>
-		<a href={transaction.kind === 'expense' ? '/expenses' : '/incomes'}>
-			{transaction.kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}
-		</a>
-	</p>
 	{@render form()}
 	<dl>
 		<dt>{m['transactions.created_by']()}</dt>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation'
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { orderAccounts } from '#lib/machines/account-order.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
@@ -110,6 +111,10 @@
 	const options = createTransactionEntryFormOptions({
 		binding: db,
 		observe,
+		navigate: (destination, signal) => {
+			signal.throwIfAborted()
+			return goto(destination, { replace: true })
+		},
 		create: async (transaction) => {
 			const result = await createTransaction(db, transaction)
 			if ('error' in result) throw new Error(result.error)

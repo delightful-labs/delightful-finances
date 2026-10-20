@@ -137,7 +137,6 @@
 	.workspace {
 		display: flex;
 		align-items: flex-start;
-		gap: var(--dui-space-sm, 1rem);
 		min-block-size: 0;
 		flex: 1;
 	}

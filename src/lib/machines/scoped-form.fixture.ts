@@ -25,7 +25,13 @@ afterEach(() => {
 	cleanup.splice(0).forEach((stop) => stop())
 })
 
-export function fixture(options: { schema?: z.ZodType<Values>; retain?: boolean } = {}) {
+export function fixture(
+	options: {
+		schema?: z.ZodType<Values>
+		retain?: boolean
+		complete?: (scope: string, signal: AbortSignal) => Promise<void>
+	} = {}
+) {
 	const received = vi.fn<(event: FormChildEvent<Facts>) => void>()
 	const started = vi.fn<(input: FormOperationInput<Values, string, Facts>) => void>()
 	const availability = setup<
@@ -91,6 +97,7 @@ export function fixture(options: { schema?: z.ZodType<Values>; retain?: boolean 
 		}
 	})
 	const config = {
+		...(options.complete ? { complete: options.complete } : {}),
 		schema: options.schema ?? schema,
 		availability,
 		operation,

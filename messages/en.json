@@ -24,6 +24,7 @@
 		"description": "A local-first personal finance tracker."
 	},
 	"forms": {
+		"completion_failed": "Your changes were saved, but the next page could not open. Retry to open it without saving again.",
 		"session_unavailable": "Editing is unavailable until your session is ready. If your session changed, reopen this page.",
 		"loading": "Loading editing permissions and records…",
 		"load_failed": "Editing information could not be loaded.",
@@ -159,6 +160,10 @@
 		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
 	},
 	"transactions": {
+		"drawer": {
+			"open": "Open transaction list",
+			"close": "Close transaction list"
+		},
 		"samples": {
 			"add_income": "Add 25 sample income transactions",
 			"add_expenses": "Add 25 sample expense transactions",

@@ -103,7 +103,7 @@ messages/en.json
 static/
 ```
 
-Current routes: `/`, `/accounts`, `/expenses`, `/expenses/new`, `/incomes`, `/incomes/new`, `/login`, `/account` (account recovery), `/settings/workspace`, `/settings/categories`, `/settings/tags`, and `/transactions/[id]`. Account management uses the shared sidebar and existing account list/create forms; history stays in the income/expense views.
+Current routes: `/`, `/accounts`, `/expenses`, `/expenses/new`, `/income`, `/income/new`, `/login`, `/account` (account recovery), `/settings/workspace`, `/settings/categories`, `/settings/tags`, and `/income/[id]` / `/expenses/[id]`. Account management uses the shared sidebar and existing account list/create forms; history stays in the income/expense views.
 
 Workspace settings use `/settings/workspace` and a reusable `WorkspaceNameForm` component. Read the submitted form with `FormData`, validate a trimmed non-empty name with Zod, and save through Jazz at the local durability tier. Owners/admins may edit; members/viewers get read-only controls. The component, page wiring, and sidebar navigation are implemented; the navigation test confirms the selected workspace and database session survive client navigation. Five shared form-machine unit tests and five workspace browser tests pass after implementation approval. Reactive reads use Jazz’s `QuerySubscriptionOne`; `QueryContent` shares loading/error feedback.
 
@@ -345,3 +345,13 @@ Add an optional Jazz string column through a local additive migration, preservin
 ### Category and tag archive filters
 
 Subscribe to all workspace categories/tags in their existing integration pages. Keep the three-way filter as simple local presentation state in CategoryList and TagList, using a shared ArchiveFilter presentation component for localized native radios and derived visible rows in each list. The shared control exposes a typed bound value and uses a unique radio group name per instance. Preserve complete observations for management authorization and duplicate-name guards. Review implementation before adding or running focused tests.
+
+Transaction list layout: use the shared Details component with initially expanded date/total summaries. Keep row presentation in TransactionListItem, using a three-column layout and one accessible chevron link whose pseudo-element covers the row. Preserve existing theme colors and grouping/pagination behavior. Disclosure state stays local to Details.
+
+Desktop transaction workspace: move income/expense/detail route shells into `(transactions)` and add one shared `+layout.svelte` integration that derives the transaction kind from the income/expense URL. Keep existing form integrations intact. A pure TransactionWorkspace presentation owns the responsive right Drawer, reuses delightful-ui Drawer and the existing isMobile helper, and composes a stable center snippet with the existing TransactionView integration. Drawer visibility and remembered list kind are simple presentation state; no new workflow effects or actor lifecycle changes are needed. Use the same 48rem breakpoint as navigation. Mobile index/list and new/detail separation remains unchanged. Preserve page query state in row and creation links. Obtain implementation review before adding or running focused browser coverage.
+
+Creation navigation: transaction-entry configures the scoped-form machine’s optional completion actor. After an accepted, same-scope persisted success, the machine transitions directly from submission to completion.navigating, invokes the bound navigation adapter, and reaches completion.completed or completion.failed. The route integration only binds SvelteKit goto with replace; it does not observe success or decide navigation. Editing does not configure completion and keeps its existing behavior.
+
+Creation navigation presentation: the machine selector retains disabled fields and hides success feedback throughout completion. It keeps the form surface visible during availability refreshes after saving. A failed navigation projects completionFailed feedback and enables Retry, which re-enters only the navigation state without repeating persistence. Scope invalidation and shutdown exit the completion invocation; late actor results cannot advance the old workflow. No navigation effects or success-visibility flags live in components.
+
+The drawer opener remains mounted (hidden while open), allowing the shared Drawer to restore focus to the same connected control after Escape.

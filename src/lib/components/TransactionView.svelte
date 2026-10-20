@@ -13,8 +13,9 @@
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import PageContent from './PageContent.svelte'
+	import FloatingActionLink from './FloatingActionLink.svelte'
 
-	let { kind }: { kind: 'income' | 'expense' } = $props()
+	let { kind, showHeading = true }: { kind: 'income' | 'expense'; showHeading?: boolean } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 
 	const requestedPage = $derived.by(() => {
@@ -28,6 +29,14 @@
 		else url.searchParams.set('page', String(number))
 		return `${url.pathname}${url.search}${url.hash}`
 	}
+	function transactionHref(id: string) {
+		const query = requestedPage > 1 ? `?page=${requestedPage}` : ''
+		return `${kind === 'income' ? '/income' : '/expenses'}/${id}${query}`
+	}
+	const newHref = $derived(
+		`${kind === 'income' ? '/income/new' : '/expenses/new'}${requestedPage > 1 ? `?page=${requestedPage}` : ''}`
+	)
+
 	let previousPaginationScope:
 		{ organizationId: string | null; pathname: string; key: string } | undefined
 	$effect(() => {
@@ -82,7 +91,6 @@
 			? app.transactionTags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const accountNames = $derived(new Map((accounts.current ?? []).map((row) => [row.id, row.name])))
 	const categoryNames = $derived(
 		new Map((categories.current ?? []).map((row) => [row.id, row.name]))
 	)
@@ -99,22 +107,10 @@
 	const groups = $derived(groupTransactionsByDate(visibleTransactions))
 </script>
 
-<svelte:head>
-	<title
-		>{kind === 'income' ? m['labels.income']() : m['labels.expenses']()} · {m['app.name']()}</title
-	>
-</svelte:head>
-
 <PageContent>
-	<PageHeader
-		title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
-		action={{
-			href: kind === 'income' ? '/incomes/new' : '/expenses/new',
-			label: m['actions.add']({
-				name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
-			})
-		}}
-	/>
+	{#if showHeading}<PageHeader
+			title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
+		/>{/if}
 
 	<QueryContent
 		queries={[transactions, accounts, categories, tags, links]}
@@ -130,7 +126,7 @@
 				{groups}
 				{requestedPage}
 				{pageHref}
-				{accountNames}
+				{transactionHref}
 				{categoryNames}
 				{tagNamesByTransaction}
 				noAccountsSelected={filters.selectedAccountIds !== null &&
@@ -139,3 +135,10 @@
 		{/key}
 	</QueryContent>
 </PageContent>
+
+<FloatingActionLink
+	href={newHref}
+	label={m['actions.add']({
+		name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+	})}
+/>
