@@ -158,5 +158,6 @@
 		view={form.view}
 		onsubmit={form.submit}
 		onreset={form.reset}
+		oncancel={() => goto('/')}
 	/>
 {/if}

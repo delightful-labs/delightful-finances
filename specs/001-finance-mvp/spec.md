@@ -302,6 +302,8 @@ Income, expense, new-transaction, and transaction detail routes share a SvelteKi
 
 After successful local transaction creation, navigate from `/income/new` or `/expenses/new` to its section index (`/income` or `/expenses`), replacing the creation history entry. Validation failures, save failures, partial outcomes, and cancellation remain on the form. Editing retains its existing behavior.
 
+Income and expense creation forms provide a localized Cancel button beside Save. Cancel navigates to the main Overview page (`/`) without submitting or validating the draft.
+
 Creation keeps the entered form visible until index navigation completes; do not display an intermediate success/add-another screen.
 
 The transaction workflow machine owns navigation after creation. Navigation failure reports that the transaction is already saved and allows retrying navigation without saving again. Form fields remain visible but disabled through navigation; no intermediate success screen appears.

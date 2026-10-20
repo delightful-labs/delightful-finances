@@ -355,3 +355,5 @@ Creation navigation: transaction-entry configures the scoped-form machine’s op
 Creation navigation presentation: the machine selector retains disabled fields and hides success feedback throughout completion. It keeps the form surface visible during availability refreshes after saving. A failed navigation projects completionFailed feedback and enables Retry, which re-enters only the navigation state without repeating persistence. Scope invalidation and shutdown exit the completion invocation; late actor results cannot advance the old workflow. No navigation effects or success-visibility flags live in components.
 
 The drawer opener remains mounted (hidden while open), allowing the shared Drawer to restore focus to the same connected control after Escape.
+
+Creation Cancel: TransactionForm receives an optional navigation callback and renders the existing localized non-submit Button before Save in create mode. TransactionEntry binds it to goto(`/`), shared by income and expense creation. This is simple navigation and needs no additional workflow state. Editing remains unchanged.

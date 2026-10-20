@@ -32,6 +32,7 @@
 		view,
 		onsubmit,
 		onreset,
+		oncancel,
 		oninput
 	}: {
 		kind: TransactionDetail['kind']
@@ -58,6 +59,7 @@
 		view: TransactionEntryView
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
+		oncancel?: () => void
 		oninput?: (event: Event) => void
 	} = $props()
 
@@ -283,10 +285,13 @@
 			{/if}
 		{/snippet}
 		{#snippet controls(form)}
+			{#if mode === 'create' && oncancel}
+				<Button type="button" onclick={oncancel}>{m['actions.cancel']()}</Button>
+			{/if}
 			{#if form.content.kind === 'success' && mode === 'create'}
 				<Button type="reset">{m['transactions.add_another']()}</Button>
 			{:else if mode === 'create' || view.readiness.kind === 'ready'}
-				<Button type="submit" disabled={!form.canSubmit}>
+				<Button type="submit" variant="primary" disabled={!form.canSubmit}>
 					{view.feedback.kind === 'result' &&
 					view.feedback.result.outcome === 'failed' &&
 					view.feedback.result.code === 'completionFailed'

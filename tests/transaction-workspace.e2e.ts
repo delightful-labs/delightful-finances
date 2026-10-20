@@ -66,6 +66,35 @@ for (const desktop of [true, false]) {
 	for (const kind of ['expense', 'income']) {
 		const base = kind === 'income' ? '/income' : '/expenses'
 		const label = kind === 'income' ? 'Add Income' : 'Add Expenses'
+		for (const valid of [false, true]) {
+			test(`${desktop ? 'desktop' : 'mobile'} ${kind} Cancel returns to Overview without saving ${valid ? 'a valid' : 'an invalid'} draft`, async ({
+				page
+			}) => {
+				await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
+				await seed(page)
+				await page.goto(`${base}/new`)
+				const main = page.getByRole('main')
+				const amount = main.getByLabel('Amount', { exact: true })
+				await expect(amount).toBeEnabled()
+				await main.getByLabel('Description', { exact: true }).fill('Cancelled draft')
+				if (valid) await amount.fill('12.34')
+				expect(
+					await main
+						.locator('form')
+						.evaluate((form) => form instanceof HTMLFormElement && form.checkValidity())
+				).toBe(valid)
+				const cancel = main.getByRole('button', { name: 'Cancel', exact: true })
+				await expect(cancel).toHaveAttribute('type', 'button')
+				await expect(cancel).not.toHaveClass(/\bprimary\b/)
+				await expect(
+					main.getByRole('button', { name: 'Save transaction', exact: true })
+				).toHaveClass(/\bprimary\b/)
+				await cancel.click()
+				await expect(page).toHaveURL('/')
+				await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+				await expect.poll(() => savedCount(page, 'Cancelled draft')).toBe(0)
+			})
+		}
 		test(`${desktop ? 'desktop' : 'mobile'} ${kind} goes directly from creation to its section, including offline`, async ({
 			page,
 			context
@@ -126,6 +155,9 @@ for (const desktop of [true, false]) {
 			await expect(page).toHaveURL(new RegExp(`${base}/[^/]+$`))
 			await expect(amount).toHaveValue('12.34')
 			await expect(amount).toBeEnabled()
+			await expect(main.getByRole('button', { name: 'Save transaction', exact: true })).toHaveClass(
+				/\bprimary\b/
+			)
 			await amount.fill('15.00')
 			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
 			await expect(main.getByText('Transaction saved.', { exact: true })).toBeVisible()
