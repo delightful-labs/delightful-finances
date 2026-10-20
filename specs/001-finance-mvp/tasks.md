@@ -418,3 +418,9 @@ All 15 focused browser scenarios pass across the suite and targeted reruns using
 - [x] After implementation approval, add/run focused browser coverage for Cancel on both creation routes, including invalid drafts.
 
 Cancel/primary Save verification: all 12 focused Playwright scenarios pass (eight Cancel cases covering valid/invalid income/expense drafts on desktop/mobile, plus four existing offline creation/edit regressions). Cancel returns to Overview without saving; Save uses the primary style in create/edit mode. Browser-test TypeScript, focused Prettier and whitespace checks pass. Existing XState assign warnings remain.
+
+- [x] Extract a reusable avatar display and show existing creator/editor profile avatars beside transaction attribution names; prefill the DUI profile avatar input and preserve name fallbacks.
+- [ ] After implementation review, add/run focused avatar display and transaction attribution coverage (missing/broken/replaced images and object URL cleanup).
+
+- [x] Put transaction attribution and timestamps in a Metadata Details disclosure closed by default; implementation approved for testing.
+- [x] Verify desktop/mobile disclosure defaults, pointer/keyboard toggling, visible editable form and retained drafts, timestamps, and closed-on-reload behavior. All eight transaction-edit Playwright scenarios pass, including six existing edit regressions; browser-test TypeScript, focused formatting and whitespace checks pass.

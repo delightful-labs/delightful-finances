@@ -316,3 +316,19 @@ loading presentation with the existing Jazz startup spinner. Keep existing error
 feedback and authorization checks. This reduces layout changes without reserving
 placeholder rows for records that have not loaded. Implementation reviewed for testing. Focused coverage checks loading accessibility,
 retained controls and layout, error precedence, and category creation after loading.
+
+### Transaction attribution avatars
+
+Transaction details show each available profile avatar beside its creator and latest
+editor name. Missing or unreadable images retain the display-name/account-ID fallback.
+A reusable pure avatar display receives image bytes and MIME type, owns and revokes
+its object URLs. The account settings avatar input is prefilled with a File made
+from the saved image bytes and supplies its own preview. Adjacent-name avatars
+are decorative for accessibility. The settings input retains its localized labels,
+replacement save action, and a single input removal button. It removes a saved
+avatar through the existing workflow or clears an unsaved replacement to restore
+the saved preview. No new subscription, permission, or workflow state is added.
+
+Transaction detail creator/editor attribution, avatars, and timestamps appear inside
+a DUI Details disclosure labeled Metadata, closed by default. The editable form
+remains outside the disclosure.

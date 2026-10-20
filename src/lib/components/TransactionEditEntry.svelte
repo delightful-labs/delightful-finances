@@ -167,8 +167,8 @@
 	{#key `${session.current.account?.id}:${filters.activeOrganizationId}:${page.params.id}`}
 		<TransactionDetails
 			transaction={observe().transaction}
-			creatorName={creatorQuery.current?.displayName || transaction?.$createdBy.account}
-			editorName={editorQuery.current?.displayName || transaction?.$updatedBy.account}
+			creatorProfile={creatorQuery.current}
+			editorProfile={editorQuery.current}
 		>
 			{#snippet form()}
 				<FormFeedback

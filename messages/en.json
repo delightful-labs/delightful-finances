@@ -204,6 +204,7 @@
 		"daily_total": "Daily total: {amount}",
 		"unavailable_item": "{subject} unavailable",
 		"details": "Transaction details",
+		"metadata": "Metadata",
 		"save_edit": "Save changes",
 		"cancel_edit": "Cancel editing",
 		"unavailable": "This transaction is unavailable in the selected workspace.",

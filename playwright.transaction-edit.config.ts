@@ -2,8 +2,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
 	testDir: './tests',
 	webServer: {
-		command:
-			'pnpm exec vite dev --config vite.e2e.config.ts --host 127.0.0.1 --port 5180 --strictPort',
+		command: 'pnpm dev:agent --host 127.0.0.1',
 		url: 'http://127.0.0.1:5180',
 		reuseExistingServer: !process.env.CI
 	},

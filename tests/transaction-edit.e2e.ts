@@ -198,3 +198,53 @@ test('check details can be edited while payment conversion is unavailable', asyn
 	await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
 	await expect.poll(async () => (await persisted(page, seed.id)).checkNumber).toBe('101')
 })
+
+for (const viewport of [
+	{ width: 1280, height: 900 },
+	{ width: 390, height: 844 }
+]) {
+	test(`metadata starts closed and toggles independently of the form at ${viewport.width}px`, async ({
+		page
+	}) => {
+		await page.setViewportSize(viewport)
+		const seed = await seedTransaction(page)
+		await page.goto(`/expenses/${seed.id}`)
+		const main = page.getByRole('main')
+		const metadata = main
+			.locator('details')
+			.filter({ has: page.locator('summary', { hasText: 'Metadata' }) })
+		const summary = metadata.locator('summary')
+		const amount = main.getByLabel('Amount', { exact: true })
+		await expect(amount).toHaveValue('12.34')
+		await expect(amount).toBeVisible()
+		await expect(metadata).not.toHaveAttribute('open')
+		await expect(metadata.locator('dl')).toBeHidden()
+		await amount.fill('45.67')
+		await summary.click()
+		await expect(metadata).toHaveAttribute('open', '')
+		await expect(metadata.locator('dl')).toBeVisible()
+		await expect(metadata.locator('dt')).toHaveText([
+			'Created by',
+			'Created at',
+			'Last edited by',
+			'Last edited at'
+		])
+		await expect(metadata.locator('.attribution').first()).not.toHaveText('')
+		await expect(metadata.locator('.attribution').last()).not.toHaveText('')
+		const times = metadata.locator('time')
+		await expect(times).toHaveCount(2)
+		for (const time of await times.all()) {
+			await expect(time).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/)
+			await expect(time).not.toHaveText('')
+		}
+		await summary.focus()
+		await page.keyboard.press('Enter')
+		await expect(metadata).not.toHaveAttribute('open')
+		await expect(metadata.locator('dl')).toBeHidden()
+		await expect(amount).toBeVisible()
+		await expect(amount).toHaveValue('45.67')
+		await page.reload()
+		await expect(amount).toHaveValue('12.34')
+		await expect(metadata).not.toHaveAttribute('open')
+	})
+}

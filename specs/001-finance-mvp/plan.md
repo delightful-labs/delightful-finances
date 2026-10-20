@@ -357,3 +357,12 @@ Creation navigation presentation: the machine selector retains disabled fields a
 The drawer opener remains mounted (hidden while open), allowing the shared Drawer to restore focus to the same connected control after Escape.
 
 Creation Cancel: TransactionForm receives an optional navigation callback and renders the existing localized non-submit Button before Save in create mode. TransactionEntry binds it to goto(`/`), shared by income and expense creation. This is simple navigation and needs no additional workflow state. Editing remains unchanged.
+
+Transaction attribution avatars reuse existing creator/editor profile subscriptions in
+TransactionEditEntry. Avatar owns presentation-only object URL creation/cleanup,
+image failure, and size/alt props; TransactionDetails composes it beside both names.
+ProfileAvatarForm prefills DUI InputAvatar's bound File from saved bytes, using the
+input's own preview instead of a separate display. Compare the selected File with
+the saved File so only a new selection shows Save. Use the input's single removal
+button for saved removal; clearing a replacement restores the saved preview.
+No statechart or authorization changes; test coverage follows implementation review.
