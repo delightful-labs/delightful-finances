@@ -307,3 +307,12 @@ Income and expense creation forms provide a localized Cancel button beside Save.
 Creation keeps the entered form visible until index navigation completes; do not display an intermediate success/add-another screen.
 
 The transaction workflow machine owns navigation after creation. Navigation failure reports that the transaction is already saved and allows retrying navigation without saving again. Form fields remain visible but disabled through navigation; no intermediate success screen appears.
+
+### Category loading layout
+
+Category settings keep the page heading, archive filter/list area, and Add category
+control rendered beneath an inert loading overlay while queries load. Use a shared
+loading presentation with the existing Jazz startup spinner. Keep existing error
+feedback and authorization checks. This reduces layout changes without reserving
+placeholder rows for records that have not loaded. Implementation reviewed for testing. Focused coverage checks loading accessibility,
+retained controls and layout, error precedence, and category creation after loading.

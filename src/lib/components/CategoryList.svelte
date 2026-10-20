@@ -11,12 +11,14 @@
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
+		loading = false,
 		categories,
 		counts,
 		archivableCategoryIds,
 		archiveView,
 		onArchive
 	}: {
+		loading?: boolean
 		categories: readonly Category[]
 		counts: ReadonlyMap<string, { transactions: number; tags: number }>
 		archivableCategoryIds: readonly string[]
@@ -46,7 +48,7 @@
 
 <ArchiveFilter bind:value={archiveFilter} />
 
-{#if visibleCategories.length}
+{#if loading || visibleCategories.length}
 	<Table caption={m['labels.categories']()}>
 		<thead
 			><tr>

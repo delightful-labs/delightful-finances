@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './AppIcon.svelte'
-	import { Button, LoadingScreen } from 'delightful-ui'
+	import { Button } from 'delightful-ui'
+	import LoadingContent from './LoadingContent.svelte'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -16,7 +17,7 @@
 </script>
 
 <main class:recoverable={error && Boolean(onRetry)}>
-	<LoadingScreen
+	<LoadingContent
 		style={error && onRetry ? '--dui-loading-screen-min-height: auto' : undefined}
 		variant={error ? 'error' : 'loading'}
 		text={workspace && error

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { StatusMessage } from 'delightful-ui'
+	import LoadingContent from './LoadingContent.svelte'
 	import type { Snippet } from 'svelte'
 	import type { QuerySubscription } from 'jazz-tools/svelte'
 
@@ -7,11 +8,13 @@
 		queries,
 		loadingMessage,
 		errorMessage,
-		children
+		children,
+		keepContentWhileLoading = false
 	}: {
 		queries: readonly Pick<QuerySubscription<{ id: string }>, 'isLoading' | 'error'>[]
 		loadingMessage: string
 		errorMessage: string
+		keepContentWhileLoading?: boolean
 		children: Snippet
 	} = $props()
 
@@ -21,6 +24,10 @@
 
 {#if failed}
 	<StatusMessage variant="error" text={errorMessage} />
+{:else if keepContentWhileLoading}
+	<LoadingContent {loading} text={loadingMessage}>
+		{@render children()}
+	</LoadingContent>
 {:else if loading}
 	<StatusMessage variant="loading" text={loadingMessage} />
 {:else}

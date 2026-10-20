@@ -123,14 +123,16 @@
 </script>
 
 <svelte:head><title>{m['labels.categories']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['labels.categories']()} />
 <QueryContent
+	keepContentWhileLoading
 	queries={[categories, transactions, tags, membership]}
 	loadingMessage={m['status.loading']({ subject: m['labels.categories']() })}
 	errorMessage={m['errors.load']({ subject: m['labels.categories']() })}
 >
-	{#if filters.activeOrganizationId && membership.current}
+	<PageHeader title={m['labels.categories']()} />
+	{#if filters.activeOrganizationId && (membership.current || membership.isLoading)}
 		<CategoryList
+			loading={categories.isLoading}
 			categories={categories.current ?? []}
 			{counts}
 			archivableCategoryIds={archivableIds}
@@ -138,13 +140,13 @@
 			{onArchive}
 		/>
 	{/if}
-</QueryContent>
 
-<CategoryForm
-	{scope}
-	view={form.view}
-	onopen={form.open}
-	onsubmit={form.submit}
-	onreset={form.reset}
-	onRetryReadiness={form.retryReadiness}
-/>
+	<CategoryForm
+		{scope}
+		view={form.view}
+		onopen={form.open}
+		onsubmit={form.submit}
+		onreset={form.reset}
+		onRetryReadiness={form.retryReadiness}
+	/>
+</QueryContent>
