@@ -56,7 +56,9 @@
 			{@render list(false)}
 		</Drawer>
 	{:else if index}
-		{@render list(true)}
+		<div class="transaction-mobile-list">
+			{@render list(true)}
+		</div>
 	{/if}
 </div>
 
@@ -78,6 +80,7 @@
 	}
 
 	.transaction-content {
+		view-transition-name: transaction-content;
 		display: grid;
 		align-content: start;
 		gap: var(--dui-spacing-md);
@@ -87,6 +90,10 @@
 
 	.transaction-workspace[data-desktop='false'] .transaction-content.index {
 		display: none;
+	}
+
+	.transaction-mobile-list {
+		view-transition-name: transaction-content;
 	}
 
 	.drawer-toggle[hidden] {
