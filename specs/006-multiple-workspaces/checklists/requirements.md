@@ -17,18 +17,18 @@
 - [x] Sharing privacy, capabilities, additive composition, invitations, ownership, departure, and archive principles recorded.
 - [x] Acceptance scenarios and measurable outcomes describe initial and future behavior.
 - [x] Edge cases and evidence limits identified.
-- [ ] D3 resolved: workspace navigation/selection remains explicitly deferred at user request.
+- [x] D3 resolved: route-based workspace persistence approved after plan review.
 - [ ] Future-sharing detail groups resolved: capability bundles, grant authority, invitation protocol, catalog availability, lifecycle details.
 - [ ] Existing constitution/MVP/merge artifacts aligned before dependent implementation.
 
 ## Feature Readiness
 
-- [x] Consolidated draft ready for user review.
-- [ ] Fully implementation-ready: navigation decisions and technical-policy verification remain.
+- [x] Creation/startup plan reviewed and approved; route-based workspace choice recorded.
+- [ ] Fully implementation-ready: concrete route mapping and technical-policy verification remain.
 - [ ] Sharing implementation-ready: later detail groups remain intentionally deferred.
 
 ## Notes
 
 D28 confirms additive role capabilities plus individual grants, without explicit denial overrides. Removing one source does not remove capabilities supplied by another valid source. Mandatory membership/scope/lifecycle restrictions still apply.
 
-No additional product questions are pending in this review cycle. D3 remains deferred. No application code or tests were added or run. Sharing/permission management remains outside the first release; future design must preserve the approved privacy and capability model.
+No additional product questions are pending in this review cycle. D3 now approves route-based workspace persistence; concrete routing design remains. No application code or tests were added or run. Sharing/permission management remains outside the first release; future design must preserve the approved privacy and capability model.
