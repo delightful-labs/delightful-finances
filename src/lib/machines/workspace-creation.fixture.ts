@@ -2,6 +2,7 @@ import { afterEach, vi } from 'vitest'
 import { createActor } from 'xstate'
 import { Transaction } from 'jazz-tools'
 import { workspaceCreationTransaction } from './workspace-creation-transaction.js'
+import { workspaceInitialization } from './workspace-initialization.js'
 import { persistWorkspaceCreation } from './workspace-creation-persistence.js'
 import type { WorkspaceCreationAttempt } from '../domain/workspace-creation.js'
 import { type Organization } from '../schema.js'
@@ -50,6 +51,7 @@ export function creationFixture() {
 	})
 	const all = vi.spyOn(tx, 'all').mockResolvedValue([])
 	const insert = vi.spyOn(tx, 'insert').mockReturnValue(workspace)
+	const update = vi.spyOn(tx, 'update').mockImplementation(() => {})
 	const rollback = vi.spyOn(tx, 'rollback').mockResolvedValue(true)
 	// The SDK commit handle is opaque; mock this I/O boundary, not the machine states.
 	const wait = vi.fn(async (_options: { tier: 'local' }) => {})
@@ -59,8 +61,8 @@ export function creationFixture() {
 		async (_query: unknown, _options?: { tier?: string }): Promise<never[]> => []
 	)
 	const db = { beginTransaction, all: hydrate }
-	function transaction() {
-		const actor = createActor(workspaceCreationTransaction, { input: { db, attempt } })
+	function transaction(purpose: 'additional' | 'bootstrap' | 'receipt' = 'additional') {
+		const actor = createActor(workspaceCreationTransaction, { input: { db, attempt, purpose } })
 		cleanups.push(() => actor.stop())
 		actor.start()
 		return actor
@@ -71,7 +73,22 @@ export function creationFixture() {
 		actor.start()
 		return actor
 	}
+	function initialization() {
+		const discover = vi.fn().mockResolvedValue([])
+		const getConfig = vi.fn().mockReturnValue({ serverUrl: 'https://unused.invalid' })
+		const actor = createActor(workspaceInitialization, {
+			input: {
+				db: { beginTransaction, all: discover, getConfig },
+				userId
+			}
+		})
+		cleanups.push(() => actor.stop())
+		return { actor, discover, getConfig }
+	}
+
 	return {
+		initialization,
+		update,
 		tx,
 		one,
 		all,
