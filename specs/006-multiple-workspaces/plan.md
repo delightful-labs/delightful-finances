@@ -178,3 +178,41 @@ stateDiagram-v2
 The child has a parallel interruption region (active/cancelling/closing) so cancellation/shutdown never loses an acquiring/open transaction or interrupts rollback/commit settlement. It checks interruption at pre-commit boundaries, rolls back before issue, and drains committed writes afterward. Shutdown takes precedence over cancellation. The parent forwards interruption without exiting the invoked child. Profile-unavailable, conflict, failure and interrupted results carry truthful notStarted/locallyPersisted/unresolved evidence; an unconfirmed rollback is unresolved. Occupied attempts return to the future creation parent for reconciliation rather than repair/replay.
 
 The parent must send cancellation/shutdown and await completion rather than directly stop the owner. Installed Jazz `beginTransaction`, transaction `commit`, `rollback`, and local write-handle wait were inspected for this resource model. Only type narrowing remains conditional outside guarded transitions. TypeScript passes; no tests added/run before implementation approval.
+
+### Approved foundation verification
+
+After the user requested continuation following machine review, added 22 focused unit cases across workspace creation payload, persistence composition, and transaction ownership. All pass. The existing 54 `data.test.ts` persistence regressions also passed. Coverage includes stable identities across retries/localized label changes, duplicate-name isolation, canonical validation, hydration failures/cancellation, profile/occupied-attempt guards, staged-write rollback, acquisition failure, cancellation before commit, shutdown precedence, parent/child forwarding, local settlement waits, and unresolved cleanup/write outcomes.
+
+The transaction fixture uses an SDK Transaction object with mocked I/O methods/commit handle; these tests verify machine decisions and resource calls, not native Jazz atomicity or real-server policy acceptance. One test initially waited on parent snapshots for child progress; it now waits directly on the child persistence boundary. No production code changes were needed for these tests. Browser and server acceptance verification remain for integration slices; no development server was started or persistent data changed. Final TypeScript validation and whitespace checks cover the test additions.
+
+### Startup child implementation review (before live integration)
+
+Implemented `workspace-initialization.ts` and extended the existing transaction child with explicit bootstrap/receipt request variants. This is a focused machine review; the live `readiness.ts`/legacy `ensurePersonalWorkspace` path has not been replaced yet. The previously added tests remain in the working tree; no tests were added or run for these newly changed implementations before review.
+
+Machine-first classification: discovery is a related read leaf; preparing IDs/payload is a preparation leaf; initialization is a workflow because receipt, accessible-workspace, identity ambiguity, and authoritative-first-use decisions govern different writes. Transaction resource ownership remains in the existing child; new profile/receipt writes are individual staging actors selected by guards.
+
+```mermaid
+stateDiagram-v2
+    [*] --> readingLocal
+    readingLocal --> checkingProfiles
+    checkingProfiles --> duplicateProfiles: more than one profile
+    checkingProfiles --> checkingReceipt: zero or one profile
+    checkingReceipt --> ready: initialization provenance present
+    checkingReceipt --> checkingExisting: no receipt
+    checkingExisting --> recordingReceipt: matching profile and accessible workspace
+    checkingExisting --> profileMissing: workspace exists without profile
+    checkingExisting --> authorityUnavailable: no local data and no configured authority
+    checkingExisting --> awaitingAuthority: otherwise
+    awaitingAuthority --> ready: remote receipt exists
+    awaitingAuthority --> recordingReceipt: remote profile and workspace exist
+    awaitingAuthority --> bootstrapping: authoritative profile and workspace lists empty
+    awaitingAuthority --> legacyAmbiguous: profile exists but no workspace or receipt
+    recordingReceipt --> ready: locally persisted
+    bootstrapping --> ready: locally persisted
+```
+
+The actual chart separates preparation and authoritative-result checks into named states. Reads, preparation, child failure, conflict, unavailable, cancellation and shutdown have explicit outcomes. Cancellation/shutdown before transaction acquisition cannot start creation; during a transaction the parent forwards events and waits for rollback/settlement. A pending remote read remains awaitingAuthority rather than interpreting an offline empty cache as first use. The machine is fixed to one identity/database binding; live integration must shut it down and await completion before replacing that binding.
+
+Bootstrap atomically stages the profile with its initialization receipt plus organization, owner membership, and seeds. It preserves legacy deterministic initial IDs only for compatibility. Legacy receipt recording updates only the user profile, does not prepare or insert seed categories, and never selects an active workspace. An already-existing receipt found transactionally is conflict/retry, never overwritten. Ordinary additional creation still requires an existing profile and does not update initialization provenance.
+
+Known integration work: replace live legacy bootstrap; compose explicit identity/shutdown/retry ownership under readiness; remove personal-kind selection preference; provide recoverable presentation for ambiguous/authority-waiting cases; preserve required system-category/profile-link repair as a separate reviewed invariant workflow. No missing-access membership repair or optional-default reseeding is permitted in the new initialization child. No schema deployment, data reset, route moves, or UI changes in this review. TypeScript and whitespace checks pass; new behavior is not runtime-verified yet.

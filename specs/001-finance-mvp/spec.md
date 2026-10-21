@@ -298,6 +298,8 @@ Category and tag settings each offer a native radio group with Default (not arch
 
 ### Desktop transaction workspace
 
+Mobile transaction detail pages provide a localized Back to list link to the matching income or expense index, preserving URL pagination. This link is hidden on desktop and creation pages.
+
 Income, expense, new-transaction, and transaction detail routes share a SvelteKit route-group layout using `/income`, `/income/new`, `/income/[id]`, `/expenses`, `/expenses/new`, and `/expenses/[id]`; detail URLs belong to their transaction kind rather than `/transactions/[id]`. Above the existing 48rem mobile breakpoint, the transaction list occupies a right-side Drawer, initially open. The center remains empty on income/expense index routes; new and selected transaction content renders in the center. The drawer can be closed and reopened using accessible controls and reuses the same UI Drawer as main navigation, including Escape and focus-return behavior. Its list remains available while navigating between entries and forms, with the URL determining income/expense list content. Pagination stays in the URL and is preserved when selecting a transaction or opening creation. On mobile, index routes show the list and new/detail routes show only their existing content. Viewport changes must not remount the center form or discard unsaved input.
 
 After successful local transaction creation, navigate from `/income/new` or `/expenses/new` to its section index (`/income` or `/expenses`), replacing the creation history entry. Validation failures, save failures, partial outcomes, and cancellation remain on the form. Editing retains its existing behavior.

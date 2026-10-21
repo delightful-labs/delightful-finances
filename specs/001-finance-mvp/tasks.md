@@ -426,4 +426,6 @@ Cancel/primary Save verification: all 12 focused Playwright scenarios pass (eigh
 - [ ] After implementation approval, add/run focused transaction navigation coverage for list/new/detail and history navigation, reduced motion, unsupported API, skipped captures, and unchanged-path/outside-route exclusions.
 
 - [x] Put transaction attribution and timestamps in a Metadata Details disclosure closed by default; implementation approved for testing.
+- [x] Add a localized mobile Back to list link on income and expense detail pages, preserving URL pagination; awaiting implementation review.
+- [ ] After implementation approval, add/run focused coverage for mobile detail back links, matching section and pagination, and absence on desktop and creation pages.
 - [x] Verify desktop/mobile disclosure defaults, pointer/keyboard toggling, visible editable form and retained drafts, timestamps, and closed-on-reload behavior. All eight transaction-edit Playwright scenarios pass, including six existing edit regressions; browser-test TypeScript, focused formatting and whitespace checks pass.

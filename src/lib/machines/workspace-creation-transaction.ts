@@ -1,6 +1,7 @@
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Organization } from '../schema.js'
+import { workspaceCreationAttemptSchema } from '../validation/identity.js'
 import type { WorkspaceCreationAttempt } from '../domain/workspace-creation.js'
 
 export type WorkspacePersistenceEvent = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
@@ -15,7 +16,11 @@ export type WorkspacePersistenceResult =
 
 type Db = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<Db['beginTransaction']>
-type Input = { db: Db; attempt: WorkspaceCreationAttempt }
+export type WorkspaceReceiptAttempt = Omit<WorkspaceCreationAttempt, 'categories'>
+type Input = { db: Db } & (
+	| { attempt: WorkspaceCreationAttempt; purpose?: 'additional' | 'bootstrap' }
+	| { attempt: WorkspaceReceiptAttempt; purpose: 'receipt' }
+)
 type Event = WorkspacePersistenceEvent
 
 // Boundary narrowing only; workflow eligibility is decided by guarded states below.
@@ -26,7 +31,11 @@ function required<T>(value: T | undefined): T {
 
 const open = fromPromise(({ input }: { input: Db }) => Promise.resolve(input.beginTransaction()))
 const read = fromPromise(
-	async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) => {
+	async ({
+		input
+	}: {
+		input: { tx: Transaction; attempt: WorkspaceCreationAttempt | WorkspaceReceiptAttempt }
+	}) => {
 		const { tx, attempt } = input
 		const [profile, organization, membership, categories] = await Promise.all([
 			tx.one(app.profiles.where({ id: attempt.profileId, userId: attempt.workspace.ownerId })),
@@ -60,13 +69,31 @@ const insert = fromPromise(
 		return workspace
 	}
 )
+const createProfile = fromPromise(
+	async ({ input }: { input: { tx: Transaction; attempt: WorkspaceReceiptAttempt } }) =>
+		input.tx.insert(
+			app.profiles,
+			{
+				userId: input.attempt.workspace.ownerId,
+				initialWorkspaceId: input.attempt.organizationId
+			},
+			{ id: input.attempt.profileId }
+		)
+)
+const recordReceipt = fromPromise(
+	async ({ input }: { input: { tx: Transaction; attempt: WorkspaceReceiptAttempt } }) =>
+		input.tx.update(app.profiles, input.attempt.profileId, {
+			initialWorkspaceId: input.attempt.organizationId
+		})
+)
 const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
 const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
 	input.wait({ tier: 'local' })
 )
 const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
 
-type Context = Input & {
+type Context = {
+	request: Input
 	tx: Transaction | undefined
 	records: OutputFrom<typeof read> | undefined
 	workspace: Organization | undefined
@@ -82,6 +109,8 @@ export const workspaceCreationTransaction = setup<
 		open: typeof open
 		read: typeof read
 		insert: typeof insert
+		createProfile: typeof createProfile
+		recordReceipt: typeof recordReceipt
 		commit: typeof commit
 		settle: typeof settle
 		rollback: typeof rollback
@@ -94,7 +123,7 @@ export const workspaceCreationTransaction = setup<
 	Input,
 	WorkspacePersistenceResult
 >({
-	actors: { open, read, insert, commit, settle, rollback },
+	actors: { open, read, insert, createProfile, recordReceipt, commit, settle, rollback },
 	guards: {
 		closing: stateIn({ running: { control: 'closing' } }),
 		cancelling: stateIn({ running: { control: 'cancelling' } })
@@ -102,7 +131,7 @@ export const workspaceCreationTransaction = setup<
 }).createMachine({
 	id: 'workspace-creation-transaction',
 	context: ({ input }) => ({
-		...input,
+		request: input,
 		tx: undefined,
 		records: undefined,
 		workspace: undefined,
@@ -139,7 +168,7 @@ export const workspaceCreationTransaction = setup<
 						opening: {
 							invoke: {
 								src: 'open',
-								input: ({ context }) => context.db,
+								input: ({ context }) => context.request.db,
 								onDone: {
 									target: 'checkingAfterOpen',
 									actions: assign({ tx: ({ event }) => event.output })
@@ -166,7 +195,10 @@ export const workspaceCreationTransaction = setup<
 						reading: {
 							invoke: {
 								src: 'read',
-								input: ({ context }) => ({ tx: required(context.tx), attempt: context.attempt }),
+								input: ({ context }) => ({
+									tx: required(context.tx),
+									attempt: context.request.attempt
+								}),
 								onDone: {
 									target: 'checkingProfile',
 									actions: assign({ records: ({ event }) => event.output })
@@ -188,7 +220,13 @@ export const workspaceCreationTransaction = setup<
 								{ guard: 'closing', target: 'rollingBack' },
 								{ guard: 'cancelling', target: 'rollingBack' },
 								{
-									guard: ({ context }) => context.records?.profile != null,
+									guard: ({ context }) =>
+										context.records?.profile != null && context.request.purpose !== 'bootstrap',
+									target: 'checkingReceipt'
+								},
+								{
+									guard: ({ context }) =>
+										context.records?.profile == null && context.request.purpose === 'bootstrap',
 									target: 'checkingAttempt'
 								},
 								{
@@ -202,14 +240,49 @@ export const workspaceCreationTransaction = setup<
 								}
 							]
 						},
+						checkingReceipt: {
+							always: [
+								{
+									guard: ({ context }) =>
+										context.request.purpose === 'receipt' &&
+										context.records?.profile?.initialWorkspaceId != null,
+									target: 'rollingBack',
+									actions: assign({
+										result: (): WorkspacePersistenceResult => ({
+											outcome: 'conflict',
+											settlement: 'notStarted'
+										})
+									})
+								},
+								{ target: 'checkingAttempt' }
+							]
+						},
 						checkingAttempt: {
 							always: [
+								{
+									guard: ({ context }) =>
+										context.request.purpose === 'receipt' && context.records?.organization != null,
+									target: 'recordingReceipt',
+									actions: assign({
+										workspace: ({ context }) => required(context.records?.organization ?? undefined)
+									})
+								},
+								{
+									guard: ({ context }) => context.request.purpose === 'receipt',
+									target: 'rollingBack',
+									actions: assign({
+										result: (): WorkspacePersistenceResult => ({
+											outcome: 'conflict',
+											settlement: 'notStarted'
+										})
+									})
+								},
 								{
 									guard: ({ context }) =>
 										context.records?.organization == null &&
 										context.records?.membership == null &&
 										context.records?.categories.length === 0,
-									target: 'staging'
+									target: 'choosingStaging'
 								},
 								{
 									target: 'rollingBack',
@@ -222,10 +295,69 @@ export const workspaceCreationTransaction = setup<
 								}
 							]
 						},
+						choosingStaging: {
+							always: [
+								{
+									guard: ({ context }) => context.request.purpose === 'bootstrap',
+									target: 'creatingProfile'
+								},
+								{ target: 'staging' }
+							]
+						},
+						creatingProfile: {
+							invoke: {
+								src: 'createProfile',
+								input: ({ context }) => ({
+									tx: required(context.tx),
+									attempt: context.request.attempt
+								}),
+								onDone: 'checkingAfterProfile',
+								onError: {
+									target: 'rollingBack',
+									actions: assign({
+										result: ({ event }): WorkspacePersistenceResult => ({
+											outcome: 'failed',
+											settlement: 'notStarted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterProfile: {
+							always: [
+								{ guard: 'closing', target: 'rollingBack' },
+								{ guard: 'cancelling', target: 'rollingBack' },
+								{ target: 'staging' }
+							]
+						},
+						recordingReceipt: {
+							invoke: {
+								src: 'recordReceipt',
+								input: ({ context }) => ({
+									tx: required(context.tx),
+									attempt: context.request.attempt
+								}),
+								onDone: 'checkingBeforeCommit',
+								onError: {
+									target: 'rollingBack',
+									actions: assign({
+										result: ({ event }): WorkspacePersistenceResult => ({
+											outcome: 'failed',
+											settlement: 'notStarted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
 						staging: {
 							invoke: {
 								src: 'insert',
-								input: ({ context }) => ({ tx: required(context.tx), attempt: context.attempt }),
+								input: ({ context }) => ({
+									tx: required(context.tx),
+									attempt: workspaceCreationAttemptSchema.parse(context.request.attempt)
+								}),
 								onDone: {
 									target: 'checkingBeforeCommit',
 									actions: assign({ workspace: ({ event }) => event.output })
