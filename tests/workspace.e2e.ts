@@ -64,6 +64,16 @@ async function start(page: Page) {
 test('owner can rename, reject whitespace, retry, and retain the name after reload', async ({
 	page
 }) => {
+	// Console events can disappear during teardown; retain action warnings across reload.
+	await page.addInitScript(() => {
+		const warn = console.warn.bind(console)
+		console.warn = (...args) => {
+			if (String(args[0]).includes('Custom actions should not call')) {
+				sessionStorage.setItem('workspace-action-warning', String(args[0]))
+			}
+			warn(...args)
+		}
+	})
 	await start(page)
 	const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
 	const name = page.getByLabel('Workspace name')
@@ -81,6 +91,7 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await expect(name).toHaveValue('Household')
 	await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
 	await expect(save).toBeDisabled()
+	expect(await page.evaluate(() => sessionStorage.getItem('workspace-action-warning'))).toBeNull()
 })
 
 test('sidebar navigation preserves the selected workspace and database session', async ({
