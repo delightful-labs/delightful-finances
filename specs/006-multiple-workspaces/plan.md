@@ -256,3 +256,48 @@ Repository reference inspection found no live caller of ensurePersonalWorkspace 
 The removed helper combined first creation, personal-kind selection, missing-membership recreation, profile-link repair, and optional starter replenishment. Its removal does not implement the still-outstanding required-integrity workflow. That workflow must check current authorization, preserve memberships/roles, repair only existing eligible profile links and required system categories, and supervise transaction cancellation/settlement explicitly. Installed application policies restrict membership updates to owners/admins and system-category inserts to owners/admins/members; a general self-membership repair cannot be assumed authorized. No permission changes are included here.
 
 After approval, run the remaining data and workspace foundation/startup suites and preserve the removed golden legacy category-UUID regression under the new preparation API. Existing creation tests already cover translated-label-independent IDs and system categories, but do not pin those historical UUID literals. Do not restore tests that require personal-home preference, missing-access membership recreation, or optional-category reseeding. Required integrity remains the next focused design/review cycle.
+
+### Approved legacy removal verification
+
+At the user's explicit request, ran the remaining data and workspace suites: all 130 tests pass across nine files covering finance persistence, creation preparation/persistence/transaction, initialization, startup, readiness, application readiness, and rename. Preserved the historical starter-category UUID literals as a regression check under prepareWorkspaceCreation. Both targeted Playwright workspace checks pass against the disposable pnpm dev:agent environment, covering rename/reload and workspace switching/navigation; the custom-action warning regression remains clear. Whitespace checks pass. No production changes, schema deployment, persistent-data changes, or commits were made during verification. Required integrity repair remains outstanding.
+
+### Required integrity statechart design for review
+
+This is a workflow, not a promise leaf: discover current profile/membership/categories -> assess integrity and authority -> prepare missing required identities -> open/re-read/check -> stage -> commit -> settle, with explicit interruption and resource release. Implement it in focused cycles after model review: (1) one-workspace assessment and transaction children; (2) composition under readiness with selection/identity replacement and presentation of partial outcomes; (3) approved unit/browser verification. Keep each implementation cycle within the agreed small related file set. No implementation or tests are included in this design review.
+
+Scope is the selected workspace, never an arbitrarily chosen personal workspace or every readable tenant at login. An intact warm workspace remains locally usable offline. The owner binds database, identity, workspace and the unique existing login profile; neither initialization provenance nor creator/kind supplies authorization. Missing attribution alone cannot block finance views. Missing/unrepairable system categories remain explicit integrity issues for dependent transaction entry/import; ordinary readable data remains available. Startup identity initialization stays distinct from this selected-workspace integrity workflow.
+
+Policy evidence: permissions.ts currently admits category inserts for owner/admin/member and membership updates only for owner/admin. Repair may update only the current user's existing membership profileId to their unique existing profile, with no membership insertion, role/access changes, or another user's profile changes. An unauthorized repair is partial/unavailable, never an optimistic unauthorized write. No permissions or capability framework changes belong in this slice.
+
+Required categories are expense/income system Uncategorized definitions from the central defaults source, excluding every optional starter. An existing active system category of the correct workspace/kind satisfies the invariant even with a different ID or label. Do not rename it or replace its transaction references. Multiple matching system categories, an archived protected system category, or an occupied deterministic target ID with incompatible contents is conflict; do not delete, overwrite, or insert a second replacement. A missing category in an incomplete local cache is not sufficient evidence for insertion. A suspected repair first refreshes scoped evidence remotely; while authority is unavailable, report partial/unavailable and retain viewing/offline behavior, rather than infer absence or block unrelated workspaces. Retry is explicit.
+
+```mermaid
+stateDiagram-v2
+    [*] --> readingLocal
+    readingLocal --> assessing: related snapshot loaded
+    assessing --> complete: invariants satisfied
+    assessing --> unavailable: workspace or membership unavailable
+    assessing --> conflict: ambiguous profile or protected records
+    assessing --> partial: no authorized repair or no configured authority
+    assessing --> awaitingAuthority: suspected authorized repair
+    awaitingAuthority --> assessingAuthority: scoped remote evidence loaded
+    assessingAuthority --> complete: already intact
+    assessingAuthority --> unavailable: access lost
+    assessingAuthority --> conflict: incompatible records
+    assessingAuthority --> partial: no authorized repair remains
+    assessingAuthority --> preparing: authorized repair remains
+    preparing --> repairing: immutable expected records and required IDs
+    repairing --> complete: all required repairs locally persisted
+    repairing --> partial: authorized subset locally persisted
+    repairing --> conflict: records changed incompatibly
+    repairing --> unavailable: access no longer available
+    repairing --> failed: failed or unresolved settlement
+    repairing --> cancelled: cancellation acknowledged
+    repairing --> closed: shutdown acknowledged
+```
+
+The repairing child owns a single Jazz transaction with work states opening -> reading -> checkingScope -> checkingRecords -> choosingWrites -> stagingProfileLink/stagingCategories -> checkingBeforeCommit -> committing -> settling -> finishing. A no-op or rejected check enters rollingBack before its terminal result. Independent control states active/cancelling/closing preserve the acquired resource through outstanding reads/staging; interruption before commit rolls back, while interruption after issue drains settlement. Shutdown has precedence. Every invocation has onError and acquired-resource cleanup. Context holds observed records, immutable repair payload, resource handles and typed outcomes, not lifecycle flags. Pure helpers may compute candidate sets but must not perform I/O or hide authorization/outcome classification.
+
+Read both hydrated and transaction snapshots. Transactional checks repeat current identity/profile/membership scope, role authority, category kind/system status, and deterministic-ID occupancy before staging only still-needed writes. SDK evidence: runtime/db.js Transaction.commit prevents further transaction operations while committing; rollback is documented as local, and beginTransaction creates a mergeable transaction. Do not attempt rollback while commit is in progress or claim local settlement proves server acceptance/global uniqueness. If commit/settlement becomes unknown, retain unresolved evidence and reconcile on explicit retry. Stable category IDs make cooperating repair attempts converge; current mergeable policies do not establish global uniqueness for arbitrary competing category IDs. Existing server permissions remain the enforcement boundary.
+
+The selected-workspace owner must forward cancellation/shutdown and await this child before replacing its binding. Late reads cannot start repairs after shutdown. Complete, partial, unavailable, conflict, cancelled, closed, failed and unresolved settlement must be represented explicitly; presentation consumes descriptors instead of reconstructing decisions. Wire this ownership separately from the foundation review rather than expanding the current change across routes/components.
