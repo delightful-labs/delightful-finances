@@ -12,8 +12,8 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(svelte@5.57.2)(xstate@5.33.2)
       delightful-ui:
-        specifier: file:vendor/delightful-ui-0.0.24-navigation-disclosure-focus.tgz
-        version: file:vendor/delightful-ui-0.0.24-navigation-disclosure-focus.tgz(svelte@5.57.2)
+        specifier: file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz
+        version: file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz(svelte@5.57.2)
       jazz-tools:
         specifier: 2.0.0-alpha.59
         version: 2.0.0-alpha.59(svelte@5.57.2)
@@ -958,8 +958,8 @@ packages:
     resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
     engines: {node: '>=0.10.0'}
 
-  delightful-ui@file:vendor/delightful-ui-0.0.24-navigation-disclosure-focus.tgz:
-    resolution: {integrity: sha512-+EV/vk/mKQ4xQ0CfFee4emLMrfzlOXxZXn8lyevSYXQ5SavVmEG61yCc1E6ugrk4jfTsnj7Cthu4K8qc5kG5kw==, tarball: file:vendor/delightful-ui-0.0.24-navigation-disclosure-focus.tgz}
+  delightful-ui@file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz:
+    resolution: {integrity: sha512-kcIFHBMk6cXydmeqMZw+UQ9AnoE13RZNR8KDJRpMHyJ6mL0hSvsGuQTpzvw0DbaB2cg8DvXrYj7ZyiZ+bbx+mQ==, tarball: file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz}
     version: 0.0.24
     engines: {node: ^22.17.0 || >=24.0.0}
     peerDependencies:
@@ -2217,7 +2217,7 @@ snapshots:
 
   deepmerge@4.3.1: {}
 
-  delightful-ui@file:vendor/delightful-ui-0.0.24-navigation-disclosure-focus.tgz(svelte@5.57.2):
+  delightful-ui@file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz(svelte@5.57.2):
     dependencies:
       svelte: 5.57.2
       tdesign-icons-svg: 0.4.7
