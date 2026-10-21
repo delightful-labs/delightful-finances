@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
       '@xstate/svelte':
         specifier: ^5.0.0
         version: 5.0.0(svelte@5.57.2)(xstate@5.33.2)

@@ -48,6 +48,7 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
+		"@opentelemetry/api": "^1.9.1",
 		"@xstate/svelte": "^5.0.0",
 		"delightful-ui": "file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz",
 		"jazz-tools": "2.0.0-alpha.59",
