@@ -272,8 +272,7 @@
 			"selected": "Selected tags",
 			"added": "Tag {name} selected.",
 			"removed": "Tag {name} removed.",
-			"duplicate": "Tag {name} is already selected.",
-			"instructions": "Choose an existing tag or enter a new name. New tags will be created when you save the transaction."
+			"duplicate": "Tag {name} is already selected."
 		}
 	},
 	"profile": {

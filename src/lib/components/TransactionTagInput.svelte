@@ -40,7 +40,6 @@
 			addedMessage={(name) => m['tags.input.added']({ name })}
 			removedMessage={(name) => m['tags.input.removed']({ name })}
 			duplicateMessage={(name) => m['tags.input.duplicate']({ name })}
-			instructions={m['tags.input.instructions']()}
 			suggestions={[...suggestions]}
 			bind:value={selectedTags}
 			{disabled}
