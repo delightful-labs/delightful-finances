@@ -1,5 +1,6 @@
 import {
 	assign,
+	enqueueActions,
 	fromPromise,
 	raise,
 	sendParent,
@@ -145,10 +146,10 @@ export function createScopedFormMachine<
 					OBSERVE: {
 						actions: [
 							assign({ observation: ({ event }) => event.observation }),
-							({ self, event }) => {
+							enqueueActions(({ self, event, enqueue }) => {
 								const child = self.getSnapshot().children.source
-								if (child?.getSnapshot().status === 'active') child.send(event)
-							}
+								if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, event)
+							})
 						]
 					}
 				}
