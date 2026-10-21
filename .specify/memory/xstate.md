@@ -4,6 +4,57 @@ These are user-approved architectural lessons from the bank-sync refactor. Read 
 implementing complex workflows, authorization, readiness, or derived UI capabilities. The
 constitution is authoritative; use the active feature artifacts for behavior requirements.
 
+## Mandatory machine-first gate
+
+Apply this gate **before writing the implementation**, not after the user identifies a complex
+function. It applies recursively to helpers, promise actors, nested callbacks, transaction bodies,
+and code already inside a machine file. Function names such as persist/prepare/commit and comments
+such as "one atomic effect" are not evidence that the operation is a leaf.
+
+1. List the operation's independently meaningful steps, decisions, acquired resources, and terminal
+   outcomes in the current plan or a short design note. Classify it as a leaf operation or a workflow.
+2. Start with an XState machine if it contains any of these:
+   - Sequential business decisions, including read -> inspect results -> choose whether/what to write.
+   - Distinct stages that need separate cancellation, error, retry, or outcome handling.
+   - An acquired resource whose lifetime spans read/check/write, commit/rollback, or cleanup paths.
+3. Define states, guards, events, resource ownership, and interruption/cleanup paths first. Then add
+   invoked child machines and leaf actors. Do not first implement a procedural async workflow and
+   wrap it in `fromPromise`, or plan to convert it into states later.
+4. A promise actor may execute one leaf operation: query a related snapshot, generate IDs, stage an
+   already-decided set of inserts, request commit, await settlement, or request rollback. Related
+   `Promise.all` reads and an unconditional insertion loop can remain one leaf. Combining these
+   stages into a promise that makes intervening business decisions is orchestration and fails the gate.
+5. Before presenting the change, inspect each changed actor **and the functions/callbacks it calls**.
+   Verify that every workflow step is visible as a state/invocation and every business branch as a
+   guarded transition. If not, refactor before claiming the change is ready for review. Report the
+   state sequence and any retained boundary invariant briefly; type-checking does not validate this gate.
+
+### Transactions are not an exemption
+
+Preserve one SDK transaction across child-machine states when its API supports that lifetime:
+open -> read -> guarded checks -> stage writes -> commit -> settle, with rollback/cleanup on the
+appropriate paths. Inspect the SDK rather than assuming callback or cancellation semantics.
+Do not split the writes into separately committed transactions just to expose more states.
+If the SDK requires a callback with restricted lifetime, document the actual restriction and model
+policy and resource ownership explicitly; do not invent unsupported async transaction boundaries.
+
+A narrow transaction-time invariant recheck may remain imperative when necessary for atomicity,
+but it must repeat an already-modeled decision, not introduce the workflow's only policy check.
+It does not justify hiding acquisition, queries, policy decisions, writes, commit, and cleanup in one
+promise actor. Pure validation/transformation, type narrowing, and low-level resource-boundary
+handling are not workflows merely because they contain conditionals.
+
+### Failure pattern from workspace creation
+
+Rejected: async persist function -> promise actor wrapping that function -> parent machine invoking
+a commit promise that still reads, checks, writes, and commits internally. Each revision leaves the
+nested workflow hidden until that nested operation becomes its own resource-owning machine.
+
+Required: persistence owner validates/hydrates and invokes a transaction child. The child owns one
+transaction, guarded eligibility, staging, commit, settlement, and rollback; its leaf actors contain
+no new orchestration. Apply the same reasoning to the next nested helper without waiting for another
+user correction. Do not turn every expression into a state or create one machine per trivial SDK call.
+
 ## Start with the model
 
 Write down the states, observed facts, events, ownership tree, and terminal outcomes before effects.

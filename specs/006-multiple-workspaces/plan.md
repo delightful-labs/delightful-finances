@@ -150,3 +150,31 @@ No tasks.md is generated in this planning cycle. Proposed increments are review 
 ## Post-design gates and limits
 
 This plan does not implement full capability-based policies, sharing, ownership administration, archive, account merge, in its creation foundation; route navigation follows a separate reviewed cycle. It reserves compatibility by retaining organization IDs/membership relationships and avoiding ownerId/kind assumptions in new reusable creation code. Receipt/journal serialization and real-server schema/policy acceptance need implementation verification. No runtime claim is established by formatting these artifacts.
+
+## First implementation review: creation data foundation
+
+Implemented the six-file foundation: centralized starter definitions, extracted/re-exported stable UUID utility, canonical workspace/attempt validation beside identity validation, an additional-workspace preparation/atomic local-write adapter, and optional profile initialization provenance. Existing bootstrap now consumes the shared defaults; its selection/repair behavior is intentionally left for the startup-machine cycle. The persistence adapter refuses occupied attempts rather than replaying/upserting; future machine reconciliation and durable journaling remain required before UI use. No schema deployment, data reset, startup receipt writes, route changes, or new UI were performed. No tests were added/run before review. Static application/Svelte/service-worker checks passed with zero diagnostics; focused follow-up TypeScript verification covers final validation-adapter changes. Review this increment before tests or the next implementation cycle.
+
+### Persistence and transaction statechart refinement
+
+Review identified that both the initial promise wrapper and its commit promise still hid multi-step decisions. `persistWorkspaceCreation` now validates and hydrates, then invokes `workspaceCreationTransaction` as its resource-owning child. The child opens a single explicit Jazz transaction, reads its snapshot, uses guarded profile/occupied-attempt checks, stages rows, commits, and waits for local settlement. Each invoked I/O actor performs only its focused operation. No business branching remains inside a commit promise.
+
+```mermaid
+stateDiagram-v2
+    [*] --> opening
+    opening --> reading: transaction acquired
+    reading --> checkingProfile: snapshot loaded
+    checkingProfile --> checkingAttempt: matching profile
+    checkingProfile --> rollingBack: missing profile
+    checkingAttempt --> staging: unused attempt
+    checkingAttempt --> rollingBack: occupied attempt
+    staging --> committing: rows staged and no interruption
+    staging --> rollingBack: cancellation or staging error
+    committing --> settling: commit handle
+    settling --> completed: locally persisted
+    rollingBack --> completed: cleanup result
+```
+
+The child has a parallel interruption region (active/cancelling/closing) so cancellation/shutdown never loses an acquiring/open transaction or interrupts rollback/commit settlement. It checks interruption at pre-commit boundaries, rolls back before issue, and drains committed writes afterward. Shutdown takes precedence over cancellation. The parent forwards interruption without exiting the invoked child. Profile-unavailable, conflict, failure and interrupted results carry truthful notStarted/locallyPersisted/unresolved evidence; an unconfirmed rollback is unresolved. Occupied attempts return to the future creation parent for reconciliation rather than repair/replay.
+
+The parent must send cancellation/shutdown and await completion rather than directly stop the owner. Installed Jazz `beginTransaction`, transaction `commit`, `rollback`, and local write-handle wait were inspected for this resource model. Only type narrowing remains conditional outside guarded transitions. TypeScript passes; no tests added/run before implementation approval.

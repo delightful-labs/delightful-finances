@@ -1,3 +1,5 @@
+import { workspaceStarterCategories } from './domain/workspace-defaults.js'
+import { stableUuid } from './domain/stable-uuid.js'
 import { normalizedName } from './domain/names.js'
 import { ReadTier } from 'jazz-tools'
 import { m } from './paraglide/messages.js'
@@ -18,57 +20,15 @@ import { appTagSchema } from './validation/tags.js'
 import type { z } from 'zod'
 import { appProfileSchema, profileAvatarValuesSchema } from './validation/identity.js'
 
+export { stableUuid } from './domain/stable-uuid.js'
+
 type Db = ReturnType<typeof getDb>
 
 export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'>, userId: string) {
 	const organizationId = await stableUuid(userId, 'personal-organization')
 	const profileId = await stableUuid(userId, 'profile')
 	const membershipId = await stableUuid(userId, 'personal-membership')
-	const defaultCategories: {
-		key: string
-		name: string
-		kind: Category['kind']
-		isSystem: boolean
-	}[] = [
-		{
-			key: 'uncategorized',
-			name: m['defaults.categories.uncategorized'](),
-			kind: 'expense',
-			isSystem: true
-		},
-		{
-			key: 'uncategorized',
-			name: m['defaults.categories.uncategorized'](),
-			kind: 'income',
-			isSystem: true
-		},
-		{
-			key: 'groceries',
-			name: m['defaults.categories.groceries'](),
-			kind: 'expense',
-			isSystem: false
-		},
-		{ key: 'housing', name: m['defaults.categories.housing'](), kind: 'expense', isSystem: false },
-		{
-			key: 'transport',
-			name: m['defaults.categories.transport'](),
-			kind: 'expense',
-			isSystem: false
-		},
-		{
-			key: 'other expense',
-			name: m['defaults.categories.other_expense'](),
-			kind: 'expense',
-			isSystem: false
-		},
-		{ key: 'salary', name: m['defaults.categories.salary'](), kind: 'income', isSystem: false },
-		{
-			key: 'other income',
-			name: m['defaults.categories.other_income'](),
-			kind: 'income',
-			isSystem: false
-		}
-	]
+	const defaultCategories = workspaceStarterCategories()
 	// Hydrate existing rows before opening a transaction: a cold transaction's
 	// read snapshot can miss records arriving from sync and recreate protected rows.
 	const readOptions = { tier: ReadTier.LocalFirstUnlessEmpty }
@@ -151,24 +111,6 @@ export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'
 	})
 	// Persist the bootstrap locally before another page can reopen the database.
 	return result.wait({ tier: 'local' })
-}
-
-export async function stableUuid(namespaceId: string, name: string) {
-	const namespaceHex = namespaceId.replaceAll('-', '')
-	const namespaceBytes = Uint8Array.from(
-		Array.from({ length: namespaceHex.length / 2 }, (_, index) =>
-			Number.parseInt(namespaceHex.slice(index * 2, index * 2 + 2), 16)
-		)
-	)
-	const nameBytes = new TextEncoder().encode(name)
-	const input = new Uint8Array(namespaceBytes.length + nameBytes.length)
-	input.set(namespaceBytes)
-	input.set(nameBytes, namespaceBytes.length)
-	const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', input))
-	digest[6] = ((digest[6] ?? 0) & 0x0f) | 0x50
-	digest[8] = ((digest[8] ?? 0) & 0x3f) | 0x80
-	const hex = Array.from(digest.slice(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join('')
-	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 export function saveProfileName(

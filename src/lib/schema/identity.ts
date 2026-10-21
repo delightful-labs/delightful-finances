@@ -7,6 +7,8 @@ export const identitySchema = {
 	profiles: s.table(
 		{
 			userId: s.uuid(),
+			// Initialization provenance only; never active-workspace selection or authority.
+			initialWorkspaceId: s.uuid().optional(),
 			displayName: s.string().optional(),
 			avatarData: s.bytes().optional(),
 			avatarMimeType: s
