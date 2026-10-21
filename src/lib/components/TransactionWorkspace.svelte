@@ -10,12 +10,14 @@
 		children,
 		list,
 		index,
-		kind
+		kind,
+		listHref
 	}: {
 		children: Snippet
 		list: Snippet<[boolean]>
 		index: boolean
 		kind: 'income' | 'expense'
+		listHref?: string | undefined
 	} = $props()
 	let desktop = $state(false)
 	let drawerOpen = $state(true)
@@ -29,6 +31,9 @@
 
 <div class="transaction-workspace" data-desktop={desktop}>
 	<div class="transaction-content" class:index>
+		{#if !desktop && listHref}
+			<a href={listHref}>{m['transactions.back_to_list']()}</a>
+		{/if}
 		{#if desktop}
 			<div class="drawer-toggle" hidden={drawerOpen}>
 				<Button
