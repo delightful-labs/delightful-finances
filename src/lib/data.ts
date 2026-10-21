@@ -1,8 +1,4 @@
-import { workspaceStarterCategories } from './domain/workspace-defaults.js'
-import { stableUuid } from './domain/stable-uuid.js'
 import { normalizedName } from './domain/names.js'
-import { ReadTier } from 'jazz-tools'
-import { m } from './paraglide/messages.js'
 import type { getDb } from 'jazz-tools/svelte'
 import {
 	app,
@@ -23,95 +19,6 @@ import { appProfileSchema, profileAvatarValuesSchema } from './validation/identi
 export { stableUuid } from './domain/stable-uuid.js'
 
 type Db = ReturnType<typeof getDb>
-
-export async function ensurePersonalWorkspace(db: Pick<Db, 'all' | 'transaction'>, userId: string) {
-	const organizationId = await stableUuid(userId, 'personal-organization')
-	const profileId = await stableUuid(userId, 'profile')
-	const membershipId = await stableUuid(userId, 'personal-membership')
-	const defaultCategories = workspaceStarterCategories()
-	// Hydrate existing rows before opening a transaction: a cold transaction's
-	// read snapshot can miss records arriving from sync and recreate protected rows.
-	const readOptions = { tier: ReadTier.LocalFirstUnlessEmpty }
-	const [profiles, ownedOrganizations] = await Promise.all([
-		db.all(app.profiles.where({ userId }), readOptions),
-		db.all(app.organizations.where({ ownerId: userId, kind: 'personal' }), readOptions)
-	])
-	const existingOrganization = ownedOrganizations[0]
-	const activeProfileId = profiles[0]?.id ?? profileId
-	const activeOrganizationId = existingOrganization?.id ?? organizationId
-	const [memberships, categories] = await Promise.all([
-		db.all(
-			app.organizationMembers.where({ organizationId: activeOrganizationId, userId }),
-			readOptions
-		),
-		db.all(app.categories.where({ organizationId: activeOrganizationId }), readOptions)
-	])
-	const categoriesWithIds = await Promise.all(
-		// Keep identity independent of translated names and preserve existing seed IDs.
-		defaultCategories.map(async ({ key, ...category }) => ({
-			category,
-			id: await stableUuid(activeOrganizationId, `category:${category.kind}:${key}`)
-		}))
-	)
-	const missingCategories = categoriesWithIds.filter(
-		({ category, id }) =>
-			!categories.some(
-				(existing) =>
-					existing.id === id ||
-					(existing.kind === category.kind && existing.name === category.name) ||
-					(category.isSystem && existing.kind === category.kind && existing.isSystem)
-			)
-	)
-	const membership = memberships[0]
-	const profileLinkNeedsRepair = membership && membership.profileId !== activeProfileId
-	if (
-		existingOrganization &&
-		profiles.length > 0 &&
-		memberships.length > 0 &&
-		!profileLinkNeedsRepair &&
-		missingCategories.length === 0
-	) {
-		return existingOrganization
-	}
-
-	const result = await db.transaction((tx) => {
-		if (profiles.length === 0) tx.insert(app.profiles, { userId }, { id: profileId })
-		const organization: Organization =
-			existingOrganization ??
-			tx.insert(
-				app.organizations,
-				{
-					name: m['defaults.workspace'](),
-					kind: 'personal',
-					defaultCurrency: 'USD',
-					ownerId: userId
-				},
-				{ id: organizationId }
-			)
-		if (memberships.length === 0) {
-			tx.insert(
-				app.organizationMembers,
-				{
-					organizationId: organization.id,
-					userId,
-					profileId: activeProfileId,
-					role: 'owner',
-					accountAccessMode: 'all'
-				},
-				{ id: membershipId }
-			)
-		}
-		if (profileLinkNeedsRepair) {
-			tx.update(app.organizationMembers, membership.id, { profileId: activeProfileId })
-		}
-		for (const { category, id } of missingCategories) {
-			tx.insert(app.categories, { organizationId: organization.id, ...category }, { id })
-		}
-		return organization
-	})
-	// Persist the bootstrap locally before another page can reopen the database.
-	return result.wait({ tier: 'local' })
-}
 
 export function saveProfileName(
 	db: Pick<Db, 'update'>,
