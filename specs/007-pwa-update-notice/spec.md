@@ -62,7 +62,7 @@ Users receive understandable behavior when another tab applies an update or an u
 
 ### Functional Requirements
 
-- **FR-001**: The app MUST announce a ready newer version through one non-modal in-app notice per tab, both when discovered during use and when already available at startup. First installation MUST NOT count as an update.
+- **FR-001**: The app MUST announce a ready newer version through one non-modal in-app notice per tab, in the drawer directly above the online status, both when discovered during use and when already available at startup. First installation MUST NOT count as an update.
 - **FR-002**: The notice MUST provide “Update and reload” and “Later” actions; downloading or detecting an update MUST NOT automatically reload an open tab.
 - **FR-003**: Accepting an update MUST activate the latest ready version and reload the requesting tab once after activation, without requiring other tabs to close. Repeated acceptance while in progress MUST NOT start duplicate attempts.
 - **FR-004**: Choosing “Later” MUST preserve current page state and suppress the same update notice across in-app navigation for that page session. A different ready release MUST be eligible for a new notice.

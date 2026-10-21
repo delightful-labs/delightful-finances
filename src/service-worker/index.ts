@@ -47,4 +47,15 @@ self.addEventListener('fetch', (event) => {
 	)
 })
 
-// Keep the default waiting lifecycle: updates never force-reload an active form.
+// Keep waiting until a user explicitly accepts the update in an app tab.
+self.addEventListener('message', (event) => {
+	const data: unknown = event.data
+	if (
+		typeof data === 'object' &&
+		data !== null &&
+		'type' in data &&
+		data.type === 'ACTIVATE_UPDATE'
+	) {
+		event.waitUntil(self.skipWaiting())
+	}
+})

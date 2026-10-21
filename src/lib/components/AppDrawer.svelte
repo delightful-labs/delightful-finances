@@ -29,6 +29,7 @@
 	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import QueryContent from './QueryContent.svelte'
+	import PwaUpdateIntegration from './PwaUpdateIntegration.svelte'
 
 	let {
 		drawerId,
@@ -330,6 +331,7 @@
 		{/if}
 
 		<div class="sidebar-status">
+			<PwaUpdateIntegration />
 			<StatusMessage
 				compact
 				text={!syncConfigured

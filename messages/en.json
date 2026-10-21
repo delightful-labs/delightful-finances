@@ -1,4 +1,13 @@
 {
+	"pwa_update": {
+		"available": "A new version is available.",
+		"activated": "A new version is active. Reload to use it.",
+		"accept": "Update and reload",
+		"later": "Later",
+		"busy": "Updating and reloading…",
+		"failed": "The update could not be completed. You can try again.",
+		"retry": "Retry"
+	},
 	"archive_filter": {
 		"label": "Archive status",
 		"active": "Default (not archived)",
