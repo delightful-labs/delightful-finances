@@ -11,14 +11,14 @@ Delightful Finance is a local-first personal finance tracker. A signed-in user c
 
 ## User Scenarios & Testing
 
-### User Story 1 — Start a personal finance workspace (P1)
+### User Story 1 — Start a finance workspace (P1)
 
-As a user, I can sign in and land in a personal organization that is created automatically on first login, so I can begin tracking finances without setup friction.
+As a user, I can sign in and receive an initial workspace on first initialization, so I can begin tracking finances without setup friction. All workspaces are equivalent; the first workspace is initialization provenance, not a permanent personal home. See `006-multiple-workspaces` for the approved multi-workspace behavior.
 
 **Acceptance Scenarios**
 
-1. **Given** an authenticated user with no personal organization, **When** the app initializes their workspace, **Then** it creates one personal organization, an owner membership, and the required default categories.
-2. **Given** an existing user, **When** they sign in again, **Then** the existing personal organization and its data are reused rather than duplicated.
+1. **Given** authoritative first-use knowledge for an authenticated user, **When** the app initializes their finances, **Then** it atomically creates the initial profile, workspace, owner membership, starter categories, and initialization receipt. An empty local cache alone MUST NOT authorize creation.
+2. **Given** an existing user, **When** they sign in again, **Then** an initialization receipt or accessible existing workspace is reused without creating a new personal home or replenishing optional starter categories. Access loss MUST NOT recreate membership; ambiguous legacy records require a recoverable unavailable outcome. Selection MUST NOT prefer personal/business kind or silently replace an unavailable selected workspace.
 3. **Given** a user without access to an organization, **When** they request its data, **Then** Jazz permissions prevent that data from being read or modified.
 
 ### User Story 2 — Manage financial accounts (P1)
@@ -345,3 +345,7 @@ Respect reduced-motion preferences
 and fall back to immediate navigation when unsupported. Query/hash-only changes and
 navigation outside transaction routes do not start a transition. Initial page loads
 retain their existing behavior.
+
+Incoming transaction content retains its natural rendered size during the transition,
+anchored at the top left. Loading transaction data or changing the form height during
+the animation must not stretch or squash the incoming page snapshot.
