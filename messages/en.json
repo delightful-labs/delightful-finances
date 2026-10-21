@@ -160,6 +160,7 @@
 		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
 	},
 	"transactions": {
+		"back_to_list": "Back to list",
 		"drawer": {
 			"open": "Open transaction list",
 			"close": "Close transaction list"

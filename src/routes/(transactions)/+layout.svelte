@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
 	import { onNavigate } from '$app/navigation'
+	import { resolve } from '$app/paths'
 	import { page } from '$app/state'
 	import TransactionWorkspace from '#lib/components/TransactionWorkspace.svelte'
 	import TransactionView from '#lib/components/TransactionView.svelte'
@@ -8,6 +9,11 @@
 	let { children }: { children: Snippet } = $props()
 	const kind = $derived(page.url.pathname.startsWith('/income') ? 'income' : 'expense')
 	const index = $derived(page.url.pathname === '/income' || page.url.pathname === '/expenses')
+	const listHref = $derived(
+		page.params.id
+			? `${resolve(kind === 'income' ? '/(transactions)/income' : '/(transactions)/expenses')}${page.url.search}`
+			: undefined
+	)
 
 	onNavigate((navigation) => {
 		if (!navigation.to?.route.id?.startsWith('/(transactions)/')) return
@@ -27,7 +33,7 @@
 	})
 </script>
 
-<TransactionWorkspace {children} {index} {kind}>
+<TransactionWorkspace {children} {index} {kind} {listHref}>
 	{#snippet list(showHeading)}
 		<TransactionView {kind} {showHeading} />
 	{/snippet}
