@@ -4,6 +4,7 @@ import type { OperationResult } from './operation.js'
 import { createBankSyncMachine, selectBankView } from './index.js'
 import { bankAvailabilityMachine } from './availability.js'
 import { bankHistoryMachine } from './history.js'
+import { availabilityReport } from './reports.fixture.js'
 import type { BankSource, BankSyncDependencies, Connection } from './types.js'
 
 // The supervisor must wait for these resource-owning children to acknowledge cancellation.
@@ -226,5 +227,160 @@ describe('operation settlement handoff', () => {
 		expect(warning).not.toHaveBeenCalledWith(expect.stringMatching(/^Event "CANCEL"/))
 		subscription.unsubscribe()
 		warning.mockRestore()
+	})
+})
+
+describe('bank report currency and command gating', () => {
+	function delayedAvailability() {
+		return start({
+			actors: { availability: bankAvailabilityMachine.provide({ actions: { publish: () => {} } }) }
+		})
+	}
+	it('waits for the actual child report at startup before allowing commands', () => {
+		const actor = delayedAvailability()
+		expect(selectBankView(actor.getSnapshot()).mode.kind).toBe('restricted')
+		actor.send({ type: 'SYNC' })
+		actor.send({ type: 'CONNECT', token: 'secret' })
+		expect(actor.getSnapshot().hasTag('busy')).toBe(false)
+		expect(actor.getSnapshot().context.setupToken).toBeUndefined()
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: availabilityReport(source, 0) })
+		actor.send({ type: 'SYNC' })
+		expect(actor.getSnapshot().children.operation).toBeDefined()
+	})
+	it('invalidates capabilities and history before a replacement report arrives', () => {
+		const actor = delayedAvailability()
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: availabilityReport(source, 0) })
+		actor.send({
+			type: 'HISTORY_REPORTED',
+			generation: 0,
+			summary: {
+				time: new Date(),
+				outcomeKey: 'bank.succeeded',
+				imported: 2,
+				existing: 0,
+				omitted: 0
+			}
+		})
+		expect(selectBankView(actor.getSnapshot()).history?.imported).toBe(2)
+		actor.send({ type: 'OBSERVED', source: { ...source, membership: null } })
+		expect(actor.getSnapshot().context.availability).toBeUndefined()
+		expect(selectBankView(actor.getSnapshot()).history).toBeUndefined()
+		actor.send({ type: 'SYNC' })
+		actor.send({ type: 'CONNECT', token: 'secret' })
+		expect(actor.getSnapshot().hasTag('busy')).toBe(false)
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: availabilityReport(source, 0) })
+		actor.send({
+			type: 'HISTORY_REPORTED',
+			generation: 0,
+			summary: {
+				time: new Date(),
+				outcomeKey: 'bank.succeeded',
+				imported: 99,
+				existing: 0,
+				omitted: 0
+			}
+		})
+		expect(actor.getSnapshot().context.availability).toBeUndefined()
+		expect(selectBankView(actor.getSnapshot()).history).toBeUndefined()
+		actor.send({
+			type: 'AVAILABILITY_REPORTED',
+			report: availabilityReport({ ...source, membership: null }, 1)
+		})
+		expect(selectBankView(actor.getSnapshot()).mode.kind).toBe('restricted')
+	})
+	it('rejects both older generations when switching A to B to A, including saved history', () => {
+		const actor = delayedAvailability()
+		const first = availabilityReport(source, 0)
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: first })
+		const other = { ...source, userId: 'other-owner', membership: null }
+		actor.send({ type: 'OBSERVED', source: other })
+		const second = availabilityReport(other, 1)
+		actor.send({ type: 'OBSERVED', source })
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: first })
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: second })
+		for (const generation of [0, 1])
+			actor.send({
+				type: 'HISTORY_REPORTED',
+				generation,
+				summary: {
+					time: new Date(),
+					outcomeKey: 'bank.succeeded',
+					imported: 99,
+					existing: 0,
+					omitted: 0
+				}
+			})
+		expect(actor.getSnapshot().context.availability).toBeUndefined()
+		expect(selectBankView(actor.getSnapshot()).history).toBeUndefined()
+		actor.send({ type: 'SYNC' })
+		expect(actor.getSnapshot().children.operation).toBeUndefined()
+		actor.send({ type: 'AVAILABILITY_REPORTED', report: availabilityReport(source, 2) })
+		expect(selectBankView(actor.getSnapshot()).mode.kind).toBe('connected')
+		actor.send({ type: 'SYNC' })
+		expect(actor.getSnapshot().children.operation).toBeDefined()
+	})
+	it.each(['authority', 'credential'])(
+		'drains an active operation when a current report changes %s',
+		(change) => {
+			const actor = start()
+			actor.send({ type: 'SYNC' })
+			const child = actor.getSnapshot().children.operation
+			if (!child) throw new Error('Expected operation')
+			const replacement =
+				change === 'authority'
+					? { ...source, membership: null }
+					: { ...source, connections: [{ ...connection, ciphertext: 'replacement' }] }
+			actor.send({ type: 'OBSERVED', source: replacement })
+			expect(child.getSnapshot().value).toBe('settling')
+			expect(actor.getSnapshot().hasTag('busy')).toBe(true)
+			child.send({ type: 'CANCEL' })
+			expect(actor.getSnapshot().hasTag('busy')).toBe(false)
+			expect(selectBankView(actor.getSnapshot()).mode.kind).toBe(
+				change === 'authority' ? 'restricted' : 'connected'
+			)
+		}
+	)
+	it.each(['DISCOVER', 'CONNECT'])('drains %s when availability fails after startup', (command) => {
+		let broken = false
+		const actor = start({
+			actors: {
+				availability: bankAvailabilityMachine.provide({
+					guards: {
+						accessAllowed: () => {
+							if (broken) return unavailable()
+							return true
+						}
+					}
+				})
+			}
+		})
+		if (command === 'DISCOVER') actor.send({ type: 'DISCOVER' })
+		else actor.send({ type: 'CONNECT', token: 'secret' })
+		const child = actor.getSnapshot().children.operation ?? actor.getSnapshot().children.setup
+		if (!child) throw new Error('Expected active work')
+		broken = true
+		actor.send({ type: 'OBSERVED', source })
+		expect(child.getSnapshot().value).toBe('settling')
+		expect(actor.getSnapshot().status).toBe('active')
+		actor.send({ type: 'RESET' })
+		actor.send({ type: 'CANCEL' })
+		child.send({ type: 'CANCEL' })
+		expect(actor.getSnapshot().status).toBe('done')
+	})
+	it('does not let current or stale reports interrupt shutdown or start provider work', () => {
+		const actor = start()
+		actor.send({ type: 'SYNC' })
+		const child = actor.getSnapshot().children.operation
+		if (!child) throw new Error('Expected operation')
+		actor.send({ type: 'SHUTDOWN' })
+		actor.send({ type: 'OBSERVED', source })
+		for (const generation of [0, 1])
+			actor.send({ type: 'AVAILABILITY_REPORTED', report: availabilityReport(source, generation) })
+		actor.send({ type: 'SYNC' })
+		actor.send({ type: 'RESET' })
+		expect(child.getSnapshot().value).toBe('settling')
+		expect(actor.getSnapshot().matches({ running: 'shuttingDown' })).toBe(true)
+		child.send({ type: 'CANCEL' })
+		expect(actor.getSnapshot().status).toBe('done')
 	})
 })

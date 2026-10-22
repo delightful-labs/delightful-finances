@@ -160,7 +160,17 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	await page.reload()
 	await expect(discover).toBeEnabled()
+	const savedHistory = page
+		.getByRole('main')
+		.getByText(/Last sync:.*Imported: 0; already present: 2; omitted: 2/)
+	await expect(savedHistory).toBeVisible()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
+	// A new discovery uses the current capability report without replacing saved sync history.
+	await discover.click()
+	await expect(page.getByText('Linked to Provider Checking', { exact: true })).toBeVisible()
+	await expect(discover).toBeEnabled()
+	await expect(savedHistory).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover'])
 	failSync = true
 	await sync.click()
 	await expect(
@@ -170,7 +180,7 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 			.filter({ hasText: 'SimpleFIN could not complete the request' })
 	).toBeVisible()
 	await expect(sync).toBeEnabled()
-	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'sync'])
+	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover', 'sync'])
 	await page.getByRole('button', { name: 'Disconnect bank sync', exact: true }).click()
 	await expect(discover).toHaveCount(0)
 	await expect(sync).toHaveCount(0)

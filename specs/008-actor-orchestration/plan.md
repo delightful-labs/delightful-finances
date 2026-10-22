@@ -1,7 +1,7 @@
 # Actor orchestration boundaries
 
-Status: workspace phase complete and verified. Bank orchestration has resumed through
-focused review cycles in [tasks.md](tasks.md); other subsystem work remains deferred.
+Status: workspace phase complete and verified. Bank orchestration is complete through
+reviewed and verified focused cycles in [tasks.md](tasks.md); other subsystem work remains deferred.
 [spec.md](spec.md) defines the requirements.
 The current workspace ownership tree and creation/integrity workflows are maintained in
 [the workspace architecture](../006-multiple-workspaces/plan.md#actor-ownership), rather than a
@@ -41,11 +41,11 @@ Version-matched research used XState 5.33.2; check installed semantics before ad
 ## Deferred scopes
 
 Bank internals, generic forms, application/session supervision and diagnostics are independent audits,
-not remaining workspace implementation. Bank work has resumed: the
+not remaining workspace implementation. Bank work is complete: the
 [ownership audit](bank-audit.md) and reviewed [setup settlement](setup-settlement.md) are
 complete; [mapping transaction ownership](mapping-transaction.md) is reviewed and verified.
 [Import/disconnect settlement](import-settlement.md) is reviewed and verified;
-availability reports remain unimplemented. Keep the other scopes unchecked
+[Availability/history reports](bank-reports.md) are reviewed and verified. Keep the other scopes unchecked
 until separately resumed.
 Each starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
 Retain existing boundaries when the audit finds no benefit from changing them.

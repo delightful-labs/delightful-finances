@@ -1,10 +1,10 @@
 # Feature Specification: Actor Orchestration Boundaries
 
-**Feature Branch**: Existing `feature/multiple-workspaces`; no new branch created.
+**Feature Branch**: `feature/xstate-orchestration`.
 
 **Created**: 2026-10-22
 
-**Status**: Workspace phase implemented and verified after review. Bank setup, mapping and write settlement are reviewed and verified; bank availability/status contracts remain unfinished. Forms, application/session supervision and diagnostics remain deferred and unchecked.
+**Status**: Workspace phase implemented and verified after review. Bank setup, mapping, write settlement and availability/history reports are reviewed and verified. Forms, application/session supervision and diagnostics remain deferred and unchecked.
 
 **Input**: Specify clearer actor ownership, lifetimes, communication and cleanup. Implement only workspace-related orchestration now; retain unfinished work for other areas in the repository.
 

@@ -1,9 +1,26 @@
-import { assign, setup } from 'xstate'
+import type { ActorRef, Snapshot } from 'xstate'
+import { assign, enqueueActions, setup } from 'xstate'
 import { required } from './identity.js'
 import type { Connection, LastSync } from './types.js'
 
-type Context = { connection: Connection | undefined; summary: LastSync | undefined }
-type Event = { type: 'OBSERVED'; connection: Connection | undefined }
+export type HistoryEvent = {
+	type: 'HISTORY_REPORTED'
+	generation: number
+	summary: LastSync | undefined
+}
+type ReportingInput = {
+	connection: Connection | undefined
+	generation: number
+	recipient: ActorRef<Snapshot<unknown>, HistoryEvent>
+}
+type Input = ReportingInput | Connection | undefined
+type Context = {
+	connection: Connection | undefined
+	summary: LastSync | undefined
+	generation: number
+	recipient: ActorRef<Snapshot<unknown>, HistoryEvent> | undefined
+}
+type Event = { type: 'OBSERVED'; connection: Connection | undefined; generation: number }
 type SummaryParams = { outcomeKey: LastSync['outcomeKey'] }
 
 export const bankHistoryMachine = setup<
@@ -11,13 +28,21 @@ export const bankHistoryMachine = setup<
 	Event,
 	{},
 	{},
-	{ summarize: SummaryParams },
+	{ summarize: SummaryParams; publish: undefined },
 	{},
 	never,
 	string,
-	Connection | undefined
+	Input
 >({
 	actions: {
+		publish: enqueueActions(({ context, enqueue }) => {
+			if (!context.recipient) return
+			enqueue.sendTo(context.recipient, {
+				type: 'HISTORY_REPORTED',
+				generation: context.generation,
+				summary: context.summary
+			})
+		}),
 		summarize: assign(({ context }, params: SummaryParams) => {
 			const connection = required(context.connection)
 			return {
@@ -33,12 +58,20 @@ export const bankHistoryMachine = setup<
 	}
 }).createMachine({
 	id: 'bank-history',
-	context: ({ input }) => ({ connection: input, summary: undefined }),
+	context: ({ input }) => ({
+		...(input && 'recipient' in input
+			? input
+			: { connection: input, generation: 0, recipient: undefined }),
+		summary: undefined
+	}),
 	initial: 'checkingConnection',
 	on: {
 		OBSERVED: {
 			target: '.checkingConnection',
-			actions: assign({ connection: ({ event }) => event.connection })
+			actions: assign({
+				connection: ({ event }) => event.connection,
+				generation: ({ event }) => event.generation
+			})
 		}
 	},
 	states: {
@@ -68,9 +101,11 @@ export const bankHistoryMachine = setup<
 				{ target: 'absent' }
 			]
 		},
-		absent: { entry: assign({ summary: undefined }) },
-		succeeded: { entry: { type: 'summarize', params: { outcomeKey: 'bank.succeeded' } } },
-		partial: { entry: { type: 'summarize', params: { outcomeKey: 'bank.partial' } } },
-		failed: { entry: { type: 'summarize', params: { outcomeKey: 'bank.failed' } } }
+		absent: { entry: [assign({ summary: undefined }), 'publish'] },
+		succeeded: {
+			entry: [{ type: 'summarize', params: { outcomeKey: 'bank.succeeded' } }, 'publish']
+		},
+		partial: { entry: [{ type: 'summarize', params: { outcomeKey: 'bank.partial' } }, 'publish'] },
+		failed: { entry: [{ type: 'summarize', params: { outcomeKey: 'bank.failed' } }, 'publish'] }
 	}
 })
