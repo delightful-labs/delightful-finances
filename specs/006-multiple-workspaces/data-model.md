@@ -1,28 +1,46 @@
-# Creation/startup data model
+# Workspace data model
 
-## Existing durable entities
+## Jazz entities
 
-- **Organization**: UUID id, name, kind, defaultCurrency, ownerId. Trim nonblank name; duplicates permitted. Retain existing enum values for compatibility in this slice; explicitly created workspaces use the existing personal value as a storage placeholder with no privileged product meaning. Do not derive grants, sharing eligibility, or startup preference from kind. Retain ownerId as creator/bootstrap compatibility; do not interpret it as the future complete owner set.
-- **Organization member**: stable id for this creation attempt, organizationId, current userId, profileId, owner role and all account mode under current policy compatibility. Future owner/capability work replaces the relevant assumptions explicitly.
-- **Profile**: reuse the current identity’s actual profile row. Never replace name/avatar or create another profile for an additional workspace.
-- **Category**: stable id derived from organization id + stable seed key/kind; localized initial label, kind, isSystem. Seed optional defaults only as part of creation. Preserve required system-category integrity separately; do not infer a missing optional category needs replenishment.
+- **Organization**: UUID, name, kind, defaultCurrency and ownerId. Names are trimmed/nonblank and may
+  repeat. Existing personal/business enum values are storage compatibility values, not access or
+  selection policy. `ownerId` is not the future multiple-owner set.
+- **Organization member**: attempt-stable ID, organizationId, userId, profileId, owner role and all-account
+  access for creation. Active membership/account scope remains necessary independently of URL selection.
+- **Profile**: one existing login profile reused across additional workspaces. Creation never replaces
+  its name/avatar. Optional `initialWorkspaceId` records initialization provenance, not a home workspace.
+- **Category**: attempt-stable ID derived from workspace ID and stable seed kind/key; localized name,
+  kind and isSystem. `src/lib/domain/workspace-defaults.ts` is the authoritative starter definition.
+  Required and optional starters are seeded only on creation; later default edits do not rewrite or
+  replenish existing catalogs. Workspace integrity does not check or repair categories.
 
-## Additive initialization receipt
+## Initialization marker
 
-Add optional `initialWorkspaceId` to the identity profile as **initialization provenance**, not a home/selection preference. New bootstrap writes it with profile, organization, membership, and categories in one local transaction. For existing identities with readable workspaces, record a receipt without rewriting their finances; choose a deterministic identity only as receipt provenance, never as an active selection. Validate this optional schema addition and deployed compatibility before use.
+First-use bootstrap writes profile, marker, organization, membership and categories in one local
+transaction. Startup can accept a warm marker even when its original workspace is inaccessible.
+Absent marker requires authoritative discovery; only no profiles/no accessible workspaces allows
+bootstrap. Existing profiles without markers are unavailable, not backfilled or re-adopted. Losing
+membership never authorizes recreation of a workspace or membership.
 
-The receipt prevents ordinary startup from recreating an initial workspace or owner membership after access loss. It does not prove present access to its referenced workspace. Existing legacy rows with no receipt need an explicit compatibility path: readable workspace means already initialized; no readable workspace plus no receipt is ambiguous. Do not regrant inaccessible legacy data automatically.
+## Device-local creation journal
 
-## Local creation-attempt record
+IndexedDB stores one pending slot keyed by app ID, server URL and authenticated user. Its frozen,
+validated payload contains workspace/member/category IDs, the existing profile reference, name,
+currency, kind, complete category seeds and identity/environment binding. It contains no transaction
+input or provider credential. Lifecycle belongs in actor states, not a persisted phase flag.
 
-Device-local durable metadata, one pending slot keyed by app ID + server URL + authenticated identity, with the attempt UUID in its frozen payload. The journal is not a transaction draft and stores no unfinished transaction input or credentials.
+The journal is written before Jazz creation. Atomic compare-and-write rejects a different competing
+tab payload. Retry reloads the slot; Create another clears only the matching completed attempt and
+permits a new ID. Reload reconciles without replaying writes. Retries retain original IDs/defaults.
 
-Fields: stable attempt/workspace/member/category IDs; current profile reference; frozen validated name, currency, kind and complete category seed payload; identity/environment binding. Lifecycle is represented by machine states, not a journal phase flag. Persist the frozen accepted creation payload before issuing the Jazz transaction. Completion is reconciled from actual matching local records and persistence outcomes, not guessed from a success flag.
+## Reconciliation and atomicity
 
-The IndexedDB resource statechart performs atomic compare-and-write on that slot. A competing tab with a different payload gets a conflict; explicit Retry reloads the shared slot rather than overwriting it. Create another clears only the matching completed attempt. Do not clear, reuse, or migrate user persistent Jazz storage. If recording fails, do not issue creation; show a retryable local-storage failure. Different deliberate Create another actions use different attempt IDs, even for matching names. Retries/reloads of the same recorded attempt retain IDs and frozen seed/name values. No automatic write replay on reload: reconcile and expose explicit retry.
+A single preflight checks profile, workspace, membership and categories. Matching records return the
+existing workspace, absent records permit the same attempt, and inconsistent records yield conflict.
+Reconciliation tolerates later display-name/category edits and optional-starter removal without
+reseeding. Required creation records and authority relationships still have to match.
 
-## Atomicity and conflicts
-
-One Jazz transaction creates organization + owner membership + categories (and bootstrap profile/receipt where applicable). Recheck same identity/binding and required profile observations at issuance. A retry checks exact IDs, relationships, owner authority, currency, and required system records. Reconciliation allows subsequent display-name/category edits and deletion of optional starters without reseeding. Complete matching records yield existing result, absent records permit the same attempt, and inconsistent/incomplete records yield conflict for recovery. Do not upsert existing organizations or categories over user edits. After a completed creation, later user modifications must not be treated as evidence requiring a second workspace: retain the attempt identity and classify existing ownership/record evidence conservatively, with no rewriting.
-
-Stable attempt IDs prevent duplicate logical entities on retries. Concurrent clients have separate deliberate attempts; same names are allowed. This design does not claim globally serialized mergeable transactions or server approval from local reads. Real-server rejection is handled through existing failure observation and does not authorize creating a new ID automatically.
+Transaction reads repeat atomic eligibility checks after acquisition; preflight is not a write lock.
+One commit creates the complete new workspace, including the profile/marker only during bootstrap.
+Stable IDs do not authorize blind inserts over existing records, imply global serialization, or prove
+remote acceptance. Failed/unknown settlement never silently generates a replacement attempt.

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feature/multiple-workspaces`
 **Created**: 2026-10-20
-**Status**: Initial create-and-switch implementation complete; query-parameter migration ready for implementation review, with its verification pending. Sharing and ownership administration remain future work.
+**Status**: Create-and-switch functionality complete and reviewed, including query-based selection and the follow-up code review fixes. Sharing and ownership administration remain future work.
 **Input**: Start a spec for working with multiple workspaces, review existing specs and Jazz code, and identify the decisions needed.
 
 ## Review summary
@@ -13,13 +13,13 @@ Design this foundation for future shared accounts: scoped capabilities, additive
 
 Future workspaces support multiple owners, accepted ownership offers, last-owner protection, unilateral owner removal with confirmation, voluntary departure, and reversible archive. Pending invitations lose validity when the inviter loses required authority; accepted access survives the inviter’s departure. Sharing and permission changes require server-confirmed online administration. These workflows are outside the first release; their constraints inform its design.
 
-### Deferred decisions
+### Current scope and future decisions
 
-- **D3 approved**: The route identifies the active workspace independently per tab. Reloads, bookmarks, direct links, and browser history retain that workspace context. Canonical URLs use native page paths with `?workspace=<uuid>` (for example `/expenses?workspace=<uuid>`). `/settings/workspace` is the chooser/create page; unscoped entry selects the sole accessible workspace or opens the chooser.
+- **D3 approved**: The URL identifies the active workspace independently per tab. Reloads, bookmarks, direct links, and browser history retain that workspace context. Canonical URLs use native page paths with `?workspace=<uuid>` (for example `/expenses?workspace=<uuid>`). `/settings/workspace` is the chooser/create page; unscoped entry selects the sole accessible workspace or opens the chooser.
 - **Before sharing implementation**: Exact capability definitions and initial role bundles; grant/delegation authority; invitation delivery, verification and lifecycle; entry category/tag availability and management; archive/removal/rejoining details.
-- **During technical planning**: Verify Jazz-enforced effective-capability and ownership invariants, align existing constitution/MVP role and personal-home assumptions, and resolve schema compatibility. These are design tasks, not additional product approvals already inferred from this draft.
+- **Before future sharing/ownership work**: Verify Jazz-enforced effective-capability and ownership invariants and align the constitution, MVP requirements, and schema with the approved future model. Existing role policies are not an implemented capability-administration system.
 
-No further product question is being asked in this review cycle. The approved decisions below are consolidated for review; unresolved items remain explicit.
+The requirements and approved future decisions below remain the product reference. [plan.md](plan.md) describes the completed architecture, [research.md](research.md) preserves useful SDK findings, and [quickstart.md](quickstart.md) describes validation. Deferred orchestration work remains in [008 tasks](../008-actor-orchestration/tasks.md).
 
 ## User Scenarios & Testing
 
@@ -83,13 +83,15 @@ An authorized manager grants another login identity access to a workspace with a
 
 ### Functional Requirements
 
+FR-015–025 and FR-029–037 describe approved future sharing, capability, ownership and lifecycle requirements. They inform the foundation but are not implemented by the completed create-and-switch release.
+
 - **FR-001**: A workspace MUST remain the organization tenancy boundary. Selecting a workspace MUST NOT switch login identity, merge data, or move records.
 - **FR-002**: Users MUST be able to select among their accessible workspaces using the existing Current workspace control. The selected workspace MUST be identifiable throughout scoped finance workflows.
 - **FR-003**: Workspace-bound reads, writes, account filters, account ordering, pagination, forms, bank metadata, and pending synchronization presentation MUST remain associated with the correct identity and workspace. Selection MUST reset account filters and pagination; account ordering MUST retain its existing per-identity/per-workspace behavior.
 - **FR-004**: Scope changes MUST prevent new work from stale workflows and clear transient credentials. Late results MUST NOT alter the replacement workspace. Issued writes MUST retain their original target and settle with truthful feedback.
 - **FR-005**: Existing locally available finance workflows MUST remain usable offline. Locally saved changes MUST NOT be presented as server-approved membership or ownership changes.
 - **FR-006**: Loading, unavailable data, access denial, query failure, and an accessible workspace with no accounts MUST have distinct outcomes. Missing query results alone MUST NOT establish revocation or authorize replacement creation.
-- **FR-007**: Membership and account-scope authorization MUST apply independently of which workspace is selected, with sharing capabilities and privacy governed by FR-015–019. Existing viewer/read-only requirements require alignment with D13 before implementation. UI visibility alone MUST NOT enforce authorization.
+- **FR-007**: Membership and account-scope authorization MUST apply independently of which workspace is selected, with sharing capabilities and privacy governed by FR-015–019. Existing viewer/read-only requirements require alignment with D13 before sharing implementation. UI visibility alone MUST NOT enforce authorization.
 - **FR-008**: Workspace access MUST NOT grant another user's bank credential access. Selecting or creating a workspace MUST NOT trigger provider transaction fetching.
 - **FR-009**: Profiles MUST remain login-identity data reused across workspaces. If sharing ships, admitted memberships MUST link the corresponding profile for authorized attribution.
 - **FR-010**: Creation MUST validate a trimmed nonblank name and create a complete owner-accessible workspace with starter categories, without copying existing finances or replacing the login profile. Retrying one creation attempt MUST preserve its identity.
@@ -120,7 +122,7 @@ An authorized manager grants another login identity access to a workspace with a
 
 - **FR-027**: Every new workspace MUST receive the centrally maintained starter-category set and no financial accounts or transactions. Starter-category definitions MUST have one authoritative maintenance location shared by initial bootstrap and explicit workspace creation, with labels localized through the existing localization system. The current optional starter labels are provisional, not approved final wording. Changing starter defaults MUST affect future workspace creation without renaming, deleting, or reseeding optional categories in existing workspaces. Required system categories MUST be created during workspace creation, preserving idempotent creation/retry behavior independently of optional starter defaults. Workspace integrity MUST NOT check or automatically repair categories in existing workspaces.
 
-- **FR-028**: Workspace names MUST NOT be unique. Creating, renaming, or accepting access to a workspace MUST allow a name already present in the user’s workspace list. Separate workspace identities MUST remain distinct regardless of matching names. Selection controls MUST provide enough additional context to distinguish same-named workspaces without exposing information outside the user’s access scope; the exact presentation remains to be designed.
+- **FR-028**: Workspace names MUST NOT be unique. Creating, renaming, or accepting access to a workspace MUST allow a name already present in the user’s workspace list. Separate workspace identities MUST remain distinct regardless of matching names. Selection controls MUST provide enough additional context to distinguish same-named workspaces without exposing information outside the user’s access scope; duplicate names are disambiguated with workspace IDs.
 
 - **FR-029**: Sharing a financial account MUST include its full existing transaction history and future transactions while the recipient’s access remains active. The sharing workflow MUST NOT impose a sharing-start-date cutoff. Supporting categories/tags, attribution, and attachments when supported remain limited to readable transactions under FR-015. Full history for a granted account MUST NOT expose any ungranted account.
 
@@ -168,25 +170,25 @@ An authorized manager grants another login identity access to a workspace with a
 
 - Explicitly approved decisions are recorded below. Remaining defaults and open design details are proposals, not approvals inferred from existing schema capabilities.
 - Retain USD entry and current currency rules. Workspace-specific currencies and conversion are excluded unless separately requested.
-- Aggregate reporting across workspaces, moving/copying accounts or transactions, workspace deletion, and encrypted bank credential sharing are excluded from this first draft.
+- Aggregate reporting across workspaces, moving/copying accounts or transactions, workspace deletion, and encrypted bank credential sharing are outside the completed create-and-switch release.
 - Keep existing UI presentation; no new visual direction is proposed.
-- This draft adds no implementation or automated tests. Implementation review must precede adding/running its tests.
-- [Research and decision register](research.md) records source evidence, unresolved policy decisions, and proposed defaults. D1 is resolved: create and switch first, designed for required future sharing. D2 is resolved: equivalent workspaces with one automatically created starting workspace. D3 is approved: route-based workspace identity and independent tab context; sharing decisions that affect initial tenancy or authorization must be resolved before the dependent design, and the remaining sharing decisions before implementing sharing.
+- The create-and-switch release is implemented and has reviewed test coverage. Future features still require their own design, implementation review, and verification.
+- [Research](research.md) records SDK evidence and its limits. This specification retains the approved product decisions; remaining sharing details must be resolved before implementing sharing.
 
 ## Decisions and compatibility
 
-- **D2 approved**: Workspaces are equivalent, including the automatically created starting workspace. Existing personal/business schema values are implementation compatibility concerns, not distinct tenancy or sharing rules. Planning must determine their treatment without changing this product decision.
-- This decision supersedes the unique-personal-home assumption for this feature. Before implementation, align bootstrap requirements in `001-finance-mvp` and the personal-only scope in `003-account-data-merge` with explicit workspace eligibility/selection. It does not authorize importing shared or other members’ records; merge eligibility remains a separate policy decision.
+- **D2 approved**: Workspaces are equivalent, including the automatically created starting workspace. Current storage retains personal/business values for compatibility; they do not determine tenancy, selection or sharing rules.
+- This decision supersedes the unique-personal-home assumption for this feature. Bootstrap now follows equivalent-workspace initialization. Future account-merge work must align the personal-only scope in `003-account-data-merge` with explicit eligibility/selection. It does not authorize importing shared or other members’ records; merge eligibility remains a separate policy decision.
 
 - **D11 approved — Selected-account privacy**: Share the account and transaction-related supporting information, plus minimal workspace identity. Exclude unrelated finance/catalog data, full membership lists, bank connection details, and aggregates over hidden accounts. An explicitly authorized entry catalog remains to be designed for writers. This narrows existing workspace-wide category/tag, profile, and other member-readable policies; it is a target requirement, not a claim that current permissions already enforce it. Before implementation, align affected requirements/policies in `001-finance-mvp` and relevant authorization plans. The constitution's existing membership/role/account-grant rules remain in force.
 
 - **D12 approved in principle — Catalog capabilities**: Different access levels control whether a recipient can enter transactions using the authorized account catalog, create categories/tags, or manage that available catalog. D13 removes read-only sharing from this product model. These capabilities need not each become a new named role. Exact mappings to existing roles/account grants and whether creation and assignment are separate permissions remain unresolved. No blanket creation/management access is inferred from account write access.
 
-- **D13 approved — No read-only sharing**: Viewing and transaction entry/editing form the baseline account-sharing access level. Do not offer a view-only tier. Existing viewer roles and read-only account grants appear in the constitution and MVP requirements; align those artifacts before implementation rather than silently treating this draft as an implementation amendment. Handling legacy viewer/read grants remains a planning decision. Read-only states caused by unavailable data or denied access remain distinct from a shareable permission tier.
+- **D13 approved — No read-only sharing**: Viewing and transaction entry/editing form the baseline account-sharing access level. Do not offer a view-only tier. Existing viewer roles and read-only account grants appear in the constitution and MVP requirements; align those artifacts before implementation rather than treating this future product decision as an implementation amendment. Handling legacy viewer/read grants remains a planning decision. Read-only states caused by unavailable data or denied access remain distinct from a shareable permission tier.
 
 - **D14 approved — Capabilities and role bundles**: Define authorization around scoped capabilities. Map capabilities to roles as named combinations later; allow new combinations and individual user grants. Existing owner/admin/member/viewer checks are current implementation facts, not the target extensibility model. Before implementation, align constitution/MVP role-based requirements and plan how the installed Jazz policy language enforces effective capabilities. Capability administration UI is not added to the first-release scope by this decision.
 
-- **D3 approved — Route-based workspace persistence**: The user approved the creation/startup plan and selected workspace identity in routes. Each tab follows its own URL. Stable workspace IDs survive renaming; knowing an ID does not grant access. This supersedes the earlier deferral. Exact route syntax, workspace-less entry/default behavior, and legacy-link handling remain technical design details; no remembered device default is inferred.
+- **D3 approved — URL-based workspace persistence**: Native SvelteKit routes carry `?workspace=<uuid>`. Each tab follows its own URL. Stable IDs survive renaming; knowing an ID does not grant access. Unscoped finance entry selects a sole accessible workspace or opens `/settings/workspace`; unscoped transaction details resolve their readable owning workspace. No remembered device default or path-prefix rewriting is used.
 - **D4 approved in part — Invitation with acceptance**: Grant shared-account access through an invitation accepted under the recipient’s login identity, rather than immediate direct addition. No email requirement, bearer-link scheme, existing-account-only restriction, or recipient-verification mechanism is implied.
 
 - **D5 approved in part — Multiple owners**: Several people may share ultimate workspace control. Prevent removal, departure, or demotion of the last owner, including competing changes. Align the existing single ownerId field, owner-role policies, bootstrap behavior, and capability-based authorization before implementation. D15 permits unilateral removal with confirmation and last-owner protection; D16 requires acceptance of ownership offers.
@@ -199,9 +201,9 @@ An authorized manager grants another login identity access to a workspace with a
 
 - **D18 approved — Reversible archive**: A workspace no longer needed is archived, preserving authorized access to its records while stopping new financial activity; an owner may restore it. Archive/restore is eventual functionality after the first release. Permanent deletion is not included. Read-only behavior of an archived workspace is a lifecycle restriction, not a read-only sharing tier.
 
-- **D8 approved in part — Discard unfinished transaction input**: Workspace switching immediately discards unfinished transaction input, without confirmation or draft retention. There is no draft-transaction concept in this feature; revisit only if draft support is introduced later. This does not cancel or undo already-submitted writes. Direct links follow route-based workspace scope under D3; account-filter/pagination reset and per-workspace ordering remain as specified.
+- **D8 approved in part — Discard unfinished transaction input**: Workspace switching immediately discards unfinished transaction input, without confirmation or draft retention. There is no draft-transaction concept in this feature; revisit only if draft support is introduced later. This does not cancel or undo already-submitted writes. Direct links follow URL query scope under D3; account-filter/pagination reset and per-workspace ordering remain as specified.
 
-- **D9 approved in part — Maintainable starter categories**: New workspaces include starter categories, with definitions easy to edit in one authoritative place. Current agent-created optional category choices/labels are provisional; inclusion does not approve their wording. No new account or transaction is seeded. Existing workspace customizations are not rewritten when defaults change. Duplicate names are allowed under D19; the exact disambiguating presentation remains to be designed.
+- **D9 approved in part — Maintainable starter categories**: New workspaces include starter categories, with definitions easy to edit in one authoritative place. Current agent-created optional category choices/labels are provisional; inclusion does not approve their wording. No new account or transaction is seeded. Existing workspace customizations are not rewritten when defaults change. Duplicate names are allowed under D19; selectors disambiguate matching names with workspace IDs.
 
 - **D19 approved — Duplicate workspace names**: Names are labels, not identifiers. Users may create, rename, or join same-named workspaces. Do not enforce name uniqueness; distinguish matching names in selection without conflating identities.
 

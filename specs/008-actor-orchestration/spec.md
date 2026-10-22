@@ -124,5 +124,5 @@ A maintainer can later improve bank, form and application orchestration using do
 
 - This changes orchestration, not finance permissions, workspace product features or data schemas.
 - [Multiple workspaces](../006-multiple-workspaces/spec.md) remains authoritative for existing product behavior.
-- [Ownership design](../006-multiple-workspaces/workspace-actor-design.md) is the research baseline; technical decisions and execution scope are recorded in [plan.md](plan.md) and [tasks.md](tasks.md).
+- [Workspace architecture](../006-multiple-workspaces/plan.md#actor-ownership) records the implemented ownership model; broader boundaries and unchecked follow-ups are in [plan.md](plan.md) and [tasks.md](tasks.md).
 - The user authorized the workspace implementation as one combined review batch. Tests still follow implementation review. This spec is not authorization for a broad application rewrite.
