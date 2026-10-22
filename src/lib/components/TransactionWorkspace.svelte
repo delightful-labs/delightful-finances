@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppLink from '#lib/components/AppLink.svelte'
 	import { Button, Drawer, ScreenReaderText } from 'delightful-ui'
 	import { onMount, type Snippet } from 'svelte'
 	import { isMobile } from '#lib/viewport.js'
@@ -32,7 +33,7 @@
 <div class="transaction-workspace" data-desktop={desktop}>
 	<div class="transaction-content" class:index>
 		{#if !desktop && listHref}
-			<a href={listHref}>{m['transactions.back_to_list']()}</a>
+			<AppLink href={listHref}>{m['transactions.back_to_list']()}</AppLink>
 		{/if}
 		{#if desktop}
 			<div class="drawer-toggle" hidden={drawerOpen}>

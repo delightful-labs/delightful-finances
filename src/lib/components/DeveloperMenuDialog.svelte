@@ -44,7 +44,7 @@
 			<dd><code>{accountId || m['developer.unavailable']()}</code></dd>
 		</dl>
 		{@render children()}
-		<Button type="button" onclick={() => (open = false)}>{m['developer.close']()}</Button>
+		<Button type="button" onclick={() => (open = false)}>{m['actions.close']()}</Button>
 	</PageContent>
 </Dialog>
 

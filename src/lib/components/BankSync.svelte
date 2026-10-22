@@ -10,6 +10,7 @@
 	let {
 		browserOffline,
 		view,
+		syncDisabled = false,
 		onTestEncryption,
 		onVerifyDecryption,
 		onSaveConnection,
@@ -23,6 +24,7 @@
 	}: {
 		browserOffline: boolean
 		view: BankPresentation
+		syncDisabled?: boolean
 		onTestEncryption: () => void
 		onVerifyDecryption: () => void
 		onSaveConnection: () => void
@@ -209,7 +211,7 @@
 				<Button
 					type="button"
 					onclick={onSync}
-					disabled={browserOffline || busy}
+					disabled={browserOffline || busy || syncDisabled}
 					aria-describedby={browserOffline ? 'bank-sync-offline' : undefined}
 				>
 					<Icon style="width: 1em; height: 1em;" icon={RefreshIcon} />

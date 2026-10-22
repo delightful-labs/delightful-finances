@@ -1,0 +1,58 @@
+# Actor orchestration boundaries
+
+Status: workspace phase complete and verified. Broader subsystem work remains deferred in
+[tasks.md](tasks.md); [spec.md](spec.md) defines its requirements.
+The current workspace ownership tree and creation/integrity workflows are maintained in
+[the workspace architecture](../006-multiple-workspaces/plan.md#actor-ownership), rather than a
+second actor proposal or chronological implementation log.
+
+## Implemented workspace contracts
+
+- The coordinator owns startup, creation, integrity, navigation and the existing bank actor for one
+  exact database attachment. WorkspaceBootstrap supplies Jazz/browser observations; bank presentation
+  does not own the workspace attachment or reconstruct workspace authorization.
+- Initialization reports identity/session request, generation and initialized profile ID. It accepts
+  initialization provenance but does not backfill legacy profiles or select a home workspace.
+- Integrity publishes a binding/generation-specific status through a typed recipient. Complete and
+  attribution-only usable partial reports can enable finance when the coordinator's access rules also
+  permit it. Category assessment/repair and blocked-partial branches have been removed.
+- Navigation consumes route/catalog facts and the coordinator's access decision. The URL is authoritative.
+  Management/account/login routes need identity readiness but remain available during catalog failures.
+- Identity-bound creation survives selection changes. Its public view is projected through supported
+  snapshot observation; finite operation results use outcome-specific payloads and invocation output.
+  Persistence owns one shared preflight reconciliation pass, then a resource-owning transaction.
+- Exact attachment matching and generation correlation reject obsolete detaches/reports. No global
+  actor registry, event bus or generic supervisor framework is introduced.
+
+## Lifetimes and cleanup
+
+Startup, creation and integrity have distinct responsibilities and interruption policies; similar
+replacement wrappers do not justify merging them. Fixed children remain invoked across work/draining
+states. Resource owners retain read/check/stage/commit/settle/rollback decisions in statecharts.
+Parents await actual cleanup before replacement or shutdown and do not request impossible
+acknowledgements from failed/completed dependents. Navigation observation cancellation does not
+promise to undo browser navigation already accepted by the platform.
+
+The [integrity reporting contract](contracts/workspace-integrity-report.md) describes report currency.
+The [XState memory](../../.specify/memory/xstate.md) contains reusable orchestration guidance.
+Version-matched research used XState 5.33.2; check installed semantics before adopting newer examples.
+
+## Deferred scopes
+
+Bank internals, generic forms, application/session supervision and diagnostics are independent audits,
+not remaining workspace implementation. Keep their tasks unchecked until separately resumed.
+Each starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
+Retain existing boundaries when the audit finds no benefit from changing them.
+
+Future implementations follow the repository review/test gate. Preserve explicit bank initiation,
+credential disposal, original write scope, finite outcome distinctions and local-first finance.
+This documentation authorizes no commits, deployment, data resets or deferred refactors.
+
+## Verification
+
+Workspace changes and subsequent review fixes received relevant unit/browser and static checks,
+including stale generations, replacement/draining, scope isolation, creation recovery, offline use,
+profile-only integrity, navigation and accessible presentation. The final creation-result cleanup
+passed 39 related unit tests and three creation/recovery browser checks, plus both type checks.
+These are scoped results, not a final full application/PWA rerun. Reproducible commands and evidence
+limits are in [workspace validation](../006-multiple-workspaces/quickstart.md).

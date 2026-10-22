@@ -17,11 +17,14 @@ export function workspaceRenameScope(facts: WorkspaceRenameObservation): Workspa
 		binding: facts.binding
 	}
 }
-export function sameWorkspaceRenameScope(left: WorkspaceRenameScope, right: WorkspaceRenameScope) {
+export function sameWorkspaceRenameScope(
+	currentScope: WorkspaceRenameScope,
+	incomingScope: WorkspaceRenameScope
+) {
 	return (
-		left.identityId === right.identityId &&
-		left.organizationId === right.organizationId &&
-		left.binding === right.binding
+		currentScope.identityId === incomingScope.identityId &&
+		currentScope.organizationId === incomingScope.organizationId &&
+		currentScope.binding === incomingScope.binding
 	)
 }
 

@@ -1,7 +1,45 @@
 import { z } from 'zod'
 import { resizeAvatar } from '../domain/avatar.js'
 
-export const workspaceNameFormSchema = z.object({ name: z.string().trim().min(1) })
+export const appWorkspaceSchema = z.strictObject({
+	name: z.string().trim().min(1),
+	kind: z.enum(['personal', 'business']),
+	defaultCurrency: z.literal('USD'),
+	ownerId: z.uuid()
+})
+
+export const workspaceNameFormSchema = appWorkspaceSchema.pick({ name: true }).strip()
+
+export const workspaceCreationAttemptSchema = z.strictObject({
+	organizationId: z.uuid(),
+	membershipId: z.uuid(),
+	profileId: z.uuid(),
+	workspace: appWorkspaceSchema,
+	categories: z
+		.array(
+			z.strictObject({
+				id: z.uuid(),
+				name: z.string().trim().min(1),
+				kind: z.enum(['expense', 'income']),
+				isSystem: z.boolean()
+			})
+		)
+		.superRefine((categories, context) => {
+			if (new Set(categories.map((category) => category.id)).size !== categories.length) {
+				context.addIssue({ code: 'custom', message: 'Duplicate starter category identity' })
+			}
+			for (const kind of ['expense', 'income']) {
+				if (
+					categories.filter((category) => category.kind === kind && category.isSystem).length !== 1
+				) {
+					context.addIssue({
+						code: 'custom',
+						message: 'One system category per transaction kind is required'
+					})
+				}
+			}
+		})
+})
 
 export const MAX_AVATAR_UPLOAD_BYTES = 10 * 1024 * 1024
 export const MAX_AVATAR_BYTES = 256 * 1024

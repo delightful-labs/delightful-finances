@@ -376,7 +376,7 @@ describe('creation navigation', () => {
 					snapshot.matches({ open: { workflow: { completion: 'navigating' } } })
 				)
 				expect(navigate).toHaveBeenCalledExactlyOnceWith(
-					kind === 'income' ? '/income' : '/expenses',
+					`${kind === 'income' ? '/income' : '/expenses'}?workspace=${id}`,
 					expect.any(AbortSignal)
 				)
 				expect(actor.getSnapshot().context.result).toMatchObject({

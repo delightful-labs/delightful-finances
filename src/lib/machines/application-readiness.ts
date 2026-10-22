@@ -10,7 +10,7 @@ import {
 	setup,
 	stopChild
 } from 'xstate'
-import type { ActorRefFrom } from 'xstate'
+import type { ActorRefFrom, SnapshotFrom } from 'xstate'
 import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
 import { createSessionStartupMachine } from './session-startup.js'
 import { createWorkspaceReadinessMachine, type WorkspaceAttachment } from './readiness.js'
@@ -23,6 +23,7 @@ type Context = {
 	session: Session | undefined
 	status: Status
 	workspace: Workspace | undefined
+	attachment: WorkspaceAttachment | undefined
 	pending: WorkspaceAttachment | undefined
 }
 type Event =
@@ -31,7 +32,7 @@ type Event =
 	| { type: 'SESSION_OBSERVED'; status: Status }
 	| { type: 'SESSION_OBSERVER_FAILED' }
 	| { type: 'ATTACH_WORKSPACE'; attachment: WorkspaceAttachment }
-	| { type: 'DETACH_WORKSPACE'; actor: Workspace }
+	| { type: 'DETACH_WORKSPACE'; attachment: WorkspaceAttachment }
 	| { type: 'WORKSPACE_CLOSED'; actor: unknown }
 	| { type: 'ATTACH_PENDING' }
 	| { type: 'SHUTDOWN' }
@@ -74,6 +75,7 @@ export function createApplicationReadinessMachine(
 		}
 	})
 	const attach = workflow.assign(({ context, spawn }) => ({
+		attachment: context.pending,
 		workspace: spawn(createWorkspaceReadinessMachine(required(context.pending)), {
 			syncSnapshot: true
 		}),
@@ -85,7 +87,7 @@ export function createApplicationReadinessMachine(
 	})
 	const release = workflow.enqueueActions(({ context, enqueue }) => {
 		enqueue.stopChild(required(context.workspace))
-		enqueue.assign({ workspace: undefined })
+		enqueue.assign({ workspace: undefined, attachment: undefined })
 		enqueue.raise({ type: 'ATTACH_PENDING' })
 	})
 	return workflow.createMachine({
@@ -95,6 +97,7 @@ export function createApplicationReadinessMachine(
 			session: existing,
 			status: 'transitioning',
 			workspace: undefined,
+			attachment: undefined,
 			pending: undefined
 		},
 		invoke: {
@@ -128,6 +131,10 @@ export function createApplicationReadinessMachine(
 			SHUTDOWN: { target: '.closing', actions: assign({ pending: undefined }) },
 			ATTACH_WORKSPACE: [
 				{
+					guard: ({ context, event }) =>
+						context.attachment === event.attachment || context.pending === event.attachment
+				},
+				{
 					guard: ({ context }) => Boolean(context.workspace),
 					actions: [
 						assign({ pending: ({ event }) => event.attachment }),
@@ -136,10 +143,18 @@ export function createApplicationReadinessMachine(
 				},
 				{ actions: [assign({ pending: ({ event }) => event.attachment }), attach] }
 			],
-			DETACH_WORKSPACE: {
-				guard: ({ context, event }) => context.workspace === event.actor,
-				actions: sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' })
-			},
+			DETACH_WORKSPACE: [
+				{
+					guard: ({ context, event }) => context.pending === event.attachment,
+					actions: assign({ pending: undefined })
+				},
+				{
+					guard: ({ context, event }) =>
+						context.attachment === event.attachment &&
+						context.workspace?.getSnapshot().status === 'active',
+					actions: sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' })
+				}
+			],
 			WORKSPACE_CLOSED: {
 				guard: ({ context, event }) => context.workspace === event.actor,
 				actions: release
@@ -232,7 +247,7 @@ export function createApplicationReadinessMachine(
 						target: 'closed',
 						actions: [
 							stopChild(({ context }) => required(context.workspace)),
-							assign({ workspace: undefined })
+							assign({ workspace: undefined, attachment: undefined })
 						]
 					},
 					ATTACH_WORKSPACE: {},
@@ -243,7 +258,18 @@ export function createApplicationReadinessMachine(
 					RETRY: {}
 				}
 			},
-			closed: { type: 'final', entry: assign({ workspace: undefined, pending: undefined }) }
+			closed: {
+				type: 'final',
+				entry: assign({ workspace: undefined, attachment: undefined, pending: undefined })
+			}
 		}
 	})
+}
+
+/** Match the exact dependency attachment, including while a previous owner drains. */
+export function selectAttachedWorkspace(
+	snapshot: SnapshotFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+	attachment: WorkspaceAttachment
+) {
+	return snapshot.context.attachment === attachment ? snapshot.context.workspace : undefined
 }

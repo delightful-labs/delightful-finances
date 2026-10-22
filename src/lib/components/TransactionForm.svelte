@@ -202,7 +202,7 @@
 						<option
 							value="cash"
 							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
-							>{m['transactions.payment.cash']()}</option
+							>{m['labels.cash']()}</option
 						>
 						<option
 							value="check"
@@ -289,14 +289,16 @@
 				<Button type="button" onclick={oncancel}>{m['actions.cancel']()}</Button>
 			{/if}
 			{#if form.content.kind === 'success' && mode === 'create'}
-				<Button type="reset">{m['transactions.add_another']()}</Button>
+				<Button type="reset"
+					>{m['actions.add_another']({ subject: m['labels.transaction']() })}</Button
+				>
 			{:else if mode === 'create' || view.readiness.kind === 'ready'}
 				<Button type="submit" variant="primary" disabled={!form.canSubmit}>
 					{view.feedback.kind === 'result' &&
 					view.feedback.result.outcome === 'failed' &&
 					view.feedback.result.code === 'completionFailed'
 						? m['actions.retry']()
-						: m['transactions.save']()}
+						: m['actions.save_subject']({ subject: m['labels.transaction']() })}
 				</Button>
 			{/if}
 		{/snippet}

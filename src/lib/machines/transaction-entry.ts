@@ -1,3 +1,4 @@
+import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
@@ -266,7 +267,13 @@ export function createTransactionEntryFormOptions(deps: {
 			? {
 					...options,
 					complete: (scope: TransactionEntryScope, signal: AbortSignal) =>
-						navigate(scope.kind === 'income' ? '/income' : '/expenses', signal)
+						navigate(
+							workspaceHref(
+								scope.organizationId,
+								scope.kind === 'income' ? '/income' : '/expenses'
+							),
+							signal
+						)
 				}
 			: options
 	}

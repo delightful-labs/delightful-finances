@@ -1,15 +1,7 @@
 <script lang="ts">
 	import Icon from './AppIcon.svelte'
 	import AppNavigationLink from './AppNavigationLink.svelte'
-	import {
-		Button,
-		Drawer,
-		Details,
-		Navigation,
-		Select,
-		Checkbox,
-		StatusMessage
-	} from 'delightful-ui'
+	import { Button, Drawer, Details, Navigation, Checkbox, StatusMessage } from 'delightful-ui'
 	import OverviewIcon from 'tdesign-icons-svg/src/dashboard.svg?component'
 	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
 	import IncomeIcon from 'tdesign-icons-svg/src/arrow-down.svg?component'
@@ -28,6 +20,7 @@
 	import type { BankSyncControls } from '#lib/bank-sync.js'
 	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import WorkspaceSelector from './WorkspaceSelector.svelte'
 	import QueryContent from './QueryContent.svelte'
 	import PwaUpdateIntegration from './PwaUpdateIntegration.svelte'
 
@@ -261,16 +254,11 @@
 								loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
 								errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
 							>
-								<Select
-									label={m['workspace.current']()}
-									id="active-organization"
-									value={organizationId ?? ''}
-									onchange={(event) => onOrganizationChange(event.currentTarget.value)}
-								>
-									{#each organizations as organization (organization.id)}
-										<option value={organization.id}>{organization.name}</option>
-									{/each}
-								</Select>
+								<WorkspaceSelector
+									{organizations}
+									{organizationId}
+									onchange={onOrganizationChange}
+								/>
 							</QueryContent>
 						</div>
 					</div>
@@ -280,7 +268,7 @@
 								href="/settings/workspace"
 								{pathname}
 								icon={WorkspaceIcon}
-								label={m['workspace.label']()}
+								label={m['labels.workspaces']()}
 								onclick={onNavigate}
 							/>
 						</li>
@@ -298,7 +286,7 @@
 								href="/account"
 								{pathname}
 								icon={AccountIcon}
-								label={m['navigation.account']()}
+								label={m['labels.account']()}
 								onclick={onNavigate}
 							/>
 						</li>

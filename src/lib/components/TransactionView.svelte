@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
+	import { withQueryParams } from '#lib/domain/query-params.js'
 	import { app } from '#lib/schema.js'
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { getContext, untrack } from 'svelte'
@@ -24,17 +25,22 @@
 		return /^\d+$/.test(value) && Number.isSafeInteger(number) && number > 0 ? number : 1
 	})
 	function pageHref(number: number) {
-		const url = new URL(page.url.href)
-		if (number <= 1) url.searchParams.delete('page')
-		else url.searchParams.set('page', String(number))
-		return `${url.pathname}${url.search}${url.hash}`
+		return withQueryParams(`${page.url.pathname}${page.url.search}${page.url.hash}`, {
+			page: number > 1 ? number : null
+		})
 	}
 	function transactionHref(id: string) {
-		const query = requestedPage > 1 ? `?page=${requestedPage}` : ''
-		return `${kind === 'income' ? '/income' : '/expenses'}/${id}${query}`
+		return withQueryParams(
+			`${kind === 'income' ? '/income' : '/expenses'}/${encodeURIComponent(id)}`,
+			{
+				page: requestedPage > 1 ? requestedPage : null
+			}
+		)
 	}
 	const newHref = $derived(
-		`${kind === 'income' ? '/income/new' : '/expenses/new'}${requestedPage > 1 ? `?page=${requestedPage}` : ''}`
+		withQueryParams(kind === 'income' ? '/income/new' : '/expenses/new', {
+			page: requestedPage > 1 ? requestedPage : null
+		})
 	)
 
 	let previousPaginationScope:

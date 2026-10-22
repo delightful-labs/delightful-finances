@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppLink from '#lib/components/AppLink.svelte'
 	import { Text } from 'delightful-ui'
 	import Icon from './AppIcon.svelte'
 	import ChevronRight from 'tdesign-icons-svg/src/chevron-right.svg?component'
@@ -38,7 +39,9 @@
 	<Text size="sm" as="span"
 		>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</Text
 	>
-	<a {href} aria-labelledby={labelId}><Icon icon={ChevronRight} /></a>
+	<AppLink class="transaction-link" {href} aria-labelledby={labelId}
+		><Icon icon={ChevronRight} /></AppLink
+	>
 	<span id={labelId} class="link-label"
 		>{m['transactions.details']()}: {categoryName ??
 			m['transactions.unavailable_item']({ subject: m['labels.category']() })}, {transaction.description
@@ -65,7 +68,7 @@
 		overflow-wrap: anywhere;
 	}
 
-	a {
+	li :global(a.transaction-link) {
 		color: inherit;
 		display: inline-flex;
 		align-self: start;
@@ -81,17 +84,17 @@
 		background-color: var(--dui-color-accent);
 	}
 
-	a::after {
+	li :global(a.transaction-link::after) {
 		content: '';
 		position: absolute;
 		inset: 0;
 	}
 
-	a:focus-visible {
+	li :global(a.transaction-link:focus-visible) {
 		outline: none;
 	}
 
-	a:focus-visible::after {
+	li :global(a.transaction-link:focus-visible::after) {
 		outline: 2px solid var(--dui-color-focus, currentColor);
 		outline-offset: 2px;
 	}

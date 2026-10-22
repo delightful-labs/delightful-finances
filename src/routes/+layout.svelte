@@ -16,15 +16,44 @@
 	import JazzStartup from '#lib/components/JazzStartup.svelte'
 	import SessionStartup from '#lib/components/SessionStartup.svelte'
 	import WorkspaceBootstrap from '#lib/components/WorkspaceBootstrap.svelte'
+	import { page } from '$app/state'
+	import { queryLinksKey, type QueryLinkContext } from '#lib/query-links.js'
+	import { browser } from '$app/env'
+	import { workspaceRoute } from '#lib/domain/workspace-routes.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { getCurrentJazzSession, getOrCreateJazzSession } from '#lib/jazz-session.js'
 
 	let { children }: { children: Snippet } = $props()
-	const financeFilters = $state<FinanceFilters>({
-		activeOrganizationId: null,
-		selectedAccountIds: null
+	const routeWorkspaceId = $derived(browser ? workspaceRoute(page.url.search).workspaceId : null)
+	const accountFilter = $state<{ scope: string | null; ids: string[] | null }>({
+		scope: null,
+		ids: null
 	})
+	$effect.pre(() => {
+		if (accountFilter.scope !== routeWorkspaceId) {
+			accountFilter.scope = routeWorkspaceId
+			accountFilter.ids = null
+		}
+	})
+	const financeFilters: FinanceFilters = {
+		get activeOrganizationId() {
+			return routeWorkspaceId
+		},
+		get selectedAccountIds() {
+			return accountFilter.scope === routeWorkspaceId ? accountFilter.ids : null
+		},
+		set selectedAccountIds(value) {
+			accountFilter.scope = routeWorkspaceId
+			accountFilter.ids = value
+		}
+	}
 
+	setContext<QueryLinkContext>(queryLinksKey, {
+		get href() {
+			return browser ? page.url.href : undefined
+		},
+		keys: ['workspace']
+	})
 	setContext(financeFiltersKey, financeFilters)
 
 	const jazzConfig = {

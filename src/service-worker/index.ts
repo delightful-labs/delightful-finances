@@ -30,18 +30,19 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
 	const url = new URL(event.request.url)
+	const publicPath = url.pathname
 	// Only the build's public shell/assets are cached. Jazz and auth requests pass through.
 	if (
 		event.request.method !== 'GET' ||
 		url.origin !== self.location.origin ||
-		!cachedPaths.has(url.pathname)
+		!cachedPaths.has(publicPath)
 	) {
 		return
 	}
 
 	event.respondWith(
 		caches.open(cacheName).then(async (cache) => {
-			const cached = await cache.match(url.pathname)
+			const cached = await cache.match(publicPath)
 			return cached ?? fetch(event.request)
 		})
 	)
