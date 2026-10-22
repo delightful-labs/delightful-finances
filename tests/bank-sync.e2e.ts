@@ -162,9 +162,12 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	failSync = true
 	await sync.click()
-	await expect(page.getByRole('main').getByRole('status')).toContainText(
-		'SimpleFIN could not complete the request'
-	)
+	await expect(
+		page
+			.getByRole('main')
+			.getByRole('status')
+			.filter({ hasText: 'SimpleFIN could not complete the request' })
+	).toBeVisible()
 	await expect(sync).toBeEnabled()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'sync'])
 	await page.getByRole('button', { name: 'Disconnect bank sync', exact: true }).click()
@@ -207,9 +210,9 @@ test('lock actor startup failure clears setup and allows an explicit new attempt
 	const token = btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token')
 	await input.fill(token)
 	await create.click()
-	await expect(page.getByRole('main').getByRole('status')).toContainText(
-		'No automatic retry will occur'
-	)
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'No automatic retry will occur' })
+	).toBeVisible()
 	await expect(input).toHaveValue('')
 	await expect(create).toBeDisabled()
 	await input.fill(token)

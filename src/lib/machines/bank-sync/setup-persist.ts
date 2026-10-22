@@ -35,7 +35,9 @@ function connectionValues(input: Input) {
 	>
 }
 type Write = { scope: CredentialScope; values: ReturnType<typeof connectionValues> }
-type Context = Input & { values: Write['values']; error: unknown }
+type Context = Input & { values: Write['values']; error: Error | undefined }
+type Output =
+	{ settlement: 'locallyPersisted'; error: undefined } | { settlement: 'unresolved'; error: Error }
 
 export function createSetupPersistenceMachine({ db }: Dependencies) {
 	const actors = {
@@ -52,22 +54,16 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 				.wait({ tier: 'local' })
 		})
 	}
-	return setup<
-		Context,
-		{ type: 'SAVE' },
-		typeof actors,
-		{},
-		{},
-		{},
-		never,
-		string,
-		Input,
-		{ error: unknown }
-	>({ actors }).createMachine({
+	return setup<Context, { type: 'SAVE' }, typeof actors, {}, {}, {}, never, string, Input, Output>({
+		actors
+	}).createMachine({
 		id: 'bank-setup-persistence',
 		context: ({ input }) => ({ ...input, values: connectionValues(input), error: undefined }),
 		initial: 'choosingWrite',
-		output: ({ context }) => ({ error: context.error }),
+		output: ({ context }): Output =>
+			context.error
+				? { settlement: 'unresolved', error: context.error }
+				: { settlement: 'locallyPersisted', error: undefined },
 		states: {
 			choosingWrite: {
 				always: [

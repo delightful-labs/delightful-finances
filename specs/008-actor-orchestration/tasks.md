@@ -7,12 +7,16 @@ and historical test-count logs are omitted.
 
 The tasks below remain unimplemented. Retaining them is not authorization to start a broader refactor.
 Each subsystem needs its own audit and implementation review, followed by approved relevant tests.
-The next optional task is D001 when the user resumes bank orchestration.
+Bank orchestration has been resumed. D001's source audit is recorded in
+[bank-audit.md](bank-audit.md); implementation scope remains subject to review.
 
-## Deferred: bank orchestration — do not implement now
+## Resumed: bank orchestration — focused review cycles
 
-- [ ] D001 Audit the bank tree's ownership, actor contracts, snapshot coupling and resource lifetimes; record which boundaries to retain, merge or change (FR-014).
+- [x] D001 Audit the bank tree's ownership, actor contracts, snapshot coupling and resource lifetimes; record which boundaries to retain, merge or change (FR-014). Source audit complete; no runtime verification claimed.
 - [ ] D002 After separate scope approval, improve bank command/status contracts and responsibility boundaries identified by D001. Preserve credential disposal, explicit user initiation and actual cancellation semantics (FR-014).
+      The reviewed setup persistence settlement slice is implemented and verified in
+      [setup-settlement.md](setup-settlement.md). Mapping transaction ownership,
+      operation/import draining and availability reports remain unfinished.
 - [ ] D003 Review that implementation, then verify cancellation, identity/scope replacement, partial results, observer errors, provider request races and resource cleanup (FR-014).
 
 ## Deferred: generic form orchestration — do not implement now

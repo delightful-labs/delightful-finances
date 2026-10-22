@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+	assign,
 	createActor,
 	createMachine,
 	fromCallback,
@@ -47,9 +48,9 @@ vi.mock('./setup-baseline.js', () => ({
 }))
 vi.mock('./setup-persist.js', () => ({
 	createSetupPersistenceMachine: () => {
-		const save = fromPromise<{ error: undefined }, PersistInput>(persist)
+		const save = fromPromise<PersistOutput, PersistInput>(persist)
 		return setup<
-			{ input: PersistInput },
+			{ input: PersistInput; result: PersistOutput | undefined },
 			{ type: 'SAVE' },
 			{ save: typeof save },
 			{},
@@ -58,17 +59,24 @@ vi.mock('./setup-persist.js', () => ({
 			never,
 			string,
 			PersistInput,
-			{ error: undefined }
+			PersistOutput
 		>({ actors: { save } }).createMachine({
-			context: ({ input }) => ({ input }),
+			context: ({ input }) => ({ input, result: undefined }),
 			initial: 'saving',
 			states: {
 				saving: {
-					invoke: { src: 'save', input: ({ context }) => context.input, onDone: 'complete' }
+					invoke: {
+						src: 'save',
+						input: ({ context }) => context.input,
+						onDone: { target: 'complete', actions: assign({ result: ({ event }) => event.output }) }
+					}
 				},
 				complete: { type: 'final' }
 			},
-			output: () => ({ error: undefined })
+			output: ({ context }) => {
+				if (!context.result) throw new Error('missing persistence result')
+				return context.result
+			}
 		})
 	}
 }))
@@ -79,6 +87,7 @@ function success<T>(output: T) {
 		output: () => output
 	})
 }
+type PersistOutput = OutputFrom<ReturnType<typeof createSetupPersistenceMachine>>
 type PersistInput = InputFrom<ReturnType<typeof createSetupPersistenceMachine>>
 type SetupActor = ActorRefFrom<ReturnType<typeof createBankSetupMachine>>
 
@@ -97,7 +106,7 @@ const seal = vi.fn<passkeys.CredentialSealer>()
 const failed = vi.fn()
 const releaseLock = vi.fn()
 const acquireLock = vi.fn<() => void>()
-const persist = vi.fn<({ input }: { input: PersistInput }) => Promise<{ error: undefined }>>()
+const persist = vi.fn<({ input }: { input: PersistInput }) => Promise<PersistOutput>>()
 const actors: SetupActor[] = []
 
 function start(): SetupActor {
@@ -154,7 +163,7 @@ beforeEach(() => {
 	vi.mocked(passkeys.verifyPasskeySample).mockResolvedValue(seal)
 	vi.mocked(provider.claimToken).mockResolvedValue('secret-access-url')
 	seal.mockResolvedValue(envelope)
-	persist.mockResolvedValue({ error: undefined })
+	persist.mockResolvedValue({ settlement: 'locallyPersisted', error: undefined })
 })
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
@@ -174,7 +183,8 @@ describe('setup actor failure boundaries', () => {
 		await advance(actor)
 		expect(await toPromise(actor)).toEqual({
 			kind: 'failed',
-			error: new Error('locking_unavailable')
+			error: new Error('locking_unavailable'),
+			settlement: 'notStarted'
 		})
 		expect(actor.getSnapshot().context).toMatchObject({
 			token: undefined,
@@ -220,7 +230,7 @@ describe('setup actor failure boundaries', () => {
 			const actor = start()
 			await advance(actor)
 			const result = await toPromise(actor)
-			expect(result).toEqual({ kind: 'failed', error: new Error(code) })
+			expect(result).toEqual({ kind: 'failed', error: new Error(code), settlement: 'notStarted' })
 			expect(actor.getSnapshot().context).toMatchObject({
 				token: undefined,
 				accessUrl: undefined,
@@ -265,7 +275,7 @@ describe('setup actor failure boundaries', () => {
 		actor.send({ type: 'TEST_ENCRYPTION' })
 		await waitFor(actor, (state) => state.matches({ encrypting: 'encryptingSample' }))
 		actor.send({ type: 'CANCEL' })
-		expect(await toPromise(actor)).toEqual({ kind: 'cancelled' })
+		expect(await toPromise(actor)).toEqual({ kind: 'cancelled', settlement: 'notStarted' })
 		expect(signal?.aborted).toBe(true)
 		pending.reject(new Error('late secret-access-url'))
 		await pending.promise.catch(() => undefined)
@@ -282,5 +292,68 @@ describe('setup actor failure boundaries', () => {
 			material: undefined,
 			base: undefined
 		})
+	})
+})
+
+describe('setup persistence settlement', () => {
+	it.each(['locallyPersisted', 'unresolved'] satisfies PersistOutput['settlement'][])(
+		'holds the lock through cancellation until %s settlement',
+		async (settlement) => {
+			const pending = Promise.withResolvers<PersistOutput>()
+			persist.mockReturnValueOnce(pending.promise)
+			const actor = start()
+			await advance(actor)
+			await waitFor(actor, (state) => state.matches({ saving: { persisting: 'working' } }))
+			actor.send({ type: 'CANCEL' })
+			actor.send({ type: 'LOCK_FAILED', error: new Error('late lock failure') })
+			actor.send({ type: 'CANCEL' })
+			actor.send({ type: 'SAVE_CONNECTION' })
+			expect(actor.getSnapshot().matches({ saving: { persisting: 'draining' } })).toBe(true)
+			expect(actor.getSnapshot().status).toBe('active')
+			expect(releaseLock).toHaveBeenCalledTimes(3)
+			expect(persist).toHaveBeenCalledOnce()
+			expect(actor.getSnapshot().context).toMatchObject({
+				token: undefined,
+				accessUrl: undefined,
+				base: undefined,
+				material: undefined
+			})
+			pending.resolve(
+				settlement === 'locallyPersisted'
+					? { settlement, error: undefined }
+					: { settlement, error: new Error('save_failure') }
+			)
+			expect(await toPromise(actor)).toEqual({ kind: 'cancelled', settlement })
+			expect(releaseLock).toHaveBeenCalledTimes(4)
+			expect(provider.claimToken).toHaveBeenCalledOnce()
+		}
+	)
+	it('waits for a write after lock failure and preserves failure despite successful settlement', async () => {
+		const pending = Promise.withResolvers<PersistOutput>()
+		persist.mockReturnValueOnce(pending.promise)
+		const actor = start()
+		await advance(actor)
+		await waitFor(actor, (state) => state.matches({ saving: { persisting: 'working' } }))
+		actor.send({ type: 'LOCK_FAILED', error: new Error('locking_unavailable') })
+		expect(actor.getSnapshot().matches({ saving: { persisting: 'failing' } })).toBe(true)
+		expect(releaseLock).toHaveBeenCalledTimes(3)
+		pending.resolve({ settlement: 'locallyPersisted', error: undefined })
+		expect(await toPromise(actor)).toEqual({
+			kind: 'failed',
+			error: new Error('locking_unavailable'),
+			settlement: 'locallyPersisted'
+		})
+		expect(releaseLock).toHaveBeenCalledTimes(4)
+	})
+	it('finishes cancellation when the persistence actor crashes without waiting for another acknowledgement', async () => {
+		const pending = Promise.withResolvers<PersistOutput>()
+		persist.mockReturnValueOnce(pending.promise)
+		const actor = start()
+		await advance(actor)
+		await waitFor(actor, (state) => state.matches({ saving: { persisting: 'working' } }))
+		actor.send({ type: 'CANCEL' })
+		pending.reject(new Error('write observer crashed'))
+		expect(await toPromise(actor)).toEqual({ kind: 'cancelled', settlement: 'unresolved' })
+		expect(releaseLock).toHaveBeenCalledTimes(4)
 	})
 })
