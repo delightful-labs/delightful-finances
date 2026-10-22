@@ -17,6 +17,7 @@ import {
 	type BankCommand,
 	type Dependencies,
 	type ImportCounts,
+	type ImportSettlement,
 	type LockEvent,
 	type OperationWork,
 	type ProgressEvent,
@@ -36,8 +37,15 @@ type Context = Input & {
 	result: ProviderSummary[] | undefined
 	completion: OperationResult | undefined
 	error: unknown
+	importSettlement: ImportSettlement
+	writeSettlement: ImportSettlement
+	outcome: SyncOutcome | undefined
 }
-type OperationSummary = { counts: ImportCounts; discovered: ProviderSummary[] | undefined }
+type OperationSummary = {
+	counts: ImportCounts
+	discovered: ProviderSummary[] | undefined
+	settlement: ImportSettlement
+}
 export type OperationResult =
 	| (OperationSummary & { kind: 'complete' | 'partial' })
 	| (OperationSummary & { kind: 'failed' | 'cancelled'; error: unknown })
@@ -48,6 +56,11 @@ type SyncOutcome =
 function workFor(context: Context) {
 	if (!context.work) throw new Error('missing-command')
 	return context.work
+}
+
+// Import-data uncertainty survives an independently settled outcome-history write.
+function operationSettlement(context: Context): ImportSettlement {
+	return context.importSettlement === 'unresolved' ? 'unresolved' : context.writeSettlement
 }
 
 export function createBankOperationMachine(dependencies: Dependencies) {
@@ -152,7 +165,12 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 	)
 	const failWith = (code: 'unlock_failure' | 'provider_failure') =>
 		workflow.assign(({ context }) => failure(context, new Error(code)))
-	const clear = workflow.assign({ work: undefined, accessUrl: undefined, response: undefined })
+	const clear = workflow.assign({
+		work: undefined,
+		accessUrl: undefined,
+		response: undefined,
+		outcome: undefined
+	})
 	return workflow.createMachine({
 		id: 'bank-operation',
 		initial: 'locking',
@@ -167,7 +185,10 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				counts: emptyCounts(),
 				result: undefined,
 				completion: undefined,
-				error: undefined
+				error: undefined,
+				importSettlement: 'settled',
+				writeSettlement: 'settled',
+				outcome: undefined
 			}
 		},
 		output: ({ context }) => required(context.completion),
@@ -236,14 +257,53 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				]
 			},
 			disconnecting: {
+				initial: 'working',
+				entry: assign({ writeSettlement: 'unresolved', response: undefined, accessUrl: undefined }),
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {}, LOCK_FAILED: {} } },
+					failing: { on: { LOCK_FAILED: {} } }
+				},
+				on: {
+					CANCEL: '.cancelling',
+					LOCK_FAILED: { target: '.failing', actions: failed }
+				},
 				invoke: {
 					src: 'disconnect',
 					input: ({ context }) => workFor(context),
-					onDone: { target: 'complete', actions: assign({ result: [] }) },
-					onError: { target: 'settlingFailure', actions: failed }
+					onDone: [
+						{
+							guard: stateIn({ disconnecting: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({ writeSettlement: 'settled' })
+						},
+						{
+							guard: stateIn({ disconnecting: 'failing' }),
+							target: 'settlingFailure',
+							actions: assign({ writeSettlement: 'settled' })
+						},
+						{ target: 'complete', actions: assign({ writeSettlement: 'settled', result: [] }) }
+					],
+					onError: [
+						{
+							guard: stateIn({ disconnecting: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({ writeSettlement: 'unresolved' })
+						},
+						{
+							guard: stateIn({ disconnecting: 'failing' }),
+							target: 'settlingFailure',
+							actions: assign({ writeSettlement: 'unresolved' })
+						},
+						{
+							target: 'settlingFailure',
+							actions: [assign({ writeSettlement: 'unresolved' }), failed]
+						}
+					]
 				}
 			},
 			mapping: {
+				entry: assign({ writeSettlement: 'unresolved' }),
 				initial: 'working',
 				states: {
 					working: {},
@@ -276,8 +336,20 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					src: 'mapAccounts',
 					input: ({ context }) => ({ work: workFor(context), discovered: context.discovered }),
 					onDone: [
-						{ guard: 'mappingCancelling', target: 'cancelled' },
-						{ guard: 'mappingFailing', target: 'settlingFailure' },
+						{
+							guard: 'mappingCancelling',
+							target: 'cancelled',
+							actions: assign({
+								writeSettlement: ({ event }) => (event.output.ok ? 'settled' : 'unresolved')
+							})
+						},
+						{
+							guard: 'mappingFailing',
+							target: 'settlingFailure',
+							actions: assign({
+								writeSettlement: ({ event }) => (event.output.ok ? 'settled' : 'unresolved')
+							})
+						},
 						{
 							guard: ({ event }) => !event.output.ok,
 							target: 'settlingFailure',
@@ -285,7 +357,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 								error: ({ event }) => (event.output.ok ? undefined : event.output.error)
 							})
 						},
-						{ target: 'complete' }
+						{ target: 'complete', actions: assign({ writeSettlement: 'settled' }) }
 					],
 					onError: [
 						{ guard: 'mappingCancelling', target: 'cancelled' },
@@ -414,28 +486,104 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				always: 'complete'
 			},
 			importing: {
+				initial: 'working',
 				meta: { loadingProvider: true },
-				invoke: {
-					src: 'importTransactions',
-					input: ({ context }) => {
-						if (!context.response) throw new Error('missing-response')
-						return { work: workFor(context), response: context.response }
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {}, LOCK_FAILED: {} } },
+					failing: { on: { LOCK_FAILED: {} } }
+				},
+				on: {
+					CANCEL: {
+						target: '.cancelling',
+						actions: [
+							assign({ accessUrl: undefined, response: undefined }),
+							enqueueActions(({ self, enqueue }) => {
+								const child = self.getSnapshot().children.import
+								if (child?.getSnapshot().status === 'active')
+									enqueue.sendTo(child, { type: 'CANCEL' })
+							})
+						]
 					},
+					LOCK_FAILED: {
+						target: '.failing',
+						actions: [
+							failed,
+							assign({ response: undefined }),
+							enqueueActions(({ self, enqueue }) => {
+								const child = self.getSnapshot().children.import
+								if (child?.getSnapshot().status === 'active')
+									enqueue.sendTo(child, { type: 'CANCEL' })
+							})
+						]
+					}
+				},
+				invoke: {
+					id: 'import',
+					src: 'importTransactions',
+					input: ({ context }) => ({
+						work: workFor(context),
+						response: required(context.response)
+					}),
 					onDone: [
 						{
-							guard: ({ event }) => event.output.error !== undefined,
+							guard: stateIn({ importing: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({
+								counts: ({ event }) => event.output.counts,
+								importSettlement: ({ event }) => event.output.settlement
+							})
+						},
+						{
+							guard: stateIn({ importing: 'failing' }),
+							target: 'settlingFailure',
+							actions: assign({
+								counts: ({ event }) => event.output.counts,
+								importSettlement: ({ event }) => event.output.settlement
+							})
+						},
+						{
+							guard: ({ event }) => event.output.kind === 'cancelled',
+							target: 'cancelled',
+							actions: assign({
+								counts: ({ event }) => event.output.counts,
+								importSettlement: ({ event }) => event.output.settlement,
+								error: ({ event }) => event.output.error
+							})
+						},
+						{
+							guard: ({ event }) => event.output.kind === 'failed',
 							target: 'preparingFailure',
 							actions: assign({
-								error: ({ event }) => event.output.error,
-								counts: ({ event }) => event.output.counts
+								counts: ({ event }) => event.output.counts,
+								importSettlement: ({ event }) => event.output.settlement,
+								error: ({ event }) => event.output.error
 							})
 						},
 						{
 							target: 'classifyingSuccess',
-							actions: assign({ counts: ({ event }) => event.output.counts })
+							actions: assign({
+								counts: ({ event }) => event.output.counts,
+								importSettlement: ({ event }) => event.output.settlement
+							})
 						}
 					],
-					onError: { target: 'recordingFailure', actions: failed }
+					onError: [
+						{
+							guard: stateIn({ importing: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({ importSettlement: 'unresolved' })
+						},
+						{
+							guard: stateIn({ importing: 'failing' }),
+							target: 'settlingFailure',
+							actions: assign({ importSettlement: 'unresolved' })
+						},
+						{
+							target: 'recordingFailure',
+							actions: [assign({ importSettlement: 'unresolved' }), failed]
+						}
+					]
 				}
 			},
 			classifyingSuccess: {
@@ -449,28 +597,12 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				]
 			},
 			recordingComplete: {
-				invoke: {
-					src: 'persistOutcome',
-					input: ({ context }) => ({
-						work: workFor(context),
-						counts: context.counts,
-						outcome: { lastOutcome: 'succeeded', lastError: null }
-					}),
-					onDone: 'complete',
-					onError: { target: 'settlingFailure', actions: failed }
-				}
+				entry: assign({ outcome: { lastOutcome: 'succeeded', lastError: null } }),
+				always: 'persistingOutcome'
 			},
 			recordingPartial: {
-				invoke: {
-					src: 'persistOutcome',
-					input: ({ context }) => ({
-						work: workFor(context),
-						counts: context.counts,
-						outcome: { lastOutcome: 'partial', lastError: null }
-					}),
-					onDone: 'partial',
-					onError: { target: 'settlingFailure', actions: failed }
-				}
+				entry: assign({ outcome: { lastOutcome: 'partial', lastError: null } }),
+				always: 'persistingOutcome'
 			},
 			preparingFailure: {
 				entry: assign({ accessUrl: undefined }),
@@ -480,15 +612,72 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				]
 			},
 			recordingFailure: {
+				entry: assign({ outcome: { lastOutcome: 'failed', lastError: 'operation-failed' } }),
+				always: 'persistingOutcome'
+			},
+			persistingOutcome: {
+				initial: 'working',
+				entry: assign({ writeSettlement: 'unresolved', response: undefined, accessUrl: undefined }),
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {}, LOCK_FAILED: {} } },
+					failing: { on: { LOCK_FAILED: {} } }
+				},
+				on: {
+					CANCEL: '.cancelling',
+					LOCK_FAILED: { target: '.failing', actions: failed }
+				},
 				invoke: {
 					src: 'persistOutcome',
 					input: ({ context }) => ({
 						work: workFor(context),
 						counts: context.counts,
-						outcome: { lastOutcome: 'failed', lastError: 'operation-failed' }
+						outcome: required(context.outcome)
 					}),
-					onDone: 'settlingFailure',
-					onError: 'settlingFailure'
+					onDone: [
+						{
+							guard: stateIn({ persistingOutcome: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({ writeSettlement: 'settled' })
+						},
+						{
+							guard: stateIn({ persistingOutcome: 'failing' }),
+							target: 'settlingFailure',
+							actions: assign({ writeSettlement: 'settled' })
+						},
+						{
+							guard: ({ context }) => context.outcome?.lastOutcome === 'succeeded',
+							target: 'complete',
+							actions: assign({ writeSettlement: 'settled' })
+						},
+						{
+							guard: ({ context }) => context.outcome?.lastOutcome === 'partial',
+							target: 'partial',
+							actions: assign({ writeSettlement: 'settled' })
+						},
+						{ target: 'settlingFailure', actions: assign({ writeSettlement: 'settled' }) }
+					],
+					onError: [
+						{
+							guard: stateIn({ persistingOutcome: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({ writeSettlement: 'unresolved' })
+						},
+						{
+							guard: stateIn({ persistingOutcome: 'failing' }),
+							target: 'settlingFailure',
+							actions: assign({ writeSettlement: 'unresolved' })
+						},
+						{
+							guard: ({ context }) => context.outcome?.lastOutcome === 'failed',
+							target: 'settlingFailure',
+							actions: assign({ writeSettlement: 'unresolved' })
+						},
+						{
+							target: 'settlingFailure',
+							actions: [assign({ writeSettlement: 'unresolved' }), failed]
+						}
+					]
 				}
 			},
 			settlingFailure: {
@@ -508,7 +697,8 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						completion: ({ context }) => ({
 							kind: 'complete',
 							counts: context.counts,
-							discovered: context.result
+							discovered: context.result,
+							settlement: operationSettlement(context)
 						})
 					}),
 					clear
@@ -521,7 +711,8 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						completion: ({ context }) => ({
 							kind: 'partial',
 							counts: context.counts,
-							discovered: context.result
+							discovered: context.result,
+							settlement: operationSettlement(context)
 						})
 					}),
 					clear
@@ -535,6 +726,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							kind: 'cancelled',
 							counts: context.counts,
 							discovered: context.result,
+							settlement: operationSettlement(context),
 							error: context.error ?? new Error('disconnected')
 						})
 					}),
@@ -549,6 +741,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							kind: 'failed',
 							counts: context.counts,
 							discovered: context.result,
+							settlement: operationSettlement(context),
 							error: context.error
 						})
 					}),

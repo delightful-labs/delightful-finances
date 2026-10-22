@@ -46,7 +46,13 @@ vi.mock('./accounts.js', () => ({
 	createAccountMappingMachine: () => success({ ok: true, value: undefined })
 }))
 vi.mock('./import.js', () => ({
-	createImportMachine: () => success({ counts, error: undefined }, imported)
+	createImportMachine: () =>
+		success(
+			{ kind: 'complete', counts, error: undefined, settlement: 'settled' } satisfies OutputFrom<
+				ReturnType<typeof import('./import.js').createImportMachine>
+			>,
+			imported
+		)
 }))
 
 function success<T>(output: T, onStart: () => void = () => {}) {
@@ -164,7 +170,8 @@ describe('operation actor failure boundaries', () => {
 				kind: 'failed',
 				error: new Error('locking_unavailable'),
 				counts,
-				discovered: undefined
+				discovered: undefined,
+				settlement: 'settled'
 			})
 			expect(actor.getSnapshot().context).toMatchObject({
 				work: undefined,
@@ -216,7 +223,8 @@ describe('operation actor failure boundaries', () => {
 				kind: 'failed',
 				error: new Error(code),
 				counts,
-				discovered: undefined
+				discovered: undefined,
+				settlement: 'settled'
 			})
 			expect(failed).toHaveBeenCalledWith('operation.failed', new Error(code))
 			expect(failed).not.toHaveBeenCalledWith('operation.failed', raw)

@@ -44,8 +44,9 @@ Bank internals, generic forms, application/session supervision and diagnostics a
 not remaining workspace implementation. Bank work has resumed: the
 [ownership audit](bank-audit.md) and reviewed [setup settlement](setup-settlement.md) are
 complete; [mapping transaction ownership](mapping-transaction.md) is reviewed and verified.
-Import/disconnect settlement and availability reports remain pending. Keep the other
-scopes unchecked until separately resumed.
+[Import/disconnect settlement](import-settlement.md) is reviewed and verified;
+availability reports remain unimplemented. Keep the other scopes unchecked
+until separately resumed.
 Each starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
 Retain existing boundaries when the audit finds no benefit from changing them.
 

@@ -89,6 +89,10 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		}
 	})
 	const clear = workflow.assign({ command: undefined, setupToken: undefined })
+	const cancelOperation = workflow.enqueueActions(({ self, enqueue }) => {
+		const child = self.getSnapshot().children.operation
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'CANCEL' })
+	})
 	const refreshMappings = workflow.enqueueActions(({ context, enqueue }) => {
 		for (const actor of context.mappingActors.values()) enqueue.stopChild(actor)
 		enqueue.assign(({ context, spawn }) => ({
@@ -454,8 +458,16 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				states: {
 					working: {},
 					cancelling: {},
-					resetting: { on: { CANCEL: {} } },
-					shuttingDown: { on: { CANCEL: {}, RESET: {}, SHUTDOWN: {}, ENVIRONMENT_CHANGED: {} } }
+					resetting: { on: { CANCEL: {}, IMPORT_PROGRESS: {} } },
+					shuttingDown: {
+						on: {
+							CANCEL: {},
+							RESET: {},
+							SHUTDOWN: {},
+							ENVIRONMENT_CHANGED: {},
+							IMPORT_PROGRESS: {}
+						}
+					}
 				},
 				tags: ['operating', 'busy'],
 				meta: { status: { key: 'bank.working' } },
@@ -477,7 +489,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							target: 'ready.neutral',
 							actions: assign({ error: undefined, counts: emptyCounts() })
 						},
-						{ guard: stateIn({ running: 'cancelling' }), target: 'ready.cancelled' },
+						{
+							guard: stateIn({ running: 'cancelling' }),
+							target: 'ready.cancelled',
+							actions: assign({ counts: ({ event }) => event.output.counts })
+						},
 						{
 							guard: ({ event }) => event.output.kind === 'cancelled',
 							target: 'ready.cancelled',
@@ -528,26 +544,18 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					]
 				},
 				on: {
-					SHUTDOWN: { target: '.shuttingDown', actions: sendTo('operation', { type: 'CANCEL' }) },
+					SHUTDOWN: { target: '.shuttingDown', actions: cancelOperation },
 					RESET: {
 						target: '.resetting',
-						actions: [
-							assign({ discovered: [] }),
-							refreshMappings,
-							sendTo('operation', { type: 'CANCEL' })
-						]
+						actions: [assign({ discovered: [] }), refreshMappings, cancelOperation]
 					},
-					CANCEL: { target: '.cancelling', actions: sendTo('operation', { type: 'CANCEL' }) },
+					CANCEL: { target: '.cancelling', actions: cancelOperation },
 					ENVIRONMENT_CHANGED: [
 						{
 							guard: ({ context, event }) =>
 								context.environment.scopeKey !== event.environment.scopeKey,
 							target: '.resetting',
-							actions: [
-								assign({ discovered: [] }),
-								updateEnvironment,
-								sendTo('operation', { type: 'CANCEL' })
-							]
+							actions: [assign({ discovered: [] }), updateEnvironment, cancelOperation]
 						},
 						{
 							guard: ({ context, event }) =>
@@ -555,7 +563,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 									event.environment.credentialFingerprint &&
 								(context.command?.type === 'SYNC' || context.command?.type === 'DISCOVER'),
 							target: '.cancelling',
-							actions: [updateEnvironment, sendTo('operation', { type: 'CANCEL' })]
+							actions: [updateEnvironment, cancelOperation]
 						},
 						{ actions: updateEnvironment }
 					],

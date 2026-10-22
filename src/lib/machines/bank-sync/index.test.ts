@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, createMachine, type ActorRefFrom } from 'xstate'
+import type { OperationResult } from './operation.js'
 import { createBankSyncMachine, selectBankView } from './index.js'
 import { bankAvailabilityMachine } from './availability.js'
 import { bankHistoryMachine } from './history.js'
@@ -16,10 +17,12 @@ function delayedOperation() {
 			settling: { on: { CANCEL: 'failed' } },
 			failed: { type: 'final' }
 		},
-		output: () => ({
+		output: (): OperationResult => ({
 			kind: 'failed',
 			error: new Error('private'),
-			counts: { imported: 1, existing: 0, omitted: 0 }
+			counts: { imported: 1, existing: 0, omitted: 0 },
+			settlement: 'settled',
+			discovered: undefined
 		})
 	})
 }
@@ -66,6 +69,7 @@ const dependencies: BankSyncDependencies = {
 const actors: ActorRefFrom<ReturnType<typeof createBankSyncMachine>>[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
+	vi.restoreAllMocks()
 })
 function start(
 	actorsOverride: Parameters<ReturnType<typeof createBankSyncMachine>['provide']>[0] = {}
@@ -172,5 +176,55 @@ describe('discriminated bank presentation', () => {
 		expect(actor.getSnapshot().children.operation).toBeUndefined()
 		expect(actor.getSnapshot().children.setup).toBeUndefined()
 		expect(selectBankView(actor.getSnapshot()).activity).toEqual({ kind: 'idle' })
+	})
+})
+
+describe('operation settlement handoff', () => {
+	it('replaces the last progress report with final counts even when cancellation wins over child failure', () => {
+		const actor = start()
+		actor.send({ type: 'SYNC' })
+		const child = actor.getSnapshot().children.operation
+		if (!child) throw new Error('Expected operation')
+		actor.send({ type: 'IMPORT_PROGRESS', counts: { imported: 0, existing: 0, omitted: 0 } })
+		actor.send({ type: 'CANCEL' })
+		expect(actor.getSnapshot().hasTag('busy')).toBe(true)
+		child.send({ type: 'CANCEL' })
+		expect(actor.getSnapshot().matches({ ready: 'cancelled' })).toBe(true)
+		expect(actor.getSnapshot().context.counts).toEqual({ imported: 1, existing: 0, omitted: 0 })
+	})
+	it.each(['RESET', 'SHUTDOWN'] satisfies ('RESET' | 'SHUTDOWN')[])(
+		'ignores late progress during %s and scrubs old counts after settlement',
+		(intent) => {
+			const actor = start()
+			actor.send({ type: 'SYNC' })
+			const child = actor.getSnapshot().children.operation
+			if (!child) throw new Error('Expected operation')
+			actor.send({ type: intent })
+			actor.send({ type: 'IMPORT_PROGRESS', counts: { imported: 99, existing: 99, omitted: 99 } })
+			actor.send({ type: 'CANCEL' })
+			expect(actor.getSnapshot().context.counts).toEqual({ imported: 0, existing: 0, omitted: 0 })
+			expect(actor.getSnapshot().hasTag('busy')).toBe(true)
+			child.send({ type: 'CANCEL' })
+			expect(actor.getSnapshot().context.counts).toEqual({ imported: 0, existing: 0, omitted: 0 })
+			expect(actor.getSnapshot().status).toBe(intent === 'SHUTDOWN' ? 'done' : 'active')
+			if (intent === 'RESET') expect(actor.getSnapshot().matches({ ready: 'neutral' })).toBe(true)
+		}
+	)
+	it('uses queued completion without sending cancellation to an already-completed operation', () => {
+		const actor = start()
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+		actor.send({ type: 'SYNC' })
+		const child = actor.getSnapshot().children.operation
+		if (!child) throw new Error('Expected operation')
+		const subscription = child.subscribe((snapshot) => {
+			if (snapshot.status === 'done') actor.send({ type: 'CANCEL' })
+		})
+		child.send({ type: 'CANCEL' })
+		child.send({ type: 'CANCEL' })
+		expect(actor.getSnapshot().matches({ ready: 'cancelled' })).toBe(true)
+		expect(actor.getSnapshot().context.counts.imported).toBe(1)
+		expect(warning).not.toHaveBeenCalledWith(expect.stringMatching(/^Event "CANCEL"/))
+		subscription.unsubscribe()
+		warning.mockRestore()
 	})
 })

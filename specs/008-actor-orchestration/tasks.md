@@ -17,8 +17,8 @@ Bank orchestration has been resumed. D001's source audit is recorded in
       The reviewed setup persistence settlement slice is implemented and verified in
       [setup-settlement.md](setup-settlement.md).
       [Mapping transaction ownership](mapping-transaction.md) is reviewed and verified;
-      import/disconnect settlement and availability reports
-      remain unimplemented.
+      [import/disconnect settlement](import-settlement.md) is reviewed and verified.
+      Availability reports remain unimplemented.
 - [ ] D003 Review that implementation, then verify cancellation, identity/scope replacement, partial results, observer errors, provider request races and resource cleanup (FR-014).
 
 ## Deferred: generic form orchestration — do not implement now
