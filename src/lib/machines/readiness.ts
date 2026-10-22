@@ -1,5 +1,16 @@
-import { assign, fromPromise, raise, sendParent, sendTo, setup, stateIn } from 'xstate'
-import { ensurePersonalWorkspace } from '#lib/data.js'
+import {
+	assign,
+	and,
+	fromPromise,
+	raise,
+	sendParent,
+	sendTo,
+	setup,
+	stateIn,
+	type ActorRefFrom
+} from 'xstate'
+import { createWorkspaceStartupMachine } from './workspace-startup.js'
+import { createWorkspaceIntegrityOwner } from './workspace-integrity-owner.js'
 import type { Organization } from '#lib/schema.js'
 import { createBankSyncMachine } from './bank-sync/index.js'
 import { required } from './bank-sync/identity.js'
@@ -19,12 +30,24 @@ export type WorkspaceAttachment = {
 	read: () => ReadinessObservation
 	selectOrganization: (id: string | null) => void
 }
-type Context = ReadinessObservation & { bootstrapUserId: string | undefined }
+type Context = ReadinessObservation & {
+	initialization: { userId: string; profileId: string } | undefined
+	integrityActor: ActorRefFrom<ReturnType<typeof createWorkspaceIntegrityOwner>> | undefined
+	bankActor: ActorRefFrom<ReturnType<typeof createBankSyncMachine>> | undefined
+	startupActor: ActorRefFrom<ReturnType<typeof createWorkspaceStartupMachine>> | undefined
+}
 type Event =
 	| { type: 'OBSERVED'; observation: ReadinessObservation }
 	| { type: 'REEVALUATE' }
 	| { type: 'BANK'; event: BankEvent }
 	| { type: 'SHUTDOWN' }
+	| { type: 'RETRY' }
+	| { type: 'INITIALIZATION_READY'; userId: string; profileId: string }
+	| { type: 'INITIALIZATION_WAITING' }
+	| { type: 'INITIALIZATION_FAILED' }
+	| { type: 'STARTUP_STOPPED' }
+	| { type: 'BANK_STOPPED' }
+	| { type: 'INTEGRITY_STOPPED' | 'OBSERVE_INTEGRITY' | 'RETRY_INTEGRITY' }
 
 export function createWorkspaceReadinessMachine({
 	dependencies,
@@ -34,9 +57,8 @@ export function createWorkspaceReadinessMachine({
 	const actors = {
 		bank: createBankSyncMachine(dependencies),
 		select: fromPromise(async ({ input }: { input: string | null }) => selectOrganization(input)),
-		bootstrap: fromPromise(({ input }: { input: string }) =>
-			ensurePersonalWorkspace(dependencies.db, input)
-		)
+		startup: createWorkspaceStartupMachine(dependencies.db),
+		integrity: createWorkspaceIntegrityOwner(dependencies.db)
 	}
 	return setup<
 		Context,
@@ -44,27 +66,116 @@ export function createWorkspaceReadinessMachine({
 		typeof actors,
 		{},
 		{},
-		{ canUseBank: undefined; workspaceReady: undefined }
+		{
+			canUseBank: undefined
+			workspaceReady: undefined
+			closingDrain: undefined
+			bankAlive: undefined
+			startupAlive: undefined
+			integrityAlive: undefined
+			canObserveIntegrity: undefined
+		}
 	>({
 		actors,
 		guards: {
 			canUseBank: stateIn({
-				active: { workspace: 'ready', session: 'ready', organization: 'ready' }
+				active: {
+					workspace: 'ready',
+					session: 'ready',
+					organization: 'ready',
+					selection: 'selected'
+				}
 			}),
-			workspaceReady: stateIn({ active: { workspace: 'ready' } })
+			workspaceReady: stateIn({ active: { workspace: 'ready' } }),
+			closingDrain: stateIn({ closing: { intent: 'shutdown' } }),
+			bankAlive: ({ context }) => context.bankActor?.getSnapshot().status === 'active',
+			startupAlive: ({ context }) => context.startupActor?.getSnapshot().status === 'active',
+			integrityAlive: ({ context }) => context.integrityActor?.getSnapshot().status === 'active',
+			canObserveIntegrity: and([
+				'canUseBank',
+				({ context }) =>
+					context.initialization !== undefined &&
+					context.initialization.userId === context.source.userId
+			])
 		}
 	}).createMachine({
 		id: 'workspace-readiness',
 		initial: 'active',
-		context: () => ({ ...read(), bootstrapUserId: undefined }),
-		invoke: {
-			id: 'bank',
-			src: 'bank',
-			onDone: [{ guard: stateIn('closing'), target: '.closed' }, { target: '.failed' }],
-			onError: [{ guard: stateIn('closing'), target: '.closed' }, { target: '.failed' }]
-		},
+		context: () => ({
+			...read(),
+			initialization: undefined,
+			bankActor: undefined,
+			startupActor: undefined,
+			integrityActor: undefined
+		}),
+		invoke: [
+			{
+				id: 'bank',
+				src: 'bank',
+				onDone: { actions: raise({ type: 'BANK_STOPPED' }) },
+				onError: { actions: raise({ type: 'BANK_STOPPED' }) }
+			},
+			{
+				id: 'startup',
+				src: 'startup',
+				input: ({ context }) => ({ userId: context.source.userId, status: context.sessionStatus }),
+				onSnapshot: [
+					{
+						guard: ({ event }) =>
+							event.snapshot.hasTag('workspace-ready') &&
+							event.snapshot.context.result?.outcome === 'ready',
+						actions: raise(({ event }) => {
+							const result = event.snapshot.context.result
+							if (result?.outcome !== 'ready') throw new Error('Expected initialized profile')
+							return {
+								type: 'INITIALIZATION_READY',
+								userId: required(event.snapshot.context.operationUserId),
+								profileId: result.profileId
+							}
+						})
+					},
+					{
+						guard: ({ event }) => event.snapshot.hasTag('workspace-error'),
+						actions: raise({ type: 'INITIALIZATION_FAILED' })
+					},
+					{ actions: raise({ type: 'INITIALIZATION_WAITING' }) }
+				],
+				onDone: { actions: raise({ type: 'STARTUP_STOPPED' }) },
+				onError: { actions: raise({ type: 'STARTUP_STOPPED' }) }
+			},
+			{
+				id: 'integrity',
+				src: 'integrity',
+				input: { binding: undefined },
+				onDone: { actions: raise({ type: 'INTEGRITY_STOPPED' }) },
+				onError: { actions: raise({ type: 'INTEGRITY_STOPPED' }) }
+			}
+		],
 		on: {
-			SHUTDOWN: { target: '.closing' },
+			SHUTDOWN: { target: '.closing.intent.shutdown' },
+			RETRY: { actions: sendTo('startup', { type: 'RETRY' }) },
+			RETRY_INTEGRITY: { actions: sendTo('integrity', { type: 'RETRY' }) },
+			OBSERVE_INTEGRITY: [
+				{
+					guard: 'canObserveIntegrity',
+					actions: sendTo('integrity', ({ context }) => {
+						const initialization = required(context.initialization)
+						const membership = required(context.source.membership)
+						return {
+							type: 'OBSERVED',
+							binding: {
+								userId: initialization.userId,
+								profileId: initialization.profileId,
+								organizationId: required(context.source.organizationId ?? undefined),
+								membershipId: membership.id,
+								role: membership.role,
+								accountAccessMode: membership.accountAccessMode
+							}
+						}
+					})
+				},
+				{ actions: sendTo('integrity', { type: 'OBSERVED', binding: undefined }) }
+			],
 			BANK: [
 				{
 					guard: ({ event }) => event.event.type === 'CANCEL' || event.event.type === 'RESET',
@@ -75,14 +186,27 @@ export function createWorkspaceReadinessMachine({
 			OBSERVED: {
 				actions: [
 					assign(({ event }) => event.observation),
+					sendTo('startup', ({ event }) => ({
+						type: 'OBSERVED',
+						source: {
+							userId: event.observation.source.userId,
+							status: event.observation.sessionStatus
+						}
+					})),
 					sendTo('bank', ({ event }) => ({ type: 'OBSERVED', source: event.observation.source })),
-					raise({ type: 'REEVALUATE' })
+					raise({ type: 'REEVALUATE' }),
+					raise({ type: 'OBSERVE_INTEGRITY' })
 				]
 			}
 		},
 		states: {
 			active: {
 				type: 'parallel',
+				on: {
+					BANK_STOPPED: '#workspace-readiness.closing.intent.failed',
+					STARTUP_STOPPED: '#workspace-readiness.closing.intent.failed',
+					INTEGRITY_STOPPED: '#workspace-readiness.closing.intent.failed'
+				},
 				states: {
 					session: {
 						initial: 'checking',
@@ -112,64 +236,31 @@ export function createWorkspaceReadinessMachine({
 						}
 					},
 					workspace: {
-						initial: 'checkingIdentity',
-						states: {
-							checkingIdentity: {
-								always: [
-									{
-										guard: ({ context }) => context.sessionStatus !== 'ready',
-										target: 'waitingForSession'
-									},
-									{ guard: ({ context }) => !context.source.userId, target: 'waitingForSession' },
-									{ target: 'initializing' }
-								]
+						initial: 'waiting',
+						on: {
+							INITIALIZATION_READY: {
+								target: '.ready',
+								actions: assign({
+									initialization: ({ event }) => ({
+										userId: event.userId,
+										profileId: event.profileId
+									})
+								})
 							},
-							waitingForSession: { on: { REEVALUATE: 'checkingIdentity' } },
-							initializing: {
-								entry: assign({ bootstrapUserId: ({ context }) => context.source.userId }),
-								invoke: {
-									src: 'bootstrap',
-									input: ({ context }) => required(context.bootstrapUserId),
-									onDone: 'ready',
-									onError: 'failed'
-								},
-								on: {
-									REEVALUATE: [
-										{
-											guard: ({ context }) => context.sessionStatus !== 'ready',
-											target: 'checkingIdentity'
-										},
-										{
-											guard: ({ context }) => context.source.userId !== context.bootstrapUserId,
-											target: 'checkingIdentity'
-										}
-									]
-								}
+							INITIALIZATION_WAITING: '.waiting',
+							INITIALIZATION_FAILED: '.failed'
+						},
+						states: {
+							waiting: {
+								entry: [assign({ initialization: undefined }), raise({ type: 'OBSERVE_INTEGRITY' })]
 							},
 							ready: {
 								tags: 'workspace-ready',
-								entry: raise({ type: 'REEVALUATE' }),
-								on: {
-									REEVALUATE: [
-										{
-											guard: ({ context }) => context.sessionStatus !== 'ready',
-											target: 'checkingIdentity'
-										},
-										{
-											guard: ({ context }) => context.source.userId !== context.bootstrapUserId,
-											target: 'checkingIdentity'
-										}
-									]
-								}
+								entry: [raise({ type: 'REEVALUATE' }), raise({ type: 'OBSERVE_INTEGRITY' })]
 							},
 							failed: {
-								tags: 'workspace-error',
-								on: {
-									REEVALUATE: {
-										guard: ({ context }) => context.source.userId !== context.bootstrapUserId,
-										target: 'checkingIdentity'
-									}
-								}
+								tags: ['workspace-error', 'workspace-retryable'],
+								entry: [assign({ initialization: undefined }), raise({ type: 'OBSERVE_INTEGRITY' })]
 							}
 						}
 					},
@@ -201,39 +292,31 @@ export function createWorkspaceReadinessMachine({
 										target: 'selected'
 									},
 									{
-										guard: ({ context }) =>
-											context.organizations?.some((row) => row.kind === 'personal') ?? false,
-										target: 'selectingPersonal'
+										guard: ({ context }) => context.source.organizationId != null,
+										target: 'unavailableSelection'
 									},
 									{
-										guard: ({ context }) => (context.organizations?.length ?? 0) > 0,
-										target: 'selectingFirst'
+										guard: ({ context }) => context.organizations?.length === 1,
+										target: 'selectingOnly'
 									},
-									{ target: 'empty' }
+									{ target: 'unselected' }
 								]
 							},
-							selectingPersonal: {
-								invoke: {
-									src: 'select',
-									input: ({ context }) =>
-										required(context.organizations?.find((row) => row.kind === 'personal')).id,
-									onError: '#workspace-readiness.settlingFailure'
-								}
-							},
-							selectingFirst: {
+							selectingOnly: {
 								invoke: {
 									src: 'select',
 									input: ({ context }) => required(context.organizations?.[0]).id,
-									onError: '#workspace-readiness.settlingFailure'
+									onError: '#workspace-readiness.closing.intent.failed'
 								}
 							},
-							empty: {
+							unselected: {
 								invoke: {
 									src: 'select',
 									input: null,
-									onError: '#workspace-readiness.settlingFailure'
+									onError: '#workspace-readiness.closing.intent.failed'
 								}
 							},
+							unavailableSelection: {},
 							selected: {},
 							waiting: {},
 							failed: {}
@@ -284,17 +367,83 @@ export function createWorkspaceReadinessMachine({
 					}
 				}
 			},
-			settlingFailure: {
-				entry: sendTo('bank', { type: 'SHUTDOWN' }),
-				on: { BANK: {}, OBSERVED: {}, REEVALUATE: {} }
+			closing: {
+				type: 'parallel',
+				entry: assign({
+					bankActor: ({ self }) => self.getSnapshot().children.bank,
+					startupActor: ({ self }) => self.getSnapshot().children.startup,
+					integrityActor: ({ self }) => self.getSnapshot().children.integrity
+				}),
+				on: {
+					BANK: {},
+					OBSERVED: {},
+					REEVALUATE: {},
+					RETRY: {},
+					RETRY_INTEGRITY: {},
+					OBSERVE_INTEGRITY: {},
+					INITIALIZATION_READY: {},
+					INITIALIZATION_FAILED: {},
+					INITIALIZATION_WAITING: {},
+					SHUTDOWN: '.intent.shutdown'
+				},
+				states: {
+					intent: {
+						initial: 'failed',
+						states: { failed: { type: 'final' }, shutdown: { type: 'final' } }
+					},
+					bank: {
+						initial: 'checking',
+						states: {
+							checking: {
+								always: [{ guard: 'bankAlive', target: 'stopping' }, { target: 'stopped' }]
+							},
+							stopping: {
+								entry: sendTo('bank', { type: 'SHUTDOWN' }),
+								on: { BANK_STOPPED: 'stopped' }
+							},
+							stopped: { type: 'final' }
+						}
+					},
+					integrity: {
+						initial: 'checking',
+						states: {
+							checking: {
+								always: [{ guard: 'integrityAlive', target: 'stopping' }, { target: 'stopped' }]
+							},
+							stopping: {
+								entry: sendTo('integrity', { type: 'SHUTDOWN' }),
+								on: { INTEGRITY_STOPPED: 'stopped' }
+							},
+							stopped: { type: 'final' }
+						}
+					},
+					startup: {
+						initial: 'checking',
+						states: {
+							checking: {
+								always: [{ guard: 'startupAlive', target: 'stopping' }, { target: 'stopped' }]
+							},
+							stopping: {
+								entry: sendTo('startup', { type: 'SHUTDOWN' }),
+								on: { STARTUP_STOPPED: 'stopped' }
+							},
+							stopped: { type: 'final' }
+						}
+					}
+				},
+				onDone: [{ guard: 'closingDrain', target: 'closed' }, { target: 'failed' }]
 			},
 			failed: {
 				tags: 'workspace-error',
-				on: { SHUTDOWN: 'closed', BANK: {}, OBSERVED: {}, REEVALUATE: {} }
-			},
-			closing: {
-				entry: sendTo('bank', { type: 'SHUTDOWN' }),
-				on: { BANK: {}, OBSERVED: {}, SHUTDOWN: {}, REEVALUATE: {} }
+				on: {
+					SHUTDOWN: 'closed',
+					BANK: {},
+					OBSERVED: {},
+					REEVALUATE: {},
+					RETRY: {},
+					OBSERVE_INTEGRITY: {},
+					RETRY_INTEGRITY: {}
+				}
 			},
 			closed: {
 				type: 'final',

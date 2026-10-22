@@ -50,8 +50,8 @@
 		"unknown": "The save result is unknown. Check your records before trying again."
 	},
 	"workspace": {
-		"loading": "Getting your private workspace ready…",
-		"setup_error": "Your workspace could not be prepared. Refresh the page to try again.",
+		"loading": "Getting your workspaces ready…",
+		"setup_error": "Your workspaces could not be prepared.",
 		"label": "Workspace",
 		"current": "Current workspace",
 		"select_workspace": "Select a workspace.",
