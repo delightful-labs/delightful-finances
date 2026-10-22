@@ -60,6 +60,13 @@ export type FormRequest<Scope> = {
 	scopeRevision: number
 	values: unknown
 }
+/** Submission-owned progress, scoped to one request and its original scope lifetime. */
+export type FormSubmissionProgressEvent = {
+	type: 'FORM_SUBMISSION_PROGRESS'
+	requestId: number
+	scopeRevision: number
+	progress: 'validating' | 'operating'
+}
 export type FormChildEvent<Observation> =
 	| { type: 'OBSERVE'; observation: FormObservation<Observation> }
 	| { type: 'INVALIDATE' | 'CANCEL' | 'SHUTDOWN' }

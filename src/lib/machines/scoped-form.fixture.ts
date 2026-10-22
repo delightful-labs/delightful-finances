@@ -144,7 +144,8 @@ export function fixture(
 		>(actor.getSnapshot(), config)
 	const submit = () => actor.send({ type: 'SUBMIT', values: { name: ' Home ' } })
 	const working = async () => {
-		await waitFor(actor, () => started.mock.calls.length > 0)
+		// Wait on the public progress report, not an incidental snapshot after a child entry action.
+		await waitFor(actor, () => view().activity.kind === 'operating')
 		const submission = actor.getSnapshot().children.submission
 		const child = submission?.getSnapshot().children.operation
 		if (!child) throw new Error('Operation did not start')

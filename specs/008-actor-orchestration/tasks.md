@@ -21,10 +21,11 @@ Bank orchestration is complete through the focused review cycles below. D001's s
       [Availability/history reports](bank-reports.md) are reviewed and verified.
 - [x] D003 Review that implementation, then verify cancellation, identity/scope replacement, partial results, observer errors, provider request races and resource cleanup (FR-014).
 
-## Deferred: generic form orchestration — do not implement now
+## Resumed: generic form orchestration — focused review cycles
 
-- [ ] D004 Audit scoped-form availability/submission/write/completion composition, forwarding wrappers, snapshot copying and shutdown ownership (FR-014).
+- [x] D004 Audit scoped-form availability/submission/write/completion composition, forwarding wrappers, snapshot copying and shutdown ownership (FR-014). Source findings and proposed review slices are in [form-audit.md](form-audit.md); no runtime verification claimed.
 - [ ] D005 After separate scope approval, implement only justified form boundary changes; retain original write scope and independently owned completion effects (FR-014).
+      The [submission progress report](form-progress.md) slice is reviewed and verified. Readiness, transaction persistence and avatar preparation remain unimplemented.
 - [ ] D006 Review that implementation, then verify permission changes, input/reset/cancellation, submitted writes, completion failures and unmount draining (FR-014).
 
 ## Deferred: application/session supervision — do not implement now

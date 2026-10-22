@@ -15,6 +15,7 @@ type Result = FormOperationResult<void, string>
 
 export function harnessOptions(controls: {
 	observe: () => Facts
+	validate?: () => Promise<void>
 	start: () => Promise<Result>
 	command: (event: FormChildEvent<Facts>) => void
 }) {
@@ -64,8 +65,14 @@ export function harnessOptions(controls: {
 			done: { type: 'final' }
 		}
 	})
+	const fields = z.object({ name: z.string().trim().min(1) })
+	const validate = controls.validate
 	return {
-		schema: z.object({ name: z.string().trim().min(1) }),
+		schema: validate
+			? fields.superRefine(async () => {
+					await validate()
+				})
+			: fields,
 		availability,
 		operation,
 		selectAvailability: (

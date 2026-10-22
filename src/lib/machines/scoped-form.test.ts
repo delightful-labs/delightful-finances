@@ -194,10 +194,10 @@ describe('scoped form ownership', () => {
 			observation: undefined,
 			scope: undefined,
 			request: undefined,
-			submission: undefined,
 			result: undefined,
 			capability: undefined
 		})
+		expect(f.actor.getSnapshot().context).not.toHaveProperty('submission')
 		expect(f.view().readiness.kind).toBe('closed')
 	})
 

@@ -1,7 +1,8 @@
 # Actor orchestration boundaries
 
 Status: workspace phase complete and verified. Bank orchestration is complete through
-reviewed and verified focused cycles in [tasks.md](tasks.md); other subsystem work remains deferred.
+reviewed and verified focused cycles in [tasks.md](tasks.md). Generic form orchestration has resumed
+with its source audit; application/session work and diagnostics remain deferred.
 [spec.md](spec.md) defines the requirements.
 The current workspace ownership tree and creation/integrity workflows are maintained in
 [the workspace architecture](../006-multiple-workspaces/plan.md#actor-ownership), rather than a
@@ -47,7 +48,10 @@ complete; [mapping transaction ownership](mapping-transaction.md) is reviewed an
 [Import/disconnect settlement](import-settlement.md) is reviewed and verified;
 [Availability/history reports](bank-reports.md) are reviewed and verified. Keep the other scopes unchecked
 until separately resumed.
-Each starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
+The [generic form audit](form-audit.md) is complete. [Submission progress reports](form-progress.md)
+are reviewed and verified. Readiness, transaction persistence
+and avatar preparation slices remain unimplemented pending focused review.
+Each other subsystem starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
 Retain existing boundaries when the audit finds no benefit from changing them.
 
 Future implementations follow the repository review/test gate. Preserve explicit bank initiation,

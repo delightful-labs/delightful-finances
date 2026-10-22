@@ -6,6 +6,8 @@
 	import { harnessOptions, type Facts } from './form-presentation.js'
 
 	const modal = new URLSearchParams(location.search).has('modal')
+	const delayedValidation = new URLSearchParams(location.search).has('validation')
+	let finishValidation: (() => void) | undefined
 	let facts = $state<Facts>({ scope: 'a', allowed: true })
 	let starts = $state(0)
 	let cancellations = $state(0)
@@ -13,6 +15,15 @@
 	const form = createScopedFormController(
 		harnessOptions({
 			observe: () => facts,
+			...(delayedValidation
+				? {
+						validate: () => {
+							const pending = Promise.withResolvers<void>()
+							finishValidation = pending.resolve
+							return pending.promise
+						}
+					}
+				: {}),
 			start: () => {
 				starts += 1
 				const pending = Promise.withResolvers<FormOperationResult<void, string>>()
@@ -29,6 +40,8 @@
 		completion = undefined
 	}
 </script>
+
+{#if delayedValidation}<button onclick={() => finishValidation?.()}>Finish validation</button>{/if}
 
 <!-- Test-only controls expose observations and settlement, never a production route. -->
 <button onclick={() => (facts = { ...facts, allowed: !facts.allowed })}>Toggle access</button>

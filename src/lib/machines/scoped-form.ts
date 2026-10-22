@@ -21,7 +21,8 @@ import type {
 	FormOperationResult,
 	FormRequest,
 	FormResult,
-	ScopedFormView
+	ScopedFormView,
+	FormSubmissionProgressEvent
 } from '#lib/form-contract.js'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
 
@@ -82,7 +83,6 @@ export function createScopedFormMachine<
 		Observation,
 		OperationSnapshot
 	>(options)
-	type SubmissionSnapshot = SnapshotFrom<typeof submission>
 	type Context = {
 		observation: FormObservation<Observation> | undefined
 		scope: { value: Scope } | undefined
@@ -91,11 +91,11 @@ export function createScopedFormMachine<
 		request: FormRequest<Scope> | undefined
 		sequence: number
 		result: FormResult<Result, Reason> | undefined
-		submission: SubmissionSnapshot | undefined
 		draftRevision: number
 		draft: unknown
 	}
 	type Event =
+		| FormSubmissionProgressEvent
 		| { type: 'OBSERVE'; observation: Observation }
 		| { type: 'SUBMIT'; values: unknown }
 		| { type: 'CHANGE'; values: unknown }
@@ -235,7 +235,6 @@ export function createScopedFormMachine<
 			request: undefined,
 			sequence: 0,
 			result: undefined,
-			submission: undefined,
 			draftRevision: 0,
 			draft: undefined
 		}),
@@ -385,11 +384,14 @@ export function createScopedFormMachine<
 								invoke: {
 									id: 'submission',
 									src: 'submission',
-									input: ({ context }) => {
+									input: ({ context, self }) => {
 										if (!context.request) throw new Error('Missing form request')
-										return { request: context.request, observation: requireObservation(context) }
+										return {
+											request: context.request,
+											observation: requireObservation(context),
+											recipient: self
+										}
 									},
-									onSnapshot: { actions: assign({ submission: ({ event }) => event.snapshot }) },
 									onDone: [
 										{ guard: 'closing', target: 'closed' },
 										{
@@ -400,8 +402,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'scopeChanged', settlement: event.output.settlement }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -412,8 +413,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'cancelled', settlement: event.output.settlement }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -424,8 +424,7 @@ export function createScopedFormMachine<
 											target: 'completion',
 											actions: assign({
 												result: ({ event }) => event.output,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -443,8 +442,7 @@ export function createScopedFormMachine<
 													options.resetOnSuccess && event.output.outcome === 'succeeded'
 														? context.draftRevision + 1
 														: context.draftRevision,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										}
 									],
@@ -458,8 +456,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'scopeChanged', settlement: 'unknown' }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -470,8 +467,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'cancelled', settlement: 'unknown' }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -485,8 +481,7 @@ export function createScopedFormMachine<
 																settlement: 'unknown'
 															}
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										}
 									]
@@ -498,7 +493,35 @@ export function createScopedFormMachine<
 									SHUTDOWN: { target: '.closing', actions: command('SHUTDOWN') }
 								},
 								states: {
-									pending: { tags: 'can-open' },
+									pending: {
+										tags: 'can-open',
+										initial: 'awaitingProgress',
+										states: {
+											awaitingProgress: {},
+											validating: { tags: 'validating' },
+											operating: {}
+										},
+										on: {
+											FORM_SUBMISSION_PROGRESS: [
+												{
+													guard: ({ context, event }) =>
+														context.request?.id === event.requestId &&
+														context.request.scopeRevision === event.scopeRevision &&
+														context.scopeRevision === event.scopeRevision &&
+														event.progress === 'validating',
+													target: '.validating'
+												},
+												{
+													guard: ({ context, event }) =>
+														context.request?.id === event.requestId &&
+														context.request.scopeRevision === event.scopeRevision &&
+														context.scopeRevision === event.scopeRevision &&
+														event.progress === 'operating',
+													target: '.operating'
+												}
+											]
+										}
+									},
 									cancelling: { tags: 'can-open', on: { CANCEL: {} } },
 									invalidated: {
 										tags: 'can-open',
@@ -559,7 +582,6 @@ export function createScopedFormMachine<
 					capability: undefined,
 					request: undefined,
 					result: undefined,
-					submission: undefined,
 					draft: undefined
 				})
 			}
@@ -602,7 +624,7 @@ export function selectScopedFormView<
 		'successContent'
 	>
 ): ScopedFormView<Result, Reason> {
-	const { capability, result, submission } = snapshot.context
+	const { capability, result } = snapshot.context
 	const closing = snapshot.matches({ open: { workflow: { active: 'closing' } } })
 	const invalidated = snapshot.matches({ open: { workflow: { active: 'invalidated' } } })
 	const cancelling = snapshot.matches({ open: { workflow: { active: 'cancelling' } } })
@@ -635,7 +657,7 @@ export function selectScopedFormView<
 						kind: 'settling',
 						reason: closing ? 'closed' : invalidated ? 'scopeChanged' : 'cancelled'
 					}
-				: submission?.hasTag('validating')
+				: snapshot.hasTag('validating')
 					? { kind: 'validating' }
 					: snapshot.matches({ open: { workflow: 'active' } }) || navigationPending
 						? { kind: 'operating' }

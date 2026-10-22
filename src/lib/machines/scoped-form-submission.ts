@@ -1,4 +1,12 @@
-import { assign, fromPromise, setup, stateIn, type ActorLogic, type Snapshot } from 'xstate'
+import {
+	assign,
+	fromPromise,
+	setup,
+	stateIn,
+	type ActorLogic,
+	type ActorRef,
+	type Snapshot
+} from 'xstate'
 import { z } from 'zod'
 import type {
 	FormChildEvent,
@@ -7,12 +15,14 @@ import type {
 	FormOperationInput,
 	FormOperationResult,
 	FormRequest,
-	FormResult
+	FormResult,
+	FormSubmissionProgressEvent
 } from '#lib/form-contract.js'
 
 type Input<Scope, Observation> = {
 	request: FormRequest<Scope>
 	observation: FormObservation<Observation>
+	recipient?: ActorRef<Snapshot<unknown>, FormSubmissionProgressEvent>
 }
 
 export function createScopedFormSubmissionMachine<
@@ -30,7 +40,8 @@ export function createScopedFormSubmissionMachine<
 		FormOperationInput<Values, Scope, Observation>
 	>
 }) {
-	type Context = Omit<Input<Scope, Observation>, 'observation'> & {
+	type Context = Omit<Input<Scope, Observation>, 'observation' | 'recipient'> & {
+		recipient: ActorRef<Snapshot<unknown>, FormSubmissionProgressEvent> | undefined
 		observation: FormObservation<Observation> | undefined
 		validated: { value: Values } | undefined
 		result: FormResult<Result, Reason> | undefined
@@ -69,6 +80,16 @@ export function createScopedFormSubmissionMachine<
 			operationCancelling: stateIn({ operating: 'cancelling' })
 		}
 	})
+	const publishProgress = (progress: FormSubmissionProgressEvent['progress']) =>
+		workflow.enqueueActions(({ context, enqueue }) => {
+			if (!context.recipient) return
+			enqueue.sendTo(context.recipient, {
+				type: 'FORM_SUBMISSION_PROGRESS',
+				requestId: context.request.id,
+				scopeRevision: context.request.scopeRevision,
+				progress
+			})
+		})
 	const observe = workflow.assign({
 		observation: ({ context, event }) =>
 			event.type === 'OBSERVE' ? event.observation : context.observation
@@ -80,6 +101,7 @@ export function createScopedFormSubmissionMachine<
 	const clearPayloads = workflow.assign({
 		request: ({ context }) => ({ ...context.request, values: undefined }),
 		validated: undefined,
+		recipient: undefined,
 		observation: undefined
 	})
 	const finishInterrupted = (outcome: FormInterruption) =>
@@ -95,13 +117,19 @@ export function createScopedFormSubmissionMachine<
 	return workflow.createMachine({
 		id: 'scoped-form-submission',
 		initial: 'validating',
-		context: ({ input }) => ({ ...input, validated: undefined, result: undefined }),
+		context: ({ input }) => ({
+			...input,
+			recipient: input.recipient,
+			validated: undefined,
+			result: undefined
+		}),
 		output: ({ context }) => {
 			if (!context.result) throw new Error('Missing form result')
 			return context.result
 		},
 		states: {
 			validating: {
+				entry: publishProgress('validating'),
 				initial: 'pending',
 				tags: 'validating',
 				invoke: {
@@ -163,6 +191,7 @@ export function createScopedFormSubmissionMachine<
 				}
 			},
 			operating: {
+				entry: publishProgress('operating'),
 				tags: 'operating',
 				initial: 'pending',
 				invoke: {
