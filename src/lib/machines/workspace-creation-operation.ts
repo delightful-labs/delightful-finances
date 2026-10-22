@@ -19,22 +19,34 @@ export type CreationRequest =
 	| { mode: 'load' }
 	| { mode: 'create'; name: string }
 	| { mode: 'retry' | 'clear'; record: WorkspaceJournalRecord }
-export type CreationResult = {
-	outcome:
-		| 'editing'
-		| 'invalid'
-		| 'recovered'
-		| 'complete'
-		| 'conflict'
-		| 'failed'
-		| 'unresolved'
-		| 'cancelled'
-		| 'closed'
-	record: WorkspaceJournalRecord | undefined
-	workspace: Organization | undefined
-	settlement: 'notStarted' | 'locallyPersisted' | 'unresolved'
-	error: unknown
-}
+export type CreationResult =
+	| { outcome: 'editing' | 'invalid'; record: undefined; settlement: 'notStarted' }
+	| { outcome: 'recovered'; record: WorkspaceJournalRecord; settlement: 'notStarted' }
+	| {
+			outcome: 'complete'
+			record: WorkspaceJournalRecord
+			workspace: Organization
+			settlement: 'locallyPersisted'
+	  }
+	| { outcome: 'conflict'; record: WorkspaceJournalRecord | undefined; settlement: 'notStarted' }
+	| {
+			outcome: 'failed'
+			record: WorkspaceJournalRecord | undefined
+			settlement: 'notStarted'
+			error: unknown
+	  }
+	| {
+			outcome: 'unresolved'
+			record: WorkspaceJournalRecord | undefined
+			settlement: 'unresolved'
+			error: unknown
+	  }
+	| {
+			outcome: 'cancelled' | 'closed'
+			record: WorkspaceJournalRecord | undefined
+			settlement: WorkspacePersistenceResult['settlement']
+	  }
+
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction'>
 type Input = { db: Db; binding: CreationBinding; request: CreationRequest }
 type Event = { type: 'CANCEL' | 'SHUTDOWN' }
@@ -63,13 +75,6 @@ type Context = Input & {
 	reconciliation: ReconciliationResult | undefined
 	persistence: WorkspacePersistenceResult | undefined
 	result: CreationResult
-}
-const empty: CreationResult = {
-	outcome: 'editing',
-	record: undefined,
-	workspace: undefined,
-	settlement: 'notStarted',
-	error: undefined
 }
 function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error('Missing creation operation value')
@@ -122,9 +127,9 @@ export const workspaceCreationOperation = model.createMachine({
 		journal: undefined,
 		reconciliation: undefined,
 		persistence: undefined,
-		result: { ...empty }
+		result: { outcome: 'editing', record: undefined, settlement: 'notStarted' }
 	}),
-	output: ({ context }) => ({ ...context.result, record: context.record }),
+	output: ({ context }) => context.result,
 	states: {
 		running: {
 			type: 'parallel',
@@ -175,7 +180,9 @@ export const workspaceCreationOperation = model.createMachine({
 								},
 								onError: {
 									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'invalid' } })
+									actions: assign({
+										result: { outcome: 'invalid', record: undefined, settlement: 'notStarted' }
+									})
 								}
 							}
 						},
@@ -192,7 +199,8 @@ export const workspaceCreationOperation = model.createMachine({
 									target: 'finishing',
 									actions: assign({
 										result: ({ context, event }): CreationResult => ({
-											...context.result,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
 											error: event.error
 										})
@@ -213,7 +221,13 @@ export const workspaceCreationOperation = model.createMachine({
 								},
 								{
 									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'conflict' } })
+									actions: assign({
+										result: ({ context }): CreationResult => ({
+											outcome: 'conflict',
+											record: context.record,
+											settlement: 'notStarted'
+										})
+									})
 								}
 							]
 						},
@@ -230,7 +244,8 @@ export const workspaceCreationOperation = model.createMachine({
 									target: 'finishing',
 									actions: assign({
 										result: ({ context, event }): CreationResult => ({
-											...context.result,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
 											error: event.error
 										})
@@ -272,7 +287,13 @@ export const workspaceCreationOperation = model.createMachine({
 								},
 								{
 									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'conflict' } })
+									actions: assign({
+										result: ({ context }): CreationResult => ({
+											outcome: 'conflict',
+											record: context.record,
+											settlement: 'notStarted'
+										})
+									})
 								}
 							]
 						},
@@ -293,7 +314,8 @@ export const workspaceCreationOperation = model.createMachine({
 									target: 'finishing',
 									actions: assign({
 										result: ({ context, event }): CreationResult => ({
-											...context.result,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
 											error: event.error
 										})
@@ -308,7 +330,7 @@ export const workspaceCreationOperation = model.createMachine({
 							always: [
 								{
 									guard: ({ context }) => context.journal?.outcome === 'succeeded',
-									target: 'reconciling'
+									target: 'persisting'
 								},
 								{ target: 'journalFailure' }
 							]
@@ -330,7 +352,8 @@ export const workspaceCreationOperation = model.createMachine({
 									target: 'finishing',
 									actions: assign({
 										result: ({ context, event }): CreationResult => ({
-											...context.result,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
 											error: event.error
 										})
@@ -355,13 +378,20 @@ export const workspaceCreationOperation = model.createMachine({
 								{
 									guard: ({ context }) => context.journal?.outcome === 'conflict',
 									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'conflict' } })
+									actions: assign({
+										result: ({ context }): CreationResult => ({
+											outcome: 'conflict',
+											record: context.record,
+											settlement: 'notStarted'
+										})
+									})
 								},
 								{
 									target: 'finishing',
 									actions: assign({
 										result: ({ context }): CreationResult => ({
-											...empty,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
 											error:
 												context.journal?.outcome === 'failed'
@@ -387,7 +417,8 @@ export const workspaceCreationOperation = model.createMachine({
 									target: 'finishing',
 									actions: assign({
 										result: ({ context, event }): CreationResult => ({
-											...context.result,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
 											error: event.error
 										})
@@ -403,30 +434,39 @@ export const workspaceCreationOperation = model.createMachine({
 									guard: ({ context }) => context.reconciliation?.outcome === 'matching',
 									target: 'finishing',
 									actions: assign({
+										result: ({ context }): CreationResult => {
+											const result = required(context.reconciliation)
+											if (result.outcome !== 'matching')
+												throw new Error('Expected completed creation')
+											return {
+												outcome: 'complete',
+												record: required(context.record),
+												workspace: result.workspace,
+												settlement: 'locallyPersisted'
+											}
+										}
+									})
+								},
+								{
+									guard: ({ context }) => context.reconciliation?.outcome === 'absent',
+									target: 'finishing',
+									actions: assign({
 										result: ({ context }): CreationResult => ({
-											...empty,
-											outcome: 'complete',
-											settlement: 'locallyPersisted',
-											workspace:
-												context.reconciliation?.outcome === 'matching'
-													? context.reconciliation.workspace
-													: undefined
+											outcome: 'recovered',
+											record: required(context.record),
+											settlement: 'notStarted'
 										})
 									})
 								},
 								{
-									guard: ({ context }) =>
-										context.reconciliation?.outcome === 'absent' && context.request.mode === 'load',
 									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'recovered' } })
-								},
-								{
-									guard: ({ context }) => context.reconciliation?.outcome === 'absent',
-									target: 'persisting'
-								},
-								{
-									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'conflict' } })
+									actions: assign({
+										result: ({ context }): CreationResult => ({
+											outcome: 'conflict',
+											record: context.record,
+											settlement: 'notStarted'
+										})
+									})
 								}
 							]
 						},
@@ -445,8 +485,8 @@ export const workspaceCreationOperation = model.createMachine({
 								onError: {
 									target: 'finishing',
 									actions: assign({
-										result: ({ event }): CreationResult => ({
-											...empty,
+										result: ({ context, event }): CreationResult => ({
+											record: context.record,
 											outcome: 'unresolved',
 											settlement: 'unresolved',
 											error: event.error
@@ -461,22 +501,32 @@ export const workspaceCreationOperation = model.createMachine({
 									guard: ({ context }) => context.persistence?.outcome === 'succeeded',
 									target: 'finishing',
 									actions: assign({
-										result: ({ context }): CreationResult => ({
-											...empty,
-											outcome: 'complete',
-											settlement: 'locallyPersisted',
-											workspace:
-												context.persistence?.outcome === 'succeeded'
-													? context.persistence.workspace
-													: undefined
-										})
+										result: ({ context }): CreationResult => {
+											const result = required(context.persistence)
+											if (result.outcome !== 'succeeded')
+												throw new Error('Expected completed creation')
+											return {
+												outcome: 'complete',
+												record: required(context.record),
+												workspace: result.workspace,
+												settlement: 'locallyPersisted'
+											}
+										}
 									})
 								},
 								{
 									guard: ({ context }) => context.persistence?.settlement === 'unresolved',
 									target: 'finishing',
 									actions: assign({
-										result: { ...empty, outcome: 'unresolved', settlement: 'unresolved' }
+										result: ({ context }): CreationResult => ({
+											outcome: 'unresolved',
+											record: context.record,
+											settlement: 'unresolved',
+											error:
+												context.persistence?.outcome === 'failed'
+													? context.persistence.error
+													: new Error('Workspace persistence settlement is unresolved')
+										})
 									})
 								},
 								{
@@ -484,15 +534,25 @@ export const workspaceCreationOperation = model.createMachine({
 										context.persistence?.outcome === 'conflict' ||
 										context.persistence?.outcome === 'profileUnavailable',
 									target: 'finishing',
-									actions: assign({ result: { ...empty, outcome: 'conflict' } })
+									actions: assign({
+										result: ({ context }): CreationResult => ({
+											outcome: 'conflict',
+											record: context.record,
+											settlement: 'notStarted'
+										})
+									})
 								},
 								{
 									target: 'finishing',
 									actions: assign({
 										result: ({ context }): CreationResult => ({
-											...empty,
+											record: context.record,
+											settlement: 'notStarted',
 											outcome: 'failed',
-											settlement: context.persistence?.settlement ?? 'notStarted'
+											error:
+												context.persistence?.outcome === 'failed'
+													? context.persistence.error
+													: new Error('Workspace persistence was interrupted')
 										})
 									})
 								}
@@ -542,11 +602,23 @@ export const workspaceCreationOperation = model.createMachine({
 		failed: { type: 'final' },
 		closed: {
 			type: 'final',
-			entry: assign({ result: ({ context }) => ({ ...context.result, outcome: 'closed' }) })
+			entry: assign({
+				result: ({ context }): CreationResult => ({
+					outcome: 'closed',
+					record: context.record,
+					settlement: context.persistence?.settlement ?? context.result.settlement
+				})
+			})
 		},
 		cancelled: {
 			type: 'final',
-			entry: assign({ result: ({ context }) => ({ ...context.result, outcome: 'cancelled' }) })
+			entry: assign({
+				result: ({ context }): CreationResult => ({
+					outcome: 'cancelled',
+					record: context.record,
+					settlement: context.persistence?.settlement ?? context.result.settlement
+				})
+			})
 		}
 	}
 })

@@ -11,7 +11,6 @@ describe('workspace integrity assessment', () => {
 			expect(result.value).toBe('repair')
 			expect(result.output).toEqual({
 				outcome: 'repair',
-				remaining: [],
 				plan: {
 					profileLink: { membershipId: membership.id, profileId: scope.profileId }
 				}

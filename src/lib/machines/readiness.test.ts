@@ -323,7 +323,7 @@ describe('workspace readiness supervision', () => {
 	})
 })
 describe('workspace public capability and report currency', () => {
-	it('requires current integrity and preserves usable versus blocked partial policy', () => {
+	it('requires current integrity and keeps profile-attribution issues usable', () => {
 		const f = start()
 		f.observe(f.selected())
 		expect(f.actor.getSnapshot().can(sync)).toBe(false)
@@ -336,12 +336,7 @@ describe('workspace public capability and report currency', () => {
 			access: 'usable'
 		})
 		expect(f.actor.getSnapshot().can(sync)).toBe(true)
-		f.report({
-			kind: 'partial',
-			settlement: 'notStarted',
-			issues: ['profileLink'],
-			access: 'blocked'
-		})
+		f.report({ kind: 'unavailable', settlement: 'notStarted' })
 		expect(f.actor.getSnapshot().can(sync)).toBe(false)
 	})
 	it('rejects prior-visit reports after A → B → A', () => {

@@ -29,6 +29,12 @@
 		scope: null,
 		ids: null
 	})
+	$effect.pre(() => {
+		if (accountFilter.scope !== routeWorkspaceId) {
+			accountFilter.scope = routeWorkspaceId
+			accountFilter.ids = null
+		}
+	})
 	const financeFilters: FinanceFilters = {
 		get activeOrganizationId() {
 			return routeWorkspaceId

@@ -21,12 +21,12 @@ const cleanups: (() => void)[] = []
 afterEach(() => {
 	for (const stop of cleanups.splice(0)) stop()
 })
-function fixture(initial: 'ready' | 'transitioning' = 'ready', legacy = false) {
+function fixture(initial: 'ready' | 'transitioning' = 'ready') {
 	const f = creationFixture()
 	const discover = vi.fn().mockResolvedValue([])
 	function queue() {
 		const pending = Promise.withResolvers<(typeof profile)[]>()
-		discover.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(legacy ? [workspace] : [])
+		discover.mockReturnValueOnce(pending.promise).mockResolvedValueOnce([])
 		return pending
 	}
 	const first = queue()
@@ -60,15 +60,15 @@ describe('startup session ownership', () => {
 		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(true)
 	})
 	it('drains old initialization writes before using the latest replacement identity', async () => {
-		const f = fixture('ready', true)
-		f.one.mockResolvedValueOnce(workspace)
+		const f = fixture('ready')
+		f.one.mockReset().mockResolvedValue(null)
 		const pendingWrite = Promise.withResolvers<void>()
 		const started = Promise.withResolvers<void>()
 		f.wait.mockImplementation(() => {
 			started.resolve()
 			return pendingWrite.promise
 		})
-		f.first.resolve([{ ...profile, initialWorkspaceId: null }])
+		f.first.resolve([])
 		await started.promise
 		const next = f.queue()
 		f.actor.send({
@@ -80,9 +80,9 @@ describe('startup session ownership', () => {
 			request: { generation: 2, userId: thirdUser, status: 'ready' }
 		})
 		expect(f.actor.getSnapshot().matches({ initializing: 'replacing' })).toBe(true)
-		expect(f.discover).toHaveBeenCalledTimes(2)
+		expect(f.discover).toHaveBeenCalledTimes(4)
 		pendingWrite.resolve()
-		await vi.waitFor(() => expect(f.discover).toHaveBeenCalledTimes(4))
+		await vi.waitFor(() => expect(f.discover).toHaveBeenCalledTimes(6))
 		expect(f.actor.getSnapshot().context.operation?.userId).toBe(thirdUser)
 		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(false)
 		next.resolve([{ ...profile, userId: thirdUser }])
@@ -100,15 +100,15 @@ describe('startup session ownership', () => {
 		).toBe(false)
 	})
 	it('preserves shutdown over replacement, observations, retries, and late completion', async () => {
-		const f = fixture('ready', true)
-		f.one.mockResolvedValueOnce(workspace)
+		const f = fixture('ready')
+		f.one.mockReset().mockResolvedValue(null)
 		const pendingWrite = Promise.withResolvers<void>()
 		const started = Promise.withResolvers<void>()
 		f.wait.mockImplementation(() => {
 			started.resolve()
 			return pendingWrite.promise
 		})
-		f.first.resolve([{ ...profile, initialWorkspaceId: null }])
+		f.first.resolve([])
 		await started.promise
 		f.actor.send({
 			type: 'OBSERVED',
@@ -123,7 +123,7 @@ describe('startup session ownership', () => {
 		expect(f.actor.getSnapshot().status).toBe('active')
 		pendingWrite.resolve()
 		await waitFor(f.actor, (s) => s.status === 'done')
-		expect(f.discover).toHaveBeenCalledTimes(2)
+		expect(f.discover).toHaveBeenCalledTimes(4)
 	})
 	it('requires explicit retry after an initialization failure', async () => {
 		const f = fixture()

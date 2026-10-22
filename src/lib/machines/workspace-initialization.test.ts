@@ -21,7 +21,7 @@ const profile = {
 }
 
 describe('workspace initialization decisions', () => {
-	it('uses a warm receipt without recreating its now-inaccessible workspace', async () => {
+	it('uses a warm initialization marker without recreating its now-inaccessible workspace', async () => {
 		const f = creationFixture()
 		const init = f.initialization()
 		init.discover
@@ -33,28 +33,31 @@ describe('workspace initialization decisions', () => {
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 		expect(f.insert).not.toHaveBeenCalled()
 	})
-	it('records legacy provenance from an accessible business workspace without seeding finance data', async () => {
-		const f = creationFixture()
-		const init = f.initialization()
-		const business = {
-			...workspace,
-			kind: 'business',
-			ownerId: '77777777-7777-4777-8777-777777777777'
+	it.each([
+		{ organizations: [] },
+		{
+			organizations: [
+				{ ...workspace, kind: 'business', ownerId: '77777777-7777-4777-8777-777777777777' }
+			]
 		}
-		init.discover.mockResolvedValueOnce([profile]).mockResolvedValueOnce([business])
-		f.one
-			.mockReset()
-			.mockResolvedValueOnce(profile)
-			.mockResolvedValueOnce(business)
-			.mockResolvedValueOnce(null)
-		const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
-		expect(done.output).toEqual({ outcome: 'ready', profileId })
-		expect(f.update).toHaveBeenCalledExactlyOnceWith(app.profiles, profileId, {
-			initialWorkspaceId: workspace.id
-		})
-		expect(f.insert).not.toHaveBeenCalled()
-		expect(f.commit).toHaveBeenCalledTimes(1)
-	})
+	])(
+		'reports a missing initialization marker without backfilling from accessible workspaces: %j',
+		async ({ organizations }) => {
+			const f = creationFixture()
+			const init = f.initialization()
+			init.discover
+				.mockResolvedValueOnce([profile])
+				.mockResolvedValueOnce(organizations)
+				.mockResolvedValueOnce([profile])
+				.mockResolvedValueOnce(organizations)
+			const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
+			expect(done.output).toEqual({ outcome: 'unavailable', reason: 'initializationMissing' })
+			expect(init.discover).toHaveBeenCalledTimes(4)
+			expect(f.beginTransaction).not.toHaveBeenCalled()
+			expect(f.update).not.toHaveBeenCalled()
+			expect(f.insert).not.toHaveBeenCalled()
+		}
+	)
 	it('requires confirmed remote emptiness before creating the initial profile and workspace', async () => {
 		const f = creationFixture()
 		const init = f.initialization()
@@ -100,18 +103,6 @@ describe('workspace initialization decisions', () => {
 		expect(done.output).toEqual({ outcome: 'unavailable', reason: 'authorityUnavailable' })
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
-	it('does not resurrect a legacy membership when remote records contain only a profile', async () => {
-		const f = creationFixture()
-		const init = f.initialization()
-		init.discover
-			.mockResolvedValueOnce([profile])
-			.mockResolvedValueOnce([])
-			.mockResolvedValueOnce([profile])
-			.mockResolvedValueOnce([])
-		const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
-		expect(done.output).toEqual({ outcome: 'unavailable', reason: 'legacyAmbiguous' })
-		expect(f.beginTransaction).not.toHaveBeenCalled()
-	})
 	it('uses remote initialization knowledge arriving after an empty local cache', async () => {
 		const f = creationFixture()
 		const init = f.initialization()
@@ -136,7 +127,11 @@ describe('workspace initialization decisions', () => {
 		async ({ profiles, organizations, reason }) => {
 			const f = creationFixture()
 			const init = f.initialization()
-			init.discover.mockResolvedValueOnce(profiles).mockResolvedValueOnce(organizations)
+			init.discover
+				.mockResolvedValueOnce(profiles)
+				.mockResolvedValueOnce(organizations)
+				.mockResolvedValueOnce(profiles)
+				.mockResolvedValueOnce(organizations)
 			const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
 			expect(done.output).toEqual({ outcome: 'unavailable', reason })
 			expect(f.beginTransaction).not.toHaveBeenCalled()
@@ -158,15 +153,10 @@ describe('workspace initialization decisions', () => {
 		expect(done.output).toEqual({ outcome: 'cancelled', settlement: 'notStarted' })
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
-	it('drains receipt persistence before completing shutdown', async () => {
+	it('drains bootstrap persistence before completing shutdown', async () => {
 		const f = creationFixture()
 		const init = f.initialization()
-		init.discover.mockResolvedValueOnce([profile]).mockResolvedValueOnce([workspace])
-		f.one
-			.mockReset()
-			.mockResolvedValueOnce(profile)
-			.mockResolvedValueOnce(workspace)
-			.mockResolvedValueOnce(null)
+		f.one.mockReset().mockResolvedValue(null)
 		const pending = Promise.withResolvers<void>()
 		const started = Promise.withResolvers<void>()
 		f.wait.mockImplementation(() => {
@@ -195,18 +185,6 @@ describe('workspace initialization decisions', () => {
 })
 
 describe('initialization transaction boundaries', () => {
-	it('does not overwrite an initialization receipt changed after discovery', async () => {
-		const f = creationFixture()
-		f.one
-			.mockReset()
-			.mockResolvedValueOnce({ ...profile, initialWorkspaceId: 'other-workspace' })
-			.mockResolvedValueOnce(workspace)
-			.mockResolvedValueOnce(null)
-		const done = await waitFor(f.transaction('receipt'), (s) => s.status === 'done')
-		expect(done.output).toEqual({ outcome: 'conflict', settlement: 'notStarted' })
-		expect(f.update).not.toHaveBeenCalled()
-		expect(f.rollback).toHaveBeenCalledTimes(1)
-	})
 	it('does not overwrite a profile that appeared before first-time bootstrap', async () => {
 		const f = creationFixture()
 		const done = await waitFor(f.transaction('bootstrap'), (s) => s.status === 'done')

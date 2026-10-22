@@ -67,6 +67,72 @@ test('workspace creation uses the shared modal and preserves a cancelled draft w
 	await expect(dialog).not.toBeVisible()
 })
 
+test('submitted workspace creation keeps Close and accessible progress without extra visible feedback', async ({
+	page
+}) => {
+	await start(page)
+	const dialog = await openCreationModal(page, 'Create Workspace')
+	await dialog.getByLabel('Workspace name', { exact: true }).fill('Quiet workspace')
+	// Hold ID generation so the submitting presentation can be checked without a timing race.
+	const gate = await page.evaluateHandle(() => {
+		const digest = crypto.subtle.digest.bind(crypto.subtle)
+		let release = () => {}
+		const pending = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		crypto.subtle.digest = (algorithm, data) => pending.then(() => digest(algorithm, data))
+		return {
+			release: () => {
+				crypto.subtle.digest = digest
+				release()
+			}
+		}
+	})
+	try {
+		await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+		await expect(dialog.getByRole('status')).toHaveText('Preparing your workspace…')
+		await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeEnabled()
+		await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0)
+		await expect(dialog.locator('p').filter({ hasText: 'Preparing your workspace' })).toHaveCount(0)
+		await expect(
+			dialog.getByRole('button', { name: 'Create Workspace', exact: true })
+		).toBeDisabled()
+	} finally {
+		await gate.evaluate((control) => control.release())
+		await gate.dispose()
+	}
+	await expect(dialog.getByRole('status')).toHaveText('Workspace saved')
+})
+
+test('workspace creation keeps its announcement regions mounted through success and reset', async ({
+	page
+}) => {
+	await start(page)
+	const dialog = await openCreationModal(page, 'Create Workspace')
+	const status = dialog.getByRole('status')
+	const alert = dialog.getByRole('alert')
+	await expect(status).toHaveText('')
+	await expect(alert).toHaveText('')
+	const originalStatus = await status.elementHandle()
+	const originalAlert = await alert.elementHandle()
+	if (!originalStatus || !originalAlert) throw new Error('Missing persistent announcement regions')
+
+	await create(page, 'Announcement workspace')
+	await expect(status).toHaveText('Workspace saved')
+	await expect(alert).toHaveText('')
+	expect(await originalStatus.evaluate((node) => node.isConnected)).toBe(true)
+	expect(await originalAlert.evaluate((node) => node.isConnected)).toBe(true)
+
+	await dialog.getByRole('button', { name: 'Create another Workspace', exact: true }).click()
+	await expect(dialog.getByLabel('Workspace name', { exact: true })).toHaveValue('')
+	await expect(status).toHaveText('')
+	await expect(alert).toHaveText('')
+	expect(await originalStatus.evaluate((node) => node.isConnected)).toBe(true)
+	expect(await originalAlert.evaluate((node) => node.isConnected)).toBe(true)
+	await originalStatus.dispose()
+	await originalAlert.dispose()
+})
+
 test('both workspace selectors preserve the settings page and synchronize their selected value', async ({
 	page
 }) => {
@@ -99,6 +165,56 @@ test('both workspace selectors preserve the settings page and synchronize their 
 	await prepareSidebar(page)
 	await expect(drawer).toHaveValue('')
 	await expect(drawer.locator('option:checked')).toHaveText('Choose a workspace')
+})
+
+test('switching away and back clears account filters while ordinary navigation preserves them', async ({
+	page
+}) => {
+	await start(page)
+	const secondId = workspaceId(await create(page, 'Filter workspace B'))
+	await closeCreationModal(page)
+	const firstId = await page.evaluate(async (secondId) => {
+		const { db, app } = window.workspaceSettingsTest
+		const organizations = await db.all(app.organizations)
+		const first = organizations.find((organization) => organization.id !== secondId)
+		if (!first) throw new Error('Missing initial workspace')
+		for (const account of [
+			{ organizationId: first.id, name: 'Filter checking' },
+			{ organizationId: first.id, name: 'Filter cash' },
+			{ organizationId: secondId, name: 'Business checking' }
+		]) {
+			await db
+				.insert(app.accounts, { ...account, kind: 'bank', currency: 'USD' })
+				.wait({ tier: 'global' })
+		}
+		return first.id
+	}, secondId)
+	await prepareSidebar(page)
+	const selector = page.getByLabel('Current workspace', { exact: true })
+	await selectWorkspace(selector, firstId)
+	const drawer = page.locator('aside.site-drawer')
+	const cash = drawer.getByRole('checkbox', { name: 'Filter cash', exact: true })
+	const checking = drawer.getByRole('checkbox', { name: 'Filter checking', exact: true })
+	await cash.uncheck()
+	await expect(checking).toBeChecked()
+	await expect(
+		drawer.getByRole('checkbox', { name: 'All accounts', exact: true })
+	).not.toBeChecked()
+
+	await drawer.getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(page).toHaveURL(`/expenses?workspace=${firstId}`)
+	await expect(cash).not.toBeChecked()
+
+	await selectWorkspace(selector, secondId)
+	await expect(page).toHaveURL(`/expenses?workspace=${secondId}`)
+	await expect(
+		drawer.getByRole('checkbox', { name: 'Business checking', exact: true })
+	).toBeChecked()
+	await selectWorkspace(selector, firstId)
+	await expect(page).toHaveURL(`/expenses?workspace=${firstId}`)
+	await expect(cash).toBeChecked()
+	await expect(checking).toBeChecked()
+	await expect(drawer.getByRole('checkbox', { name: 'All accounts', exact: true })).toBeChecked()
 })
 
 test('creates duplicate-named isolated workspaces without switching, and reconciles reload', async ({
@@ -280,9 +396,9 @@ test('reload recovers a journaled attempt without replay, then retry uses the or
 	await page.reload()
 	await openCreationModal(page, 'Create Workspace')
 	await expect(
-		page.getByText(
-			'An unfinished creation attempt was found. Retry uses the same workspace identity.'
-		)
+		creationDialog(page, 'Create Workspace').getByRole('status').filter({
+			hasText: 'An unfinished creation attempt was found. Retry uses the same workspace identity.'
+		})
 	).toBeVisible()
 	await harness(page)
 	expect(
@@ -449,7 +565,47 @@ test('repairs profile links without creating missing categories and preserves wo
 	).toEqual({ count: 7, profile: 'Preserved identity' })
 })
 
-test('lost membership does not resurrect the receipt workspace or select a replacement', async ({
+test('startup does not backfill a missing initialization marker or create replacement data', async ({
+	page
+}) => {
+	await start(page)
+	const before = await page.evaluate(async () => {
+		const { db, app, userId } = window.workspaceSettingsTest
+		const profile = (await db.all(app.profiles.where({ userId })))[0]
+		if (!profile) throw new Error('Missing initial profile')
+		await db.update(app.profiles, profile.id, { initialWorkspaceId: null }).wait({ tier: 'global' })
+		return {
+			profileId: profile.id,
+			organizations: (await db.all(app.organizations)).map((row) => row.id).sort(),
+			memberships: (await db.all(app.organizationMembers.where({ userId })))
+				.map((row) => row.id)
+				.sort()
+		}
+	})
+	await page.reload()
+	await expect(
+		page.getByText('Your workspaces could not be prepared.', { exact: true })
+	).toBeVisible()
+	await harness(page)
+	const after = await page.evaluate(async () => {
+		const { db, app, userId } = window.workspaceSettingsTest
+		const profiles = await db.all(app.profiles.where({ userId }), { tier: 'global' })
+		return {
+			profiles: profiles.map((row) => ({ id: row.id, initialWorkspaceId: row.initialWorkspaceId })),
+			organizations: (await db.all(app.organizations)).map((row) => row.id).sort(),
+			memberships: (await db.all(app.organizationMembers.where({ userId })))
+				.map((row) => row.id)
+				.sort()
+		}
+	})
+	expect(after).toEqual({
+		profiles: [{ id: before.profileId, initialWorkspaceId: null }],
+		organizations: before.organizations,
+		memberships: before.memberships
+	})
+})
+
+test('lost membership does not resurrect the initial workspace or select a replacement', async ({
 	page
 }) => {
 	await start(page)
@@ -462,15 +618,15 @@ test('lost membership does not resurrect the receipt workspace or select a repla
 	})
 	await page.goto(`/expenses?workspace=${workspaceId}`)
 	await expect(
-		page
-			.getByRole('main')
-			.getByText('This workspace or transaction is unavailable. Choose a workspace you can access.')
+		page.getByRole('main').getByRole('status').filter({
+			hasText: 'This workspace or transaction is unavailable. Choose a workspace you can access.'
+		})
 	).toBeVisible()
 	await page.reload()
 	await expect(
-		page
-			.getByRole('main')
-			.getByText('This workspace or transaction is unavailable. Choose a workspace you can access.')
+		page.getByRole('main').getByRole('status').filter({
+			hasText: 'This workspace or transaction is unavailable. Choose a workspace you can access.'
+		})
 	).toBeVisible()
 	await harness(page)
 	expect(

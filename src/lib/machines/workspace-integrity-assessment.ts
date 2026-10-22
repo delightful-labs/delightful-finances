@@ -10,12 +10,12 @@ export type IntegrityRecords = {
 }
 export type IntegrityIssue = 'profileLink'
 export type IntegrityPlan = {
-	profileLink: { membershipId: string; profileId: string } | undefined
+	profileLink: { membershipId: string; profileId: string }
 }
 export type IntegrityAssessment =
 	| { outcome: 'complete' }
 	| { outcome: 'partial'; issues: IntegrityIssue[] }
-	| { outcome: 'repair'; plan: IntegrityPlan; remaining: IntegrityIssue[] }
+	| { outcome: 'repair'; plan: IntegrityPlan }
 	| { outcome: 'unavailable'; reason: 'profileMissing' | 'accessUnavailable' }
 	| {
 			outcome: 'conflict'
@@ -26,9 +26,14 @@ export type IntegrityAssessmentInput = IntegrityScope & {
 }
 
 type Context = IntegrityAssessmentInput & {
-	plan: IntegrityPlan
+	plan: IntegrityPlan | undefined
 	issues: IntegrityIssue[]
 	result: IntegrityAssessment | undefined
+}
+
+function requiredPlan(plan: IntegrityPlan | undefined): IntegrityPlan {
+	if (!plan) throw new Error('Missing profile-link repair plan')
+	return plan
 }
 
 /** Current-policy adapter: never uses workspace creator/kind as authority. */
@@ -47,7 +52,7 @@ export const workspaceIntegrityAssessment = setup<
 	id: 'workspace-integrity-assessment',
 	context: ({ input }) => ({
 		...input,
-		plan: { profileLink: undefined },
+		plan: undefined,
 		issues: [],
 		result: undefined
 	}),
@@ -111,7 +116,6 @@ export const workspaceIntegrityAssessment = setup<
 							const membership = context.records.memberships[0]
 							if (!membership) throw new Error('Missing assessed membership')
 							return {
-								...context.plan,
 								profileLink: { membershipId: membership.id, profileId: context.profileId }
 							}
 						}
@@ -123,13 +127,12 @@ export const workspaceIntegrityAssessment = setup<
 		classifying: {
 			always: [
 				{
-					guard: ({ context }) => context.plan.profileLink !== undefined,
+					guard: ({ context }) => context.plan !== undefined,
 					target: 'repair',
 					actions: assign({
 						result: ({ context }): IntegrityAssessment => ({
 							outcome: 'repair',
-							plan: context.plan,
-							remaining: context.issues
+							plan: requiredPlan(context.plan)
 						})
 					})
 				},

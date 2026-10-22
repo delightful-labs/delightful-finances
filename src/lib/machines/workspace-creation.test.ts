@@ -5,8 +5,17 @@ import type {
 	CreationRequest,
 	CreationResult
 } from './workspace-creation-operation.js'
-import { createWorkspaceCreationMachine } from './workspace-creation.js'
-import { attempt, creationFixture, userId, profileId } from './workspace-creation.fixture.js'
+import {
+	createWorkspaceCreationMachine,
+	selectWorkspaceCreationView
+} from './workspace-creation.js'
+import {
+	attempt,
+	creationFixture,
+	userId,
+	profileId,
+	workspace
+} from './workspace-creation.fixture.js'
 const { started, interrupted } = vi.hoisted(() => ({ started: vi.fn(), interrupted: vi.fn() }))
 vi.mock('./workspace-creation-operation.js', () => ({
 	workspaceCreationOperation: setup<
@@ -24,7 +33,13 @@ vi.mock('./workspace-creation-operation.js', () => ({
 		initial: 'waiting',
 		context: ({ input }) => {
 			started(input)
-			return { result: result('editing') }
+			return {
+				result: {
+					outcome: 'editing',
+					record: undefined,
+					settlement: 'notStarted'
+				} satisfies CreationResult
+			}
 		},
 		output: ({ context }) => context.result,
 		states: {
@@ -46,15 +61,7 @@ afterEach(() => {
 })
 const binding = { key: 'environment/user', userId, profileId }
 const record = { key: binding.key, attempt }
-function result(outcome: CreationResult['outcome'], withRecord = false): CreationResult {
-	return {
-		outcome,
-		record: withRecord ? record : undefined,
-		workspace: undefined,
-		settlement: 'notStarted',
-		error: undefined
-	}
-}
+
 function start() {
 	const f = creationFixture()
 	const actor = createActor(createWorkspaceCreationMachine(f.db), { input: { binding } }).start()
@@ -71,7 +78,7 @@ describe('workspace creation owner', () => {
 		const actor = start()
 		actor.send({ type: 'SUBMIT', name: 'Ignored during load' })
 		expect(started).toHaveBeenCalledTimes(1)
-		finish(actor, result('recovered', true))
+		finish(actor, { outcome: 'recovered', record, settlement: 'notStarted' })
 		actor.send({ type: 'OBSERVED', binding: { ...binding } })
 		expect(actor.getSnapshot().matches('recovered')).toBe(true)
 		expect(started).toHaveBeenCalledTimes(1)
@@ -84,7 +91,7 @@ describe('workspace creation owner', () => {
 		actor.send({ type: 'OBSERVED', binding: { ...binding, key: 'third' } })
 		expect(actor.getSnapshot().matches({ operating: 'replacing' })).toBe(true)
 		expect(started).toHaveBeenCalledTimes(1)
-		finish(actor, result('closed', true))
+		finish(actor, { outcome: 'closed', record, settlement: 'notStarted' })
 		expect(started).toHaveBeenCalledTimes(2)
 		expect(started.mock.lastCall?.[0].binding.key).toBe('third')
 	})
@@ -94,23 +101,24 @@ describe('workspace creation owner', () => {
 		actor.send({ type: 'OBSERVED', binding: { ...binding, key: 'late' } })
 		actor.send({ type: 'RETRY' })
 		expect(actor.getSnapshot().status).toBe('active')
-		finish(actor, result('closed'))
+		finish(actor, { outcome: 'closed', record: undefined, settlement: 'notStarted' })
 		expect(actor.getSnapshot().status).toBe('done')
 		expect(started).toHaveBeenCalledTimes(1)
 	})
 	it('rereads a journal after cancelled loading or a conflict retry', () => {
 		const actor = start()
 		actor.send({ type: 'CANCEL' })
-		finish(actor, result('cancelled'))
+		finish(actor, { outcome: 'cancelled', record: undefined, settlement: 'notStarted' })
 		expect(started).toHaveBeenCalledTimes(2)
 		expect(started.mock.lastCall?.[0].request).toEqual({ mode: 'load' })
-		finish(actor, result('conflict', true))
+		finish(actor, { outcome: 'conflict', record, settlement: 'notStarted' })
 		actor.send({ type: 'RETRY' })
 		expect(started.mock.lastCall?.[0].request).toEqual({ mode: 'load' })
 	})
 	it('requires an explicit new action after completion', () => {
 		const actor = start()
-		finish(actor, result('complete', true))
+		finish(actor, { outcome: 'complete', record, workspace, settlement: 'locallyPersisted' })
+		expect(selectWorkspaceCreationView(actor.getSnapshot()).workspace).toEqual(workspace)
 		actor.send({ type: 'SUBMIT', name: 'Ignored after success' })
 		expect(started).toHaveBeenCalledTimes(1)
 		actor.send({ type: 'NEW' })

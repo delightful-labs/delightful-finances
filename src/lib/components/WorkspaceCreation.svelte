@@ -14,5 +14,4 @@
 	onSubmit={(name) => workspace.actor?.send({ type: 'CREATION', event: { type: 'SUBMIT', name } })}
 	onRetry={() => workspace.actor?.send({ type: 'CREATION', event: { type: 'RETRY' } })}
 	onNew={() => workspace.actor?.send({ type: 'CREATION', event: { type: 'NEW' } })}
-	onCancel={() => workspace.actor?.send({ type: 'CREATION', event: { type: 'CANCEL' } })}
 />

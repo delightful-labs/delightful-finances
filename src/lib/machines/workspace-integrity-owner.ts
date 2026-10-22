@@ -167,46 +167,17 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 				entry: report((context) => ({ kind: 'complete', settlement: settlement(context) }))
 			},
 			partial: {
-				tags: 'integrity-partial',
-				initial: 'checking',
-				states: {
-					checking: {
-						always: [
-							{
-								guard: ({ context }) =>
-									context.result?.outcome === 'partial' &&
-									context.result.issues.every((issue) => issue === 'profileLink'),
-								target: 'attribution'
-							},
-							{ target: 'blocked' }
-						]
-					},
-					attribution: {
-						tags: 'integrity-finance-ready',
-						entry: report((context) => {
-							const result = required(context.result)
-							if (result.outcome !== 'partial') throw new Error('Expected partial integrity result')
-							return {
-								kind: 'partial',
-								issues: result.issues,
-								settlement: result.settlement,
-								access: 'usable'
-							}
-						})
-					},
-					blocked: {
-						entry: report((context) => {
-							const result = required(context.result)
-							if (result.outcome !== 'partial') throw new Error('Expected partial integrity result')
-							return {
-								kind: 'partial',
-								issues: result.issues,
-								settlement: result.settlement,
-								access: 'blocked'
-							}
-						})
+				tags: ['integrity-partial', 'integrity-finance-ready'],
+				entry: report((context) => {
+					const result = required(context.result)
+					if (result.outcome !== 'partial') throw new Error('Expected partial integrity result')
+					return {
+						kind: 'partial',
+						issues: result.issues,
+						settlement: result.settlement,
+						access: 'usable'
 					}
-				}
+				})
 			},
 			unavailable: {
 				tags: 'integrity-unavailable',

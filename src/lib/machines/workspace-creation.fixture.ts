@@ -57,11 +57,13 @@ export function creationFixture() {
 	const wait = vi.fn(async (_options: { tier: 'local' }) => {})
 	const commit = vi.spyOn(tx, 'commit').mockImplementation(vi.fn().mockReturnValue({ wait }))
 	const beginTransaction = vi.fn(() => tx)
-	const hydrate = vi.fn(
-		async (_query: unknown, _options?: { tier?: string }): Promise<never[]> => []
-	)
-	const db = { beginTransaction, all: hydrate }
-	function transaction(purpose: 'additional' | 'bootstrap' | 'receipt' = 'additional') {
+	const readScope = new Transaction('mergeable', () => {
+		throw new Error('Unit fixture must not open a Jazz runtime')
+	})
+	const hydrate = vi.spyOn(readScope, 'all').mockResolvedValue([])
+	hydrate.mockResolvedValueOnce([{ id: profileId, userId }])
+	const db = { beginTransaction, all: readScope.all.bind(readScope) }
+	function transaction(purpose: 'additional' | 'bootstrap' = 'additional') {
 		const actor = createActor(workspaceCreationTransaction, { input: { db, attempt, purpose } })
 		cleanups.push(() => actor.stop())
 		actor.start()

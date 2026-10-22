@@ -1,6 +1,6 @@
 <script lang="ts">
 	import AppLink from '#lib/components/AppLink.svelte'
-	import { Button, InputText } from 'delightful-ui'
+	import { Button, InputText, ScreenReaderText } from 'delightful-ui'
 	import {
 		workspaceCreationFormView,
 		type WorkspaceCreationView
@@ -12,15 +12,13 @@
 		view,
 		onSubmit,
 		onRetry,
-		onNew,
-		onCancel
+		onNew
 	}: {
 		scope: unknown
 		view: WorkspaceCreationView
 		onSubmit: (name: string) => void
 		onRetry: () => void
 		onNew: () => void
-		onCancel: () => void
 	} = $props()
 	const formView = $derived(workspaceCreationFormView(view))
 	let name = $state('')
@@ -38,6 +36,8 @@
 		failed: () => m['workspace.create_failed'](),
 		unresolved: () => m['workspace.create_unresolved']()
 	}
+	const message = $derived(descriptions[view.mode]())
+	const urgent = $derived(['invalid', 'conflict', 'failed', 'unresolved'].includes(view.mode))
 </script>
 
 <FormModal
@@ -63,21 +63,14 @@
 			disabled={!form.fieldsEditable}
 		/>
 	{/snippet}
+	{#snippet announcements()}
+		<ScreenReaderText role="status">{urgent ? '' : message}</ScreenReaderText>
+		<ScreenReaderText role="alert">{urgent ? message : ''}</ScreenReaderText>
+	{/snippet}
 	{#snippet feedback()}
-		{#if descriptions[view.mode]()}
-			<p
-				role={['invalid', 'conflict', 'failed', 'unresolved'].includes(view.mode)
-					? 'alert'
-					: 'status'}
-			>
-				{descriptions[view.mode]()}
-			</p>
-		{/if}
+		{#if message && view.mode !== 'working'}<p aria-hidden="true">{message}</p>{/if}
 		{#if view.name && view.mode !== 'complete'}<p>{view.name}</p>{/if}
 		{#if view.canRetry}<Button type="button" onclick={onRetry}>{m['actions.retry']()}</Button>{/if}
-		{#if view.mode === 'working'}<Button type="button" onclick={onCancel}
-				>{m['actions.cancel']()}</Button
-			>{/if}
 		{#if view.canCreateAnother}
 			{#if view.workspace}<p>
 					<AppLink href="/" query={{ workspace: view.workspace.id }}

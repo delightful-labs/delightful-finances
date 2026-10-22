@@ -5,7 +5,6 @@ import {
 	workspaceIntegrityAssessment,
 	type IntegrityAssessment,
 	type IntegrityAssessmentInput,
-	type IntegrityIssue,
 	type IntegrityPlan,
 	type IntegrityRecords
 } from './workspace-integrity-assessment.js'
@@ -46,11 +45,7 @@ const read = fromPromise(
 	}
 )
 const linkProfile = fromPromise(
-	async ({
-		input
-	}: {
-		input: { tx: Transaction; link: NonNullable<IntegrityPlan['profileLink']> }
-	}) =>
+	async ({ input }: { input: { tx: Transaction; link: IntegrityPlan['profileLink'] } }) =>
 		input.tx.update(app.organizationMembers, input.link.membershipId, {
 			profileId: input.link.profileId
 		})
@@ -65,7 +60,6 @@ type Context = Input & {
 	records: IntegrityRecords | undefined
 	assessment: IntegrityAssessment | undefined
 	plan: IntegrityPlan | undefined
-	remaining: IntegrityIssue[]
 	write: OutputFrom<typeof commit> | undefined
 	result: IntegrityResult | undefined
 }
@@ -112,7 +106,6 @@ export const workspaceIntegrityTransaction = setup<
 		records: undefined,
 		assessment: undefined,
 		plan: undefined,
-		remaining: [],
 		write: undefined,
 		result: undefined
 	}),
@@ -227,16 +220,15 @@ export const workspaceIntegrityTransaction = setup<
 								{
 									guard: ({ context }) =>
 										context.assessment?.outcome === 'repair' &&
-										(context.assessment.plan.profileLink === undefined ||
-											(context.assessment.plan.profileLink.membershipId ===
-												context.expected.profileLink?.membershipId &&
-												context.assessment.plan.profileLink.profileId ===
-													context.expected.profileLink?.profileId)),
-									target: 'choosingProfileWrite',
+										context.assessment.plan.profileLink.membershipId ===
+											context.expected.profileLink.membershipId &&
+										context.assessment.plan.profileLink.profileId ===
+											context.expected.profileLink.profileId,
+									target: 'stagingProfileLink',
 									actions: assign(({ context }) => {
 										const assessment = required(context.assessment)
 										if (assessment.outcome !== 'repair') throw new Error('Expected repair payload')
-										return { plan: assessment.plan, remaining: assessment.remaining }
+										return { plan: assessment.plan }
 									})
 								},
 								{
@@ -249,15 +241,6 @@ export const workspaceIntegrityTransaction = setup<
 										}
 									})
 								}
-							]
-						},
-						choosingProfileWrite: {
-							always: [
-								{
-									guard: ({ context }) => context.plan?.profileLink !== undefined,
-									target: 'stagingProfileLink'
-								},
-								{ target: 'checkingBeforeCommit' }
 							]
 						},
 						stagingProfileLink: {
@@ -325,25 +308,10 @@ export const workspaceIntegrityTransaction = setup<
 							}
 						},
 						classifyingSuccess: {
-							always: [
-								{
-									guard: ({ context }) => context.remaining.length > 0,
-									target: 'finishing',
-									actions: assign({
-										result: ({ context }): IntegrityResult => ({
-											outcome: 'partial',
-											settlement: 'locallyPersisted',
-											issues: context.remaining
-										})
-									})
-								},
-								{
-									target: 'finishing',
-									actions: assign({
-										result: { outcome: 'complete', settlement: 'locallyPersisted' }
-									})
-								}
-							]
+							always: {
+								target: 'finishing',
+								actions: assign({ result: { outcome: 'complete', settlement: 'locallyPersisted' } })
+							}
 						},
 						rollingBack: {
 							invoke: {

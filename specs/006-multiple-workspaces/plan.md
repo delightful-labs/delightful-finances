@@ -361,3 +361,67 @@ Remove workspace prefix rewriting and prefix-to-shell service-worker mapping. Si
 ### Shared query-aware links
 
 AppLink owns navigation integration and composes a pure Anchor primitive; no Jazz subscriptions or actor workflows enter either component. A root-provided generic query context supplies the current browser URL and inherited key names (initially workspace). Pure query transformation inherits only missing configured keys for same-origin HTTP(S) links; explicit destination values win, per-link query updates can override/remove, repeated values remain intact, and downloads/external URLs do not inherit. This is synchronous URL transformation, not an async workflow. Native anchor attributes/events and DOM structure remain available for browser navigation, preloading, copying and new tabs. Pagination uses the same resolver through an adapter to the existing UI-library item rather than changing its styling/semantics. Existing presentation styles are retargeted to the unchanged emitted anchors. Programmatic completion retains original operation scope and continues to use URL helpers. Review implementation before adding/running tests.
+
+### Review cleanup: remove legacy initialization backfill
+
+Supersedes the earlier receipt-migration implementation notes above. Existing data does not
+require migration support. Initialization no longer chooses an accessible workspace to backfill
+`profiles.initialWorkspaceId`; the receipt transaction purpose, preparation and update actor are
+removed. The marker remains initialization provenance, never active workspace selection.
+
+The statechart reads local records, accepts an existing marker, otherwise requires authoritative
+records before deciding. Only an identity with no profiles and no accessible workspaces may
+bootstrap. An existing profile without a marker reports `initializationMissing`; workspaces without
+a profile report `profileMissing`. Neither condition creates or repairs records. Missing marker
+and unavailable authority remain unavailable rather than allowing a bootstrap from empty cache.
+The shared transaction retains bootstrap/additional creation, atomic eligibility checks, staging,
+commit/local settlement, cancellation, shutdown and rollback ownership.
+
+After review, the user authorized tests. Updated initialization/startup fixtures and replaced
+backfill-only expectations with missing-marker rejection and bootstrap-draining coverage. Relevant
+unit checks pass: 47 tests across six files. Three browser checks pass: missing-marker rejection
+without replacement data, fresh/additional creation with reload, and lost-membership handling.
+The latter needed its stale text selector updated to target the persistent accessible status region.
+Application/service-worker and browser-test type checks pass, as do formatting/whitespace checks.
+Browser checks used disposable in-memory Jazz storage; no persistent development data was changed.
+
+### Review cleanup: one creation preflight read
+
+Creation/retry now saves the journal and invokes persistence directly. Persistence validates the
+attempt, invokes the existing reconciliation machine once (its related LocalFirst reads hydrate
+the scope), and chooses an outcome: matching returns the existing workspace; absent opens the
+transaction; missing profile or conflicting records return without writes. The former hydration
+actor and its second read pass are removed. Loading a saved journal still invokes reconciliation
+without writing, producing complete/recovered/conflict presentation as before.
+
+The transaction retains its own reads and guarded checks after acquisition, followed by staging,
+commit/local settlement and rollback/draining on interruption. These reads must remain because
+preflight observations cannot replace atomic checks. Cancellation before acquisition discards
+read-only reconciliation; cancellation/shutdown during a transaction still forwards to its owner
+and waits for settlement. No skip-hydration flags or manually bridged child lifecycles are added.
+After review, the user authorized tests. Updated the fixture and persistence tests to exercise
+one preflight read pass, matching-attempt reuse without writes, conflict/missing-profile rejection,
+transaction-time profile loss, cancellation, and shutdown draining. All 52 relevant unit tests across
+six files pass. Three browser checks pass: duplicate-named creation/reload, warm-offline creation,
+and journal recovery/retry with original IDs and no replay. The recovery assertion now targets its
+persistent status region. Application/service-worker and browser-test type checks pass. Browser
+checks used disposable in-memory Jazz storage.
+
+### Review cleanup: discriminated creation results
+
+`CreationResult` now uses outcome-specific payloads. Complete requires its journal record and
+workspace with local settlement; recovered requires its record; editing/invalid have no record;
+conflict carries only its available record; failed and unresolved require diagnostics and distinct
+settlements. Cancellation/shutdown preserve the available record and actual settlement.
+
+Existing statechart transitions construct their own complete payloads instead of spreading an
+empty result. Output returns that payload unchanged. Guarded success branches narrow their child
+outcomes before reading the workspace, and presentation reads a workspace only from a complete
+result. This changes the public result contract, not workflow ownership or I/O orchestration.
+After review, the user authorized tests. Replaced the loose result builder with explicit valid
+fixtures and added six operation tests covering complete/recovered payloads, invalid input without
+fake diagnostics, preserved failure errors, unresolved settlement, and shutdown draining. All 39
+relevant unit tests across five files pass. Three browser checks pass: modal draft preservation,
+persistent announcements through success/reset, and journal recovery/retry using original IDs.
+Application/service-worker and browser-test type checks pass. Browser checks used disposable
+in-memory Jazz storage.

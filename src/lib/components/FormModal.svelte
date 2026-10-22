@@ -18,7 +18,8 @@
 		onreset,
 		fields,
 		feedback,
-		trigger
+		trigger,
+		announcements
 	}: {
 		scope: unknown
 		label: string
@@ -28,6 +29,7 @@
 		onreset: (event: Event) => void
 		fields: Snippet<[View]>
 		feedback: Snippet<[View]>
+		announcements?: Snippet<[View]> | undefined
 		trigger?: Snippet<[() => void, boolean]> | undefined
 	} = $props()
 
@@ -55,6 +57,7 @@
 {/if}
 
 <Dialog heading={label} bind:open closedby="any">
+	{@render announcements?.(view)}
 	{#key scope}
 		{#if view.content.kind === 'success'}
 			{@render feedback(view)}

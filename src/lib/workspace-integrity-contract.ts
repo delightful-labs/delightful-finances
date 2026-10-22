@@ -20,7 +20,7 @@ export type IntegrityStatus =
 			kind: 'partial'
 			issues: readonly IntegrityIssue[]
 			settlement: Settlement
-			access: 'usable' | 'blocked'
+			access: 'usable'
 	  }
 	| { kind: 'unresolved'; settlement: 'unresolved' }
 	| { kind: 'closed'; settlement: Settlement }

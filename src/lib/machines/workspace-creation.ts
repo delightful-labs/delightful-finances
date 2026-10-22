@@ -224,7 +224,10 @@ export function selectWorkspaceCreationView(
 	return {
 		mode,
 		name: replacing ? '' : (snapshot.context.record?.attempt.workspace.name ?? ''),
-		workspace: replacing ? undefined : snapshot.context.result?.workspace,
+		workspace:
+			!replacing && snapshot.context.result?.outcome === 'complete'
+				? snapshot.context.result.workspace
+				: undefined,
 		canSubmit: mode === 'editing' || mode === 'invalid',
 		canRetry: ['recovered', 'failed', 'unresolved', 'conflict'].includes(mode),
 		canCreateAnother: mode === 'complete'

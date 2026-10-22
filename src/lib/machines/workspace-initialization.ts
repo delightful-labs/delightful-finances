@@ -11,8 +11,7 @@ import {
 import {
 	workspaceCreationTransaction,
 	type WorkspacePersistenceEvent,
-	type WorkspacePersistenceResult,
-	type WorkspaceReceiptAttempt
+	type WorkspacePersistenceResult
 } from './workspace-creation-transaction.js'
 
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig'>
@@ -21,7 +20,8 @@ export type WorkspaceInitializationResult =
 	| { outcome: 'ready'; profileId: string }
 	| {
 			outcome: 'unavailable'
-			reason: 'authorityUnavailable' | 'legacyAmbiguous' | 'profileMissing' | 'duplicateProfiles'
+			reason:
+				'authorityUnavailable' | 'initializationMissing' | 'profileMissing' | 'duplicateProfiles'
 	  }
 	| WorkspacePersistenceResult
 
@@ -46,31 +46,13 @@ const prepareInitial = fromPromise(async ({ input }: { input: Input }) => {
 		userId: input.userId,
 		name: m['defaults.workspace']()
 	})
-	// Preserve the legacy initial membership identity without making this workspace special.
+	// Keep bootstrap membership IDs stable across retries without making this workspace special.
 	return { ...attempt, membershipId }
 })
-const prepareReceipt = fromPromise(
-	async ({
-		input
-	}: {
-		input: {
-			userId: string
-			profileId: string
-			organizationId: string
-			name: string
-		}
-	}): Promise<WorkspaceReceiptAttempt> => ({
-		organizationId: input.organizationId,
-		profileId: input.profileId,
-		membershipId: await stableUuid(input.organizationId, `owner:${input.userId}`),
-		workspace: { ownerId: input.userId, name: input.name, kind: 'personal', defaultCurrency: 'USD' }
-	})
-)
 
 type Context = Input & {
 	records: OutputFrom<typeof discover> | undefined
 	attempt: WorkspaceCreationAttempt | undefined
-	receipt: WorkspaceReceiptAttempt | undefined
 	result: WorkspaceInitializationResult | undefined
 }
 function required<T>(value: T | undefined): T {
@@ -85,7 +67,6 @@ export const workspaceInitialization = setup<
 	{
 		discover: typeof discover
 		prepareInitial: typeof prepareInitial
-		prepareReceipt: typeof prepareReceipt
 		transaction: typeof workspaceCreationTransaction
 	},
 	{},
@@ -96,14 +77,13 @@ export const workspaceInitialization = setup<
 	Input,
 	WorkspaceInitializationResult
 >({
-	actors: { discover, prepareInitial, prepareReceipt, transaction: workspaceCreationTransaction }
+	actors: { discover, prepareInitial, transaction: workspaceCreationTransaction }
 }).createMachine({
 	id: 'workspace-initialization',
 	context: ({ input }) => ({
 		...input,
 		records: undefined,
 		attempt: undefined,
-		receipt: undefined,
 		result: undefined
 	}),
 	initial: 'readingLocal',
@@ -143,30 +123,20 @@ export const workspaceInitialization = setup<
 					guard: ({ context }) => (context.records?.profiles.length ?? 0) > 1,
 					target: 'duplicateProfiles'
 				},
-				{ target: 'checkingReceipt' }
+				{ target: 'checkingInitialization' }
 			]
 		},
-		checkingReceipt: {
+		checkingInitialization: {
 			always: [
 				{
 					guard: ({ context }) => context.records?.profiles[0]?.initialWorkspaceId != null,
 					target: 'ready'
 				},
-				{ target: 'checkingExisting' }
+				{ target: 'checkingAuthority' }
 			]
 		},
-		checkingExisting: {
+		checkingAuthority: {
 			always: [
-				{
-					guard: ({ context }) =>
-						(context.records?.organizations.length ?? 0) > 0 &&
-						context.records?.profiles.length === 1,
-					target: 'preparingReceipt'
-				},
-				{
-					guard: ({ context }) => (context.records?.organizations.length ?? 0) > 0,
-					target: 'profileMissing'
-				},
 				{
 					guard: ({ context }) => context.records?.serverConfigured === true,
 					target: 'awaitingAuthority'
@@ -206,14 +176,14 @@ export const workspaceInitialization = setup<
 					target: 'ready'
 				},
 				{
-					guard: ({ context }) => (context.records?.organizations.length ?? 0) > 0,
-					target: 'checkingExisting'
+					guard: ({ context }) => context.records?.profiles.length === 1,
+					target: 'initializationMissing'
 				},
 				{
-					guard: ({ context }) => context.records?.profiles.length === 0,
-					target: 'preparingInitial'
+					guard: ({ context }) => (context.records?.organizations.length ?? 0) > 0,
+					target: 'profileMissing'
 				},
-				{ target: 'legacyAmbiguous' }
+				{ target: 'preparingInitial' }
 			]
 		},
 		preparingInitial: {
@@ -223,31 +193,6 @@ export const workspaceInitialization = setup<
 				onDone: {
 					target: 'bootstrapping',
 					actions: assign({ attempt: ({ event }) => event.output })
-				},
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): WorkspaceInitializationResult => ({
-							outcome: 'failed',
-							settlement: 'notStarted',
-							error: event.error
-						})
-					})
-				}
-			}
-		},
-		preparingReceipt: {
-			invoke: {
-				src: 'prepareReceipt',
-				input: ({ context }) => ({
-					userId: context.userId,
-					profileId: required(context.records?.profiles[0]).id,
-					organizationId: required(context.records?.organizations[0]).id,
-					name: required(context.records?.organizations[0]).name
-				}),
-				onDone: {
-					target: 'recordingReceipt',
-					actions: assign({ receipt: ({ event }) => event.output })
 				},
 				onError: {
 					target: 'failed',
@@ -273,35 +218,6 @@ export const workspaceInitialization = setup<
 					db: context.db,
 					attempt: required(context.attempt),
 					purpose: 'bootstrap'
-				}),
-				onDone: [
-					{ guard: ({ event }) => event.output.outcome === 'succeeded', target: 'ready' },
-					{ target: 'completed', actions: assign({ result: ({ event }) => event.output }) }
-				],
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): WorkspaceInitializationResult => ({
-							outcome: 'failed',
-							settlement: 'unresolved',
-							error: event.error
-						})
-					})
-				}
-			}
-		},
-		recordingReceipt: {
-			on: {
-				CANCEL: { actions: sendTo('receipt', { type: 'CANCEL' }) },
-				SHUTDOWN: { actions: sendTo('receipt', { type: 'SHUTDOWN' }) }
-			},
-			invoke: {
-				id: 'receipt',
-				src: 'transaction',
-				input: ({ context }) => ({
-					db: context.db,
-					attempt: required(context.receipt),
-					purpose: 'receipt'
 				}),
 				onDone: [
 					{ guard: ({ event }) => event.output.outcome === 'succeeded', target: 'ready' },
@@ -355,12 +271,12 @@ export const workspaceInitialization = setup<
 				})
 			})
 		},
-		legacyAmbiguous: {
+		initializationMissing: {
 			type: 'final',
 			entry: assign({
 				result: (): WorkspaceInitializationResult => ({
 					outcome: 'unavailable',
-					reason: 'legacyAmbiguous'
+					reason: 'initializationMissing'
 				})
 			})
 		},

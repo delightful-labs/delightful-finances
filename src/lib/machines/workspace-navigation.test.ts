@@ -95,6 +95,40 @@ describe('workspace navigation public contract', () => {
 			expect(f.navigate).not.toHaveBeenCalled()
 		}
 	)
+	it.each(['/settings/workspace', '/account', '/login'])(
+		'keeps %s available during catalog loading or failure, but requires identity readiness',
+		(pathname) => {
+			const f = fixture({ ...facts, pathname, loading: true, organizations: [], access: 'waiting' })
+			const status = pathname === '/settings/workspace' ? 'directory' : 'global'
+			expect(f.reports().at(-1)?.report.status).toBe(status)
+			f.actor.send({
+				type: 'OBSERVED',
+				facts: {
+					...facts,
+					pathname,
+					generation: 1,
+					error: new Error('Catalog failed'),
+					access: 'failed'
+				}
+			})
+			expect(f.reports().at(-1)?.report).toEqual({ generation: 1, status })
+			f.actor.send({ type: 'OBSERVED', facts: { ...facts, pathname, generation: 2, ready: false } })
+			expect(f.reports().at(-1)?.report.status).toBe('waiting')
+			expect(f.navigate).not.toHaveBeenCalled()
+			expect(f.one).not.toHaveBeenCalled()
+		}
+	)
+	it('keeps ledger routes gated by catalog loading and failure', () => {
+		const input = { ...facts, pathname: '/expenses', search: `?workspace=${scope.organizationId}` }
+		const f = fixture({ ...input, loading: true })
+		expect(f.reports().at(-1)?.report.status).toBe('waiting')
+		f.actor.send({
+			type: 'OBSERVED',
+			facts: { ...input, generation: 1, error: new Error('Catalog failed') }
+		})
+		expect(f.reports().at(-1)?.report.status).toBe('failed')
+		expect(f.navigate).not.toHaveBeenCalled()
+	})
 	it('records manual switches in history and leaves unfinished transaction entry', async () => {
 		const f = fixture({
 			...facts,

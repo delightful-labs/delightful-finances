@@ -1,9 +1,8 @@
 import { assign, fromPromise, sendTo, setup } from 'xstate'
-import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
-import { app } from '../schema.js'
 import { workspaceCreationAttemptSchema } from '../validation/identity.js'
 import type { WorkspaceCreationAttempt } from '../domain/workspace-creation.js'
+import { workspaceCreationReconciliation } from './workspace-creation-reconciliation.js'
 import {
 	workspaceCreationTransaction,
 	type WorkspacePersistenceEvent,
@@ -18,27 +17,13 @@ type Context = Input & { result: WorkspacePersistenceResult | undefined }
 const validate = fromPromise<WorkspaceCreationAttempt, WorkspaceCreationAttempt>(({ input }) =>
 	Promise.resolve(workspaceCreationAttemptSchema.parse(input))
 )
-const hydrate = fromPromise(async ({ input }: { input: Input }) => {
-	const { db, attempt } = input
-	const options = { tier: ReadTier.LocalFirst }
-	await Promise.all([
-		db.all(
-			app.profiles.where({ id: attempt.profileId, userId: attempt.workspace.ownerId }),
-			options
-		),
-		db.all(app.organizations.where({ id: attempt.organizationId }), options),
-		db.all(app.organizationMembers.where({ id: attempt.membershipId }), options),
-		db.all(app.categories.where({ organizationId: attempt.organizationId }), options)
-	])
-})
-
-/** Hydrate before opening a snapshot; the transaction child owns all write decisions/resources. */
+/** Reconcile once before opening a snapshot; the transaction child rechecks atomic eligibility. */
 export const persistWorkspaceCreation = setup<
 	Context,
 	WorkspacePersistenceEvent,
 	{
 		validate: typeof validate
-		hydrate: typeof hydrate
+		reconcile: typeof workspaceCreationReconciliation
 		transaction: typeof workspaceCreationTransaction
 	},
 	{},
@@ -48,7 +33,13 @@ export const persistWorkspaceCreation = setup<
 	string,
 	Input,
 	WorkspacePersistenceResult
->({ actors: { validate, hydrate, transaction: workspaceCreationTransaction } }).createMachine({
+>({
+	actors: {
+		validate,
+		reconcile: workspaceCreationReconciliation,
+		transaction: workspaceCreationTransaction
+	}
+}).createMachine({
 	id: 'workspace-creation-persistence',
 	context: ({ input }) => ({ ...input, result: undefined }),
 	initial: 'validating',
@@ -62,7 +53,10 @@ export const persistWorkspaceCreation = setup<
 			invoke: {
 				src: 'validate',
 				input: ({ context }) => context.attempt,
-				onDone: { target: 'hydrating', actions: assign({ attempt: ({ event }) => event.output }) },
+				onDone: {
+					target: 'reconciling',
+					actions: assign({ attempt: ({ event }) => event.output })
+				},
 				onError: {
 					target: 'failed',
 					actions: assign({
@@ -75,11 +69,37 @@ export const persistWorkspaceCreation = setup<
 				}
 			}
 		},
-		hydrating: {
+		reconciling: {
 			invoke: {
-				src: 'hydrate',
+				src: 'reconcile',
 				input: ({ context }) => context,
-				onDone: 'transacting',
+				onDone: [
+					{ guard: ({ event }) => event.output.outcome === 'absent', target: 'transacting' },
+					{
+						guard: ({ event }) => event.output.outcome === 'matching',
+						target: 'completed',
+						actions: assign({
+							result: ({ event }): WorkspacePersistenceResult => {
+								if (event.output.outcome !== 'matching')
+									throw new Error('Expected matched workspace')
+								return {
+									outcome: 'succeeded',
+									settlement: 'locallyPersisted',
+									workspace: event.output.workspace
+								}
+							}
+						})
+					},
+					{
+						guard: ({ event }) => event.output.outcome === 'profileUnavailable',
+						target: 'completed',
+						actions: assign({ result: { outcome: 'profileUnavailable', settlement: 'notStarted' } })
+					},
+					{
+						target: 'completed',
+						actions: assign({ result: { outcome: 'conflict', settlement: 'notStarted' } })
+					}
+				],
 				onError: {
 					target: 'failed',
 					actions: assign({

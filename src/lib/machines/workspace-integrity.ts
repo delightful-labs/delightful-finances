@@ -7,8 +7,7 @@ import {
 	workspaceIntegrityAssessment,
 	type IntegrityAssessment,
 	type IntegrityRecords,
-	type IntegrityScope,
-	type IntegrityIssue
+	type IntegrityScope
 } from './workspace-integrity-assessment.js'
 import {
 	workspaceIntegrityTransaction,
@@ -166,13 +165,11 @@ export const workspaceIntegrity = setup<
 						result: ({ context }): IntegrityResult => {
 							const assessment = required(context.assessment)
 							if (assessment.outcome !== 'repair') throw new Error('Expected suspected repair')
-							const profileIssues: IntegrityIssue[] = assessment.plan.profileLink
-								? ['profileLink']
-								: []
+
 							return {
 								outcome: 'partial',
 								settlement: 'notStarted',
-								issues: [...assessment.remaining, ...profileIssues]
+								issues: ['profileLink']
 							}
 						}
 					})

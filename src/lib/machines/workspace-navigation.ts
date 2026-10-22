@@ -87,10 +87,9 @@ export function createWorkspaceNavigationMachine(
 				entry: assign({ replace: true }),
 				always: [
 					{
-						guard: ({ context }) => !context.facts.ready || context.facts.loading,
+						guard: ({ context }) => !context.facts.ready,
 						target: 'waiting'
 					},
-					{ guard: ({ context }) => context.facts.error != null, target: 'failed' },
 					{
 						guard: ({ context }) => context.facts.pathname === '/settings/workspace',
 						target: 'directory'
@@ -99,6 +98,8 @@ export function createWorkspaceNavigationMachine(
 						guard: ({ context }) => ['/account', '/login'].includes(context.facts.pathname),
 						target: 'global'
 					},
+					{ guard: ({ context }) => context.facts.loading, target: 'waiting' },
+					{ guard: ({ context }) => context.facts.error != null, target: 'failed' },
 					{
 						guard: ({ context }) => workspaceRoute(context.facts.search).scoped,
 						target: 'checkingScope'
