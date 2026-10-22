@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openCreationModal } from './helpers/ui.js'
 
 async function installPasskey(page: Page) {
 	await page.addInitScript(() => {
@@ -273,4 +274,91 @@ test('cancelled passkey creation ignores a late success and releases the bank lo
 	await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 	await expect(input).toHaveValue('')
 	expect(errors).toEqual([])
+})
+
+test('maps and remaps a provider account to existing accounts without creating duplicates', async ({
+	page
+}) => {
+	await installPasskey(page)
+	await page.goto('/accounts')
+	for (const name of ['Existing checking', 'Replacement checking']) {
+		const dialog = await openCreationModal(page, 'Add Account')
+		await dialog.getByLabel('Account name', { exact: true }).fill(name)
+		await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
+		await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+		await expect(dialog.getByRole('status')).toContainText(name)
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await expect(dialog).toBeHidden()
+	}
+	const operations: string[] = []
+	await page.route('**/api/simplefin', async (route) => {
+		const body: unknown = route.request().postDataJSON()
+		if (
+			!body ||
+			typeof body !== 'object' ||
+			!('operation' in body) ||
+			typeof body.operation !== 'string'
+		)
+			throw new Error('Invalid provider command')
+		operations.push(body.operation)
+		if (body.operation === 'claim') {
+			await route.fulfill({
+				contentType: 'text/plain',
+				body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+			})
+			return
+		}
+		await route.fulfill({
+			json: {
+				errors: [],
+				accounts: [
+					{
+						id: 'existing-checking',
+						name: 'Provider Checking',
+						currency: 'USD',
+						org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' }
+					}
+				]
+			}
+		})
+	})
+	await page.goto('/settings/banks')
+	await page
+		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+	for (const name of [
+		'Create passkey',
+		'Test encryption with my passkey',
+		'Test unlocking with my passkey',
+		'Connect and save securely'
+	]) {
+		await page.getByRole('button', { name, exact: true }).click()
+	}
+	const discover = page.getByRole('button', { name: 'Discover accounts', exact: true })
+	await expect(discover).toBeEnabled()
+	await discover.click()
+	const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Provider Checking' })
+	const existing = row.getByRole('combobox', {
+		name: 'Or link to an existing account',
+		exact: true
+	})
+	await existing.selectOption({ label: 'Existing checking' })
+	await expect(row.getByText('Linked to Existing checking', { exact: true })).toBeVisible()
+	await expect(
+		row.getByRole('button', { name: 'Add account “Provider Checking”', exact: true })
+	).toHaveCount(0)
+	await existing.selectOption({ label: 'Replacement checking' })
+	await expect(row.getByText('Linked to Replacement checking', { exact: true })).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover'])
+	await page.reload()
+	await expect(discover).toBeEnabled()
+	expect(operations).toEqual(['claim', 'discover'])
+	await discover.click()
+	await expect(row.getByText('Linked to Replacement checking', { exact: true })).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover', 'discover'])
+	await page.goto('/accounts')
+	const table = page.getByRole('table', { name: 'Accounts', exact: true })
+	await expect(table.getByRole('row')).toHaveCount(3)
+	await expect(table.getByRole('cell', { name: 'Existing checking', exact: true })).toBeVisible()
+	await expect(table.getByRole('cell', { name: 'Replacement checking', exact: true })).toBeVisible()
 })

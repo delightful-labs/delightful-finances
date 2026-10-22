@@ -65,8 +65,8 @@ persistence cancellation remain separate work.
 
 ## Implementation review
 
-Implementation is ready for review. `pnpm check`, focused Prettier and
-`git diff --check` passed. No tests added or run for this implementation yet.
+Implementation was reviewed and committed as `bf1f214` before tests were added/run.
+The approved verification is complete; no production changes were needed during testing.
 
 The recursive actor/helper review found no hidden read/check/write orchestration:
 all new effect actors open, read, stage one chosen write, request commit, wait, or
@@ -82,10 +82,41 @@ Operation owns the cancellation/failure intent and its lock lifetime; transactio
 rollback/settlement. The agent server used for the prior review was stopped before
 the static check; the user's persistent environment was untouched.
 
-After approval, verification should cover duplicate/provider/destination conflicts,
-missing/archived/foreign accounts, existing creation and account reuse, insert/update
-choices, cancellation during open/read/staging/commit/settlement/rollback, failed or
-unconfirmed rollback, lock failure/cancellation priority, already-finished children,
-unlink settlement, and the complete operation→mapping→creation→write→transaction
-chain. Browser checks should retain existing explicit creation/remapping/unlink and
-idempotency behavior. Static checks do not establish these runtime properties.
+## Verification
+
+62 relevant unit tests passed across transaction ownership, the real mapping actor
+chain, operation and bank owner tests. The 39 new tests cover atomic creation and
+account reuse, remapping, duplicate/provider/destination conflicts, missing/archived/
+foreign accounts, currency checks, existing-creation idempotency, storage failures,
+interruption at acquisition/read/staging/commit/settlement/rollback boundaries,
+confirmed/unconfirmed rollback, original scope, authority rejection, cancellation/
+lock-failure priority, a mapping actor crash before transaction acquisition, completed
+child command forwarding, and unlink's issued-delete settlement.
+
+The fixture composes the real operation→mapping→creation/write→transaction machines,
+with real authorization decisions and controlled storage/platform leaves. This proves
+that cancellation reaches the resource owner and lock release waits for its output;
+it does not replace a live Jazz concurrency test. The completed-child test checks the
+domain cancellation command specifically; XState can also emit an already-queued
+completion notification after the deliberately injected actor crash.
+
+Four Playwright checks passed against disposable in-memory Jazz: explicit connection/
+provider-account creation/idempotent import, lock startup failure/recovery, cancelled
+passkey creation with late completion, and mapping/remapping existing accounts with
+reload persistence, no duplicates and no extra provider requests. Unlink currently
+has no visible bank control; its cancellation/settlement contract is covered at the
+actor boundary. No UI control or browser database-delay hook was introduced for tests.
+
+`pnpm check`, `pnpm check:tests`, focused Prettier and `git diff --check` passed.
+
+```sh
+pnpm exec vitest run src/lib/machines/bank-sync/account-write-transaction.test.ts src/lib/machines/bank-sync/mapping.test.ts src/lib/machines/bank-sync/operation.test.ts src/lib/machines/bank-sync/index.test.ts
+pnpm check
+pnpm check:tests
+pnpm dev:agent --host 127.0.0.1 --strictPort
+# Wait for http://127.0.0.1:5180/ to return 200 before starting Playwright.
+pnpm exec playwright test --config playwright.bank-sync.config.ts tests/bank-sync.e2e.ts --grep 'connects explicitly|maps and remaps|lock actor startup failure|cancelled passkey creation'
+```
+
+This is focused verification, not a full application/PWA rerun. Import, disconnect,
+and outcome persistence settlement and correlated availability reports remain pending.
