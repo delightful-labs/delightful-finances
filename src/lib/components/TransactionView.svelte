@@ -91,6 +91,24 @@
 			? app.transactionTags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
+	const reportedQueryErrors = new WeakSet<Error>()
+	$effect(() => {
+		const queries = { transactions, accounts, categories, tags, transactionTags: links }
+		for (const [query, subscription] of Object.entries(queries)) {
+			const error = subscription.error
+			if (!error || reportedQueryErrors.has(error)) continue
+			reportedQueryErrors.add(error)
+			// Log error details only, never query parameters or finance records.
+			console.error('[Jazz transaction view] Query failed', {
+				query,
+				kind,
+				name: error.name,
+				message: error.message,
+				stack: error.stack,
+				userAgent: navigator.userAgent
+			})
+		}
+	})
 	const categoryNames = $derived(
 		new Map((categories.current ?? []).map((row) => [row.id, row.name]))
 	)
