@@ -11,14 +11,14 @@ Delightful Finance is a local-first personal finance tracker. A signed-in user c
 
 ## User Scenarios & Testing
 
-### User Story 1 — Start a finance workspace (P1)
+### User Story 1 — Start a personal finance workspace (P1)
 
-As a user, I can sign in and receive an initial workspace on first initialization, so I can begin tracking finances without setup friction. All workspaces are equivalent; the first workspace is initialization provenance, not a permanent personal home. See `006-multiple-workspaces` for the approved multi-workspace behavior.
+As a user, I can sign in and land in a personal organization that is created automatically on first login, so I can begin tracking finances without setup friction.
 
 **Acceptance Scenarios**
 
-1. **Given** authoritative first-use knowledge for an authenticated user, **When** the app initializes their finances, **Then** it atomically creates the initial profile, workspace, owner membership, starter categories, and initialization receipt. An empty local cache alone MUST NOT authorize creation.
-2. **Given** an existing user, **When** they sign in again, **Then** an initialization receipt or accessible existing workspace is reused without creating a new personal home or replenishing optional starter categories. Access loss MUST NOT recreate membership; ambiguous legacy records require a recoverable unavailable outcome. Selection MUST NOT prefer personal/business kind or silently replace an unavailable selected workspace.
+1. **Given** an authenticated user with no personal organization, **When** the app initializes their workspace, **Then** it creates one personal organization, an owner membership, and the required default categories.
+2. **Given** an existing user, **When** they sign in again, **Then** the existing personal organization and its data are reused rather than duplicated.
 3. **Given** a user without access to an organization, **When** they request its data, **Then** Jazz permissions prevent that data from being read or modified.
 
 ### User Story 2 — Manage financial accounts (P1)
@@ -298,8 +298,6 @@ Category and tag settings each offer a native radio group with Default (not arch
 
 ### Desktop transaction workspace
 
-Mobile transaction detail pages provide a localized Back to list link to the matching income or expense index, preserving URL pagination. This link is hidden on desktop and creation pages.
-
 Income, expense, new-transaction, and transaction detail routes share a SvelteKit route-group layout using `/income`, `/income/new`, `/income/[id]`, `/expenses`, `/expenses/new`, and `/expenses/[id]`; detail URLs belong to their transaction kind rather than `/transactions/[id]`. Above the existing 48rem mobile breakpoint, the transaction list occupies a right-side Drawer, initially open. The center remains empty on income/expense index routes; new and selected transaction content renders in the center. The drawer can be closed and reopened using accessible controls and reuses the same UI Drawer as main navigation, including Escape and focus-return behavior. Its list remains available while navigating between entries and forms, with the URL determining income/expense list content. Pagination stays in the URL and is preserved when selecting a transaction or opening creation. On mobile, index routes show the list and new/detail routes show only their existing content. Viewport changes must not remount the center form or discard unsaved input.
 
 After successful local transaction creation, navigate from `/income/new` or `/expenses/new` to its section index (`/income` or `/expenses`), replacing the creation history entry. Validation failures, save failures, partial outcomes, and cancellation remain on the form. Editing retains its existing behavior.
@@ -334,18 +332,3 @@ the saved preview. No new subscription, permission, or workflow state is added.
 Transaction detail creator/editor attribution, avatars, and timestamps appear inside
 a DUI Details disclosure labeled Metadata, closed by default. The editable form
 remains outside the disclosure.
-
-### Transaction page transitions
-
-Client-side navigation between income/expense index, creation, and detail paths uses
-the native View Transitions API to slide the incoming content 24px from the right
-over 200ms, without fading. Keep surrounding navigation and the desktop transaction
-drawer still. On mobile, transition between the list and form/detail content.
-Respect reduced-motion preferences
-and fall back to immediate navigation when unsupported. Query/hash-only changes and
-navigation outside transaction routes do not start a transition. Initial page loads
-retain their existing behavior.
-
-Incoming transaction content retains its natural rendered size during the transition,
-anchored at the top left. Loading transaction data or changing the form height during
-the animation must not stretch or squash the incoming page snapshot.

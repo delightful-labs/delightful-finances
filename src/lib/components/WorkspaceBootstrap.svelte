@@ -25,10 +25,6 @@
 	const workspaceState = $derived(applicationState.current.context.workspace?.getSnapshot())
 	const ready = $derived(workspaceState?.hasTag('workspace-ready') ?? false)
 	const setupError = $derived(workspaceState?.hasTag('workspace-error') ?? false)
-	const retryableSetup = $derived(workspaceState?.hasTag('workspace-retryable') ?? false)
-	function retrySetup() {
-		readiness.actor.getSnapshot().context.workspace?.send({ type: 'RETRY' })
-	}
 	const db = getDb()
 	const session = fromStore(getJazzSession())
 	const accountOrder = useMachine(accountOrderMachine)
@@ -166,7 +162,7 @@
 				{@render pageContent()}
 			</AppShell>
 		{:else if setupError}
-			<JazzStartup error workspace {...retryableSetup ? { onRetry: retrySetup } : {}} />
+			<JazzStartup error workspace />
 		{:else}
 			<JazzStartup workspace />
 		{/if}

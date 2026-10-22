@@ -338,18 +338,6 @@ are prepared locally with no deployment. Existing-tag migration needs a reviewed
 unlinked and mixed-kind usage before stored data is changed. Add and run focused
 unit/Playwright coverage only after implementation approval.
 
-### Transaction page transitions
-
-Register SvelteKit's onNavigate hook in the existing transaction route-group layout.
-Use document.startViewTransition to capture the old view, release navigation, and
-await navigation.complete before capturing the updated view. Name the central content
-and mobile index list transaction-content, with only one rendered transition target
-visible at a time. Replace the default crossfade with a 200ms, 24px slide from the
-right on the incoming content; disable root and group animations to keep surrounding
-navigation and the desktop drawer still. No workflow state is needed. Guard unsupported browsers,
-reduced motion, unchanged paths, and destinations outside the route group. Failed
-captures must release navigation. Add/run focused coverage after implementation review.
-
 ### Transaction description implementation
 
 Add an optional Jazz string column through a local additive migration, preserving existing data. Extend canonical transaction validation, the form adapter, and persistence. Use the existing InputText component for Description, keep Memo as Textarea, and localize labels. Update list/detail presentation, SimpleFIN mapping, and sample generation without changing workflow states. Review implementation before adding or running focused unit and Playwright coverage; migration deployment is separate.

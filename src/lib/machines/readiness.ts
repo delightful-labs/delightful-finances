@@ -1,14 +1,5 @@
-import {
-	assign,
-	fromPromise,
-	raise,
-	sendParent,
-	sendTo,
-	setup,
-	stateIn,
-	type ActorRefFrom
-} from 'xstate'
-import { createWorkspaceStartupMachine } from './workspace-startup.js'
+import { assign, fromPromise, raise, sendParent, sendTo, setup, stateIn } from 'xstate'
+import { ensurePersonalWorkspace } from '#lib/data.js'
 import type { Organization } from '#lib/schema.js'
 import { createBankSyncMachine } from './bank-sync/index.js'
 import { required } from './bank-sync/identity.js'
@@ -28,21 +19,12 @@ export type WorkspaceAttachment = {
 	read: () => ReadinessObservation
 	selectOrganization: (id: string | null) => void
 }
-type Context = ReadinessObservation & {
-	bankActor: ActorRefFrom<ReturnType<typeof createBankSyncMachine>> | undefined
-	startupActor: ActorRefFrom<ReturnType<typeof createWorkspaceStartupMachine>> | undefined
-}
+type Context = ReadinessObservation & { bootstrapUserId: string | undefined }
 type Event =
 	| { type: 'OBSERVED'; observation: ReadinessObservation }
 	| { type: 'REEVALUATE' }
 	| { type: 'BANK'; event: BankEvent }
 	| { type: 'SHUTDOWN' }
-	| { type: 'RETRY' }
-	| { type: 'INITIALIZATION_READY' }
-	| { type: 'INITIALIZATION_WAITING' }
-	| { type: 'INITIALIZATION_FAILED' }
-	| { type: 'STARTUP_STOPPED' }
-	| { type: 'BANK_STOPPED' }
 
 export function createWorkspaceReadinessMachine({
 	dependencies,
@@ -52,7 +34,9 @@ export function createWorkspaceReadinessMachine({
 	const actors = {
 		bank: createBankSyncMachine(dependencies),
 		select: fromPromise(async ({ input }: { input: string | null }) => selectOrganization(input)),
-		startup: createWorkspaceStartupMachine(dependencies.db)
+		bootstrap: fromPromise(({ input }: { input: string }) =>
+			ensurePersonalWorkspace(dependencies.db, input)
+		)
 	}
 	return setup<
 		Context,
@@ -60,62 +44,27 @@ export function createWorkspaceReadinessMachine({
 		typeof actors,
 		{},
 		{},
-		{
-			canUseBank: undefined
-			workspaceReady: undefined
-			closingDrain: undefined
-			bankAlive: undefined
-			startupAlive: undefined
-		}
+		{ canUseBank: undefined; workspaceReady: undefined }
 	>({
 		actors,
 		guards: {
 			canUseBank: stateIn({
-				active: {
-					workspace: 'ready',
-					session: 'ready',
-					organization: 'ready',
-					selection: 'selected'
-				}
+				active: { workspace: 'ready', session: 'ready', organization: 'ready' }
 			}),
-			workspaceReady: stateIn({ active: { workspace: 'ready' } }),
-			closingDrain: stateIn({ closing: { intent: 'shutdown' } }),
-			bankAlive: ({ context }) => context.bankActor?.getSnapshot().status === 'active',
-			startupAlive: ({ context }) => context.startupActor?.getSnapshot().status === 'active'
+			workspaceReady: stateIn({ active: { workspace: 'ready' } })
 		}
 	}).createMachine({
 		id: 'workspace-readiness',
 		initial: 'active',
-		context: () => ({ ...read(), bankActor: undefined, startupActor: undefined }),
-		invoke: [
-			{
-				id: 'bank',
-				src: 'bank',
-				onDone: { actions: raise({ type: 'BANK_STOPPED' }) },
-				onError: { actions: raise({ type: 'BANK_STOPPED' }) }
-			},
-			{
-				id: 'startup',
-				src: 'startup',
-				input: ({ context }) => ({ userId: context.source.userId, status: context.sessionStatus }),
-				onSnapshot: [
-					{
-						guard: ({ event }) => event.snapshot.hasTag('workspace-ready'),
-						actions: raise({ type: 'INITIALIZATION_READY' })
-					},
-					{
-						guard: ({ event }) => event.snapshot.hasTag('workspace-error'),
-						actions: raise({ type: 'INITIALIZATION_FAILED' })
-					},
-					{ actions: raise({ type: 'INITIALIZATION_WAITING' }) }
-				],
-				onDone: { actions: raise({ type: 'STARTUP_STOPPED' }) },
-				onError: { actions: raise({ type: 'STARTUP_STOPPED' }) }
-			}
-		],
+		context: () => ({ ...read(), bootstrapUserId: undefined }),
+		invoke: {
+			id: 'bank',
+			src: 'bank',
+			onDone: [{ guard: stateIn('closing'), target: '.closed' }, { target: '.failed' }],
+			onError: [{ guard: stateIn('closing'), target: '.closed' }, { target: '.failed' }]
+		},
 		on: {
-			SHUTDOWN: { target: '.closing.intent.shutdown' },
-			RETRY: { actions: sendTo('startup', { type: 'RETRY' }) },
+			SHUTDOWN: { target: '.closing' },
 			BANK: [
 				{
 					guard: ({ event }) => event.event.type === 'CANCEL' || event.event.type === 'RESET',
@@ -126,13 +75,6 @@ export function createWorkspaceReadinessMachine({
 			OBSERVED: {
 				actions: [
 					assign(({ event }) => event.observation),
-					sendTo('startup', ({ event }) => ({
-						type: 'OBSERVED',
-						source: {
-							userId: event.observation.source.userId,
-							status: event.observation.sessionStatus
-						}
-					})),
 					sendTo('bank', ({ event }) => ({ type: 'OBSERVED', source: event.observation.source })),
 					raise({ type: 'REEVALUATE' })
 				]
@@ -141,10 +83,6 @@ export function createWorkspaceReadinessMachine({
 		states: {
 			active: {
 				type: 'parallel',
-				on: {
-					BANK_STOPPED: '#workspace-readiness.closing.intent.failed',
-					STARTUP_STOPPED: '#workspace-readiness.closing.intent.failed'
-				},
 				states: {
 					session: {
 						initial: 'checking',
@@ -174,16 +112,65 @@ export function createWorkspaceReadinessMachine({
 						}
 					},
 					workspace: {
-						initial: 'waiting',
-						on: {
-							INITIALIZATION_READY: '.ready',
-							INITIALIZATION_WAITING: '.waiting',
-							INITIALIZATION_FAILED: '.failed'
-						},
+						initial: 'checkingIdentity',
 						states: {
-							waiting: {},
-							ready: { tags: 'workspace-ready', entry: raise({ type: 'REEVALUATE' }) },
-							failed: { tags: ['workspace-error', 'workspace-retryable'] }
+							checkingIdentity: {
+								always: [
+									{
+										guard: ({ context }) => context.sessionStatus !== 'ready',
+										target: 'waitingForSession'
+									},
+									{ guard: ({ context }) => !context.source.userId, target: 'waitingForSession' },
+									{ target: 'initializing' }
+								]
+							},
+							waitingForSession: { on: { REEVALUATE: 'checkingIdentity' } },
+							initializing: {
+								entry: assign({ bootstrapUserId: ({ context }) => context.source.userId }),
+								invoke: {
+									src: 'bootstrap',
+									input: ({ context }) => required(context.bootstrapUserId),
+									onDone: 'ready',
+									onError: 'failed'
+								},
+								on: {
+									REEVALUATE: [
+										{
+											guard: ({ context }) => context.sessionStatus !== 'ready',
+											target: 'checkingIdentity'
+										},
+										{
+											guard: ({ context }) => context.source.userId !== context.bootstrapUserId,
+											target: 'checkingIdentity'
+										}
+									]
+								}
+							},
+							ready: {
+								tags: 'workspace-ready',
+								entry: raise({ type: 'REEVALUATE' }),
+								on: {
+									REEVALUATE: [
+										{
+											guard: ({ context }) => context.sessionStatus !== 'ready',
+											target: 'checkingIdentity'
+										},
+										{
+											guard: ({ context }) => context.source.userId !== context.bootstrapUserId,
+											target: 'checkingIdentity'
+										}
+									]
+								}
+							},
+							failed: {
+								tags: 'workspace-error',
+								on: {
+									REEVALUATE: {
+										guard: ({ context }) => context.source.userId !== context.bootstrapUserId,
+										target: 'checkingIdentity'
+									}
+								}
+							}
 						}
 					},
 					selection: {
@@ -214,31 +201,39 @@ export function createWorkspaceReadinessMachine({
 										target: 'selected'
 									},
 									{
-										guard: ({ context }) => context.source.organizationId != null,
-										target: 'unavailableSelection'
+										guard: ({ context }) =>
+											context.organizations?.some((row) => row.kind === 'personal') ?? false,
+										target: 'selectingPersonal'
 									},
 									{
-										guard: ({ context }) => context.organizations?.length === 1,
-										target: 'selectingOnly'
+										guard: ({ context }) => (context.organizations?.length ?? 0) > 0,
+										target: 'selectingFirst'
 									},
-									{ target: 'unselected' }
+									{ target: 'empty' }
 								]
 							},
-							selectingOnly: {
+							selectingPersonal: {
+								invoke: {
+									src: 'select',
+									input: ({ context }) =>
+										required(context.organizations?.find((row) => row.kind === 'personal')).id,
+									onError: '#workspace-readiness.settlingFailure'
+								}
+							},
+							selectingFirst: {
 								invoke: {
 									src: 'select',
 									input: ({ context }) => required(context.organizations?.[0]).id,
-									onError: '#workspace-readiness.closing.intent.failed'
+									onError: '#workspace-readiness.settlingFailure'
 								}
 							},
-							unselected: {
+							empty: {
 								invoke: {
 									src: 'select',
 									input: null,
-									onError: '#workspace-readiness.closing.intent.failed'
+									onError: '#workspace-readiness.settlingFailure'
 								}
 							},
-							unavailableSelection: {},
 							selected: {},
 							waiting: {},
 							failed: {}
@@ -289,59 +284,17 @@ export function createWorkspaceReadinessMachine({
 					}
 				}
 			},
-			closing: {
-				type: 'parallel',
-				entry: assign({
-					bankActor: ({ self }) => self.getSnapshot().children.bank,
-					startupActor: ({ self }) => self.getSnapshot().children.startup
-				}),
-				on: {
-					BANK: {},
-					OBSERVED: {},
-					REEVALUATE: {},
-					RETRY: {},
-					INITIALIZATION_READY: {},
-					INITIALIZATION_FAILED: {},
-					INITIALIZATION_WAITING: {},
-					SHUTDOWN: '.intent.shutdown'
-				},
-				states: {
-					intent: {
-						initial: 'failed',
-						states: { failed: { type: 'final' }, shutdown: { type: 'final' } }
-					},
-					bank: {
-						initial: 'checking',
-						states: {
-							checking: {
-								always: [{ guard: 'bankAlive', target: 'stopping' }, { target: 'stopped' }]
-							},
-							stopping: {
-								entry: sendTo('bank', { type: 'SHUTDOWN' }),
-								on: { BANK_STOPPED: 'stopped' }
-							},
-							stopped: { type: 'final' }
-						}
-					},
-					startup: {
-						initial: 'checking',
-						states: {
-							checking: {
-								always: [{ guard: 'startupAlive', target: 'stopping' }, { target: 'stopped' }]
-							},
-							stopping: {
-								entry: sendTo('startup', { type: 'SHUTDOWN' }),
-								on: { STARTUP_STOPPED: 'stopped' }
-							},
-							stopped: { type: 'final' }
-						}
-					}
-				},
-				onDone: [{ guard: 'closingDrain', target: 'closed' }, { target: 'failed' }]
+			settlingFailure: {
+				entry: sendTo('bank', { type: 'SHUTDOWN' }),
+				on: { BANK: {}, OBSERVED: {}, REEVALUATE: {} }
 			},
 			failed: {
 				tags: 'workspace-error',
-				on: { SHUTDOWN: 'closed', BANK: {}, OBSERVED: {}, REEVALUATE: {}, RETRY: {} }
+				on: { SHUTDOWN: 'closed', BANK: {}, OBSERVED: {}, REEVALUATE: {} }
+			},
+			closing: {
+				entry: sendTo('bank', { type: 'SHUTDOWN' }),
+				on: { BANK: {}, OBSERVED: {}, SHUTDOWN: {}, REEVALUATE: {} }
 			},
 			closed: {
 				type: 'final',
