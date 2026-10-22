@@ -15,8 +15,10 @@ Bank orchestration has been resumed. D001's source audit is recorded in
 - [x] D001 Audit the bank tree's ownership, actor contracts, snapshot coupling and resource lifetimes; record which boundaries to retain, merge or change (FR-014). Source audit complete; no runtime verification claimed.
 - [ ] D002 After separate scope approval, improve bank command/status contracts and responsibility boundaries identified by D001. Preserve credential disposal, explicit user initiation and actual cancellation semantics (FR-014).
       The reviewed setup persistence settlement slice is implemented and verified in
-      [setup-settlement.md](setup-settlement.md). Mapping transaction ownership,
-      operation/import draining and availability reports remain unfinished.
+      [setup-settlement.md](setup-settlement.md).
+      [Mapping transaction ownership](mapping-transaction.md) is now implemented pending
+      review and approved tests; import/disconnect settlement and availability reports
+      remain unimplemented.
 - [ ] D003 Review that implementation, then verify cancellation, identity/scope replacement, partial results, observer errors, provider request races and resource cleanup (FR-014).
 
 ## Deferred: generic form orchestration — do not implement now

@@ -1,8 +1,9 @@
-import { assign, fromPromise, setup } from 'xstate'
+import { assign, fromPromise, enqueueActions, setup } from 'xstate'
 import { stableUuid } from '#lib/data.js'
 import { appAccountSchema } from '#lib/validation/accounts.js'
 import { createAccountWriteMachine } from './account-write.js'
 import { required } from './identity.js'
+import type { MappingInterruption } from './account-write-transaction.js'
 import type { Dependencies, OperationWork, ProviderSummary, Result } from './types.js'
 
 type Input = { work: OperationWork; provider: ProviderSummary }
@@ -31,7 +32,7 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		{ type: 'CREATE' },
+		{ type: 'CREATE' } | MappingInterruption,
 		typeof actors,
 		{},
 		{},
@@ -49,6 +50,10 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 			error: undefined
 		}),
 		initial: 'validatingAccount',
+		on: {
+			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
+			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+		},
 		output: ({ context }) =>
 			context.error === undefined
 				? { ok: true, value: undefined }
@@ -77,7 +82,24 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 				}
 			},
 			writingAccountAndLink: {
+				on: {
+					CANCEL: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.write
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					},
+					SHUTDOWN: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.write
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'SHUTDOWN' })
+						})
+					}
+				},
 				invoke: {
+					id: 'write',
 					src: 'write',
 					input: ({ context }) => ({
 						kind: 'create',

@@ -1,5 +1,5 @@
 import type { EventObject } from 'xstate'
-import { assign, fromPromise, sendParent, setup } from 'xstate'
+import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
 import type { ErrorActorEvent } from 'xstate'
 import { app } from '#lib/schema.js'
 import { createBankTrace } from '#lib/integrations/diagnostics.js'
@@ -129,14 +129,20 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 		typeof actors,
 		{},
 		{},
-		{},
+		{ mappingCancelling: undefined; mappingFailing: undefined },
 		never,
 		string,
 		Input,
 		OperationResult,
 		EventObject,
 		BankViewMeta
-	>({ actors })
+	>({
+		actors,
+		guards: {
+			mappingCancelling: stateIn({ mapping: 'cancelling' }),
+			mappingFailing: stateIn({ mapping: 'failing' })
+		}
+	})
 	const failure = (context: Context, error: unknown) => {
 		context.work?.trace.failed('operation.failed', error)
 		return { error, accessUrl: undefined }
@@ -238,10 +244,40 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				}
 			},
 			mapping: {
+				initial: 'working',
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {}, LOCK_FAILED: {} } },
+					failing: { on: { LOCK_FAILED: {} } }
+				},
+				on: {
+					CANCEL: {
+						target: '.cancelling',
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.mapping
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					},
+					LOCK_FAILED: {
+						target: '.failing',
+						actions: [
+							failed,
+							enqueueActions(({ self, enqueue }) => {
+								const child = self.getSnapshot().children.mapping
+								if (child?.getSnapshot().status === 'active')
+									enqueue.sendTo(child, { type: 'CANCEL' })
+							})
+						]
+					}
+				},
 				invoke: {
+					id: 'mapping',
 					src: 'mapAccounts',
 					input: ({ context }) => ({ work: workFor(context), discovered: context.discovered }),
 					onDone: [
+						{ guard: 'mappingCancelling', target: 'cancelled' },
+						{ guard: 'mappingFailing', target: 'settlingFailure' },
 						{
 							guard: ({ event }) => !event.output.ok,
 							target: 'settlingFailure',
@@ -251,7 +287,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						},
 						{ target: 'complete' }
 					],
-					onError: { target: 'settlingFailure', actions: failed }
+					onError: [
+						{ guard: 'mappingCancelling', target: 'cancelled' },
+						{ guard: 'mappingFailing', target: 'settlingFailure' },
+						{ target: 'settlingFailure', actions: failed }
+					]
 				}
 			},
 			authorizingDisconnect: {

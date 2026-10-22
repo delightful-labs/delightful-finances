@@ -1,8 +1,9 @@
-import { assign, setup } from 'xstate'
+import { assign, enqueueActions, setup } from 'xstate'
 import { createAccountCreationMachine } from './account-create.js'
 import { createAccountWriteMachine } from './account-write.js'
 import { createAccountUnlinkMachine } from './account-unlink.js'
 import { required } from './identity.js'
+import type { MappingInterruption } from './account-write-transaction.js'
 import type { Dependencies, OperationWork, ProviderSummary, Result } from './types.js'
 
 type Input = { work: OperationWork; discovered: ProviderSummary[] }
@@ -16,7 +17,7 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		{ type: 'MAP' },
+		{ type: 'MAP' } | MappingInterruption,
 		typeof actors,
 		{},
 		{},
@@ -29,6 +30,10 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 		id: 'bank-account-mapping',
 		context: ({ input }) => ({ ...input, provider: undefined, error: undefined }),
 		initial: 'checkingCommand',
+		on: {
+			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
+			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+		},
 		output: ({ context }) =>
 			context.error === undefined
 				? { ok: true, value: undefined }
@@ -76,7 +81,24 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 				]
 			},
 			creating: {
+				on: {
+					CANCEL: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.createAccount
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					},
+					SHUTDOWN: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.createAccount
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'SHUTDOWN' })
+						})
+					}
+				},
 				invoke: {
+					id: 'createAccount',
 					src: 'createAccount',
 					input: ({ context }) => ({ work: context.work, provider: required(context.provider) }),
 					onDone: [
@@ -93,7 +115,24 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 				}
 			},
 			mapping: {
+				on: {
+					CANCEL: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.mapAccount
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					},
+					SHUTDOWN: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.mapAccount
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'SHUTDOWN' })
+						})
+					}
+				},
 				invoke: {
+					id: 'mapAccount',
 					src: 'mapAccount',
 					input: ({ context }) => ({
 						kind: 'map',
@@ -117,7 +156,24 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 				}
 			},
 			unlinking: {
+				on: {
+					CANCEL: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.unlinkAccount
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					},
+					SHUTDOWN: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.unlinkAccount
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'SHUTDOWN' })
+						})
+					}
+				},
 				invoke: {
+					id: 'unlinkAccount',
 					src: 'unlinkAccount',
 					input: ({ context }) => ({
 						work: context.work,
