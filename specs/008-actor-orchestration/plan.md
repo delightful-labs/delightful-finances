@@ -49,8 +49,9 @@ complete; [mapping transaction ownership](mapping-transaction.md) is reviewed an
 [Availability/history reports](bank-reports.md) are reviewed and verified. Keep the other scopes unchecked
 until separately resumed.
 The [generic form audit](form-audit.md) is complete. [Submission progress reports](form-progress.md)
-are reviewed and verified. Readiness, transaction persistence
-and avatar preparation slices remain unimplemented pending focused review.
+are reviewed and verified. The four-file [readiness adapter](form-readiness.md) is implemented for review; test protocol migration
+and runtime verification await approval. Transaction persistence and avatar preparation remain
+unimplemented.
 Each other subsystem starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
 Retain existing boundaries when the audit finds no benefit from changing them.
 

@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-22
 
-**Status**: Workspace phase implemented and verified after review. Bank setup, mapping, write settlement and availability/history reports are reviewed and verified. The generic form source audit is complete; submission progress reports are reviewed and verified, while other form slices remain unchecked. Application/session supervision and diagnostics remain deferred and unchecked.
+**Status**: Workspace phase implemented and verified after review. Bank setup, mapping, write settlement and availability/history reports are reviewed and verified. The generic form source audit is complete; submission progress reports are reviewed and verified, and the readiness adapter is implemented for review. Readiness verification and other form slices remain unchecked. Application/session supervision and diagnostics remain deferred and unchecked.
 
 **Input**: Specify clearer actor ownership, lifetimes, communication and cleanup. Implement only workspace-related orchestration now; retain unfinished work for other areas in the repository.
 

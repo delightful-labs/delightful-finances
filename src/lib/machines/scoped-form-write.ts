@@ -1,3 +1,4 @@
+import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 import { assign, fromPromise, setup, stateIn, type ActorLogic, type Snapshot } from 'xstate'
 import type {
 	FormCapability,
@@ -8,7 +9,7 @@ import type {
 	FormOperationResult
 } from '#lib/form-contract.js'
 
-/** One effect only. Domain decisions belong in the supplied assessment actor. */
+/** Owns prewrite readiness and settlement; supplied effects retain their domain resource obligations. */
 export function createScopedFormWriteMachine<
 	Values,
 	Result,
@@ -36,44 +37,14 @@ export function createScopedFormWriteMachine<
 	type Context = {
 		request: Input['request'] | undefined
 		observation: FormObservation<Observation> | undefined
+		assessmentGeneration: number
 		capability: FormCapability<Scope, Reason> | undefined
 		result: Output | undefined
 	}
 	type Event = FormChildEvent<Observation>
-	const review = setup<
-		{
-			observation: FormObservation<Observation>
-			capability: FormCapability<Scope, Reason> | undefined
-		},
-		FormChildEvent<Observation>,
-		{ source: typeof options.availability },
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<Observation>
-	>({ actors: { source: options.availability } }).createMachine({
-		context: ({ input }) => ({ observation: input, capability: undefined }),
-		initial: 'watching',
-		states: {
-			watching: {
-				invoke: {
-					src: 'source',
-					input: ({ context }) => context.observation,
-					onSnapshot: {
-						guard: ({ event }) => event.snapshot.status === 'active',
-						actions: assign({
-							capability: ({ event }) => options.selectAvailability(event.snapshot)
-						})
-					},
-					onError: 'failed',
-					onDone: 'failed'
-				}
-			},
-			failed: { type: 'final' }
-		}
-	})
+	const review = createScopedFormReadinessMachine<Scope, Reason, Observation, AvailabilitySnapshot>(
+		options
+	)
 	const actors = {
 		refresh: fromPromise<FormObservation<Observation>, FormObservation<Observation>>(
 			async ({ input }) => ({ revision: input.revision, facts: options.observe() })
@@ -162,6 +133,7 @@ export function createScopedFormWriteMachine<
 		context: ({ input }) => ({
 			request: input.request,
 			observation: input.observation,
+			assessmentGeneration: 0,
 			capability: undefined,
 			result: undefined
 		}),
@@ -202,31 +174,48 @@ export function createScopedFormWriteMachine<
 				]
 			},
 			authorizing: {
+				entry: assign({
+					assessmentGeneration: ({ context }) => context.assessmentGeneration + 1,
+					capability: undefined
+				}),
 				invoke: {
 					src: 'review',
 					input: ({ context }) => ({
-						...observation(context),
-						facts:
-							options.assessmentObservation?.({
-								request: request(context),
-								observation: observation(context)
-							}) ?? observation(context).facts
-					}),
-					onSnapshot: {
-						guard: ({ context, event }) => {
-							const capability = event.snapshot.context.capability
-							return (
-								event.snapshot.status === 'active' &&
-								capability !== undefined &&
-								capability.revision === observation(context).revision &&
-								options.sameScope(capability.scope, request(context).scope)
-							)
+						observation: {
+							...observation(context),
+							facts:
+								options.assessmentObservation?.({
+									request: request(context),
+									observation: observation(context)
+								}) ?? observation(context).facts
 						},
-						target: 'deciding',
-						actions: assign({ capability: ({ event }) => event.snapshot.context.capability })
-					},
-					onError: { target: 'failed', actions: assign({ result: () => prewriteFailure }) },
-					onDone: { target: 'failed', actions: assign({ result: () => prewriteFailure }) }
+						delivery: {
+							kind: 'assessment',
+							token: {
+								requestId: request(context).id,
+								scopeRevision: request(context).scopeRevision,
+								generation: context.assessmentGeneration
+							}
+						}
+					}),
+					onDone: [
+						{
+							guard: ({ context, event }) =>
+								event.output.kind === 'assessed' &&
+								event.output.token.requestId === request(context).id &&
+								event.output.token.scopeRevision === request(context).scopeRevision &&
+								event.output.token.generation === context.assessmentGeneration &&
+								event.output.capability.revision === observation(context).revision &&
+								options.sameScope(event.output.capability.scope, request(context).scope),
+							target: 'deciding',
+							actions: assign({
+								capability: ({ event }) =>
+									event.output.kind === 'assessed' ? event.output.capability : undefined
+							})
+						},
+						{ target: 'failed', actions: assign({ result: () => prewriteFailure }) }
+					],
+					onError: { target: 'failed', actions: assign({ result: () => prewriteFailure }) }
 				},
 				on: { OBSERVE: { target: 'checkingScope', actions: observe } }
 			},
