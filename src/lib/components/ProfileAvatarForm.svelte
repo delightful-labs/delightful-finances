@@ -86,7 +86,7 @@
 		{#snippet controls(view)}
 			{#if selectedFile && selectedFile !== savedFile}
 				<Button type="submit" disabled={!view.canSubmit}>
-					{m['actions.save_avatar']()}
+					{m['actions.save_subject']({ subject: m['labels.avatar']() })}
 				</Button>
 			{/if}
 		{/snippet}

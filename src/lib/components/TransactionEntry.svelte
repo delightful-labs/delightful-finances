@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { workspaceHref } from '#lib/domain/workspace-routes.js'
 	import { goto } from '$app/navigation'
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { orderAccounts } from '#lib/machines/account-order.js'
@@ -158,6 +159,9 @@
 		view={form.view}
 		onsubmit={form.submit}
 		onreset={form.reset}
-		oncancel={() => goto('/')}
+		oncancel={() =>
+			goto(
+				workspaceHref(filters.activeOrganizationId, kind === 'income' ? '/income' : '/expenses')
+			)}
 	/>
 {/if}

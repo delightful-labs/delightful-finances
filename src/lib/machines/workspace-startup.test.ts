@@ -3,6 +3,8 @@ import { createActor, waitFor } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '../schema.js'
 import { createWorkspaceStartupMachine } from './workspace-startup.js'
+import { workspaceReports } from './workspace-reports.fixture.js'
+import type { InitializationStatusEvent } from '../workspace-orchestration-contract.js'
 import { creationFixture, profileId, userId, workspace } from './workspace-creation.fixture.js'
 
 const secondUser = '77777777-7777-4777-8777-777777777777'
@@ -28,30 +30,32 @@ function fixture(initial: 'ready' | 'transitioning' = 'ready', legacy = false) {
 		return pending
 	}
 	const first = queue()
+	const recipient = workspaceReports<InitializationStatusEvent>()
+	cleanups.push(() => recipient.stop())
 	const actor = createActor(
 		createWorkspaceStartupMachine({
 			...f.db,
 			all: discover,
 			getConfig: vi.fn().mockReturnValue({ serverUrl: 'https://unused.invalid' })
 		}),
-		{ input: { userId, status: initial } }
+		{ input: { request: { generation: 0, userId, status: initial }, recipient } }
 	).start()
 	cleanups.push(() => actor.stop())
-	return { ...f, actor, discover, first, queue }
+	return { ...f, actor, discover, first, queue, reports: () => recipient.getSnapshot().context }
 }
 
 describe('startup session ownership', () => {
 	it('waits for a ready session before starting initialization', () => {
 		const f = fixture('transitioning')
 		expect(f.discover).not.toHaveBeenCalled()
-		f.actor.send({ type: 'OBSERVED', source: { userId, status: 'ready' } })
+		f.actor.send({ type: 'OBSERVED', request: { generation: 1, userId, status: 'ready' } })
 		expect(f.discover).toHaveBeenCalledTimes(2)
 	})
 	it('does not restart initialization for ordinary observations of the same identity', async () => {
 		const f = fixture()
 		f.first.resolve([profile])
 		await waitFor(f.actor, (s) => s.matches('ready'))
-		f.actor.send({ type: 'OBSERVED', source: { userId, status: 'ready' } })
+		f.actor.send({ type: 'OBSERVED', request: { generation: 0, userId, status: 'ready' } })
 		expect(f.discover).toHaveBeenCalledTimes(2)
 		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(true)
 	})
@@ -67,17 +71,33 @@ describe('startup session ownership', () => {
 		f.first.resolve([{ ...profile, initialWorkspaceId: null }])
 		await started.promise
 		const next = f.queue()
-		f.actor.send({ type: 'OBSERVED', source: { userId: secondUser, status: 'ready' } })
-		f.actor.send({ type: 'OBSERVED', source: { userId: thirdUser, status: 'ready' } })
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 1, userId: secondUser, status: 'ready' }
+		})
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 2, userId: thirdUser, status: 'ready' }
+		})
 		expect(f.actor.getSnapshot().matches({ initializing: 'replacing' })).toBe(true)
 		expect(f.discover).toHaveBeenCalledTimes(2)
 		pendingWrite.resolve()
 		await vi.waitFor(() => expect(f.discover).toHaveBeenCalledTimes(4))
-		expect(f.actor.getSnapshot().context.operationUserId).toBe(thirdUser)
+		expect(f.actor.getSnapshot().context.operation?.userId).toBe(thirdUser)
 		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(false)
 		next.resolve([{ ...profile, userId: thirdUser }])
 		await waitFor(f.actor, (s) => s.matches('ready'))
-		expect(f.actor.getSnapshot().context.result).toEqual({ outcome: 'ready', profileId })
+		expect(f.reports().at(-1)?.report).toEqual({
+			request: { generation: 2, userId: thirdUser, status: 'ready' },
+			status: { kind: 'ready', profileId }
+		})
+		expect(
+			f
+				.reports()
+				.some(
+					(event) => event.report.request.generation === 0 && event.report.status.kind === 'ready'
+				)
+		).toBe(false)
 	})
 	it('preserves shutdown over replacement, observations, retries, and late completion', async () => {
 		const f = fixture('ready', true)
@@ -90,10 +110,16 @@ describe('startup session ownership', () => {
 		})
 		f.first.resolve([{ ...profile, initialWorkspaceId: null }])
 		await started.promise
-		f.actor.send({ type: 'OBSERVED', source: { userId: secondUser, status: 'ready' } })
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 1, userId: secondUser, status: 'ready' }
+		})
 		f.actor.send({ type: 'SHUTDOWN' })
-		f.actor.send({ type: 'OBSERVED', source: { userId: thirdUser, status: 'ready' } })
-		f.actor.send({ type: 'RETRY' })
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 2, userId: thirdUser, status: 'ready' }
+		})
+		f.actor.send({ type: 'OBSERVED', request: { generation: 3, userId, status: 'ready' } })
 		expect(f.actor.getSnapshot().status).toBe('active')
 		pendingWrite.resolve()
 		await waitFor(f.actor, (s) => s.status === 'done')
@@ -103,10 +129,10 @@ describe('startup session ownership', () => {
 		const f = fixture()
 		f.first.reject(new Error('read failed'))
 		await waitFor(f.actor, (s) => s.hasTag('workspace-error'))
-		f.actor.send({ type: 'OBSERVED', source: { userId, status: 'ready' } })
+		f.actor.send({ type: 'OBSERVED', request: { generation: 0, userId, status: 'ready' } })
 		expect(f.discover).toHaveBeenCalledTimes(2)
 		const retry = f.queue()
-		f.actor.send({ type: 'RETRY' })
+		f.actor.send({ type: 'OBSERVED', request: { generation: 3, userId, status: 'ready' } })
 		retry.resolve([profile])
 		await waitFor(f.actor, (s) => s.hasTag('workspace-ready'))
 		expect(f.discover).toHaveBeenCalledTimes(4)

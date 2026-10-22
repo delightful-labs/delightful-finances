@@ -3,14 +3,12 @@ import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
 import { app } from '../schema.js'
-import { prepareWorkspaceSystemCategories } from '../domain/workspace-system-categories.js'
 import {
 	workspaceIntegrityAssessment,
 	type IntegrityAssessment,
 	type IntegrityRecords,
 	type IntegrityScope,
-	type IntegrityIssue,
-	type RequiredCategory
+	type IntegrityIssue
 } from './workspace-integrity-assessment.js'
 import {
 	workspaceIntegrityTransaction,
@@ -24,7 +22,6 @@ const prepare = fromPromise(async ({ input }: { input: Input }) => {
 	z.uuid().parse(input.userId)
 	z.uuid().parse(input.profileId)
 	z.uuid().parse(input.organizationId)
-	return prepareWorkspaceSystemCategories(input.organizationId)
 })
 const discover = fromPromise(
 	async ({
@@ -33,17 +30,15 @@ const discover = fromPromise(
 		input: Input & { tier: typeof ReadTier.LocalFirst | typeof ReadTier.Remote }
 	}): Promise<IntegrityRecords> => {
 		const { db, tier, organizationId, userId } = input
-		const [profiles, organizations, memberships, categories] = await Promise.all([
+		const [profiles, organizations, memberships] = await Promise.all([
 			db.all(app.profiles.where({ userId }), { tier }),
 			db.all(app.organizations.where({ id: organizationId }), { tier }),
-			db.all(app.organizationMembers.where({ organizationId, userId }), { tier }),
-			db.all(app.categories.where({ organizationId }), { tier })
+			db.all(app.organizationMembers.where({ organizationId, userId }), { tier })
 		])
-		return { profiles, organizations, memberships, categories }
+		return { profiles, organizations, memberships }
 	}
 )
 type Context = Input & {
-	systemCategories: RequiredCategory[]
 	records: IntegrityRecords | undefined
 	assessment: IntegrityAssessment | undefined
 	result: IntegrityResult | undefined
@@ -85,23 +80,19 @@ export const workspaceIntegrity = setup<
 	id: 'workspace-integrity',
 	context: ({ input }) => ({
 		...input,
-		systemCategories: [],
 		records: undefined,
 		assessment: undefined,
 		result: undefined
 	}),
-	initial: 'preparingDefinitions',
+	initial: 'validatingScope',
 	output: ({ context }) => required(context.result),
 	on: { CANCEL: '.cancelled', SHUTDOWN: '.closed' },
 	states: {
-		preparingDefinitions: {
+		validatingScope: {
 			invoke: {
 				src: 'prepare',
 				input: ({ context }) => context,
-				onDone: {
-					target: 'readingLocal',
-					actions: assign({ systemCategories: ({ event }) => event.output })
-				},
+				onDone: 'readingLocal',
 				onError: {
 					target: 'failed',
 					actions: assign({
@@ -181,11 +172,7 @@ export const workspaceIntegrity = setup<
 							return {
 								outcome: 'partial',
 								settlement: 'notStarted',
-								issues: [
-									...assessment.remaining,
-									...assessment.plan.categories.map((row) => row.kind),
-									...profileIssues
-								]
+								issues: [...assessment.remaining, ...profileIssues]
 							}
 						}
 					})

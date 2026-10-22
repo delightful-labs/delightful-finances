@@ -45,8 +45,8 @@
 	}
 </script>
 
-<svelte:head><title>{m['navigation.account']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['navigation.account']()} />
+<svelte:head><title>{m['labels.account']()} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['labels.account']()} />
 <RecoveryPhraseIntegration />
 
 <ProfileNameForm

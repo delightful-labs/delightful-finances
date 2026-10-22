@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppLink from '#lib/components/AppLink.svelte'
 	import { page } from '$app/state'
 	import { resolve } from '$app/paths'
 	import { Text } from 'delightful-ui'
@@ -21,5 +22,5 @@
 			? m['errors.not_found_description']()
 			: m['errors.unexpected_description']()}
 	</Text>
-	<Text><a href={resolve('/')}>{m['errors.back_to_overview']()}</a></Text>
+	<Text><AppLink href={resolve('/')}>{m['errors.back_to_overview']()}</AppLink></Text>
 </main>

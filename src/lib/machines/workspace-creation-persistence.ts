@@ -20,7 +20,7 @@ const validate = fromPromise<WorkspaceCreationAttempt, WorkspaceCreationAttempt>
 )
 const hydrate = fromPromise(async ({ input }: { input: Input }) => {
 	const { db, attempt } = input
-	const options = { tier: ReadTier.LocalFirstUnlessEmpty }
+	const options = { tier: ReadTier.LocalFirst }
 	await Promise.all([
 		db.all(
 			app.profiles.where({ id: attempt.profileId, userId: attempt.workspace.ownerId }),

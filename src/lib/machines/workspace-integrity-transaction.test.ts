@@ -6,12 +6,11 @@ import {
 	integrityFixture,
 	membership,
 	records,
-	scope,
-	systemCategories
+	scope
 } from './workspace-integrity.fixture.js'
 
 describe('workspace integrity transaction ownership', () => {
-	it('stages only the existing membership link and required categories in one local commit', async () => {
+	it('stages only the existing membership link in one local commit', async () => {
 		const f = integrityFixture()
 		const actor = f.transaction()
 		const done = await waitFor(actor, (s) => s.status === 'done')
@@ -20,35 +19,11 @@ describe('workspace integrity transaction ownership', () => {
 		expect(f.update).toHaveBeenCalledExactlyOnceWith(app.organizationMembers, membership.id, {
 			profileId: scope.profileId
 		})
-		expect(f.insert).toHaveBeenCalledTimes(2)
-		for (const category of systemCategories) {
-			const { id, ...values } = category
-			expect(f.insert).toHaveBeenCalledWith(
-				app.categories,
-				{ ...values, organizationId: scope.organizationId, archivedAt: null },
-				{ id }
-			)
-		}
+		expect(f.insert).not.toHaveBeenCalled()
 		expect(f.commit).toHaveBeenCalledTimes(1)
 		expect(f.wait).toHaveBeenCalledWith({ tier: 'local' })
 		expect(f.rollback).not.toHaveBeenCalled()
 		expect(done.context.tx).toBeUndefined()
-	})
-	it('commits a member-authorized subset while preserving the profile attribution issue', async () => {
-		const snapshot = records({
-			categories: [],
-			memberships: [{ ...membership, role: 'member', profileId: null }]
-		})
-		const f = integrityFixture(snapshot)
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
-		expect(done.value).toBe('partial')
-		expect(done.output).toEqual({
-			outcome: 'partial',
-			settlement: 'locallyPersisted',
-			issues: ['profileLink']
-		})
-		expect(f.update).not.toHaveBeenCalled()
-		expect(f.insert).toHaveBeenCalledTimes(2)
 	})
 	it('rolls back a no-op if another operation already repaired the records', async () => {
 		const f = integrityFixture(brokenRecords(), brokenRecords(), records())
@@ -75,26 +50,30 @@ describe('workspace integrity transaction ownership', () => {
 		const f = integrityFixture(
 			brokenRecords(),
 			brokenRecords(),
-			records({ categories: [], memberships: [{ ...membership, profileId: null, role: 'viewer' }] })
+			records({ memberships: [{ ...membership, profileId: null, role: 'viewer' }] })
 		)
 		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
 		expect(done.output).toEqual({
 			outcome: 'partial',
 			settlement: 'notStarted',
-			issues: ['profileLink', 'expense', 'income']
+			issues: ['profileLink']
 		})
 		expect(f.insert).not.toHaveBeenCalled()
 		expect(f.update).not.toHaveBeenCalled()
 		expect(f.commit).not.toHaveBeenCalled()
 	})
-	it('refuses to expand a remotely assessed repair based on a stale transaction snapshot', async () => {
-		const authoritative = records({
-			categories: records().categories.filter((row) => row.kind === 'income')
+	it('rejects a transaction repair that differs from the confirmed profile link', async () => {
+		const f = integrityFixture()
+		const done = await waitFor(
+			f.transaction({ profileLink: { membershipId: scope.profileId, profileId: scope.profileId } }),
+			(s) => s.status === 'done'
+		)
+		expect(done.output).toEqual({
+			outcome: 'conflict',
+			reason: 'repairPlanChanged',
+			settlement: 'notStarted'
 		})
-		const f = integrityFixture(authoritative, authoritative, records({ categories: [] }))
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
-		expect(done.value).toBe('conflict')
-		expect(f.insert).not.toHaveBeenCalled()
+		expect(f.update).not.toHaveBeenCalled()
 		expect(f.commit).not.toHaveBeenCalled()
 		expect(f.rollback).toHaveBeenCalledTimes(1)
 	})
@@ -154,10 +133,10 @@ describe('workspace integrity transaction ownership', () => {
 		expect(done.output).toEqual({ outcome: 'closed', settlement: 'locallyPersisted' })
 		expect(f.rollback).not.toHaveBeenCalled()
 	})
-	it('rolls back staged writes on insertion failure', async () => {
+	it('rolls back staged writes on profile-link update failure', async () => {
 		const f = integrityFixture()
 		const error = new Error('staging failed')
-		f.insert.mockImplementation(() => {
+		f.update.mockImplementation(() => {
 			throw error
 		})
 		const done = await waitFor(f.transaction(), (s) => s.status === 'done')

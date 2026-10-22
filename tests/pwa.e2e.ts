@@ -27,13 +27,15 @@ test('loads an unvisited page and reloads its shell offline', async ({ page, con
 		'Offline checking'
 	)
 	await context.setOffline(true)
-	const response = await page.goto('/expenses/new')
+	const workspaceId = new URL(page.url()).searchParams.get('workspace')
+	if (!workspaceId) throw new Error('Expected workspace query parameter')
+	const response = await page.goto(`/expenses/new?workspace=${workspaceId}`)
 	expect(response?.fromServiceWorker()).toBe(true)
-	await expect(page.getByRole('heading', { name: 'Add expense' })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Add Expenses' })).toBeVisible()
 	await expect(page.getByLabel('Account', { exact: true })).toContainText('Offline checking')
 	const reload = await page.reload()
 	expect(reload?.fromServiceWorker()).toBe(true)
-	await expect(page.getByRole('heading', { name: 'Add expense' })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Add Expenses' })).toBeVisible()
 	await expect(page.getByLabel('Account', { exact: true })).toContainText('Offline checking')
 })
 
@@ -115,8 +117,8 @@ test('serves a saved transaction detail directly and after reload in production'
 	await page.getByLabel('Amount', { exact: true }).fill('12.34')
 	await page.getByLabel('Date', { exact: true }).fill('2026-03-10')
 	await page.getByLabel('Description', { exact: true }).fill('Production detail verification')
-	await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
-	await expect(page).toHaveURL(/\/expenses$/)
+	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await expect(page).toHaveURL(/\/expenses\?workspace=[a-f0-9-]+$/)
 	const link = page
 		.getByRole('main')
 		.getByRole('link', { name: /Transaction details:.*Production detail verification/ })
@@ -402,7 +404,7 @@ test('an activation error shows retry and retry activates the waiting update', a
 		await expect(updateStatus(page)).toHaveText(
 			'The update could not be completed. You can try again.'
 		)
-		await page.locator('aside').getByRole('button', { name: 'Retry', exact: true }).click()
+		await page.locator('aside').getByRole('button', { name: 'Try again', exact: true }).click()
 		await expect(updateStatus(page)).toBeEmpty()
 		await expect(updateAction(page)).toHaveCount(0)
 	})

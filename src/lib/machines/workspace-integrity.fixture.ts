@@ -1,7 +1,6 @@
 import { afterEach, vi } from 'vitest'
 import { createActor, type AnyActorRef } from 'xstate'
 import { Transaction } from 'jazz-tools'
-import { prepareWorkspaceSystemCategories } from '../domain/workspace-system-categories.js'
 import {
 	workspaceIntegrityAssessment,
 	type IntegrityAssessmentInput,
@@ -16,7 +15,6 @@ export const scope = {
 	profileId: '22222222-2222-4222-8222-222222222222',
 	organizationId: '33333333-3333-4333-8333-333333333333'
 }
-export const systemCategories = await prepareWorkspaceSystemCategories(scope.organizationId)
 export const membership: IntegrityRecords['memberships'][number] = {
 	id: '44444444-4444-4444-8444-444444444444',
 	organizationId: scope.organizationId,
@@ -47,20 +45,15 @@ export function records(overrides: Partial<IntegrityRecords> = {}): IntegrityRec
 			}
 		],
 		memberships: [{ ...membership }],
-		categories: systemCategories.map((row) => ({
-			...row,
-			organizationId: scope.organizationId,
-			archivedAt: null
-		})),
 		...overrides
 	}
 }
 export function brokenRecords() {
-	return records({ categories: [], memberships: [{ ...membership, profileId: null }] })
+	return records({ memberships: [{ ...membership, profileId: null }] })
 }
 export function assess(input: Partial<IntegrityAssessmentInput> = {}) {
 	return createActor(workspaceIntegrityAssessment, {
-		input: { ...scope, systemCategories, records: records(), ...input }
+		input: { ...scope, records: records(), ...input }
 	})
 		.start()
 		.getSnapshot()
@@ -86,7 +79,7 @@ export function integrityFixture(
 		throw new Error('Fixture must not open a Jazz runtime')
 	})
 	const all = vi.spyOn(tx, 'all').mockResolvedValue([])
-	const insert = vi.spyOn(tx, 'insert').mockReturnValue(records().categories[0])
+	const insert = vi.spyOn(tx, 'insert')
 	const update = vi.spyOn(tx, 'update').mockImplementation(() => {})
 	const rollback = vi.spyOn(tx, 'rollback').mockResolvedValue(true)
 	const wait = vi.fn(async (_options: { tier: 'local' }) => {})
@@ -97,19 +90,13 @@ export function integrityFixture(
 	const getConfig = vi.fn().mockReturnValue({ serverUrl: 'https://unused.invalid' })
 	const db = { all: discover, getConfig, beginTransaction }
 	for (const snapshot of [local, authoritative]) {
-		for (const rows of [
-			snapshot.profiles,
-			snapshot.organizations,
-			snapshot.memberships,
-			snapshot.categories
-		])
+		for (const rows of [snapshot.profiles, snapshot.organizations, snapshot.memberships])
 			discover.mockResolvedValueOnce(rows)
 	}
 	for (const rows of [
 		transactional.profiles,
 		transactional.organizations,
-		transactional.memberships,
-		transactional.categories
+		transactional.memberships
 	])
 		all.mockResolvedValueOnce(rows)
 	function transaction(expected?: IntegrityPlan) {
@@ -120,7 +107,7 @@ export function integrityFixture(
 		if (!plan) throw new Error('Missing fixture plan')
 		return start(
 			createActor(workspaceIntegrityTransaction, {
-				input: { ...scope, systemCategories, db, expected: plan }
+				input: { ...scope, db, expected: plan }
 			})
 		)
 	}

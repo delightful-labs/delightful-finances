@@ -41,8 +41,13 @@ declare global {
 }
 
 async function start(page: Page) {
-	await page.goto('/settings/workspace')
-	await expect(page.getByLabel('Workspace name')).toBeVisible()
+	await page.goto('/')
+	const selector = page.getByLabel('Current workspace', { exact: true })
+	await expect(selector).toBeAttached()
+	await expect.poll(() => selector.inputValue()).not.toBe('')
+	const workspaceId = await selector.inputValue()
+	await page.goto(`/settings/workspace?workspace=${workspaceId}`)
+	await expect(page.getByRole('textbox', { name: 'Workspace name', exact: true })).toBeVisible()
 	await prepareSidebar(page)
 	await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
@@ -76,7 +81,7 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	})
 	await start(page)
 	const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-	const name = page.getByLabel('Workspace name')
+	const name = page.getByRole('textbox', { name: 'Workspace name', exact: true })
 	const save = page.getByRole('button', { name: 'Save', exact: true })
 	await name.fill('   ')
 	await save.click()
@@ -121,22 +126,31 @@ test('sidebar navigation preserves the selected workspace and database session',
 	const selector = page.getByLabel('Current workspace', { exact: true })
 	await expect(selector.locator(`option[value="${workspaceId}"]`)).toHaveCount(1)
 	await selectWorkspace(selector, workspaceId)
-	await expect(page.getByLabel('Workspace name')).toHaveValue('Navigation workspace')
+	await expect(page).toHaveURL(`/settings/workspace?workspace=${workspaceId}`)
+	await expect(page.getByRole('textbox', { name: 'Workspace name', exact: true })).toHaveValue(
+		'Navigation workspace'
+	)
 	const navigation = page.getByRole('navigation', { name: 'Main navigation' })
 	await navigation.getByRole('link', { name: 'Overview', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL(`/?workspace=${workspaceId}`)
 	await openSidebarSection(page, 'Settings')
-	const link = navigation.getByRole('link', { name: 'Workspace', exact: true })
-	await expect(link).toHaveAttribute('href', '/settings/workspace')
+	const link = navigation.getByRole('link', { name: 'Workspaces', exact: true })
+	await expect(link).toHaveAttribute('href', `/settings/workspace?workspace=${workspaceId}`)
 	await link.click()
-	await expect(page).toHaveURL('/settings/workspace')
+	await expect(page).toHaveURL(`/settings/workspace?workspace=${workspaceId}`)
 	await expect(selector).toHaveValue(workspaceId)
-	await expect(page.getByLabel('Workspace name')).toHaveValue('Navigation workspace')
+	await expect(page.getByRole('textbox', { name: 'Workspace name', exact: true })).toHaveValue(
+		'Navigation workspace'
+	)
 	const save = page.getByRole('button', { name: 'Save', exact: true })
 	await expect(save).toBeDisabled()
-	await page.getByLabel('Workspace name').fill('Navigation workspace edited')
+	await page
+		.getByRole('textbox', { name: 'Workspace name', exact: true })
+		.fill('Navigation workspace edited')
 	await expect(save).toBeEnabled()
-	await page.getByLabel('Workspace name').fill('Navigation workspace')
+	await page
+		.getByRole('textbox', { name: 'Workspace name', exact: true })
+		.fill('Navigation workspace')
 	await expect(save).toBeDisabled()
 	// The binding survives only client navigation and still points to the active client.
 	expect(
@@ -1085,7 +1099,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 			const selector = subject.getByLabel('Current workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
-			const name = subject.getByLabel('Workspace name')
+			const name = subject.getByRole('textbox', { name: 'Workspace name', exact: true })
 			const save = subject.getByRole('button', { name: 'Save', exact: true })
 			await expect(name).toHaveValue('Shared workspace')
 			if (role === 'admin') {
@@ -1095,7 +1109,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await expect(subject.getByRole('main').getByRole('status')).toHaveText(
 					'Workspace name saved.'
 				)
-				await expect(page.getByLabel('Workspace name')).toHaveValue('Admin renamed workspace')
+				await expect(
+					page.getByRole('textbox', { name: 'Workspace name', exact: true })
+				).toHaveValue('Admin renamed workspace')
 			} else {
 				await expect(name).not.toBeEditable()
 				await expect(save).toBeDisabled()
@@ -2592,27 +2608,36 @@ test('overview page exposes income and expense links and preserves the workspace
 }) => {
 	await start(page)
 	const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
-	await page.getByRole('complementary').getByRole('link', { name: 'Overview', exact: true }).click()
+	await page
+		.getByRole('complementary', { name: 'Main navigation', exact: true })
+		.getByRole('link', { name: 'Overview', exact: true })
+		.click()
 	await expect(page).toHaveTitle('Overview · Delightful Finance')
 	const main = page.getByRole('main')
 	await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
 	await expect(main.getByRole('link', { name: 'Expenses', exact: true })).toHaveAttribute(
 		'href',
-		'/expenses'
+		`/expenses?workspace=${workspaceId}`
 	)
 	await expect(main.getByRole('link', { name: 'Income', exact: true })).toHaveAttribute(
 		'href',
-		'/incomes'
+		`/income?workspace=${workspaceId}`
 	)
 	await main.getByRole('link', { name: 'Expenses', exact: true }).click()
-	await expect(page).toHaveURL('/expenses')
+	await expect(page).toHaveURL(`/expenses?workspace=${workspaceId}`)
 	await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
-	await page.getByRole('complementary').getByRole('link', { name: 'Overview', exact: true }).click()
+	await page
+		.getByRole('complementary', { name: 'Main navigation', exact: true })
+		.getByRole('link', { name: 'Overview', exact: true })
+		.click()
 	await main.getByRole('link', { name: 'Income', exact: true }).click()
-	await expect(page).toHaveURL('/incomes')
+	await expect(page).toHaveURL(`/income?workspace=${workspaceId}`)
 	await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
-	await page.getByRole('complementary').getByRole('link', { name: 'Overview', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await page
+		.getByRole('complementary', { name: 'Main navigation', exact: true })
+		.getByRole('link', { name: 'Overview', exact: true })
+		.click()
+	await expect(page).toHaveURL(`/?workspace=${workspaceId}`)
 	await page.reload()
 	await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
 })

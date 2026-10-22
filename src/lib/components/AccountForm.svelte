@@ -71,7 +71,7 @@
 			defaultValue=""
 		>
 			<option value="" disabled>{m['labels.account_type']()}</option>
-			<option value="cash">{m['accounts.type.cash']()}</option>
+			<option value="cash">{m['labels.cash']()}</option>
 			<option value="bank">{m['accounts.type.bank']()}</option>
 			<option value="card">{m['accounts.type.card']()}</option>
 		</Select>

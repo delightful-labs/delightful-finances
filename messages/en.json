@@ -5,8 +5,7 @@
 		"accept": "Update and reload",
 		"later": "Later",
 		"busy": "Updating and reloading…",
-		"failed": "The update could not be completed. You can try again.",
-		"retry": "Retry"
+		"failed": "The update could not be completed. You can try again."
 	},
 	"archive_filter": {
 		"label": "Archive status",
@@ -24,8 +23,7 @@
 		"jazz_server_url": "Jazz server URL",
 		"account_id": "Current account ID",
 		"unavailable": "Unavailable",
-		"menu": "Developer menu",
-		"close": "Close"
+		"menu": "Developer menu"
 	},
 	"app": {
 		"name": "Delightful Finance",
@@ -64,7 +62,21 @@
 		"rename_closed": "Renaming ended when the page closed.",
 		"rename_settling": "Waiting for the issued rename to finish. Closing the page does not undo an issued change.",
 		"rename_interrupted_saved": "The name was saved before the operation ended.",
-		"rename_unknown": "The final save result could not be confirmed. Check the workspace name before trying again."
+		"rename_unknown": "The final save result could not be confirmed. Check the workspace name before trying again.",
+		"create_working": "Preparing your workspace…",
+		"create_saved": "Workspace saved",
+		"create_recovered": "An unfinished creation attempt was found. Retry uses the same workspace identity.",
+		"create_conflict": "This creation attempt conflicts with existing records. Retry to reconcile without overwriting data.",
+		"create_failed": "Workspace creation could not finish. Check local storage and retry the same attempt.",
+		"create_unresolved": "The save result is unknown. Retry to check the same workspace before issuing another write.",
+		"create_unavailable": "Workspace creation needs a ready login profile.",
+		"choose": "Choose a workspace",
+		"unavailable": "This workspace or transaction is unavailable. Choose a workspace you can access.",
+		"integrity_working": "Checking required workspace records…",
+		"integrity_partial": "Some required workspace records need repair. An administrator may be needed to repair profile attribution.",
+		"integrity_failed": "Required workspace records could not be verified. Retry to check again.",
+		"integrity_conflict": "Required workspace records conflict. No records were overwritten.",
+		"empty": "No accessible workspaces. Create a workspace to continue."
 	},
 	"defaults": {
 		"workspace": "Personal workspace",
@@ -81,14 +93,13 @@
 	"navigation": {
 		"label": "Main navigation",
 		"overview": "Overview",
-		"account": "Account",
 		"settings": "Settings",
 		"login": "Login",
-		"open": "Open navigation",
 		"close": "Close navigation",
 		"toggle": "Toggle navigation"
 	},
 	"labels": {
+		"cash": "Cash",
 		"accounts": "Accounts",
 		"actions": "Actions",
 		"account_name": "Account name",
@@ -109,7 +120,6 @@
 		"workspace_settings": "Workspace settings",
 		"transactions": "Transactions",
 		"transaction": "Transaction",
-		"accounts_and_categories": "Accounts and categories",
 		"categories": "Categories",
 		"tags": "Tags",
 		"tag": "Tag",
@@ -119,11 +129,15 @@
 		"avatar": "Avatar"
 	},
 	"actions": {
+		"create": "Create {subject}",
+		"add_another": "Add another {subject}",
+		"save_subject": "Save {subject}",
+		"create_another": "Create another {subject}",
+		"open": "Open {subject}",
 		"close": "Close",
 		"empty": "No {name} yet.",
 		"add": "Add {name}",
 		"archive": "Archive {name}",
-		"edit": "Edit {name}",
 		"cancel": "Cancel",
 		"archive_button": "Archive",
 		"save": "Save",
@@ -131,25 +145,20 @@
 		"saved_with_name": "{subject} {name} saved.",
 		"saved": "{subject} saved.",
 		"archived": "{subject} {name} archived.",
-		"upload_avatar": "Upload avatar",
-		"replace_avatar": "Replace avatar",
 		"remove_avatar": "Remove avatar",
 		"clear_selected_image": "Clear selected image",
-		"choose_image": "Choose image",
-		"save_avatar": "Save avatar"
+		"choose_image": "Choose image"
 	},
 	"accounts": {
 		"manage": "Manage Accounts",
 		"type": {
-			"cash": "Cash",
 			"bank": "Bank",
 			"card": "Card"
 		},
 		"currency_usd": "Currency: USD",
 		"filters": {
 			"legend": "Filter Accounts",
-			"all": "All accounts",
-			"toggle": "Show {name}"
+			"all": "All accounts"
 		},
 		"order": {
 			"edit": "Edit order",
@@ -187,8 +196,7 @@
 			"previous": "Previous page",
 			"next": "Next page",
 			"more": "More pages",
-			"page": "Page {page}",
-			"status": "Page {page} of {pages}"
+			"page": "Page {page}"
 		},
 		"empty": {
 			"title": "Your recent activity will appear here."
@@ -198,7 +206,6 @@
 		"select_category": "Select a category",
 		"payment": {
 			"method": "Payment method",
-			"cash": "Cash",
 			"check": "Check",
 			"transfer": "Transfer",
 			"electronic": "Electronic"
@@ -209,14 +216,10 @@
 		},
 		"no_accounts": "Add an account before recording a transaction.",
 		"validation_error": "Check the transaction details and try again.",
-		"add_another": "Add another transaction",
-		"save": "Save transaction",
 		"daily_total": "Daily total: {amount}",
 		"unavailable_item": "{subject} unavailable",
 		"details": "Transaction details",
 		"metadata": "Metadata",
-		"save_edit": "Save changes",
-		"cancel_edit": "Cancel editing",
 		"unavailable": "This transaction is unavailable in the selected workspace.",
 		"created_by": "Created by",
 		"created_at": "Created at",
@@ -236,8 +239,7 @@
 		"recovery_phrase": "Recovery phrase",
 		"restore_error": "The account could not be restored. Check the recovery phrase and try again.",
 		"session_error": "The account could not be restored. Please try again.",
-		"restoring": "Restoring account…",
-		"restore_action": "Login"
+		"restoring": "Restoring account…"
 	},
 	"recovery": {
 		"heading": "Account recovery",
@@ -261,7 +263,6 @@
 	},
 	"status": {
 		"loading": "Loading {subject}…",
-		"saving": "Saving {subject}…",
 		"archiving": "Archiving {subject}…"
 	},
 	"errors": {
@@ -307,13 +308,9 @@
 		"manual_only": "Transactions are fetched only when you press Sync now. Each provider operation requires passkey verification.",
 		"restricted": "Select a workspace where you are an owner or admin to manage your own bank connection.",
 		"token": "SimpleFIN Bridge setup token",
-		"connect": "Connect with a passkey",
-		"reconnect": "Reconnect with a new token and passkey",
 		"passkey_help": "First create a passkey. We will then explain two separate tests: encrypting a harmless sample and unlocking it again. Your SimpleFIN token is claimed only after both tests pass and you choose to save the connection.",
 		"discover": "Discover accounts",
 		"sync": "Sync now (last 90 days)",
-		"setup_start": "Create passkey",
-		"unmapped": "Not mapped — excluded from import",
 		"disconnect": "Disconnect bank sync",
 		"setup_offline": "Bank sync setup is not available offline. Connect to the internet to continue.",
 		"sync_offline": "Sync is not available offline. Connect to the internet to sync your bank transactions.",

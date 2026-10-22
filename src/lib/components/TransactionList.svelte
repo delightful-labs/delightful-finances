@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Details, Heading, Pagination, PaginationItem, Text } from 'delightful-ui'
+	import { Details, Heading, Pagination, Text } from 'delightful-ui'
 	import PageContent from './PageContent.svelte'
+	import PaginationLink from './PaginationLink.svelte'
 	import SplitRow from './SplitRow.svelte'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { formatMoney } from '#lib/domain/money.js'
@@ -111,25 +112,25 @@
 		{/each}
 		{#if pageCount > 1}
 			<Pagination label={m['transactions.pagination.label']()}>
-				<PaginationItem
+				<PaginationLink
 					label={m['transactions.pagination.previous']()}
 					href={pageHref(page - 1)}
-					disabled={page === 1}>‹</PaginationItem
+					disabled={page === 1}>‹</PaginationLink
 				>
 				{#each pageNumbers as number, index (number)}
 					{#if index > 0 && number - (pageNumbers[index - 1] ?? number) > 1}
-						<PaginationItem label={m['transactions.pagination.more']()} ellipsis>…</PaginationItem>
+						<PaginationLink label={m['transactions.pagination.more']()} ellipsis>…</PaginationLink>
 					{/if}
-					<PaginationItem
+					<PaginationLink
 						label={m['transactions.pagination.page']({ page: number })}
 						href={pageHref(number)}
-						current={page === number}>{number}</PaginationItem
+						current={page === number}>{number}</PaginationLink
 					>
 				{/each}
-				<PaginationItem
+				<PaginationLink
 					label={m['transactions.pagination.next']()}
 					href={pageHref(page + 1)}
-					disabled={page === pageCount}>›</PaginationItem
+					disabled={page === pageCount}>›</PaginationLink
 				>
 			</Pagination>
 		{/if}

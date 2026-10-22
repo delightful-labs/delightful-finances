@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, setup, sendParent, waitFor, type ActorRefFrom } from 'xstate'
 import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
-import { createApplicationReadinessMachine } from './application-readiness.js'
+import {
+	createApplicationReadinessMachine,
+	selectAttachedWorkspace
+} from './application-readiness.js'
 import type { WorkspaceAttachment } from './readiness.js'
 
 const { workspaceStart } = vi.hoisted(() => ({ workspaceStart: vi.fn() }))
@@ -70,6 +73,7 @@ function attach(actor: ReturnType<typeof start>) {
 		links: []
 	}
 	const attachment: WorkspaceAttachment = {
+		environment: 'test',
 		dependencies: {
 			db: vi.fn<() => WorkspaceAttachment['dependencies']['db']>()(),
 			read: () => source,
@@ -82,9 +86,10 @@ function attach(actor: ReturnType<typeof start>) {
 			membershipError: undefined,
 			organizations: [],
 			organizationsLoading: false,
-			organizationsError: undefined
+			organizationsError: undefined,
+			route: { pathname: '/settings/workspace', search: '', hash: '' }
 		}),
-		selectOrganization: vi.fn()
+		navigate: vi.fn(async () => {})
 	}
 	actor.send({ type: 'ATTACH_WORKSPACE', attachment })
 	const workspace = actor.getSnapshot().context.workspace
@@ -220,6 +225,7 @@ describe('application readiness supervision', () => {
 		actor.send({
 			type: 'ATTACH_WORKSPACE',
 			attachment: {
+				environment: 'test',
 				dependencies: {
 					db: vi.fn<() => WorkspaceAttachment['dependencies']['db']>()(),
 					read: () => source,
@@ -232,9 +238,10 @@ describe('application readiness supervision', () => {
 					membershipError: undefined,
 					organizations: [],
 					organizationsLoading: false,
-					organizationsError: undefined
+					organizationsError: undefined,
+					route: { pathname: '/settings/workspace', search: '', hash: '' }
 				}),
-				selectOrganization: vi.fn()
+				navigate: vi.fn(async () => {})
 			}
 		})
 		expect(actor.getSnapshot().matches('observerFailed')).toBe(true)
@@ -248,11 +255,13 @@ describe('application readiness supervision', () => {
 		const current = session()
 		const actor = start(async () => current.value, current.value)
 		const previous = attach(actor)
+		const previousAttachment = actor.getSnapshot().context.attachment
+		if (!previousAttachment) throw new Error('Missing attachment')
 		attach(actor)
 		previous.send({ type: 'SHUTDOWN' })
 		const replacement = actor.getSnapshot().context.workspace
 		expect(replacement).not.toBe(previous)
-		actor.send({ type: 'DETACH_WORKSPACE', actor: previous })
+		actor.send({ type: 'DETACH_WORKSPACE', attachment: previousAttachment })
 		actor.send({ type: 'WORKSPACE_CLOSED', actor: previous })
 		actor.send({
 			type: `xstate.error.actor.${previous.id}`,
@@ -261,5 +270,30 @@ describe('application readiness supervision', () => {
 		})
 		expect(actor.getSnapshot().context.workspace).toBe(replacement)
 		expect(replacement?.getSnapshot().matches('active')).toBe(true)
+	})
+	it('cancels a pending attachment before it can spawn an orphan owner', () => {
+		const current = session()
+		const actor = start(async () => current.value, current.value)
+		const previous = attach(actor)
+		attach(actor)
+		const pending = actor.getSnapshot().context.pending
+		if (!pending) throw new Error('Missing pending attachment')
+		expect(selectAttachedWorkspace(actor.getSnapshot(), pending)).toBeUndefined()
+		actor.send({ type: 'DETACH_WORKSPACE', attachment: pending })
+		previous.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().context.pending).toBeUndefined()
+		expect(actor.getSnapshot().context.workspace).toBeUndefined()
+		expect(actor.getSnapshot().context.attachment).toBeUndefined()
+	})
+	it('does not replace the owner when the same attachment is submitted twice', () => {
+		const current = session()
+		const actor = start(async () => current.value, current.value)
+		const workspace = attach(actor)
+		const attachment = actor.getSnapshot().context.attachment
+		if (!attachment) throw new Error('Missing attachment')
+		actor.send({ type: 'ATTACH_WORKSPACE', attachment })
+		expect(selectAttachedWorkspace(actor.getSnapshot(), attachment)).toBe(workspace)
+		expect(workspace.getSnapshot().matches('active')).toBe(true)
+		expect(actor.getSnapshot().context.pending).toBeUndefined()
 	})
 })

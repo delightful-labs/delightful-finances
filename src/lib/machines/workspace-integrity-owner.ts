@@ -1,40 +1,32 @@
 import { assign, raise, sendTo, setup, stateIn } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
-import type { OrganizationMember } from '../schema.js'
-import type { IntegrityScope } from './workspace-integrity-assessment.js'
+import {
+	sameIntegrityRequest,
+	type IntegrityRequest,
+	type IntegrityStatus,
+	type IntegrityRecipient,
+	type IntegrityStatusEvent
+} from '../workspace-integrity-contract.js'
 import type { IntegrityResult } from './workspace-integrity-transaction.js'
 import { workspaceIntegrity } from './workspace-integrity.js'
 
-export type IntegrityBinding = IntegrityScope & {
-	membershipId: string
-	role: OrganizationMember['role']
-	accountAccessMode: OrganizationMember['accountAccessMode']
-}
-type Input = { binding: IntegrityBinding | undefined }
+export type { IntegrityBinding, WorkspaceIntegrityView } from '../workspace-integrity-contract.js'
+type Input = { request: IntegrityRequest; recipient: IntegrityRecipient }
 type Context = Input & {
-	operation: IntegrityBinding | undefined
+	operation: IntegrityRequest | undefined
 	result: IntegrityResult | undefined
 }
-type Event =
-	| { type: 'OBSERVED'; binding: IntegrityBinding | undefined }
-	| { type: 'REEVALUATE' | 'RETRY' | 'SHUTDOWN' }
+type Event = { type: 'OBSERVED'; request: IntegrityRequest } | { type: 'REEVALUATE' | 'SHUTDOWN' }
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig'>
 
-/** Binding equality, not a permission decision. Profile-link repair does not change authority. */
-function sameBinding(left: IntegrityBinding | undefined, right: IntegrityBinding | undefined) {
-	return (
-		left?.userId === right?.userId &&
-		left?.organizationId === right?.organizationId &&
-		left?.profileId === right?.profileId &&
-		left?.membershipId === right?.membershipId &&
-		left?.role === right?.role &&
-		left?.accountAccessMode === right?.accountAccessMode
-	)
+function required<T>(value: T | undefined): T {
+	if (value === undefined) throw new Error('Missing integrity operation result')
+	return value
 }
 
 /** The database binding is fixed; its parent drains this owner before replacing the database. */
 export function createWorkspaceIntegrityOwner(db: Db) {
-	return setup<
+	const model = setup<
 		Context,
 		Event,
 		{ repair: typeof workspaceIntegrity },
@@ -47,57 +39,77 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 	>({
 		actors: { repair: workspaceIntegrity },
 		guards: {
-			bindingChanged: ({ context }) => !sameBinding(context.binding, context.operation),
+			bindingChanged: ({ context }) =>
+				context.operation === undefined ||
+				!sameIntegrityRequest(context.request, context.operation),
 			closing: stateIn({ running: 'closing' }),
 			replacing: stateIn({ running: 'replacing' })
 		}
-	}).createMachine({
+	})
+	const report = (status: (context: Context) => IntegrityStatus) =>
+		model.sendTo(
+			({ context }) => context.recipient,
+			({ context }): IntegrityStatusEvent => ({
+				type: 'INTEGRITY_STATUS',
+				report: { request: context.operation ?? context.request, status: status(context) }
+			})
+		)
+	const settlement = (context: Context) => required(context.result).settlement
+	return model.createMachine({
 		id: 'workspace-integrity-owner',
 		context: ({ input }) => ({ ...input, operation: undefined, result: undefined }),
 		initial: 'checking',
 		on: {
 			OBSERVED: {
-				actions: [assign({ binding: ({ event }) => event.binding }), raise({ type: 'REEVALUATE' })]
+				actions: [assign({ request: ({ event }) => event.request }), raise({ type: 'REEVALUATE' })]
 			},
 			REEVALUATE: { guard: 'bindingChanged', target: '.checking' },
-			RETRY: '.checking',
 			SHUTDOWN: '.closed'
 		},
 		states: {
 			checking: {
 				always: [
-					{ guard: ({ context }) => context.binding !== undefined, target: 'running' },
+					{ guard: ({ context }) => context.request.binding !== undefined, target: 'running' },
 					{ target: 'waiting' }
 				]
 			},
 			waiting: {
 				tags: 'integrity-waiting',
-				entry: assign({ operation: undefined, result: undefined })
+				entry: [
+					assign({ operation: undefined, result: undefined }),
+					report(() => ({ kind: 'waiting' }))
+				]
 			},
 			running: {
 				tags: 'integrity-working',
 				initial: 'active',
-				entry: assign({ operation: ({ context }) => context.binding, result: undefined }),
+				entry: [
+					assign({ operation: ({ context }) => context.request, result: undefined }),
+					report(() => ({ kind: 'checking' }))
+				],
 				on: {
 					REEVALUATE: {
 						guard: 'bindingChanged',
 						target: '.replacing',
 						actions: sendTo('repair', { type: 'SHUTDOWN' })
 					},
-					SHUTDOWN: { target: '.closing', actions: sendTo('repair', { type: 'SHUTDOWN' }) },
-					RETRY: {}
+					SHUTDOWN: { target: '.closing', actions: sendTo('repair', { type: 'SHUTDOWN' }) }
 				},
 				states: {
 					active: {},
-					replacing: { on: { REEVALUATE: {}, RETRY: {} } },
-					closing: { on: { REEVALUATE: {}, RETRY: {}, SHUTDOWN: {} } }
+					replacing: { entry: report(() => ({ kind: 'waiting' })), on: { REEVALUATE: {} } },
+					closing: {
+						entry: report(() => ({ kind: 'waiting' })),
+						on: { REEVALUATE: {}, SHUTDOWN: {} }
+					}
 				},
 				invoke: {
 					id: 'repair',
 					src: 'repair',
 					input: ({ context }) => {
-						if (!context.operation) throw new Error('Integrity repair requires a bound workspace')
-						return { ...context.operation, db }
+						if (!context.operation?.binding)
+							throw new Error('Integrity repair requires a bound workspace')
+						return { ...context.operation.binding, db }
 					},
 					onDone: [
 						{
@@ -109,7 +121,17 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 						{ target: 'classifying', actions: assign({ result: ({ event }) => event.output }) }
 					],
 					onError: [
-						{ guard: 'closing', target: 'closed' },
+						{
+							guard: 'closing',
+							target: 'closed',
+							actions: assign({
+								result: ({ event }): IntegrityResult => ({
+									outcome: 'failed',
+									settlement: 'unresolved',
+									error: event.error
+								})
+							})
+						},
 						{ guard: 'replacing', target: 'checking' },
 						{
 							target: 'unresolved',
@@ -140,13 +162,76 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 					{ target: 'failed' }
 				]
 			},
-			complete: { tags: 'integrity-complete' },
-			partial: { tags: 'integrity-partial' },
-			unavailable: { tags: 'integrity-unavailable' },
-			conflict: { tags: 'integrity-conflict' },
-			failed: { tags: 'integrity-failed' },
-			unresolved: { tags: 'integrity-unresolved' },
-			closed: { type: 'final', on: { OBSERVED: {}, REEVALUATE: {}, RETRY: {}, SHUTDOWN: {} } }
+			complete: {
+				tags: ['integrity-complete', 'integrity-finance-ready'],
+				entry: report((context) => ({ kind: 'complete', settlement: settlement(context) }))
+			},
+			partial: {
+				tags: 'integrity-partial',
+				initial: 'checking',
+				states: {
+					checking: {
+						always: [
+							{
+								guard: ({ context }) =>
+									context.result?.outcome === 'partial' &&
+									context.result.issues.every((issue) => issue === 'profileLink'),
+								target: 'attribution'
+							},
+							{ target: 'blocked' }
+						]
+					},
+					attribution: {
+						tags: 'integrity-finance-ready',
+						entry: report((context) => {
+							const result = required(context.result)
+							if (result.outcome !== 'partial') throw new Error('Expected partial integrity result')
+							return {
+								kind: 'partial',
+								issues: result.issues,
+								settlement: result.settlement,
+								access: 'usable'
+							}
+						})
+					},
+					blocked: {
+						entry: report((context) => {
+							const result = required(context.result)
+							if (result.outcome !== 'partial') throw new Error('Expected partial integrity result')
+							return {
+								kind: 'partial',
+								issues: result.issues,
+								settlement: result.settlement,
+								access: 'blocked'
+							}
+						})
+					}
+				}
+			},
+			unavailable: {
+				tags: 'integrity-unavailable',
+				entry: report((context) => ({ kind: 'unavailable', settlement: settlement(context) }))
+			},
+			conflict: {
+				tags: 'integrity-conflict',
+				entry: report((context) => ({ kind: 'conflict', settlement: settlement(context) }))
+			},
+			failed: {
+				tags: 'integrity-failed',
+				entry: report((context) => ({ kind: 'failed', settlement: settlement(context) }))
+			},
+			unresolved: {
+				tags: 'integrity-unresolved',
+				entry: report(() => ({ kind: 'unresolved', settlement: 'unresolved' }))
+			},
+			closed: {
+				type: 'final',
+				entry: report((context) => ({
+					kind: 'closed',
+					settlement: context.result?.settlement ?? 'notStarted'
+				})),
+				on: { OBSERVED: {}, REEVALUATE: {}, SHUTDOWN: {} }
+			}
 		}
 	})
 }

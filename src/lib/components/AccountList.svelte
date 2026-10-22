@@ -57,7 +57,7 @@
 						<td>{account.name}</td>
 						<td>
 							{account.kind === 'cash'
-								? m['accounts.type.cash']()
+								? m['labels.cash']()
 								: account.kind === 'bank'
 									? m['accounts.type.bank']()
 									: m['accounts.type.card']()}

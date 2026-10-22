@@ -32,7 +32,7 @@ const open = fromPromise(({ input }: { input: Db }) => Promise.resolve(input.beg
 const read = fromPromise(
 	async ({ input }: { input: { tx: Transaction; scope: Input } }): Promise<IntegrityRecords> => {
 		const { tx, scope } = input
-		const [profiles, organizations, memberships, categories] = await Promise.all([
+		const [profiles, organizations, memberships] = await Promise.all([
 			tx.all(app.profiles.where({ userId: scope.userId })),
 			tx.all(app.organizations.where({ id: scope.organizationId })),
 			tx.all(
@@ -40,10 +40,9 @@ const read = fromPromise(
 					organizationId: scope.organizationId,
 					userId: scope.userId
 				})
-			),
-			tx.all(app.categories.where({ organizationId: scope.organizationId }))
+			)
 		])
-		return { profiles, organizations, memberships, categories }
+		return { profiles, organizations, memberships }
 	}
 )
 const linkProfile = fromPromise(
@@ -55,21 +54,6 @@ const linkProfile = fromPromise(
 		input.tx.update(app.organizationMembers, input.link.membershipId, {
 			profileId: input.link.profileId
 		})
-)
-const insertCategories = fromPromise(
-	async ({
-		input
-	}: {
-		input: { tx: Transaction; organizationId: string; categories: IntegrityPlan['categories'] }
-	}) => {
-		for (const { id, ...category } of input.categories) {
-			input.tx.insert(
-				app.categories,
-				{ ...category, organizationId: input.organizationId, archivedAt: null },
-				{ id }
-			)
-		}
-	}
 )
 const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
 const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
@@ -95,7 +79,6 @@ export const workspaceIntegrityTransaction = setup<
 		read: typeof read
 		assess: typeof workspaceIntegrityAssessment
 		linkProfile: typeof linkProfile
-		insertCategories: typeof insertCategories
 		commit: typeof commit
 		settle: typeof settle
 		rollback: typeof rollback
@@ -113,7 +96,6 @@ export const workspaceIntegrityTransaction = setup<
 		read,
 		assess: workspaceIntegrityAssessment,
 		linkProfile,
-		insertCategories,
 		commit,
 		settle,
 		rollback
@@ -245,11 +227,6 @@ export const workspaceIntegrityTransaction = setup<
 								{
 									guard: ({ context }) =>
 										context.assessment?.outcome === 'repair' &&
-										context.assessment.plan.categories.every((row) =>
-											context.expected.categories.some(
-												(expected) => expected.id === row.id && expected.kind === row.kind
-											)
-										) &&
 										(context.assessment.plan.profileLink === undefined ||
 											(context.assessment.plan.profileLink.membershipId ===
 												context.expected.profileLink?.membershipId &&
@@ -267,7 +244,7 @@ export const workspaceIntegrityTransaction = setup<
 									actions: assign({
 										result: {
 											outcome: 'conflict',
-											reason: 'systemCategories',
+											reason: 'repairPlanChanged',
 											settlement: 'notStarted'
 										}
 									})
@@ -280,7 +257,7 @@ export const workspaceIntegrityTransaction = setup<
 									guard: ({ context }) => context.plan?.profileLink !== undefined,
 									target: 'stagingProfileLink'
 								},
-								{ target: 'choosingCategoryWrites' }
+								{ target: 'checkingBeforeCommit' }
 							]
 						},
 						stagingProfileLink: {
@@ -289,43 +266,6 @@ export const workspaceIntegrityTransaction = setup<
 								input: ({ context }) => ({
 									tx: required(context.tx),
 									link: required(context.plan?.profileLink)
-								}),
-								onDone: 'checkingAfterProfile',
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
-								}
-							}
-						},
-						checkingAfterProfile: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'choosingCategoryWrites' }
-							]
-						},
-						choosingCategoryWrites: {
-							always: [
-								{
-									guard: ({ context }) => (context.plan?.categories.length ?? 0) > 0,
-									target: 'stagingCategories'
-								},
-								{ target: 'checkingBeforeCommit' }
-							]
-						},
-						stagingCategories: {
-							invoke: {
-								src: 'insertCategories',
-								input: ({ context }) => ({
-									tx: required(context.tx),
-									organizationId: context.organizationId,
-									categories: required(context.plan).categories
 								}),
 								onDone: 'checkingBeforeCommit',
 								onError: {

@@ -15,7 +15,7 @@ describe('selected workspace integrity coordination', () => {
 		const f = integrityFixture(records())
 		const done = await waitFor(f.coordinator(), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'complete', settlement: 'notStarted' })
-		expect(f.discover).toHaveBeenCalledTimes(4)
+		expect(f.discover).toHaveBeenCalledTimes(3)
 		for (const [, options] of f.discover.mock.calls)
 			expect(options).toEqual({ tier: ReadTier.LocalFirst })
 		expect(f.getConfig).not.toHaveBeenCalled()
@@ -25,10 +25,10 @@ describe('selected workspace integrity coordination', () => {
 		const f = integrityFixture()
 		const done = await waitFor(f.coordinator(), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'complete', settlement: 'locallyPersisted' })
-		expect(f.discover).toHaveBeenCalledTimes(8)
-		for (const [, options] of f.discover.mock.calls.slice(4))
+		expect(f.discover).toHaveBeenCalledTimes(6)
+		for (const [, options] of f.discover.mock.calls.slice(3))
 			expect(options).toEqual({ tier: ReadTier.Remote })
-		expect(f.discover.mock.invocationCallOrder[7]).toBeLessThan(
+		expect(f.discover.mock.invocationCallOrder[5]).toBeLessThan(
 			f.beginTransaction.mock.invocationCallOrder[0] ?? 0
 		)
 		expect(f.commit).toHaveBeenCalledTimes(1)
@@ -37,7 +37,7 @@ describe('selected workspace integrity coordination', () => {
 		const f = integrityFixture(brokenRecords(), records())
 		const done = await waitFor(f.coordinator(), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'complete', settlement: 'notStarted' })
-		expect(f.discover).toHaveBeenCalledTimes(8)
+		expect(f.discover).toHaveBeenCalledTimes(6)
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it('reports partial integrity without guessing absence when no authority is configured', async () => {
@@ -48,14 +48,13 @@ describe('selected workspace integrity coordination', () => {
 		expect(done.output).toEqual({
 			outcome: 'partial',
 			settlement: 'notStarted',
-			issues: ['expense', 'income', 'profileLink']
+			issues: ['profileLink']
 		})
-		expect(f.discover).toHaveBeenCalledTimes(4)
+		expect(f.discover).toHaveBeenCalledTimes(3)
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it('does not attempt unauthorized viewer repair or require the network for that outcome', async () => {
 		const snapshot = records({
-			categories: [],
 			memberships: [{ ...membership, role: 'viewer', profileId: null }]
 		})
 		const f = integrityFixture(snapshot)
@@ -63,9 +62,9 @@ describe('selected workspace integrity coordination', () => {
 		expect(done.output).toEqual({
 			outcome: 'partial',
 			settlement: 'notStarted',
-			issues: ['profileLink', 'expense', 'income']
+			issues: ['profileLink']
 		})
-		expect(f.discover).toHaveBeenCalledTimes(4)
+		expect(f.discover).toHaveBeenCalledTimes(3)
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it('does not recreate access that remote discovery says has disappeared', async () => {
@@ -79,13 +78,13 @@ describe('selected workspace integrity coordination', () => {
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it('does not write if a concurrent remote role change removes repair authority', async () => {
-		const remote = records({ categories: [], memberships: [{ ...membership, role: 'viewer' }] })
+		const remote = records({ memberships: [{ ...membership, role: 'viewer', profileId: null }] })
 		const f = integrityFixture(brokenRecords(), remote)
 		const done = await waitFor(f.coordinator(), (s) => s.status === 'done')
 		expect(done.output).toEqual({
 			outcome: 'partial',
 			settlement: 'notStarted',
-			issues: ['expense', 'income']
+			issues: ['profileLink']
 		})
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
@@ -94,12 +93,12 @@ describe('selected workspace integrity coordination', () => {
 		const local = brokenRecords()
 		const error = new Error('remote read failed')
 		f.discover.mockReset().mockResolvedValue([])
-		for (const rows of [local.profiles, local.organizations, local.memberships, local.categories])
+		for (const rows of [local.profiles, local.organizations, local.memberships])
 			f.discover.mockResolvedValueOnce(rows)
 		f.discover.mockRejectedValueOnce(error)
 		const done = await waitFor(f.coordinator(), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'failed', settlement: 'notStarted', error })
-		expect(f.discover).toHaveBeenCalledTimes(8)
+		expect(f.discover).toHaveBeenCalledTimes(6)
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it('does not start a transaction from a late authoritative read after shutdown', async () => {
@@ -107,7 +106,7 @@ describe('selected workspace integrity coordination', () => {
 		const local = brokenRecords()
 		const pending = Promise.withResolvers<ReturnType<typeof records>['profiles']>()
 		f.discover.mockReset().mockResolvedValue([])
-		for (const rows of [local.profiles, local.organizations, local.memberships, local.categories])
+		for (const rows of [local.profiles, local.organizations, local.memberships])
 			f.discover.mockResolvedValueOnce(rows)
 		f.discover.mockReturnValueOnce(pending.promise)
 		const actor = f.coordinator()

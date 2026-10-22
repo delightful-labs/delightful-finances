@@ -1,57 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import {
-	assess,
-	brokenRecords,
-	membership,
-	records,
-	scope,
-	systemCategories
-} from './workspace-integrity.fixture.js'
+import { assess, brokenRecords, membership, records, scope } from './workspace-integrity.fixture.js'
 
 describe('workspace integrity assessment', () => {
-	it('prepares only the two validated required categories with deterministic identities', async () => {
-		const { prepareWorkspaceSystemCategories } =
-			await import('../domain/workspace-system-categories.js')
-		expect(await prepareWorkspaceSystemCategories(scope.organizationId)).toEqual(systemCategories)
-		expect(systemCategories.map((row) => [row.kind, row.isSystem])).toEqual([
-			['expense', true],
-			['income', true]
-		])
-	})
-	it('accepts renamed system categories with noncanonical IDs and no optional starters', () => {
-		const snapshot = records()
-		const result = assess({
-			records: {
-				...snapshot,
-				categories: snapshot.categories.map((row, index) => ({
-					...row,
-					name: 'Legacy name',
-					id: index === 0 ? scope.profileId : membership.id
-				}))
-			}
-		})
-		expect(result.value).toBe('complete')
-		expect(result.output).toEqual({ outcome: 'complete' })
+	it('accepts consistent profile and membership records without category data', () => {
+		expect(assess().output).toEqual({ outcome: 'complete' })
 	})
 	for (const role of ['owner', 'admin'] satisfies (typeof membership.role)[]) {
-		it(`allows ${role} to repair the existing profile link and required categories`, () => {
+		it(`allows ${role} to repair the existing profile link`, () => {
 			const result = assess({ records: brokenRecordsWithRole(role) })
 			expect(result.value).toBe('repair')
 			expect(result.output).toEqual({
 				outcome: 'repair',
 				remaining: [],
 				plan: {
-					profileLink: { membershipId: membership.id, profileId: scope.profileId },
-					categories: systemCategories
+					profileLink: { membershipId: membership.id, profileId: scope.profileId }
 				}
 			})
 		})
 	}
-	it('allows member category repair while retaining a separate profile-link issue', () => {
+	it('retains a profile-link issue for members without repair authority', () => {
 		expect(assess({ records: brokenRecordsWithRole('member') }).output).toEqual({
-			outcome: 'repair',
-			plan: { profileLink: undefined, categories: systemCategories },
-			remaining: ['profileLink']
+			outcome: 'partial',
+			issues: ['profileLink']
 		})
 	})
 	it('does not grant viewer repair authority from workspace creator identity', () => {
@@ -64,7 +34,7 @@ describe('workspace integrity assessment', () => {
 		expect(result.value).toBe('partial')
 		expect(result.output).toEqual({
 			outcome: 'partial',
-			issues: ['profileLink', 'expense', 'income']
+			issues: ['profileLink']
 		})
 	})
 	for (const [name, snapshot] of [
@@ -91,27 +61,6 @@ describe('workspace integrity assessment', () => {
 			assess({ records: records({ memberships: [{ ...membership, userId: membership.id }] }) })
 				.value
 		).toBe('conflict')
-	})
-	it('rejects archived, duplicate, foreign-scope, or occupied system identities', () => {
-		const snapshot = records()
-		const expense = snapshot.categories[0]
-		if (!expense) throw new Error('Missing expense fixture')
-		for (const categories of [
-			[...snapshot.categories, { ...expense, id: membership.id }],
-			snapshot.categories.map((row) => ({ ...row, archivedAt: new Date() })),
-			snapshot.categories.map((row) => ({ ...row, organizationId: membership.id })),
-			[{ ...expense, isSystem: false }]
-		])
-			expect(assess({ records: records({ categories }) }).output).toEqual({
-				outcome: 'conflict',
-				reason: 'systemCategories'
-			})
-	})
-	it('rejects incomplete or duplicate required definitions', () => {
-		expect(assess({ systemCategories: [] }).value).toBe('conflict')
-		expect(assess({ systemCategories: [...systemCategories, ...systemCategories] }).value).toBe(
-			'conflict'
-		)
 	})
 })
 

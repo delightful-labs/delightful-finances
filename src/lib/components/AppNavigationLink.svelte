@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppLink from '#lib/components/AppLink.svelte'
 	import type { ComponentProps } from 'svelte'
 	import Icon from './AppIcon.svelte'
 
@@ -17,26 +18,26 @@
 	} = $props()
 
 	const current = $derived(
-		pathname.replace(/\/$/, '') === href.replace(/\/$/, '') ? 'page' : undefined
+		pathname.replace(/\/$/, '') === href.split(/[?#]/)[0]?.replace(/\/$/, '') ? 'page' : undefined
 	)
 </script>
 
-<a class="navigation-link" {href} aria-current={current} {onclick}>
+<AppLink class="navigation-link" {href} aria-current={current} {onclick}>
 	<Icon class="navigation-link-icon" {icon} />{label}
-</a>
+</AppLink>
 
 <style>
-	a.navigation-link {
+	:global(a.navigation-link) {
 		padding-inline: 1rem;
 	}
 
-	a.navigation-link[aria-current='page'] {
+	:global(a.navigation-link[aria-current='page']) {
 		background-color: var(--dui-color-accent, #94ff47);
 		color: #000;
 		text-decoration: none;
 	}
 
-	.navigation-link :global(.navigation-link-icon) {
+	:global(a.navigation-link .navigation-link-icon) {
 		inline-size: 1.25rem;
 		block-size: 1.25rem;
 		flex-shrink: 0;

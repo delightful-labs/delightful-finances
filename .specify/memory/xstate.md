@@ -92,6 +92,56 @@ subtree once dependencies become available. Keep identity, workspace, membership
 readiness distinct. Model supported observations only: browser online status is not proof of Jazz
 sync connectivity, and a missing SDK observer is a reason to omit that state.
 
+## Design orchestration boundaries before adding machines
+
+A collection of machines is not yet a well-designed actor system. Before implementation, draw the
+ownership tree and record each actor's responsibility, lifetime, accepted commands, public reports,
+terminal output and cleanup obligations. Review both the statechart and communication protocol.
+The current workspace-focused reference is
+[`008-actor-orchestration`](../../specs/008-actor-orchestration/spec.md); its deferred tasks are not
+permission to refactor unrelated subsystems.
+
+- Choose boundaries by responsibility, independent lifetime and resource ownership, not file size or
+  the existence of an async function. Use nested states for phases of one responsibility. A child
+  machine is justified when it encapsulates a coherent workflow/resource or independently meaningful
+  lifetime. Do not mechanically add one wrapper per step or merge resource owners just to reduce files.
+- Prefer invocation for fixed children. Invoke on a compound parent state when the child must survive
+  transitions between its normal-work and graceful-drain substates. Use spawning for dynamic
+  populations or lifetimes that genuinely do not fit state ownership; crossing sibling substates alone
+  does not require spawning. Parallel regions share one machine/context and receive the same events;
+  separate actors have their own state and explicit message contracts.
+- Treat child context and state paths as private implementation details. Publish small domain reports
+  for ongoing readiness/access changes and use invocation output for finite results. Presentation can
+  observe public snapshots/selectors; parents should not copy full snapshots and inspect private
+  operation fields to reconstruct child policy. Snapshot observation itself is supported and can be
+  appropriate at an explicitly designed boundary.
+- Actor input initializes that actor; later facts arrive through typed events. Prefer typed recipient
+  references supplied through input/events and `sendTo` for ongoing communication. Use `invoke.onDone`
+  and `invoke.onError` at finite-operation boundaries. Do not replace local typed relationships with
+  a global bus, registry or generic supervisor without a demonstrated requirement.
+- Give each readiness/authorization decision one owner. Other actors consume its scoped result;
+  persistence still rechecks atomic invariants. Keep route state distinct from access state and
+  identity-wide capabilities distinct from selected-workspace capabilities.
+- Correlate asynchronous reports with their dependency binding and operation/observation generation.
+  Invalidate published capabilities immediately on identity, environment, scope or authority changes.
+  Equal workspace IDs do not make an old result current after switching away and back. Store observed
+  facts/results in context, not a second lifecycle made of synchronized flags.
+- Keep integration components responsible for Jazz subscriptions, dependency attachment and browser
+  effects. They must not become the message router that interprets one actor's private state for
+  another. Independent UI actors may remain component-owned; actors sharing domain policy/lifetime
+  need an explicit coordinating relationship.
+- A parent supervises direct children; each resource owner handles its own cleanup and descendants.
+  Graceful shutdown is a domain protocol, distinct from actor stopping. Await real settlement where
+  required, but never await an acknowledgement from an already failed/completed child. Distinguish
+  normal failure output from an actor crash. Preserve shutdown intent against late reports/retries.
+- Review the installed XState version and platform adapter semantics before relying on examples.
+  Optional inspection should expose actor lifetimes and event causality without logging secrets or
+  private finance payloads. Static checks alone cannot validate an ownership or race model.
+
+Before presenting a refactor, explain which boundaries changed, which policy now has a single owner,
+and how stale reports, replacement and shutdown are handled. Work one subsystem/review cycle at a
+time; leave unrelated audits as explicit unchecked tasks rather than expanding the current change.
+
 ## Let states own behavior
 
 Represent complete success, partial success, cancellation, and failures as actual states. Return typed
@@ -200,6 +250,11 @@ Review the complete actor tree after focused changes, including startup and pres
 Look for hidden branching promises, duplicated result classification, flags outside the model, and
 teardown paths that bypass cleanup. Prefer a small reviewed change over another broad mechanical
 rewrite.
+
+When an actor contract changes, update test doubles to accept its typed initialization/observation
+inputs and emit its public reports, including binding/generation correlation. A fake child that only
+sets private state tags cannot verify a message protocol. Capture reports with a real actor recipient;
+test stale-report rejection and actual settlement rather than merely renaming fixture fields.
 
 Follow the repository review gate: do not add or run tests until the user approves the implementation
 being covered. Formatting and type checks do not establish runtime correctness. After approval, test

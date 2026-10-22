@@ -1,5 +1,5 @@
 export type FinanceFilters = {
-	activeOrganizationId: string | null
+	readonly activeOrganizationId: string | null
 	selectedAccountIds: string[] | null
 }
 

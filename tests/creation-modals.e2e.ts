@@ -46,7 +46,7 @@ for (const entity of ['category', 'tag']) {
 		await dialog.getByRole('button', { name: label, exact: true }).click()
 		await expect(dialog.getByRole('alert')).toHaveText(error)
 		await name.fill('Unsaved draft')
-		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 		await expect(dialog).not.toBeVisible()
 		await expect(trigger).toBeFocused()
 		await trigger.click()
@@ -67,7 +67,7 @@ for (const entity of ['category', 'tag']) {
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 		await trigger.click()
 		await expect(name).toHaveValue('')
-		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 		const table = page.getByRole('main').getByRole('table', { name: caption, exact: true })
 		await expect(table.getByRole('rowheader', { name: savedName, exact: true })).toBeVisible()
 		const tableBox = await bounds(table)
@@ -100,12 +100,12 @@ for (const route of ['/expenses', '/income', '/expenses/new', '/income/new']) {
 		page
 	}) => {
 		const { dialog } = await openCreation(page, route, 'Add Account')
-		await expect(page).toHaveURL(route)
+		await expect(page).toHaveURL((url) => url.pathname === route)
 		await dialog.getByLabel('Account name', { exact: true }).fill('First checking')
 		await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
 		await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 		await expect(dialog).not.toBeVisible()
-		await expect(page).toHaveURL(route)
+		await expect(page).toHaveURL((url) => url.pathname === route)
 		const entry = route.endsWith('/new') ? route : `${route}/new`
 		if (entry !== route) await page.goto(entry)
 		const main = page.getByRole('main')
@@ -119,8 +119,8 @@ for (const route of ['/expenses', '/income', '/expenses/new', '/income/new']) {
 		await expect(memo).toHaveJSProperty('tagName', 'TEXTAREA')
 		await description.fill('  First transaction  ')
 		await memo.fill('Additional notes\nSecond line')
-		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
-		await expect(page).toHaveURL(route.replace('/new', ''))
+		await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+		await expect(page).toHaveURL((url) => url.pathname === route.replace('/new', ''))
 		await expect(main.getByText('First transaction', { exact: true })).toBeVisible()
 		await expect(main.getByText('Additional notes', { exact: false })).toHaveCount(0)
 		await main.getByRole('link', { name: /Transaction details:.*First transaction/ }).click()
@@ -129,7 +129,7 @@ for (const route of ['/expenses', '/income', '/expenses/new', '/income/new']) {
 			'Additional notes\nSecond line'
 		)
 		await main.getByLabel('Description', { exact: true }).fill('Updated description')
-		await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 		await expect(
 			main.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
 		).toBeVisible()

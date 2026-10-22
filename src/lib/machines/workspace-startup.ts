@@ -5,24 +5,26 @@ import {
 	type WorkspaceInitializationResult
 } from './workspace-initialization.js'
 
-type SessionFacts = {
-	userId: string | undefined
-	status: 'ready' | 'signed-out' | 'transitioning' | 'error' | 'closed'
-}
+import {
+	sameInitializationRequest,
+	type InitializationRequest,
+	type InitializationRecipient,
+	type InitializationStatus,
+	type InitializationStatusEvent
+} from '../workspace-orchestration-contract.js'
+
+type Input = { request: InitializationRequest; recipient: InitializationRecipient }
 type Event =
-	| { type: 'OBSERVED'; source: SessionFacts }
-	| { type: 'REEVALUATE' }
-	| { type: 'RETRY' }
-	| { type: 'SHUTDOWN' }
-type Context = SessionFacts & {
-	operationUserId: string | undefined
+	{ type: 'OBSERVED'; request: InitializationRequest } | { type: 'REEVALUATE' | 'SHUTDOWN' }
+type Context = Input & {
+	operation: InitializationRequest | undefined
 	result: WorkspaceInitializationResult | undefined
 }
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig'>
 
 // Snapshot replacement is a workflow: keep the old initialization child alive until cleanup finishes.
 export function createWorkspaceStartupMachine(db: Db) {
-	return setup<
+	const model = setup<
 		Context,
 		Event,
 		{ initialize: typeof workspaceInitialization },
@@ -31,58 +33,79 @@ export function createWorkspaceStartupMachine(db: Db) {
 		{ closing: undefined; replacing: undefined; identityChanged: undefined },
 		never,
 		string,
-		SessionFacts
+		Input
 	>({
 		actors: { initialize: workspaceInitialization },
 		guards: {
 			closing: stateIn({ initializing: 'closing' }),
 			replacing: stateIn({ initializing: 'replacing' }),
 			identityChanged: ({ context }) =>
-				context.status !== 'ready' || context.userId !== context.operationUserId
+				context.operation === undefined ||
+				!sameInitializationRequest(context.request, context.operation)
 		}
-	}).createMachine({
+	})
+	const report = (status: (context: Context) => InitializationStatus) =>
+		model.sendTo(
+			({ context }) => context.recipient,
+			({ context }): InitializationStatusEvent => ({
+				type: 'INITIALIZATION_STATUS',
+				report: { request: context.operation ?? context.request, status: status(context) }
+			})
+		)
+	return model.createMachine({
 		id: 'workspace-startup',
-		context: ({ input }) => ({ ...input, operationUserId: undefined, result: undefined }),
+		context: ({ input }) => ({ ...input, operation: undefined, result: undefined }),
 		initial: 'checking',
 		on: {
-			OBSERVED: { actions: [assign(({ event }) => event.source), raise({ type: 'REEVALUATE' })] },
+			OBSERVED: {
+				actions: [assign({ request: ({ event }) => event.request }), raise({ type: 'REEVALUATE' })]
+			},
 			SHUTDOWN: '.closed'
 		},
 		states: {
 			checking: {
 				always: [
 					{
-						guard: ({ context }) => context.status === 'ready' && context.userId !== undefined,
+						guard: ({ context }) =>
+							context.request.status === 'ready' && context.request.userId !== undefined,
 						target: 'initializing'
 					},
 					{ target: 'waitingForSession' }
 				]
 			},
-			waitingForSession: { on: { REEVALUATE: 'checking', RETRY: 'checking' } },
+			waitingForSession: {
+				entry: [assign({ operation: undefined }), report(() => ({ kind: 'waiting' }))],
+				on: { REEVALUATE: 'checking' }
+			},
 			initializing: {
 				initial: 'active',
-				entry: assign({ operationUserId: ({ context }) => context.userId, result: undefined }),
+				entry: [
+					assign({ operation: ({ context }) => context.request, result: undefined }),
+					report(() => ({ kind: 'checking' }))
+				],
 				on: {
 					SHUTDOWN: { target: '.closing', actions: sendTo('initialize', { type: 'SHUTDOWN' }) },
 					REEVALUATE: {
 						guard: 'identityChanged',
 						target: '.replacing',
 						actions: sendTo('initialize', { type: 'SHUTDOWN' })
-					},
-					RETRY: {}
+					}
 				},
 				states: {
 					active: {},
-					replacing: { on: { REEVALUATE: {}, RETRY: {} } },
-					closing: { on: { REEVALUATE: {}, RETRY: {}, SHUTDOWN: {} } }
+					replacing: { entry: report(() => ({ kind: 'waiting' })), on: { REEVALUATE: {} } },
+					closing: {
+						entry: report(() => ({ kind: 'waiting' })),
+						on: { REEVALUATE: {}, SHUTDOWN: {} }
+					}
 				},
 				invoke: {
 					id: 'initialize',
 					src: 'initialize',
 					input: ({ context }) => {
-						if (!context.operationUserId)
+						if (!context.operation?.userId)
 							throw new Error('Initialization requires a session identity')
-						return { db, userId: context.operationUserId }
+						return { db, userId: context.operation.userId }
 					},
 					onDone: [
 						{ guard: 'closing', target: 'closed' },
@@ -112,13 +135,22 @@ export function createWorkspaceStartupMachine(db: Db) {
 			},
 			ready: {
 				tags: 'workspace-ready',
+				entry: report((context) => {
+					if (context.result?.outcome !== 'ready') throw new Error('Expected initialized profile')
+					return { kind: 'ready', profileId: context.result.profileId }
+				}),
 				on: { REEVALUATE: { guard: 'identityChanged', target: 'checking' } }
 			},
 			failed: {
 				tags: 'workspace-error',
-				on: { RETRY: 'checking', REEVALUATE: { guard: 'identityChanged', target: 'checking' } }
+				entry: report(() => ({ kind: 'failed' })),
+				on: { REEVALUATE: { guard: 'identityChanged', target: 'checking' } }
 			},
-			closed: { type: 'final', on: { OBSERVED: {}, SHUTDOWN: {} } }
+			closed: {
+				type: 'final',
+				entry: report(() => ({ kind: 'closed' })),
+				on: { OBSERVED: {}, SHUTDOWN: {} }
+			}
 		}
 	})
 }

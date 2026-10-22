@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppLink from '#lib/components/AppLink.svelte'
 	import Icon from './AppIcon.svelte'
 	import AddIcon from 'tdesign-icons-svg/src/add.svg?component'
 
@@ -6,7 +7,9 @@
 </script>
 
 <div class="floating-action-space">
-	<a {href} aria-label={label} title={label}><Icon icon={AddIcon} /></a>
+	<AppLink class="floating-action-link" {href} aria-label={label} title={label}
+		><Icon icon={AddIcon} /></AppLink
+	>
 </div>
 
 <style>
@@ -14,7 +17,7 @@
 		min-block-size: 5rem;
 	}
 
-	a {
+	.floating-action-space :global(a.floating-action-link) {
 		position: fixed;
 		inset-inline-end: calc(var(--dui-spacing-md) + env(safe-area-inset-right, 0px));
 		inset-block-end: calc(var(--dui-spacing-md) + env(safe-area-inset-bottom, 0px));
@@ -33,7 +36,7 @@
 		box-shadow: var(--dui-shadow);
 	}
 
-	a:hover {
+	.floating-action-space :global(a.floating-action-link:hover) {
 		background-color: var(--dui-color-foreground);
 		color: var(--dui-color-background);
 	}

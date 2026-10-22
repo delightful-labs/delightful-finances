@@ -20,10 +20,12 @@ export async function prepareSidebar(page: Page) {
 export async function navigateSidebar(page: Page, label: string) {
 	await closeCreationModal(page)
 	if (label === 'Accounts') await openSidebarSection(page, 'Accounts')
-	if (['Workspace', 'Banks', 'Account', 'Login'].includes(label))
+	if (['Workspaces', 'Banks', 'Account', 'Login'].includes(label))
 		await openSidebarSection(page, 'Settings')
-	if (label === 'Accounts') await page.locator('aside a[href="/accounts"]').click()
-	else await page.locator('aside').getByRole('link', { name: label, exact: true }).click()
+	await page
+		.locator('aside')
+		.getByRole('link', { name: label === 'Accounts' ? 'Manage Accounts' : label, exact: true })
+		.click()
 }
 
 export function creationDialog(page: Page, label: string) {

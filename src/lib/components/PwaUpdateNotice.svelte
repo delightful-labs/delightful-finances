@@ -28,7 +28,7 @@
 	</p>
 	{#if view !== 'hidden'}
 		<Button disabled={view === 'busy'} onclick={onUpdate}>
-			{view === 'failed' ? m['pwa_update.retry']() : m['pwa_update.accept']()}
+			{view === 'failed' ? m['actions.retry']() : m['pwa_update.accept']()}
 		</Button>
 		{#if view !== 'busy'}
 			<Button onclick={onLater}>{m['pwa_update.later']()}</Button>

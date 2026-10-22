@@ -5,17 +5,24 @@
 	import type { WorkspaceRenameObservation } from '#lib/workspace-rename-contract.js'
 	import { renameWorkspace } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
-	import { getDb, getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import PageHeader from '#lib/components/PageHeader.svelte'
+	import { Heading } from 'delightful-ui'
+	import WorkspaceSelector from '#lib/components/WorkspaceSelector.svelte'
+	import { getWorkspace } from '#lib/workspace.js'
+	import QueryContent from '#lib/components/QueryContent.svelte'
+	import WorkspaceCreation from '#lib/components/WorkspaceCreation.svelte'
 	import WorkspaceNameForm from '#lib/components/WorkspaceNameForm.svelte'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+	const coordinator = getWorkspace()
 
+	const organizations = new QuerySubscription(() => app.organizations.orderBy('name'))
 	const db = getDb()
 	const session = fromStore(getJazzSession())
 	const workspaceQuery = new QuerySubscriptionOne(() =>
@@ -51,13 +58,29 @@
 	const form = createScopedFormController(options)
 </script>
 
-<svelte:head><title>{m['workspace.label']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['workspace.label']()} />
-<WorkspaceNameForm
-	name={workspace?.name ?? ''}
-	view={form.view}
-	onsubmit={form.submit}
-	onreset={form.reset}
-	oninput={form.input}
-	onRetryReadiness={form.retryReadiness}
-/>
+<svelte:head><title>{m['labels.workspaces']()} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['labels.workspaces']()} />
+<QueryContent
+	queries={[organizations]}
+	loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
+	errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
+>
+	<WorkspaceSelector
+		organizations={organizations.current ?? []}
+		organizationId={filters.activeOrganizationId}
+		label={m['workspace.choose']()}
+		onchange={(workspaceId) => coordinator.actor?.send({ type: 'SELECT_WORKSPACE', workspaceId })}
+	/>
+</QueryContent>
+{#if filters.activeOrganizationId}
+	<Heading level="h2">{m['labels.workspace_settings']()}</Heading>
+	<WorkspaceNameForm
+		name={workspace?.name ?? ''}
+		view={form.view}
+		onsubmit={form.submit}
+		onreset={form.reset}
+		oninput={form.input}
+		onRetryReadiness={form.retryReadiness}
+	/>
+{/if}
+<WorkspaceCreation />

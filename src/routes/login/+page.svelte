@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { getContext } from 'svelte'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { workspaceHref } from '#lib/domain/workspace-routes.js'
 	import { RecoveryPhrase } from 'jazz-tools/passphrase'
 	import { getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
@@ -7,6 +10,7 @@
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import LoginForm from '#lib/components/LoginForm.svelte'
 
+	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const session = getJazzSession()
 	const snapshot = fromStore(session)
 	let restoreSessionError = $state(false)
@@ -31,7 +35,7 @@
 		restoring = true
 		try {
 			await session.restoreLocalFirst(secret)
-			await goto('/')
+			await goto(workspaceHref(filters.activeOrganizationId))
 		} catch {
 			restoreSessionError = true
 		} finally {

@@ -12,9 +12,7 @@ describe('workspace persistence composition', () => {
 		await waitFor(actor, (s) => s.matches('hydrating'))
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 		expect(f.hydrate).toHaveBeenCalledTimes(4)
-		expect(
-			f.hydrate.mock.calls.every((call) => call[1]?.tier === ReadTier.LocalFirstUnlessEmpty)
-		).toBe(true)
+		expect(f.hydrate.mock.calls.every((call) => call[1]?.tier === ReadTier.LocalFirst)).toBe(true)
 		hydrated.resolve([])
 		const done = await waitFor(actor, (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'succeeded', settlement: 'locallyPersisted', workspace })
