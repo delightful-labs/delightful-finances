@@ -1,6 +1,7 @@
 # Repository working agreements
 
 - Follow `.specify/memory/constitution.md` and the active feature artifacts under `specs/`. Before designing or changing complex state, read `.specify/memory/xstate.md`.
+- Before adding or changing localized strings, read `.specify/memory/localization.md`. Consolidate reusable action/label structures, use shared plural nouns, and name variable-bearing keys and inputs consistently (for example, `actions.select_subject: "Select {subject}"`).
 - Do not use `switch` statements or `case` clauses; use discriminated-union narrowing, lookup records, or clear conditional expressions.
 - Work on one task at a time. Do not start another task until the current change has been shown to the user and reviewed.
 - Use a small related set of files per focused review cycle, typically 4–6 implementation files. Multiple routes/components may change together. Discuss larger batches first; do not edit dozens of files without explicit authorization.
@@ -12,5 +13,6 @@
 - Use the repository Prettier configuration. Do not format unrelated files.
 - Whenever starting a development server, tell the user and provide its URL so they can open the same server.
 - Use `pnpm dev:agent` for agent browser work (default `http://localhost:5180`); it uses disposable in-memory Jazz storage. For concurrent sessions, pass a distinct app port, for example `pnpm dev:agent --port 5181`. Reserve `pnpm dev`, app port 5173, and Jazz port 5174 for the user's persistent development environment. Do not clear its browser storage or Jazz data, or stop its server.
+- Do all work on feature branches. Before making changes, create or switch to an appropriate feature branch; never work directly on or push directly to `main`.
 - Never commit unless the user explicitly authorizes the commit.
 - Delightful Labs operates through open source and open learning. Create its GitHub repositories as public unless the user explicitly requests otherwise.

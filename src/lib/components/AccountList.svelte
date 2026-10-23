@@ -9,14 +9,17 @@
 		$props()
 	const feedbackText = $derived(
 		view.feedback?.outcome === 'succeeded'
-			? m['actions.archived']({ subject: m['labels.account'](), name: view.feedback.request.name })
+			? m['status.archived_subject_name']({
+					subject: m['nouns.account']({ count: 1 }),
+					name: view.feedback.request.name
+				})
 			: view.feedback?.settlement === 'locallyPersisted'
 				? m['accounts.archive_interrupted_saved']()
 				: view.feedback?.outcome === 'scopeChanged'
 					? m['accounts.archive_scope_changed']()
 					: view.feedback?.outcome === 'denied'
 						? m['accounts.archive_restricted']()
-						: m['errors.archive']({ subject: m['labels.account']() })
+						: m['errors.archive_subject']({ subject: m['nouns.account']({ count: 1 }) })
 	)
 </script>
 
@@ -25,12 +28,15 @@
 {:else if view.kind === 'loading'}
 	<StatusMessage
 		variant="loading"
-		text={m['status.loading']({ subject: m['labels.accounts']() })}
+		text={m['status.loading_subject']({ subject: m['nouns.account']({ count: 2 }) })}
 	/>
 {:else if view.kind === 'selectWorkspace'}
-	<p>{m['workspace.select_workspace']()}</p>
+	<p>{m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}</p>
 {:else if view.kind === 'loadFailed'}
-	<StatusMessage variant="error" text={m['errors.load']({ subject: m['labels.accounts']() })} />
+	<StatusMessage
+		variant="error"
+		text={m['errors.load_subject']({ subject: m['nouns.account']({ count: 2 }) })}
+	/>
 {:else if view.kind === 'ready'}
 	{#if view.feedback}
 		<StatusMessage
@@ -41,11 +47,15 @@
 	{#if view.rows.length === 0}
 		<p>{m['accounts.empty.title']()}</p>
 	{:else}
-		<Table caption={m['labels.accounts']()}>
+		<Table caption={m['nouns.account']({ count: 2 })}>
 			<thead>
 				<tr>
-					<th scope="col">{m['labels.account_name']()}</th>
-					<th scope="col">{m['labels.account_type']()}</th>
+					<th scope="col"
+						>{m['labels.subject_name']({ subject: m['nouns.account']({ count: 1 }) })}</th
+					>
+					<th scope="col"
+						>{m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })}</th
+					>
 					<th scope="col">{m['labels.currency']()}</th>
 					<th scope="col">{m['labels.actions']()}</th>
 				</tr>
@@ -68,11 +78,11 @@
 								<Button
 									type="button"
 									disabled={row.action !== 'available'}
-									aria-label={m['actions.archive']({ name: account.name })}
+									aria-label={m['actions.archive_subject']({ subject: account.name })}
 									onclick={() => onArchive(account.id)}
 								>
 									{#if row.action === 'archiving'}
-										{m['status.archiving']({ subject: m['labels.account']() })}
+										{m['status.archiving_subject']({ subject: m['nouns.account']({ count: 1 }) })}
 									{:else}
 										<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
 										{m['actions.archive_button']()}

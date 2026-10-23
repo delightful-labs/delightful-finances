@@ -58,22 +58,24 @@
 	const form = createScopedFormController(options)
 </script>
 
-<svelte:head><title>{m['labels.workspaces']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['labels.workspaces']()} />
+<svelte:head><title>{m['nouns.workspace']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['nouns.workspace']({ count: 2 })} />
 <QueryContent
 	queries={[organizations]}
-	loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
+	loadingMessage={m['status.loading_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
+	errorMessage={m['errors.load_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
 >
 	<WorkspaceSelector
 		organizations={organizations.current ?? []}
 		organizationId={filters.activeOrganizationId}
-		label={m['workspace.choose']()}
+		label={m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}
 		onchange={(workspaceId) => coordinator.actor?.send({ type: 'SELECT_WORKSPACE', workspaceId })}
 	/>
 </QueryContent>
 {#if filters.activeOrganizationId}
-	<Heading level="h2">{m['labels.workspace_settings']()}</Heading>
+	<Heading level="h2"
+		>{m['labels.subject_settings']({ subject: m['nouns.workspace']({ count: 1 }) })}</Heading
+	>
 	<WorkspaceNameForm
 		name={workspace?.name ?? ''}
 		view={form.view}

@@ -21,11 +21,11 @@
 <Button
 	type="button"
 	disabled={view.kind === 'revealing' || view.kind === 'closed'}
-	onclick={onReveal}>{m['recovery.show']()}</Button
+	onclick={onReveal}>{m['actions.show_subject']({ subject: m['login.recovery_phrase']() })}</Button
 >
 
 <Dialog
-	heading={m['recovery.heading']()}
+	heading={m['labels.subject_recovery']({ subject: m['nouns.account']({ count: 1 }) })}
 	aria-describedby="recovery-warning"
 	open={view.kind === 'revealed'}
 	closedby="any"

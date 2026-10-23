@@ -45,8 +45,8 @@
 	}
 </script>
 
-<svelte:head><title>{m['labels.account']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['labels.account']()} />
+<svelte:head><title>{m['nouns.account']({ count: 1 })} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['nouns.account']({ count: 1 })} />
 <RecoveryPhraseIntegration />
 
 <ProfileNameForm

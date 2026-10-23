@@ -36,11 +36,15 @@
 </script>
 
 {#if section !== 'result'}
-	{#if view.readiness.kind === 'observing'}<p role="status">{m['status.loading']({ subject })}</p>
+	{#if view.readiness.kind === 'observing'}<p role="status">
+			{m['status.loading_subject']({ subject })}
+		</p>
 	{:else if view.readiness.kind === 'blocked'}<p role={blockedRole(view.readiness.reason)}>
 			{reasonText(view.readiness.reason)}
 		</p>
-	{:else if view.readiness.kind === 'failed'}<p role="alert">{m['errors.load']({ subject })}</p>
+	{:else if view.readiness.kind === 'failed'}<p role="alert">
+			{m['errors.load_subject']({ subject })}
+		</p>
 	{:else if view.readiness.kind === 'closed'}<p role="status">
 			{messages.sessionUnavailable ?? m['forms.session_unavailable']()}
 		</p>{/if}
@@ -55,7 +59,7 @@
 	{@const result = view.feedback.result}
 	{#if result.outcome === 'succeeded'}
 		<p role="status">
-			{successMessage ? successMessage(result.value) : m['actions.saved']({ subject })}
+			{successMessage ? successMessage(result.value) : m['status.saved_subject']({ subject })}
 		</p>
 	{:else if result.outcome === 'failed' && result.code === 'completionFailed'}
 		<p role="alert">{m['forms.completion_failed']()}</p>
@@ -83,7 +87,9 @@
 			</p>{/if}
 	{:else}
 		<p role="alert">
-			{action === 'archive' ? m['errors.archive']({ subject }) : m['errors.save']({ subject })}
+			{action === 'archive'
+				? m['errors.archive_subject']({ subject })
+				: m['errors.save_subject']({ subject })}
 		</p>
 		{#if result.settlement === 'unknown'}<p role="alert">
 				{messages.unknown ?? m['forms.unknown']()}

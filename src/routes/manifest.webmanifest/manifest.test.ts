@@ -7,8 +7,10 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('localized install manifest', () => {
 	it('reads app metadata from messages rather than duplicating English text', async () => {
-		vi.spyOn(m, 'app.name').mockReturnValue(m['labels.workspace_name']())
-		vi.spyOn(m, 'app.short_name').mockReturnValue(m['labels.account']())
+		vi.spyOn(m, 'app.name').mockReturnValue(
+			m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })
+		)
+		vi.spyOn(m, 'app.short_name').mockReturnValue(m['nouns.account']({ count: 1 }))
 		vi.spyOn(m, 'app.description').mockReturnValue(m['profile.name_description']())
 		await expect(GET().json()).resolves.toMatchObject({
 			name: 'Workspace name',

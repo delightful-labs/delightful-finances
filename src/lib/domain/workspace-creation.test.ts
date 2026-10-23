@@ -30,7 +30,7 @@ describe('workspace creation payload', () => {
 	})
 	it('keeps attempt and seed identities stable across retries and label changes', async () => {
 		const first = await prepareWorkspaceCreation(input)
-		const revisedLabel = m['labels.workspace_name']()
+		const revisedLabel = m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })
 		vi.spyOn(m, 'defaults.categories.groceries').mockReturnValue(revisedLabel)
 		const translated = await prepareWorkspaceCreation(input)
 		expect(translated.workspace.name).toBe('Household')

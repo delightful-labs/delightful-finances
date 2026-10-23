@@ -29,7 +29,7 @@
 			<Text size="sm" as="span"
 				><strong
 					>{categoryName ??
-						m['transactions.unavailable_item']({ subject: m['labels.category']() })}</strong
+						m['status.unavailable_subject']({ subject: m['nouns.category']({ count: 1 }) })}</strong
 				></Text
 			>
 			{#if tagNames.length}<Text size="sm" as="span">{tags.format(tagNames)}</Text>{/if}
@@ -43,8 +43,8 @@
 		><Icon icon={ChevronRight} /></AppLink
 	>
 	<span id={labelId} class="link-label"
-		>{m['transactions.details']()}: {categoryName ??
-			m['transactions.unavailable_item']({ subject: m['labels.category']() })}, {transaction.description
+		>{m['labels.subject_details']({ subject: m['nouns.transaction']({ count: 1 }) })}: {categoryName ??
+			m['status.unavailable_subject']({ subject: m['nouns.category']({ count: 1 }) })}, {transaction.description
 			? `${transaction.description}, `
 			: ''}{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</span
 	>

@@ -157,12 +157,20 @@
 	const entryController = createScopedFormController({ ...entryForm, arrayFields: () => ['tags'] })
 </script>
 
-<svelte:head><title>{m['transactions.details']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['transactions.details']()} />
+<svelte:head
+	><title
+		>{m['labels.subject_details']({ subject: m['nouns.transaction']({ count: 1 }) })} · {m[
+			'app.name'
+		]()}</title
+	></svelte:head
+>
+<PageHeader
+	title={m['labels.subject_details']({ subject: m['nouns.transaction']({ count: 1 }) })}
+/>
 <QueryContent
 	queries={[transactionQuery]}
-	loadingMessage={m['status.loading']({ subject: m['labels.transaction']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.transaction']() })}
+	loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
+	errorMessage={m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
 >
 	{#key `${session.current.account?.id}:${filters.activeOrganizationId}:${page.params.id}`}
 		<TransactionDetails
@@ -173,7 +181,7 @@
 			{#snippet form()}
 				<FormFeedback
 					view={entryController.view}
-					subject={m['labels.transaction']()}
+					subject={m['nouns.transaction']({ count: 1 })}
 					reasonText={(reason) => formReasonText[reason]()}
 					invalidMessage={m['transactions.validation_error']()}
 					section="readiness"

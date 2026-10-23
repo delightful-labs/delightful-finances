@@ -82,7 +82,7 @@
 	}
 </script>
 
-<svelte:head><title>{m['labels.accounts']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['labels.accounts']()} />
+<svelte:head><title>{m['nouns.account']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
+<PageHeader title={m['nouns.account']({ count: 2 })} />
 <AccountCreation />
 <AccountList {view} {onArchive} />

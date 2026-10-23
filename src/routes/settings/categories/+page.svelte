@@ -122,14 +122,14 @@
 	}
 </script>
 
-<svelte:head><title>{m['labels.categories']()} · {m['app.name']()}</title></svelte:head>
+<svelte:head><title>{m['nouns.category']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
 <QueryContent
 	keepContentWhileLoading
 	queries={[categories, transactions, tags, membership]}
-	loadingMessage={m['status.loading']({ subject: m['labels.categories']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.categories']() })}
+	loadingMessage={m['status.loading_subject']({ subject: m['nouns.category']({ count: 2 }) })}
+	errorMessage={m['errors.load_subject']({ subject: m['nouns.category']({ count: 2 }) })}
 >
-	<PageHeader title={m['labels.categories']()} />
+	<PageHeader title={m['nouns.category']({ count: 2 })} />
 	{#if filters.activeOrganizationId && (membership.current || membership.isLoading)}
 		<CategoryList
 			loading={categories.isLoading}
