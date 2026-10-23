@@ -429,3 +429,18 @@ Cancel/primary Save verification: all 12 focused Playwright scenarios pass (eigh
 - [x] Add a localized mobile Back to list link on income and expense detail pages, preserving URL pagination; awaiting implementation review.
 - [ ] After implementation approval, add/run focused coverage for mobile detail back links, matching section and pagination, and absence on desktop and creation pages.
 - [x] Verify desktop/mobile disclosure defaults, pointer/keyboard toggling, visible editable form and retained drafts, timestamps, and closed-on-reload behavior. All eight transaction-edit Playwright scenarios pass, including six existing edit regressions; browser-test TypeScript, focused formatting and whitespace checks pass.
+
+## Permission integrity follow-up
+
+- [x] Tighten Jazz tag insert/update and transaction-tag assignment rules; preserve legacy historical access and prohibit kind changes that invalidate assignments.
+- [x] Require a payment method for manual income at the Jazz permission boundary while allowing SimpleFIN income to omit it.
+- [x] Review the permission implementation (approved by the user’s “continue”).
+- [x] After approval, add/run focused permission coverage for valid and mismatched tag/category organizations and kinds, missing kinds, legacy archive/removal, kind-change bypasses, manual missing-method rejection, imported missing-method acceptance and check-details enforcement.
+
+Verification: `pnpm test:unit --run src/lib/permissions.test.ts` passes all 11
+permission tests against the SDK’s temporary local authority, including seeded
+legacy history. `pnpm test:permissions` passes all 32 browser scenarios (30 existing
+and two new income/expense integrity cases) against disposable in-memory Jazz on
+port 5180. Existing tag fixtures now specify their required kind. `pnpm check`,
+`pnpm check:tests`, focused Prettier and `git diff --check` pass. No production
+changes were needed during verification; nothing was deployed or committed.

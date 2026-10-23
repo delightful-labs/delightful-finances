@@ -378,3 +378,23 @@ input's own preview instead of a separate display. Compare the selected File wit
 the saved File so only a new selection shows Save. Use the input's single removal
 button for saved removal; clearing a replacement restores the saved preview.
 No statechart or authorization changes; test coverage follows implementation review.
+
+## Permission integrity follow-up
+
+Enforce tag kind/category compatibility and manual-income payment methods in Jazz
+permissions, retaining the existing role and account authority checks. New tags
+require a kind and a null or same-workspace, same-kind category. New assignments
+require an active same-workspace tag matching the transaction kind. Tag workspace
+and kind, and transaction kind, remain immutable on update to protect existing
+assignments. Legacy untyped tags retain their original workspace/category and
+remain readable, archivable and removable from historical transactions.
+Only SimpleFIN income may omit paymentMethod; check income still requires its
+matching check-details record. These are declarative persistence invariants, not
+an async workflow or a change to machine ownership. No schema migration, data
+rewrite, localization, deployment or commit is included.
+
+Implementation reviewed and approved for testing. Verification passed: 11 focused
+permission tests using the SDK test authority, all 32 browser permission scenarios,
+application/service-worker and browser-test type checks, focused formatting and
+whitespace checks. The browser run used disposable in-memory Jazz on port 5180;
+no deployment or commit was performed.

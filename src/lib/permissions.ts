@@ -1,6 +1,6 @@
 import { schema as s } from 'jazz-tools'
 import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
-import { app, type OrganizationMember, type TransactionRow } from './schema.js'
+import { app, type OrganizationMember, type Tag, type TransactionRow } from './schema.js'
 
 type Role = NonNullable<OrganizationMember['role']>
 type IdExpression = string | RowRefValue
@@ -112,7 +112,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 				allOf([
 					{ kind: 'income', checkDetailsId: { isNull: true } },
 					anyOf([
-						{ paymentMethod: { isNull: true } },
+						{ source: 'simplefin', paymentMethod: { isNull: true } },
 						{ paymentMethod: 'cash' },
 						{ paymentMethod: 'transfer' },
 						{ paymentMethod: 'electronic' }
@@ -218,13 +218,60 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		allOf([isAdmin(category.organizationId), { isSystem: false }])
 	)
 
+	const tagReferencesAreValid = (tag: RowContext<Tag>) =>
+		allOf([
+			anyOf([{ kind: 'expense' }, { kind: 'income' }]),
+			anyOf([
+				{ categoryId: { isNull: true } },
+				policy.categories.exists.where({
+					id: tag.categoryId,
+					organizationId: tag.organizationId,
+					kind: tag.kind
+				})
+			])
+		])
+
 	policy.tags.allowRead.where((tag) => isMember(tag.organizationId))
 	policy.tags.allowInsert.where((tag) =>
-		anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')])
+		allOf([
+			anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]),
+			tagReferencesAreValid(tag)
+		])
 	)
 	policy.tags.allowUpdate
 		.whereOld((tag) => anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]))
-		.whereNew((tag) => anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]))
+		.whereNew((tag) =>
+			allOf([
+				anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]),
+				anyOf([
+					allOf([
+						tagReferencesAreValid(tag),
+						// Kind and workspace are immutable so existing assignments stay compatible.
+						policy.tags.exists.where({
+							id: tag.id,
+							organizationId: tag.organizationId,
+							kind: tag.kind
+						})
+					]),
+					// Legacy untyped tags retain their category and historical assignments.
+					allOf([
+						{ kind: { isNull: true } },
+						policy.tags.exists.where({
+							id: tag.id,
+							organizationId: tag.organizationId,
+							kind: { isNull: true }
+						}),
+						anyOf([
+							allOf([
+								{ categoryId: { isNull: true } },
+								policy.tags.exists.where({ id: tag.id, categoryId: { isNull: true } })
+							]),
+							policy.tags.exists.where({ id: tag.id, categoryId: tag.categoryId })
+						])
+					])
+				])
+			])
+		)
 	policy.tags.allowDelete.where((tag) => isAdmin(tag.organizationId))
 
 	policy.transactions.allowRead.where((transaction) =>
@@ -236,6 +283,8 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((transaction) =>
 			allOf([
 				canWriteTransaction(transaction),
+				// Changing kind would invalidate existing tag assignments.
+				policy.transactions.exists.where({ id: transaction.id, kind: transaction.kind }),
 				// A check's selected detail cannot be replaced or shared with another transaction.
 				anyOf([
 					allOf([
@@ -269,15 +318,23 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	policy.transactionTags.allowInsert.where((link) =>
 		allOf([
 			allowedTo.update('transaction'),
-			policy.transactions.exists.where({
-				id: link.transactionId,
-				organizationId: link.organizationId
-			}),
-			policy.tags.exists.where({
-				id: link.tagId,
-				organizationId: link.organizationId,
-				archivedAt: { isNull: true }
-			})
+			anyOf(
+				(['expense', 'income'] satisfies readonly TransactionRow['kind'][]).map((kind) =>
+					allOf([
+						policy.transactions.exists.where({
+							id: link.transactionId,
+							organizationId: link.organizationId,
+							kind
+						}),
+						policy.tags.exists.where({
+							id: link.tagId,
+							organizationId: link.organizationId,
+							kind,
+							archivedAt: { isNull: true }
+						})
+					])
+				)
+			)
 		])
 	)
 	// Links are immutable; replace an assignment through delete/insert.
