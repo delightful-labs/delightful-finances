@@ -490,5 +490,19 @@
 		"setup_saving_body": "Claiming your SimpleFIN token and saving the encrypted credential. The connection will be locked when setup finishes.",
 		"idle_step": "{step} to begin.",
 		"result_time_outcome_imported_existing_omitted": "Last sync: {time}. Outcome: {outcome}. Imported: {imported}; already present: {existing}; omitted: {omitted}."
+	},
+	"overview_expenses": {
+		"title": "Expenses by category",
+		"start": "Start date",
+		"end": "End date",
+		"last7": "Last 7 days",
+		"last30": "Last 30 days",
+		"all": "All categories",
+		"empty": "No expenses in this time period.",
+		"invalid": "Enter a start date and an end date on or after the start date.",
+		"transactions": "Expenses in this period",
+		"currency": "Currency",
+		"total": "Total expenses",
+		"chart": "Expense totals by category. Select a slice or a category below to filter transactions."
 	}
 }
