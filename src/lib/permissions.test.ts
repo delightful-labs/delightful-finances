@@ -9,8 +9,8 @@ const accountId = crypto.randomUUID()
 const expenseCategoryId = crypto.randomUUID()
 const incomeCategoryId = crypto.randomUUID()
 const foreignCategoryId = crypto.randomUUID()
-const legacyTagId = crypto.randomUUID()
-const legacyLinkId = crypto.randomUUID()
+const historicalTagId = crypto.randomUUID()
+const historicalLinkId = crypto.randomUUID()
 const expenseId = crypto.randomUUID()
 const session = {
 	user_id: 'permission-integrity',
@@ -79,13 +79,17 @@ beforeAll(async () => {
 		seed.insert(app.transactions, transaction('expense'), { id: expenseId })
 	)
 	await fixture.seed((seed) =>
-		seed.insert(app.tags, { organizationId, name: 'Legacy' }, { id: legacyTagId })
+		seed.insert(
+			app.tags,
+			{ organizationId, name: 'Historical', kind: 'expense' },
+			{ id: historicalTagId }
+		)
 	)
 	await fixture.seed((seed) =>
 		seed.insert(
 			app.transactionTags,
-			{ organizationId, transactionId: expenseId, tagId: legacyTagId },
-			{ id: legacyLinkId }
+			{ organizationId, transactionId: expenseId, tagId: historicalTagId },
+			{ id: historicalLinkId }
 		)
 	)
 }, 30_000)
@@ -95,10 +99,9 @@ afterAll(async () => {
 
 describe('tag permission integrity', () => {
 	it.each([
-		{ name: 'missing kind', kind: null, categoryId: null },
 		{ name: 'wrong category kind', kind: 'expense', categoryId: incomeCategoryId },
 		{ name: 'foreign category', kind: 'expense', categoryId: foreignCategoryId }
-	] satisfies { name: string; kind: 'expense' | null; categoryId: string | null }[])(
+	] satisfies { name: string; kind: 'expense'; categoryId: string | null }[])(
 		'rejects $name',
 		async (values) => {
 			await db.expectDenied((writer) => writer.insert(app.tags, { organizationId, ...values }))
@@ -159,26 +162,66 @@ describe('tag permission integrity', () => {
 			})
 		)
 	})
-	it('preserves legacy history and allows archive/removal without new assignments or migration', async () => {
+	it('rejects missing/null kinds on direct SDK inserts and updates', async () => {
+		for (const kind of [undefined, null]) {
+			const values = {
+				organizationId,
+				name: 'Invalid',
+				kind: 'expense'
+			} satisfies import('jazz-tools').schema.InsertOf<typeof app.tags>
+			if (kind === undefined) Reflect.deleteProperty(values, 'kind')
+			else Reflect.set(values, 'kind', kind)
+			await expect(
+				Promise.resolve().then(() => db.insert(app.tags, values).wait({ tier: 'global' }))
+			).rejects.toThrow()
+		}
+		const patch: Pick<import('./schema.js').Tag, 'kind'> = { kind: 'expense' }
+		Reflect.set(patch, 'kind', null)
+		await expect(
+			Promise.resolve().then(() =>
+				db.update(app.tags, historicalTagId, patch).wait({ tier: 'global' })
+			)
+		).rejects.toThrow()
+		expect((await db.one(app.tags.where({ id: historicalTagId }), { tier: 'remote' }))?.kind).toBe(
+			'expense'
+		)
+	})
+	it('preserves archived typed history and permits removing its assignment', async () => {
+		await db.update(app.tags, historicalTagId, { archivedAt: new Date() }).wait({ tier: 'global' })
 		expect(
-			await db.one(app.transactionTags.where({ id: legacyLinkId }), { tier: 'remote' })
+			await db.one(app.transactionTags.where({ id: historicalLinkId }), { tier: 'remote' })
 		).toBeTruthy()
 		await db.expectDenied((writer) =>
 			writer.insert(app.transactionTags, {
 				organizationId,
 				transactionId: expenseId,
-				tagId: legacyTagId
+				tagId: historicalTagId
 			})
 		)
-		await db.expectDenied((writer) => writer.update(app.tags, legacyTagId, { kind: 'expense' }))
-		await db.expectDenied((writer) =>
-			writer.update(app.tags, legacyTagId, { categoryId: expenseCategoryId })
-		)
-		await db.update(app.tags, legacyTagId, { archivedAt: new Date() }).wait({ tier: 'global' })
-		await db.delete(app.transactionTags, legacyLinkId).wait({ tier: 'global' })
+		await db.delete(app.transactionTags, historicalLinkId).wait({ tier: 'global' })
 		expect(
-			await db.one(app.transactionTags.where({ id: legacyLinkId }), { tier: 'remote' })
+			await db.one(app.transactionTags.where({ id: historicalLinkId }), { tier: 'remote' })
 		).toBeNull()
+	})
+	it('rejects moving a tag or assigning it across workspaces even with access to both', async () => {
+		const tag = await db
+			.insert(app.tags, { organizationId, name: 'Scope', kind: 'expense' })
+			.wait({ tier: 'global' })
+		await db.expectDenied((writer) =>
+			writer.update(app.tags, tag.id, { organizationId: otherOrganizationId })
+		)
+		const foreign = await db
+			.insert(app.tags, { organizationId: otherOrganizationId, name: 'Foreign', kind: 'expense' })
+			.wait({ tier: 'global' })
+		for (const scope of [organizationId, otherOrganizationId]) {
+			await db.expectDenied((writer) =>
+				writer.insert(app.transactionTags, {
+					organizationId: scope,
+					transactionId: expenseId,
+					tagId: foreign.id
+				})
+			)
+		}
 	})
 })
 

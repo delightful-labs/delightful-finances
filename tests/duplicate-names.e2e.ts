@@ -105,7 +105,7 @@ test('category and tag names are kind-scoped; tag categories filter and duplicat
 	await expect(table.getByRole('row').filter({ hasText: 'Bonus' })).toContainText('Income')
 })
 
-test('transaction tag choices respect kind, inline creation saves kind, and legacy history is preserved', async ({
+test('transaction tag choices respect kind, inline creation saves kind, and archived typed history is preserved', async ({
 	page
 }) => {
 	await page.goto('/accounts')
@@ -146,8 +146,8 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 		await db
 			.insert(app.tags, { organizationId, name: 'Income only', kind: 'income' })
 			.wait({ tier: 'local' })
-		const legacy = await db
-			.insert(app.tags, { organizationId, name: 'Legacy history' })
+		const historical = await db
+			.insert(app.tags, { organizationId, name: 'Archived history', kind: 'expense' })
 			.wait({ tier: 'local' })
 		const transaction = await db
 			.insert(app.transactions, {
@@ -166,25 +166,22 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 			.insert(app.transactionTags, {
 				organizationId,
 				transactionId: transaction.id,
-				tagId: legacy.id
+				tagId: historical.id
 			})
 			.wait({ tier: 'local' })
+		await db.update(app.tags, historical.id, { archivedAt: new Date() }).wait({ tier: 'global' })
 		return {
 			organizationId,
 			categoryId: category.id,
 			expenseTagId: expenseTag.id,
-			legacyId: legacy.id,
+			historicalId: historical.id,
 			transactionId: transaction.id
 		}
 	})
-	await page.goto('/settings/tags')
-	await expect(page.getByRole('row').filter({ hasText: 'Legacy history' })).toContainText(
-		'Type unassigned'
-	)
 	await page.goto('/expenses')
-	await expect(page.getByRole('main').getByText('Legacy history', { exact: false })).toBeVisible()
+	await expect(page.getByRole('main').getByText('Archived history', { exact: false })).toBeVisible()
 	for (const kind of ['expense', 'income']) {
-		await page.goto(kind === 'expense' ? '/expenses/new' : '/incomes/new')
+		await page.goto(kind === 'expense' ? '/expenses/new' : '/income/new')
 		const tags = page.getByRole('combobox', { name: 'Tags', exact: true })
 		await tags.click()
 		await expect(
@@ -199,7 +196,7 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 				exact: true
 			})
 		).toHaveCount(0)
-		await expect(page.getByRole('option', { name: 'Legacy history', exact: true })).toHaveCount(0)
+		await expect(page.getByRole('option', { name: 'Archived history', exact: true })).toHaveCount(0)
 		await page.getByLabel('Amount', { exact: true }).fill('12.00')
 		if (kind === 'expense')
 			await page.getByLabel('Category', { exact: true }).selectOption(seed.categoryId)
@@ -210,7 +207,10 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 			await tags.press('Enter')
 		}
 		await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-		await expect(page.getByRole('main').getByRole('status')).toContainText('Transaction saved.')
+		await expect(page).toHaveURL(
+			(url) => url.pathname === (kind === 'expense' ? '/expenses' : '/income')
+		)
+		await expect(page.getByRole('main').getByText('Shared inline', { exact: false })).toBeVisible()
 	}
 	const persisted = await page.evaluate(async (seed) => {
 		const schemaPath = '/src/lib/schema.ts',
@@ -234,10 +234,10 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 			.sort()
 	).toEqual(['expense', 'income'])
 	expect(persisted.links.filter((link) => link.tagId === seed.expenseTagId)).toHaveLength(1)
-	expect(persisted.links.filter((link) => link.tagId === seed.legacyId)).toEqual([
+	expect(persisted.links.filter((link) => link.tagId === seed.historicalId)).toEqual([
 		expect.objectContaining({ transactionId: seed.transactionId })
 	])
-	expect(persisted.tags.find((tag) => tag.id === seed.legacyId)?.kind).toBeNull()
+	expect(persisted.tags.find((tag) => tag.id === seed.historicalId)?.kind).toBe('expense')
 	for (const tag of persisted.tags.filter((tag) => tag.name === 'Shared inline')) {
 		const link = persisted.links.find((link) => link.tagId === tag.id)
 		expect(link).toBeDefined()

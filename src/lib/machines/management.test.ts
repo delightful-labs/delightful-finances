@@ -155,11 +155,11 @@ describe('category/tag policy', () => {
 			})
 		).toEqual({ kind: 'blocked', reason: 'unavailableReference' })
 	})
-	it('does not reserve names for legacy untyped tags', () => {
+	it('does not reserve names for archived typed tags', () => {
 		expect(
 			policy({
 				...facts(),
-				tags: [{ ...tag, kind: null }],
+				tags: [{ ...tag, archivedAt: new Date() }],
 				intent: { kind: 'createTag', name: tag.name, tagKind: 'expense', categoryId: null }
 			})
 		).toEqual({ kind: 'ready' })

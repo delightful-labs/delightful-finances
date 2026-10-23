@@ -451,7 +451,6 @@ describe('transaction edit staging boundaries', () => {
 	it.each([
 		{ ...historical },
 		{ ...historical, kind: 'income', archivedAt: null },
-		{ ...historical, kind: null, archivedAt: null },
 		{ ...historical, organizationId: 'other', archivedAt: null }
 	] satisfies Tag[])(
 		'creates a new typed assignment instead of reusing ineligible tag %j',

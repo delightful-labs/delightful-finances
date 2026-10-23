@@ -94,14 +94,13 @@ describe('transaction tag name policy', () => {
 			reason: 'ambiguousTagName'
 		})
 	})
-	it('excludes other kinds, organizations, archived and untyped tags from new assignments', () => {
+	it('excludes other kinds, organizations, and archived tags from new assignments', () => {
 		const f = {
 			...facts(),
 			intent: { ...transaction, tags: ['Salary'] },
 			tags: [
 				tag,
 				{ ...tag, id: 'income', kind: 'income' },
-				{ ...tag, id: 'legacy', kind: null },
 				{ ...tag, id: 'archived', archivedAt: new Date() },
 				{ ...tag, id: 'other', organizationId: 'other' }
 			] satisfies TransactionEntryObservation['tags']

@@ -410,3 +410,22 @@ is authoritative; this does not infer intended behavior from code alone. Removed
 obsolete worker tasks from the open MVP backlog by marking them superseded, not
 completed. No implementation, provider operation, deployment, or unfinished
 feature work is part of this documentation-only review cycle.
+
+## Required tag kind in alpha storage
+
+The required-kind alpha policy in [tag-kinds.md](tag-kinds.md) supersedes nullable
+tag storage and the legacy permission exception recorded in previous reviews.
+Require expense/income in `schema/tags.ts` without a default; simplify tag update
+permissions to the typed path while retaining reference and immutable-scope checks.
+Existing category and assignment consistency rules remain in place. This is a
+declarative schema/invariant change with no async workflow or actor changes.
+Do not reset data, deploy, or rewrite historical migrations in this review cycle.
+After implementation review, replace obsolete legacy fixtures and verify schema
+rejection and authority rejection/acceptance through direct SDK writes.
+
+Required-kind implementation approved and verification complete: 177 focused tests,
+three direct-write permission browser cases, and one typed-tag history/entry UI
+case pass. Static application/service-worker and browser-test checks pass. SDK
+checks use a temporary authority and browser checks use disposable in-memory
+storage. Existing environments have not been reset or deployed; schema/data
+transition remains a separate step. See tag-kinds.md for verification details.

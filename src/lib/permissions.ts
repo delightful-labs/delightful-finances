@@ -243,33 +243,13 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((tag) =>
 			allOf([
 				anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]),
-				anyOf([
-					allOf([
-						tagReferencesAreValid(tag),
-						// Kind and workspace are immutable so existing assignments stay compatible.
-						policy.tags.exists.where({
-							id: tag.id,
-							organizationId: tag.organizationId,
-							kind: tag.kind
-						})
-					]),
-					// Legacy untyped tags retain their category and historical assignments.
-					allOf([
-						{ kind: { isNull: true } },
-						policy.tags.exists.where({
-							id: tag.id,
-							organizationId: tag.organizationId,
-							kind: { isNull: true }
-						}),
-						anyOf([
-							allOf([
-								{ categoryId: { isNull: true } },
-								policy.tags.exists.where({ id: tag.id, categoryId: { isNull: true } })
-							]),
-							policy.tags.exists.where({ id: tag.id, categoryId: tag.categoryId })
-						])
-					])
-				])
+				tagReferencesAreValid(tag),
+				// Kind and workspace are immutable so existing assignments stay compatible.
+				policy.tags.exists.where({
+					id: tag.id,
+					organizationId: tag.organizationId,
+					kind: tag.kind
+				})
 			])
 		)
 	policy.tags.allowDelete.where((tag) => isAdmin(tag.organizationId))

@@ -323,7 +323,7 @@ Runtime logs include XState assign warnings and a SvelteKit replaceState depreca
 - [x] Share pure name normalization between category and account guards.
 - [x] Observe active organization accounts and assess duplicate names after authorization before creation (implementation approved; focused checks passed).
 - [x] Review category/account implementation, then add and run focused unit and Playwright coverage.
-- [ ] Review an existing-tag migration policy preserving unlinked and mixed-kind history.
+- **Superseded**: existing-tag migration policy preserving unlinked and mixed-kind history; the user selected required-kind alpha storage instead.
 - [x] Add required kind for new tags, matching-kind categories, settings duplicate guards and legacy unassigned feedback (implementation approved; focused checks passed).
 - [x] Update transaction tag selection, inline creation and ambiguity guards to match transaction kind (implementation approved; focused checks passed).
 - [x] Review tag implementation, then add and run relevant unit and Playwright coverage.
@@ -449,3 +449,16 @@ changes were needed during verification; nothing was deployed or committed.
 
 - [x] Align MVP SimpleFIN requirements, architecture, credential-access assumptions and obsolete backlog entries with constitution VI and spec 002.
 - [ ] Review this documentation-only reconciliation; unfinished sync-indicator, merge and sharing features remain outside this cycle.
+
+## Required tag kind in alpha storage
+
+- [x] Require tag kind in storage and remove the untyped-tag permission exception.
+- [x] Replace the legacy migration proposal with the user-approved required-kind alpha policy in the design and plan.
+- [x] Review this schema/permission implementation (user approved with “continue”).
+- [x] After approval, update fixtures and verify direct SDK inserts/updates and assignments for expense/income, missing/null kinds, optional/mismatched/foreign categories, immutable kinds/workspaces, archived typed history, and cross-workspace assignment rejection.
+- [ ] Handle an existing environment’s schema/data transition separately before deployment; no reset is performed here.
+
+Verification: 177 focused tests and four focused browser scenarios pass; the
+12 SDK authority tests also pass separately. Application/service-worker and
+browser-test type checks pass. See [tag-kinds.md](tag-kinds.md#required-kind-verification)
+for scope, fixture updates, and limits. No data reset or deployment performed.

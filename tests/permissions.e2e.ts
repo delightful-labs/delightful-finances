@@ -1056,11 +1056,15 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 					}
 				}
 				const denied = []
-				denied.push(
-					await attempt(() =>
-						db.insert(app.tags, { organizationId, name: 'Untyped' }).wait({ tier: 'global' })
+				const invalidKinds = []
+				for (const invalidKind of [undefined, null]) {
+					const invalid = { organizationId, name: 'Invalid kind', kind }
+					if (invalidKind === undefined) Reflect.deleteProperty(invalid, 'kind')
+					else Reflect.set(invalid, 'kind', invalidKind)
+					invalidKinds.push(
+						await attempt(() => db.insert(app.tags, invalid).wait({ tier: 'global' }))
 					)
-				)
+				}
 				denied.push(
 					await attempt(() =>
 						db
@@ -1150,12 +1154,13 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 				const retained = await db.one(app.transactionTags.where({ id: link.id }), {
 					tier: 'remote'
 				})
-				return { denied, retained: retained?.tagId === tag.id, imported }
+				return { denied, invalidKinds, retained: retained?.tagId === tag.id, imported }
 			},
 			{ organizationId, kind }
 		)
 		for (const outcome of results.denied)
 			expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
+		for (const outcome of results.invalidKinds) expect(outcome).not.toBe('accepted')
 		expect(results.retained).toBe(true)
 		if (kind === 'income') expect(results.imported).toBeTruthy()
 	})

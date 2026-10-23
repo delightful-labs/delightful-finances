@@ -141,7 +141,6 @@ describe('transaction tag persistence', () => {
 	it.each([
 		{ kind: 'expense', archivedAt: new Date(), organizationId: organization.id },
 		{ kind: 'income', archivedAt: null, organizationId: organization.id },
-		{ kind: null, archivedAt: null, organizationId: organization.id },
 		{ kind: 'expense', archivedAt: null, organizationId: 'other' }
 	])('creates a typed tag instead of reusing an ineligible existing tag: %j', async (patch) => {
 		const { db, transaction, insert } = setup()
