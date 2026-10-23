@@ -71,3 +71,16 @@ retained arc nodes with geometry changing across spring animation frames,
 desktop/mobile layout and horizontal overflow, and reduced-motion interaction.
 `tsc --project tests/tsconfig.json --noEmit` passes. Workspace replacement and
 permission-loss scenarios remain outside this focused browser run.
+
+## Shared localization conventions
+
+The overview reuses plural nouns and generic labels from the localization memory.
+“All categories” uses `labels.all_subjects` with `nouns.category`; the heading uses
+`labels.subjects_by_subject` with expense/category nouns. The currency control reuses
+`labels.currency`. Date bounds use `labels.start_subject` / `labels.end_subject` with
+`nouns.date`; both presets share `labels.last_count_subjects` with the real count and
+the corresponding plural of `nouns.day`. The total uses `labels.total_subject_amount`,
+including the formatted amount inside the message rather than appending punctuation
+and money in the template. Period headings and empty-state copy also interpolate the
+expense noun. The chart explanation retains its context-specific message, and date
+validation uses `errors.date_range_invalid`.

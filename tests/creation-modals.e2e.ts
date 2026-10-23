@@ -74,7 +74,7 @@ for (const entity of ['category', 'tag']) {
 		const triggerBox = await bounds(trigger)
 		expect(triggerBox.y - (tableBox.y + tableBox.height)).toBeGreaterThanOrEqual(15)
 		await page.setViewportSize({ width: 390, height: 900 })
-		const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+		const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 		if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click()
 		const region = page.getByRole('main').getByRole('region', { name: caption, exact: true })
 		await expect(region).toBeVisible()
@@ -226,7 +226,7 @@ for (const entity of ['category', 'tag', 'account']) {
 				.wait({ tier: 'global' })
 			return workspace.id
 		})
-		const selector = page.getByLabel('Current workspace', { exact: true })
+		const selector = page.getByLabel('Current Workspace', { exact: true })
 		await expect(selector.locator(`option[value="${workspaceId}"]`)).toHaveCount(1)
 		// Exercise a scope update while the modal owns focus, as with an external workspace change.
 		await selector.evaluate((node, id) => {

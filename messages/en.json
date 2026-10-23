@@ -260,13 +260,32 @@
 					"countPlural=*": "Archives"
 				}
 			}
+		],
+		"date": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Date",
+					"countPlural=*": "Dates"
+				}
+			}
+		],
+		"day": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Day",
+					"countPlural=*": "Days"
+				}
+			}
 		]
 	},
 	"labels": {
 		"cash": "Cash",
 		"actions": "Actions",
 		"currency": "Currency",
-		"date": "Date",
 		"amount": "Amount",
 		"description": "Description",
 		"memo": "Memo (additional notes)",
@@ -291,7 +310,14 @@
 		"next_subject": "Next {subject}",
 		"more_subjects": "More {subjects}",
 		"sample_subject_number": "Sample {subject} {number}",
-		"status_subject": "{subject} status"
+		"status_subject": "{subject} status",
+		"subjects_by_subject": "{subjects} by {subject}",
+		"start_subject": "Start {subject}",
+		"end_subject": "End {subject}",
+		"last_count_subjects": "Last {count} {subjects}",
+		"total_subject_amount": "Total {subject}: {amount}",
+		"subjects_in_period": "{subjects} in this period",
+		"no_subjects_in_period": "No {subjects} in this time period."
 	},
 	"actions": {
 		"save_subject": "Save {subject}",
@@ -422,7 +448,8 @@
 		"save_subject": "Could not save {subject}. Please try again.",
 		"load_subject": "Could not load {subject}. Please try again.",
 		"archive_subject": "Could not archive {subject}. Please try again.",
-		"already_selected_subject_name": "{subject} {name} is already selected."
+		"already_selected_subject_name": "{subject} {name} is already selected.",
+		"date_range_invalid": "Enter a start date and an end date on or after the start date."
 	},
 	"tags": {
 		"validation_error": "Enter a tag name and select an available category or no category."
@@ -492,17 +519,6 @@
 		"result_time_outcome_imported_existing_omitted": "Last sync: {time}. Outcome: {outcome}. Imported: {imported}; already present: {existing}; omitted: {omitted}."
 	},
 	"overview_expenses": {
-		"title": "Expenses by category",
-		"start": "Start date",
-		"end": "End date",
-		"last7": "Last 7 days",
-		"last30": "Last 30 days",
-		"all": "All categories",
-		"empty": "No expenses in this time period.",
-		"invalid": "Enter a start date and an end date on or after the start date.",
-		"transactions": "Expenses in this period",
-		"currency": "Currency",
-		"total": "Total expenses",
 		"chart": "Expense totals by category. Select a slice or a category below to filter transactions."
 	}
 }

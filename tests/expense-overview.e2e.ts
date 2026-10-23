@@ -108,14 +108,14 @@ async function seed(page: Page) {
 test('date presets, category selection, currencies, empty and invalid ranges', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 })
 	await seed(page)
-	const overview = page.getByRole('region', { name: 'Expenses by category', exact: true })
+	const overview = page.getByRole('region', { name: 'Expenses by Category', exact: true })
 	const legend = overview.locator('.legend')
-	await expect(overview).toContainText('Total expenses: $120.00')
+	await expect(overview).toContainText('Total Expenses: $120.00')
 	await expect(page.getByText('Outside range', { exact: true })).toHaveCount(0)
 	await legend.getByRole('button', { name: /Overview travel/ }).click()
 	await expect(page.getByText('Older travel', { exact: true })).toBeVisible()
 	await expect(page.getByText('Recent food', { exact: true })).toHaveCount(0)
-	await overview.getByRole('button', { name: 'All categories', exact: true }).click()
+	await overview.getByRole('button', { name: 'All Categories', exact: true }).click()
 	await expect(page.getByText('Recent food', { exact: true })).toBeVisible()
 	// Keep a node reference: date changes must resize existing arcs, not remount them.
 	await overview
@@ -124,8 +124,8 @@ test('date presets, category selection, currencies, empty and invalid ranges', a
 		.evaluate((node) => {
 			Reflect.set(window, 'overviewArc', node)
 		})
-	await overview.getByRole('button', { name: 'Last 7 days', exact: true }).click()
-	await expect(overview).toContainText('Total expenses: $30.00')
+	await overview.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
+	await expect(overview).toContainText('Total Expenses: $30.00')
 	const frames = await overview.locator('.chart').evaluate(async (chart) => {
 		const samples = []
 		for (let frame = 0; frame < 10; frame++) {
@@ -146,22 +146,22 @@ test('date presets, category selection, currencies, empty and invalid ranges', a
 			.first()
 			.evaluate((node) => Reflect.get(window, 'overviewArc') === node)
 	).toBe(true)
-	await overview.getByRole('button', { name: 'Last 30 days', exact: true }).click()
-	await expect(overview).toContainText('Total expenses: $120.00')
+	await overview.getByRole('button', { name: 'Last 30 Days', exact: true }).click()
+	await expect(overview).toContainText('Total Expenses: $120.00')
 	await overview.getByLabel('Currency').selectOption('EUR')
 	await expect(page.getByText('Euro expense', { exact: true })).toBeVisible()
 	await expect(page.getByText('Recent food', { exact: true })).toHaveCount(0)
-	await overview.getByLabel('Start date').fill('2000-01-01')
-	await overview.getByLabel('End date').fill('2000-01-02')
-	await expect(overview).toContainText('No expenses in this time period.')
-	await overview.getByLabel('Start date').fill('2001-01-01')
+	await overview.getByLabel('Start Date').fill('2000-01-01')
+	await overview.getByLabel('End Date').fill('2000-01-02')
+	await expect(overview).toContainText('No Expenses in this time period.')
+	await overview.getByLabel('Start Date').fill('2001-01-01')
 	await expect(overview.getByRole('status')).toContainText('Enter a start date')
 })
 
 test('slice clicks filter transactions and layout follows available width', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 })
 	await seed(page)
-	const overview = page.getByRole('region', { name: 'Expenses by category', exact: true })
+	const overview = page.getByRole('region', { name: 'Expenses by Category', exact: true })
 	const chart = overview.locator('.chart')
 	const list = overview.locator('.transactions')
 	const desktopChart = await chart.boundingBox()
@@ -170,7 +170,7 @@ test('slice clicks filter transactions and layout follows available width', asyn
 	expect(desktopList.x).toBeGreaterThan(desktopChart.x + desktopChart.width - 1)
 	await overview.locator('.chart path').filter({ visible: true }).first().click({ force: true })
 	await expect(overview.locator('.legend button[aria-pressed="true"]')).toHaveCount(1)
-	await overview.getByRole('button', { name: 'All categories', exact: true }).click()
+	await overview.getByRole('button', { name: 'All Categories', exact: true }).click()
 	await page.setViewportSize({ width: 390, height: 900 })
 	await page.getByRole('button', { name: 'Close Main navigation', exact: true }).click()
 	await expect
@@ -184,6 +184,6 @@ test('slice clicks filter transactions and layout follows available width', asyn
 		true
 	)
 	await page.emulateMedia({ reducedMotion: 'reduce' })
-	await overview.getByRole('button', { name: 'Last 7 days', exact: true }).click()
-	await expect(overview).toContainText('Total expenses: $30.00')
+	await overview.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
+	await expect(overview).toContainText('Total Expenses: $30.00')
 })

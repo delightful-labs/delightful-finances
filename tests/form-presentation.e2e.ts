@@ -141,7 +141,12 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 	context
 }) => {
 	await page.goto('/settings/workspace')
-	const name = page.getByLabel('Workspace name', { exact: true })
+	const selector = page
+		.getByRole('main')
+		.getByRole('combobox', { name: 'Select Workspace', exact: true })
+	await expect(selector.locator('option')).toHaveCount(2)
+	await selector.selectOption({ index: 1 })
+	const name = page.getByRole('main').getByRole('textbox', { name: 'Workspace name', exact: true })
 	const save = page.getByRole('main').getByRole('button', { name: 'Save', exact: true })
 	await expect(name).toBeEditable()
 	const original = await name.inputValue()
@@ -155,12 +160,16 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 	await name.fill('   ')
 	await expect(save).toBeEnabled()
 	await save.click()
-	await expect(page.getByRole('main').getByRole('alert')).toHaveText('Enter a workspace name.')
+	await expect(
+		page.getByRole('main').getByRole('alert').filter({ hasText: 'Enter a workspace name.' })
+	).toHaveText('Enter a workspace name.')
 	await name.fill('Offline edit mode workspace')
 	await expect(save).toBeEnabled()
 	await context.setOffline(true)
 	await save.click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Workspace name saved.')
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace name saved.' })
+	).toHaveText('Workspace name saved.')
 	await expect(save).toHaveText('Save')
 	await expect(save).toBeDisabled()
 	await expect(name).toBeEditable()

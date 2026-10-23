@@ -124,7 +124,7 @@ test('always-visible form supports reverted drafts, repeated offline saves and r
 	const seed = await seedTransaction(page)
 	await page.goto(`/expenses/${seed.id}`)
 	const amount = page.getByLabel('Amount', { exact: true })
-	const save = page.getByRole('button', { name: 'Save transaction', exact: true })
+	const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
 	await expect(amount).toHaveValue('12.34')
 	await expect(amount).toBeEnabled()
 	await expect(page.getByRole('button', { name: 'Edit transaction', exact: true })).toHaveCount(0)
@@ -171,14 +171,14 @@ for (const scenario of ['viewer', 'imported', 'archived'] satisfies (
 		await expect(page.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
 			'Editable ledger'
 		)
-		await expect(page.getByRole('button', { name: 'Save transaction', exact: true })).toHaveCount(0)
+		await expect(page.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveCount(0)
 	})
 }
 
 test('removing a tag alone enables Save and persists removal', async ({ page }) => {
 	const seed = await seedTransaction(page)
 	await page.goto(`/expenses/${seed.id}`)
-	const save = page.getByRole('button', { name: 'Save transaction', exact: true })
+	const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
 	await expect(save).toBeDisabled()
 	await page.getByRole('button', { name: 'Remove Historical', exact: true }).click()
 	await expect(save).toBeEnabled()
@@ -195,7 +195,7 @@ test('check details can be edited while payment conversion is unavailable', asyn
 	const check = page.locator('[name="checkNumber"]')
 	await expect(check).toHaveValue('100')
 	await check.fill('101')
-	await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await expect.poll(async () => (await persisted(page, seed.id)).checkNumber).toBe('101')
 })
 

@@ -5,7 +5,7 @@ for (const width of [390, 768, 769, 1280]) {
 		await page.setViewportSize({ width, height: 900 })
 		await page.emulateMedia({ reducedMotion: 'reduce' })
 		await page.goto('/accounts')
-		const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+		const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 		const drawer = page.locator('aside.site-drawer')
 		const mobile = width <= 768
 		await expect(toggle).toHaveAttribute('aria-expanded', String(!mobile))
@@ -31,7 +31,7 @@ for (const width of [390, 768, 769, 1280]) {
 		await expect(toggle).toHaveAttribute('aria-expanded', 'false')
 		await page.reload()
 		await expect(
-			page.getByRole('button', { name: 'Toggle navigation', exact: true })
+			page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 		).toHaveAttribute('aria-expanded', String(!mobile))
 	})
 }
@@ -42,7 +42,7 @@ test('resizing preserves disclosure state and navigation uses the current viewpo
 	await page.setViewportSize({ width: 1280, height: 900 })
 	await page.emulateMedia({ reducedMotion: 'reduce' })
 	await page.goto('/accounts')
-	const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+	const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 	const drawer = page.locator('aside.site-drawer')
 	await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 	await page.setViewportSize({ width: 390, height: 900 })

@@ -82,11 +82,11 @@ test('global keyboard developer menu saves both sample kinds and retains progres
 	const dialog = page.getByRole('dialog', { name: 'Developer menu', exact: true })
 	await expect(dialog).toBeVisible()
 	const income = dialog.getByRole('button', {
-		name: 'Add 25 sample income transactions',
+		name: 'Add 25 sample Income Transactions',
 		exact: true
 	})
 	const expense = dialog.getByRole('button', {
-		name: 'Add 25 sample expense transactions',
+		name: 'Add 25 sample Expense Transactions',
 		exact: true
 	})
 	await expect(income).toBeVisible()
@@ -97,7 +97,7 @@ test('global keyboard developer menu saves both sample kinds and retains progres
 	await expect(trigger).toBeFocused()
 	await page.locator('aside').getByRole('link', { name: 'Expenses', exact: true }).click()
 	await expect(
-		page.getByRole('main').getByRole('link', { name: /Sample transaction/ })
+		page.getByRole('main').getByRole('link', { name: /Sample Transaction/ })
 	).toHaveCount(25)
 	await openMenu(page)
 	await expect(dialog.getByRole('status')).toHaveText('Saved 25 of 25 sample transactions.')
@@ -110,10 +110,10 @@ test('global keyboard developer menu saves both sample kinds and retains progres
 	await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 	await page.locator('aside').getByRole('link', { name: 'Income', exact: true }).click()
 	await expect(
-		page.getByRole('main').getByRole('link', { name: /Sample transaction/ })
+		page.getByRole('main').getByRole('link', { name: /Sample Transaction/ })
 	).toHaveCount(25)
 	await page.locator('aside').getByRole('link', { name: 'Login', exact: true }).click()
-	await expect(page.getByRole('heading', { name: 'Restore an account', exact: true })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Restore Account', exact: true })).toBeVisible()
 	await openMenu(page)
 	await expect(income).toBeVisible()
 	await expect(expense).toBeVisible()
@@ -130,14 +130,14 @@ test('URL pages preserve totals, five slots, history, reload and filter reset', 
 	await expect(entries).toHaveCount(25)
 	await expect(page.getByLabel('Daily total: $201.00', { exact: true })).toBeVisible()
 	await expect(navigation.getByRole('listitem')).toHaveCount(7)
-	await expect(navigation.getByLabel('Previous page', { exact: true })).toHaveAttribute(
+	await expect(navigation.getByLabel('Previous Page', { exact: true })).toHaveAttribute(
 		'aria-disabled',
 		'true'
 	)
 	await navigation.getByRole('link', { name: 'Page 3', exact: true }).click()
 	await expect(page).toHaveURL('/expenses?other=keep&page=3')
 	await expect(navigation.locator('[aria-current="page"]')).toHaveText('3')
-	await navigation.getByRole('link', { name: 'Next page', exact: true }).click()
+	await navigation.getByRole('link', { name: 'Next Page', exact: true }).click()
 	await expect(navigation.getByRole('listitem')).toHaveCount(7)
 	await expect(navigation.locator('[aria-current="page"]')).toHaveText('4')
 	await page.goBack()
@@ -149,7 +149,7 @@ test('URL pages preserve totals, five slots, history, reload and filter reset', 
 	await navigation.getByRole('link', { name: 'Page 9', exact: true }).click()
 	await expect(entries).toHaveCount(1)
 	await expect(navigation.getByRole('listitem')).toHaveCount(7)
-	await expect(navigation.getByLabel('Next page', { exact: true })).toHaveAttribute(
+	await expect(navigation.getByLabel('Next Page', { exact: true })).toHaveAttribute(
 		'aria-disabled',
 		'true'
 	)

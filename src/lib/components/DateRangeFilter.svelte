@@ -15,16 +15,22 @@
 </script>
 
 <InputDate
-	label={m['overview_expenses.start']()}
+	label={m['labels.start_subject']({ subject: m['nouns.date']({ count: 1 }) })}
 	value={start}
 	max={end}
 	oninput={(event) => onchange(event.currentTarget.value, end)}
 />
 <InputDate
-	label={m['overview_expenses.end']()}
+	label={m['labels.end_subject']({ subject: m['nouns.date']({ count: 1 }) })}
 	value={end}
 	min={start}
 	oninput={(event) => onchange(start, event.currentTarget.value)}
 />
-<Button onclick={() => onpreset(7)}>{m['overview_expenses.last7']()}</Button>
-<Button onclick={() => onpreset(30)}>{m['overview_expenses.last30']()}</Button>
+{#each [7, 30] as days (days)}
+	<Button onclick={() => onpreset(days)}
+		>{m['labels.last_count_subjects']({
+			count: days,
+			subjects: m['nouns.day']({ count: days })
+		})}</Button
+	>
+{/each}
