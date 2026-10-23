@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { actorInspection } from '#lib/actor-inspection.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import {
 		createAccountArchiveMachine,
@@ -55,8 +54,7 @@
 		}
 	}
 	const actor = createActor(
-		createAccountArchiveMachine((request) => archiveAccount(db, request.accountId), observe),
-		actorInspection()
+		createAccountArchiveMachine((request) => archiveAccount(db, request.accountId), observe)
 	)
 	let archiveSnapshot = $state.raw(actor.getSnapshot())
 	const view = $derived(selectAccountArchiveView(archiveSnapshot))

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { actorInspection } from '#lib/actor-inspection.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscriptionOne, QuerySubscription } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
@@ -120,7 +119,7 @@
 		}
 	})
 	let observationRevision = 0
-	const samples = createActor(sampleMachine, actorInspection())
+	const samples = createActor(sampleMachine)
 	const sampleSnapshot = readable(samples.getSnapshot(), (set) => {
 		const subscription = samples.subscribe(set)
 		return () => subscription.unsubscribe()

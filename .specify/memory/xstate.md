@@ -272,10 +272,10 @@ configuration in `playwright.bank-sync.config.ts` for reproducible bank/readines
 The completed [orchestration ownership map](../../specs/008-actor-orchestration/architecture.md)
 records the application, bank and independent form roots. Keep diagnostic instrumentation at existing
 actor creation boundaries; an inspection requirement does not justify reparenting actors or adding a
-registry, bus or generic supervisor. The development-only [inspection adapter](../../src/lib/actor-inspection.ts)
-projects XState inspection events synchronously into bounded anonymous metadata. Never expose raw
-inspection events, actor references, snapshot values/context/output/error, arbitrary names or action
-parameters to logs or browser tools. Match any new diagnostic label/event name against a fixed allowlist.
+registry, bus or generic supervisor. Use XState's built-in inspection API and evaluate Stately
+Inspector before adding custom tooling. The custom trace adapter was removed at the user's request.
+Any future inspection integration must exclude credentials and private finance payloads; no inspector
+is currently configured.
 
 Shared SDK session ownership is distinct from a rendered layout's actor lifetime. Coordinate known
 identity-changing SDK calls after workspace drain; retain issued calls until settlement, and reattach

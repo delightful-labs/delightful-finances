@@ -109,10 +109,9 @@ the application/form descendants without changing parentage or creating a global
 - Pica owns its shared worker pool; avatar cleanup releases owned bitmap/canvas resources, not private
   SDK worker fields. IndexedDB transaction activity constraints still apply to journal boundaries.
 - Browser online status is a hint, never proof of SDK delivery. Finance stays useful offline.
-- Inspection is development-only, opt-in, bounded and redacted. It omits private state values, context,
-  arbitrary identifiers, payloads, action parameters, outputs and errors. It is not a persisted audit
-  trail, debugger with actor access, production telemetry, or PWA inspection. Bounded histories can
-  omit earlier causes. See [inspection](inspection.md) for usage and verification.
+- The custom inspector was removed at the user's request. No replacement is configured. Future
+  diagnostics should evaluate XState/Stately tooling and exclude credentials and private payloads;
+  see the [inspection decision](inspection.md).
 - Validation evidence is scoped. Passing these checks does not claim a final rerun of all unrelated
   finance, permissions, provider, cross-device and PWA browser suites.
 

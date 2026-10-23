@@ -1,8 +1,8 @@
 # Actor orchestration boundaries
 
-Status: complete. Workspace, bank, generic form, application/session and opt-in inspection work is
-implemented and verified. D010–D012 were authorized as one combined implementation/verification batch.
-The [inspection plan](inspection.md) records final checks: 1,049 unit tests, 21 browser checks, static
+Status: complete. Workspace, bank, generic form, application/session work is
+implemented and verified. The custom inspector was subsequently removed at the user’s request. D010–D012 were authorized as one combined implementation/verification batch.
+The [inspection plan](inspection.md) records the removal decision; historical checks before removal passed 1,049 unit tests, 21 browser checks, static
 checks and production build. The [final architecture](architecture.md) records ownership and limits.
 [spec.md](spec.md) defines the requirements.
 The current workspace ownership tree and creation/integrity workflows are maintained in
@@ -60,7 +60,7 @@ and controller code stay unchanged.
 The [application/session audit](session-audit.md) records current ownership, retry lifetime and recovery/drain
 findings. The focused application retry change is reviewed and verified with 88 relevant unit tests, four browser checks and passing static checks; SDK integration and recovery
 are reviewed and verified in the [focused recovery/drain slice](session-recovery.md).
-The [inspection boundary](inspection.md) covers the existing actor roots without changing ownership.
+The [inspection decision](inspection.md) records removal of custom tooling; no inspector is configured.
 The [final architecture](architecture.md) records ownership diagrams, proven redundant code removed
 and retained SDK/platform limits. Only unused startup observation commands and unused workspace
 snapshot forwarding were removed in the final cleanup. No broad controller or actor consolidation.
@@ -79,6 +79,5 @@ passed 39 related unit tests and three creation/recovery browser checks, plus bo
 These are scoped results, not a final full application/PWA rerun. Reproducible commands and evidence
 limits are in [workspace validation](../006-multiple-workspaces/quickstart.md).
 
-The final follow-through passed all 1,049 src/lib unit tests, the 12 diagnostics/shared-form browser
-checks and nine recovery browser checks, static checks and the production build. No raw data is exposed
-by inspection; independent roots retain their existing owners. All remaining task markers are closed.
+Before the custom inspector was removed, the final follow-through passed all 1,049 src/lib unit tests, the 12 diagnostics/shared-form browser
+checks and nine recovery browser checks, static checks and the production build. Independent roots retain their existing owners. All remaining task markers are closed.

@@ -44,14 +44,14 @@ Bank orchestration is complete through the focused review cycles below. D001's s
 
 ## Completed: inspection and architecture follow-through — final combined batch
 
-- [x] D010 Design opt-in actor-system inspection of lifetimes and event causality with sensitive payloads excluded (FR-015). Design and review are recorded in [inspection.md](inspection.md).
-- [x] D011 After separate scope approval, implement and review diagnostics; then verify correlation and absence of credentials/private payloads (FR-015). Implemented and source-reviewed under the combined authorization; 1,049 unit tests, 21 browser checks, static checks and the production build pass. See [inspection.md](inspection.md).
+- [x] D010 Design opt-in actor-system inspection of lifetimes and event causality with sensitive payloads excluded (FR-015). The subsequent user-directed removal is recorded in [inspection.md](inspection.md).
+- [x] D011 After separate scope approval, implement and review diagnostics; then verify correlation and absence of credentials/private payloads (FR-015). Historically implemented and source-reviewed under the combined authorization; subsequently removed at the user’s request, with no replacement configured. Before removal, 1,049 unit tests, 21 browser checks, static checks and the production build passed. See [inspection.md](inspection.md).
 - [x] D012 Reconcile lessons from completed subsystem audits into orchestration memory and remove only abstractions demonstrated to be redundant. Record final ownership diagrams and remaining exceptions (FR-013–FR-015). Completed in [architecture.md](architecture.md), XState memory and the workspace plan; removed only unused startup status commands and workspace snapshot forwarding.
 
 ## Completion
 
 All workspace and D001–D012 orchestration work is complete. The user separately authorized the final
-combined design/implementation/verification pass. Final validation: 1,049 unit tests across 68 src/lib
+combined design/implementation/verification pass. Historical validation before inspector removal: 1,049 unit tests across 68 src/lib
 files, 21 relevant browser checks, both static checks, Prettier, diff checks and production build.
 Browser coverage is scoped to diagnostics, shared forms and recovery; historical domain checks remain
 linked to their focused implementation plans. No full unrelated finance/PWA browser rerun is claimed.

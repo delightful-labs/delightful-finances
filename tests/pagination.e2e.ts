@@ -134,8 +134,16 @@ test('URL pages preserve totals, five slots, history, reload and filter reset', 
 		'aria-disabled',
 		'true'
 	)
+	const workspaceId = new URL(page.url()).searchParams.get('workspace')
+	expect(workspaceId).not.toBeNull()
 	await navigation.getByRole('link', { name: 'Page 3', exact: true }).click()
-	await expect(page).toHaveURL('/expenses?other=keep&page=3')
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === '/expenses' &&
+			url.searchParams.get('other') === 'keep' &&
+			url.searchParams.get('page') === '3' &&
+			url.searchParams.get('workspace') === workspaceId
+	)
 	await expect(navigation.locator('[aria-current="page"]')).toHaveText('3')
 	await navigation.getByRole('link', { name: 'Next Page', exact: true }).click()
 	await expect(navigation.getByRole('listitem')).toHaveCount(7)
@@ -155,7 +163,13 @@ test('URL pages preserve totals, five slots, history, reload and filter reset', 
 	)
 	await expect(page.getByLabel('Daily total: $201.00', { exact: true })).toBeVisible()
 	await navigation.getByRole('link', { name: 'Page 1', exact: true }).click()
-	await expect(page).toHaveURL('/expenses?other=keep')
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === '/expenses' &&
+			url.searchParams.get('other') === 'keep' &&
+			!url.searchParams.has('page') &&
+			url.searchParams.get('workspace') === workspaceId
+	)
 	await page.goto('/expenses?page=999')
 	await expect(navigation.locator('[aria-current="page"]')).toHaveText('9')
 	await page.goto('/expenses?page=invalid')
@@ -163,8 +177,13 @@ test('URL pages preserve totals, five slots, history, reload and filter reset', 
 	await page.goto('/expenses?page=4')
 	await expect(navigation.locator('[aria-current="page"]')).toHaveText('4')
 	const accounts = await openSidebarSection(page, 'Accounts')
-	await accounts.getByRole('checkbox', { name: 'Show Pagination account', exact: true }).uncheck()
-	await expect(page).toHaveURL('/expenses')
+	await accounts.getByRole('checkbox', { name: 'Pagination account', exact: true }).uncheck()
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === '/expenses' &&
+			!url.searchParams.has('page') &&
+			url.searchParams.get('workspace') === workspaceId
+	)
 	await expect(navigation).toHaveCount(0)
 })
 

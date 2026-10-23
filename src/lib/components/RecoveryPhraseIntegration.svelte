@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { actorInspection } from '#lib/actor-inspection.js'
 	import { onMount } from 'svelte'
 	import { fromStore, readable } from 'svelte/store'
 	import { createActor } from 'xstate'
@@ -23,7 +22,7 @@
 				throw new Error('Recovery identity changed')
 			return RecoveryPhrase.fromSecret(exportLocalFirstSecret(account))
 		}),
-		{ input: identity(), ...actorInspection() }
+		{ input: identity() }
 	)
 	const snapshot = fromStore(
 		readable(actor.getSnapshot(), (set) => {

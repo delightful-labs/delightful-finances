@@ -19,7 +19,7 @@ async function restoreAccount(page: Page, phrase: string) {
 	await page.goto('/login')
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL((url) => url.pathname === '/')
 	await prepareSidebar(page)
 }
 
@@ -541,7 +541,7 @@ test('restore session failures retain identity and retry without exposing the re
 	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL((url) => url.pathname === '/')
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')
 	await expect(
@@ -655,7 +655,7 @@ test('recoverable restore failure keeps the original client and generic feedback
 	}
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL((url) => url.pathname === '/')
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')
 	await expect(page.getByRole('cell', { name: 'Recoverable checking', exact: true })).toBeVisible()

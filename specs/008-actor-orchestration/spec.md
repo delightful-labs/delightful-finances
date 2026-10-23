@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-22
 
-**Status**: Workspace phase implemented and verified after review. Bank setup, mapping, write settlement and availability/history reports are reviewed and verified. The generic form source audit is complete; submission progress reports, the readiness adapter and transaction creation/editing ownership are reviewed and verified. Avatar save ownership is reviewed and verified; generic form boundary work is complete. Application/session supervision, including retry ownership and recovery/workspace drain coordination, is reviewed and verified. Opt-in inspection and final architecture reconciliation are complete and verified; all feature tasks are closed.
+**Status**: Workspace phase implemented and verified after review. Bank setup, mapping, write settlement and availability/history reports are reviewed and verified. The generic form source audit is complete; submission progress reports, the readiness adapter and transaction creation/editing ownership are reviewed and verified. Avatar save ownership is reviewed and verified; generic form boundary work is complete. Application/session supervision, including retry ownership and recovery/workspace drain coordination, is reviewed and verified. Final architecture reconciliation is complete and verified. The custom inspector was subsequently removed at the user’s request; no replacement is configured.
 
 **Input**: Specify clearer actor ownership, lifetimes, communication and cleanup. Implement only workspace-related orchestration now; retain unfinished work for other areas in the repository.
 
@@ -100,7 +100,7 @@ A maintainer can later improve bank, form and application orchestration using do
 
 - **FR-013**: Bank orchestration, generic forms and application/session orchestration MUST remain separate unchecked follow-up scopes until explicitly resumed.
 - **FR-014**: Each deferred subsystem MUST receive its own ownership/lifetime audit before refactoring; known workspace patterns MUST NOT be copied mechanically without checking its resource semantics.
-- **FR-015**: Later cross-subsystem diagnostics MUST make actor relationships and event causality inspectable without exposing provider credentials or private finance payloads.
+- **FR-015**: If cross-subsystem diagnostics are added, they MUST make actor relationships and event causality inspectable without exposing provider credentials or private finance payloads.
 
 ### Key Entities
 
@@ -131,7 +131,7 @@ A maintainer can later improve bank, form and application orchestration using do
 
 The user explicitly resumed each later subsystem and authorized D010–D012 together as one design,
 implementation and verification batch. [All tasks](tasks.md) are complete. Final ownership, cleanup
-and retained SDK/platform limits are in [architecture.md](architecture.md). Optional development-only
-inspection and its privacy boundary are documented in [inspection.md](inspection.md). Final checks
-pass: 1,049 src/lib unit tests, 21 focused browser checks, both static checks and production build.
+and retained SDK/platform limits are in [architecture.md](architecture.md). The subsequent user-directed removal of custom
+inspection and the future tooling boundary are documented in [inspection.md](inspection.md). Historical checks before removal
+passed: 1,049 src/lib unit tests, 21 focused browser checks, both static checks and production build.
 This is scoped orchestration completion, not a claim that unrelated product/PWA browser suites were rerun.
