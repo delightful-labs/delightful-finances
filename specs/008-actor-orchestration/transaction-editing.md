@@ -30,7 +30,8 @@ is needed merely because their SDK cleanup protocol is the same.
 ## Guarded invariants and planning
 
 - Read the captured transaction ID in the owned transaction before any mutation. Reject missing,
-  imported, wrong-workspace or wrong-kind rows. Preserve the existing restriction against check
+  wrong-workspace, wrong-kind or mismatched-provenance rows. Imported transactions
+  are editable under the same current account authority; source and provider ID remain immutable. Preserve the existing restriction against check
   payment conversion and moving an existing check to another account.
 - Read tag links, scoped tags (including archived tags) and check details as one related snapshot.
   For check input, require exactly one details row matching the existing `checkDetailsId`.
@@ -106,3 +107,72 @@ restrictions, read-only historical transactions, plus desktop/mobile creation, c
 pagination/reload and repeated offline sample batches. Creation and shared-form regressions were
 included because both composition factories share readiness/schema policy. No browser assertions
 needed changes in this cycle.
+
+## Imported transaction editing model
+
+User-approved behavior: imported income and expenses support editing category,
+tags, description and memo along with the existing transaction fields. Preserve
+source/externalId, row identity and workspace; preserve imported income’s absent
+payment method. Do not fabricate a manual source or cash payment. Existing check
+conversion/account restrictions remain until the separate check-domain redesign.
+
+Reuse the existing scoped edit owner and transaction-owning child. Validation
+binds provenance from the observed transaction, never submitted form fields.
+Readiness withdraws capability for invalid references or unusable provider identity.
+The persistence machine remains validate → open → read transaction → guarded
+eligibility (scope/kind/provenance/check compatibility) → read relationships →
+guarded detail compatibility → plan → stage → commit → local settle. Precommit
+interruption drains issued reads and rolls back; issued commits settle before
+reporting cancellation/scope change/shutdown. Promise actors remain individual
+leaf operations; no new workflow is hidden in an async helper.
+
+Jazz update policy rechecks immutable workspace/kind/source/externalId, including
+direct writes. The existing bank importer’s findingExisting transition skips a
+known stable provider row without updating it, preserving user edits and preventing
+duplicate imports. No importer writes or provider requests change in this slice.
+
+Four implementation files: validation/transactions.ts, machines/transaction-entry.ts,
+machines/transaction-edit-persistence.ts and permissions.ts. No UI strings, schema
+changes or actor lifetime changes. Review before adding/running coverage for
+imported income/expense edits, trusted provenance, unchanged/reverted drafts, tags,
+repeat-import preservation, direct-write provenance changes and existing manual/
+check/authorization regressions.
+
+Implementation ready for review: the four planned production files now bind
+observed provenance, accept imported edit variants, retain pristine/reverted
+imported-income drafts, and enforce immutable workspace/kind/source/externalId.
+The persistence write plan never writes source or externalId; absent imported
+payment methods remain null. Recursive review confirms all changed logic is in
+existing guarded eligibility or synchronous validation/draft transformations;
+no promise actor or helper gained hidden orchestration. Ownership, interruption
+and issued-write settlement remain in the existing statechart. No tests added
+or run for this slice before implementation approval.
+
+Static review: `pnpm check` passes with zero errors/warnings; focused Prettier and
+`git diff --check` pass. Runtime editing and repeat-import behavior are not yet
+verified for this slice; coverage awaits implementation approval.
+
+## Imported editing approved verification
+
+The user approved implementation testing. All 178 focused tests pass across five
+files: canonical/form validation, readiness/pristine draft comparison, edit-machine
+staging/rollback, real SDK authority provenance checks, and importer skip-existing
+behavior. Tests prove forged form provenance is ignored in favor of the observed
+row; imported income stays without paymentMethod; source/externalId edits reject;
+category/tag/description/memo changes persist while identity fields are untouched.
+
+The eight existing transaction-edit browser cases passed, including repeated
+offline manual saves, archived/viewer restrictions, check details, metadata and
+large amounts. Both imported income/expense cases pass offline edits and reloads
+with changed category, tags, amount, description and memo, retained archived tags,
+unchanged provenance and pristine/reverted Save behavior. Their initial failure
+was a test locator expecting a combobox when TagInput had no suggestions; the
+corrected locator targets textbox/combobox roles and avoids the suggestion list.
+
+A real manual bank-sync browser scenario passes: import, edit a provider expense,
+repeat explicit sync, and verify edited amount/description/memo remain with the
+same externalId and exactly two imported rows. Its existing provider-failure
+branch still emits the expected sanitized warning. Browser runs use disposable
+in-memory Jazz through dev:agent on port 5180. Interrupted/server-startup attempts
+were not counted as successful runs. No production changes were needed during
+verification. Type, focused formatting and whitespace checks pass.

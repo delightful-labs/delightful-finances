@@ -579,3 +579,46 @@ describe('edit persistence composition', () => {
 		}
 	)
 })
+
+describe('imported editing readiness and pristine drafts', () => {
+	it.each(['expense', 'income'] satisfies TransactionDetail['kind'][])(
+		'allows %s edits with a pristine and reverted draft',
+		(kind) => {
+			const f = editFixture()
+			f.records({
+				rows: [{ ...existingTransaction, kind, source: 'simplefin', externalId: 'provider-id' }]
+			})
+			const observation = f.facts()
+			expect(policy({ ...observation, binding })).toEqual({ kind: 'ready' })
+			const options = createTransactionEditFormOptions({
+				binding: f.db,
+				db: f.db,
+				observe: () => observation
+			})
+			if (options.mode !== 'edit') throw new Error('Expected edit mode')
+			const initial = options.initialValues(observation)
+			expect(initial.source).toEqual({ source: 'simplefin', externalId: 'provider-id' })
+			const draft = {
+				accountId: existingTransaction.accountId,
+				categoryId: existingTransaction.categoryId,
+				amount: '1.00',
+				bookedOn: existingTransaction.bookedOn,
+				tags: [],
+				description: '',
+				memo: ''
+			}
+			expect(options.valuesEqual(draft, initial)).toBe(true)
+			expect(options.valuesEqual({ ...draft, tags: ['Added'] }, initial)).toBe(false)
+			expect(options.valuesEqual({ ...draft, memo: 'Edited' }, initial)).toBe(false)
+			expect(options.valuesEqual({ ...draft, memo: ' ' }, initial)).toBe(true)
+		}
+	)
+	it('blocks an imported row with no external identity', () => {
+		const f = editFixture()
+		f.records({ rows: [{ ...existingTransaction, source: 'simplefin', externalId: null }] })
+		expect(policy({ ...f.facts(), binding })).toEqual({
+			kind: 'blocked',
+			reason: 'unavailableReference'
+		})
+	})
+})

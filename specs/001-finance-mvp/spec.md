@@ -150,7 +150,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 - **NFR-001**: Read/write flows for already available data MUST not require connectivity.
 - **NFR-002**: Jazz permissions MUST prevent unauthorized organization/account access. SimpleFIN credentials MUST be persisted only as passkey-protected ciphertext bound to the connecting user, organization, and connection; Jazz membership or admin status alone MUST NOT provide a usable credential.
-- **NFR-003**: Money handling MUST avoid floating-point arithmetic and preserve the stored currency code.
+- **NFR-003**: Money handling MUST preserve exact integer minor units and the stored currency code. Manual amount entry MUST NOT impose a signed-32-bit or other product-specific ceiling. Parse decimal entry exactly before converting to the current JavaScript number representation; reject values beyond its safe-integer range rather than rounding or losing cents.
 - **NFR-004**: Main flows MUST work on mobile-size screens and with keyboard/screen-reader accessible controls.
 - **NFR-005**: Native SvelteKit service-worker caching MUST cover public page shells and build assets and coexist with Jazz's persistence and synchronization. Jazz data/auth/sync requests MUST NOT be added to the service-worker runtime cache.
 - **NFR-006**: The automated test suite MUST include unit tests and browser-level Playwright tests and run reliably in local development and CI.
@@ -351,3 +351,15 @@ retain their existing behavior.
 Incoming transaction content retains its natural rendered size during the transition,
 anchored at the top left. Loading transaction data or changing the form height during
 the animation must not stretch or squash the incoming page snapshot.
+
+### Editing imported transactions
+
+Imported income and expenses MUST support authorized edits to categories, tags,
+description, memo, amount, business date and account through the transaction form.
+Edits MUST preserve transaction identity, workspace, kind, provider source and
+external ID. Imported income without a payment method MUST remain without one;
+editing MUST NOT convert it to manual income or default it to cash. Repeating
+manual bank sync MUST recognize the existing provider identity and preserve user
+edits without creating a duplicate or overwriting the transaction. Existing
+account/category validation, permissions, attribution, local durability and scope/
+shutdown settlement rules apply. Check-object redesign remains a separate slice.

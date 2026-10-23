@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function seedTransaction(
 	page: Page,
-	scenario: 'manual' | 'imported' | 'archived' | 'viewer' | 'check' = 'manual'
+	scenario: 'manual' | 'imported' | 'imported-income' | 'archived' | 'viewer' | 'check' = 'manual'
 ) {
 	await page.goto('/accounts')
 	await expect(
@@ -32,7 +32,7 @@ async function seedTransaction(
 			.insert(app.categories, {
 				organizationId: organization.id,
 				name: 'Editable category',
-				kind: scenario === 'check' ? 'income' : 'expense',
+				kind: scenario === 'check' || scenario === 'imported-income' ? 'income' : 'expense',
 				isSystem: false
 			})
 			.wait({ tier: 'local' })
@@ -62,14 +62,20 @@ async function seedTransaction(
 						paymentMethod: 'check',
 						checkDetails: { checkNumber: '100', checkDate: base.bookedOn }
 					}
-				: {
-						...base,
-						kind: 'expense',
-						source:
-							scenario === 'imported'
-								? { source: 'simplefin', externalId: 'imported-edit-test' }
-								: { source: 'manual' }
-					}
+				: scenario === 'imported-income'
+					? {
+							...base,
+							kind: 'income',
+							source: { source: 'simplefin', externalId: 'imported-edit-test' }
+						}
+					: {
+							...base,
+							kind: 'expense',
+							source:
+								scenario === 'imported'
+									? { source: 'simplefin', externalId: 'imported-edit-test' }
+									: { source: 'manual' }
+						}
 		const facts = {
 			identityId: snapshot.account.id,
 			organizationId: organization.id,
@@ -138,6 +144,11 @@ async function persisted(page: Page, id: string) {
 		return {
 			amountMinor: row?.amountMinor,
 			memo: row?.memo,
+			description: row?.description,
+			categoryId: row?.categoryId,
+			source: row?.source,
+			externalId: row?.externalId,
+			paymentMethod: row?.paymentMethod,
 			links: links.map(({ id, tagId }) => ({ id, tagId })),
 			checkNumber: details[0]?.checkNumber
 		}
@@ -184,9 +195,7 @@ test('always-visible form supports reverted drafts, repeated offline saves and r
 	)
 })
 
-for (const scenario of ['viewer', 'imported', 'archived'] satisfies (
-	'viewer' | 'imported' | 'archived'
-)[]) {
+for (const scenario of ['viewer', 'archived'] satisfies ('viewer' | 'archived')[]) {
 	test(`${scenario} transaction remains visible as a non-editable form`, async ({ page }) => {
 		const seed = await seedTransaction(page, scenario)
 		await page.goto(`/expenses/${seed.id}`)
@@ -273,5 +282,96 @@ for (const viewport of [
 		await page.reload()
 		await expect(amount).toHaveValue('12.34')
 		await expect(metadata).not.toHaveAttribute('open')
+	})
+}
+
+test('manual amount entry saves above the former ceiling with exact cents', async ({ page }) => {
+	const seed = await seedTransaction(page)
+	await page.goto(`/expenses/${seed.id}`)
+	const amount = page.getByLabel('Amount', { exact: true })
+	const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
+	for (const [text, amountMinor] of [
+		['21474836.48', 2_147_483_648],
+		['90071992547409.91', Number.MAX_SAFE_INTEGER]
+	] satisfies [string, number][]) {
+		await amount.fill(text)
+		await save.click()
+		await expect(save).toBeDisabled()
+		await expect.poll(() => persisted(page, seed.id)).toMatchObject({ amountMinor })
+		await page.reload()
+		await expect(amount).toHaveValue(text)
+	}
+	await amount.fill('90071992547409.92')
+	await save.click()
+	await expect(amount).toHaveAttribute('aria-invalid', 'true')
+	await expect(page.getByText('Transaction saved.', { exact: true })).toHaveCount(0)
+	await expect
+		.poll(() => persisted(page, seed.id))
+		.toMatchObject({ amountMinor: Number.MAX_SAFE_INTEGER })
+})
+
+for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
+	test(`imported ${kind} supports category, tag and note edits offline without changing provenance`, async ({
+		page,
+		context
+	}) => {
+		const seed = await seedTransaction(page, kind === 'expense' ? 'imported' : 'imported-income')
+		await page.goto(`/${kind === 'expense' ? 'expenses' : 'income'}/${seed.id}`)
+		const amount = page.getByLabel('Amount', { exact: true })
+		const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
+		await expect(amount).toBeEnabled()
+		await expect(save).toBeDisabled()
+		if (kind === 'income')
+			await expect(page.getByLabel('Payment method', { exact: true })).toHaveCount(0)
+		const memo = page.getByLabel('Memo (additional notes)', { exact: true })
+		await memo.fill('Changed')
+		await expect(save).toBeEnabled()
+		await memo.fill('Original memo')
+		await expect(save).toBeDisabled()
+		const category = page.getByLabel('Category', { exact: true })
+		const replacementId = await category
+			.locator('option')
+			.evaluateAll((options) =>
+				options
+					.find(
+						(option) =>
+							option instanceof HTMLOptionElement &&
+							!option.disabled &&
+							option.value &&
+							option.label !== 'Editable category'
+					)
+					?.getAttribute('value')
+			)
+		if (!replacementId) throw new Error('Missing alternate category')
+		await context.setOffline(true)
+		await category.selectOption(replacementId)
+		await amount.fill('56.78')
+		await page.getByLabel('Description', { exact: true }).fill('User description')
+		await memo.fill('User notes')
+		const tags = page
+			.getByRole('textbox', { name: 'Tags', exact: true })
+			.or(page.getByRole('combobox', { name: 'Tags', exact: true }))
+		await tags.fill('User tag')
+		await tags.press('Enter')
+		await save.click()
+		await expect(save).toBeDisabled()
+		await expect
+			.poll(() => persisted(page, seed.id))
+			.toMatchObject({
+				amountMinor: 5678,
+				description: 'User description',
+				memo: 'User notes',
+				categoryId: replacementId,
+				source: 'simplefin',
+				externalId: 'imported-edit-test',
+				paymentMethod: null
+			})
+		await expect.poll(async () => (await persisted(page, seed.id)).links.length).toBe(2)
+		await context.setOffline(false)
+		await page.reload()
+		await expect(memo).toHaveValue('User notes')
+		await expect(amount).toHaveValue('56.78')
+		await expect(page.getByRole('button', { name: 'Remove User tag', exact: true })).toBeVisible()
+		await expect(save).toBeDisabled()
 	})
 }

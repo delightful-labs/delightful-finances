@@ -462,3 +462,39 @@ Verification: 177 focused tests and four focused browser scenarios pass; the
 12 SDK authority tests also pass separately. Application/service-worker and
 browser-test type checks pass. See [tag-kinds.md](tag-kinds.md#required-kind-verification)
 for scope, fixture updates, and limits. No data reset or deployment performed.
+
+## Remove the unrequested amount ceiling
+
+- [x] Remove the signed-32-bit amount ceiling and parse decimal digits exactly before safe Number conversion; align the money requirement and plan.
+- [x] Identify the actual signed-32-bit SDK storage restriction through direct-write tests and change transaction amount storage to bigint with a validated Number adapter.
+- [x] Review the original parser implementation (user approved implementation/verification).
+- [x] Review the additional bigint storage change discovered necessary during SDK verification (user approved with “continue”).
+- [x] Replace obsolete ceiling expectations and verify above-old-limit entry, exact safe-integer boundaries, no rounded acceptance, and direct SDK persistence above the old limit.
+
+Verification after bigint storage approval: all 94 focused tests pass across
+money parsing/formatting, transaction validation and the real SDK permission
+authority. Both 2,147,483,648 and Number.MAX_SAFE_INTEGER minor units persist
+without truncation and read back through a remote-confirmed SDK query. The
+focused Playwright amount-entry scenario passes on disposable in-memory Jazz at
+port 5180: save/reload above the old limit, exact maximum cents, and rejection
+one cent beyond the safe-integer boundary without changing the saved amount.
+Application/service-worker and browser-test type checks, focused formatting and
+whitespace checks pass. No schema deployment, reset or commit performed.
+
+## Imported transaction editing
+
+- [x] Record imported editing requirements and the existing-machine ownership/guard model.
+- [x] Implement observed provenance in validation, imported readiness/persistence support and immutable provenance at the Jazz boundary.
+- [x] Review the implementation before tests (user approved with “do tests”).
+- [x] After approval, verify imported expense/income edits, categories/tags/notes and other editable fields, absent payment-method retention, provenance spoof/change rejection, pristine/reverted drafts, repeat-import preservation and existing manual/check/offline/access behavior.
+
+Imported editing verification: all 178 focused unit/SDK tests pass across form
+validation, edit readiness, edit persistence, permissions and provider import
+decisions. The eight existing transaction-edit browser cases passed in the initial
+run; both new imported income/expense cases passed in a focused rerun after test
+locator corrections. The updated bank connection/manual-sync scenario also passes
+and confirms repeat sync retains user description/memo/amount and exactly two
+provider rows. All browser work used disposable in-memory Jazz on port 5180.
+Application/service-worker and browser-test type checks, focused formatting and
+whitespace checks pass. No production fixes were needed during verification.
+No commits, existing-data resets or schema deployments performed.

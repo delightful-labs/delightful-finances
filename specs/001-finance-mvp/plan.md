@@ -429,3 +429,50 @@ case pass. Static application/service-worker and browser-test checks pass. SDK
 checks use a temporary authority and browser checks use disposable in-memory
 storage. Existing environments have not been reset or deployed; schema/data
 transition remains a separate step. See tag-kinds.md for verification details.
+
+## Remove the unrequested amount ceiling
+
+Remove the signed-32-bit minor-unit ceiling from manual amount parsing. Parse the
+whole and fractional decimal digits into BigInt before any conversion to Number;
+only convert a value within Number.MAX_SAFE_INTEGER. This is a pure synchronous
+transformation, with no workflow effects, resources or actors. SDK verification
+found that Jazz `int` is signed 32-bit, so the transaction amount storage must also
+change to `bigint`. Its TypeScript transform validates safe nonnegative integers
+and exposes the existing Number-valued domain contract; it stores BigInt and
+rejects unsafe values rather than rounding. This storage revision requires review
+before its tests run. Existing databases need an explicit schema/data transition
+before deployment; no reset or deployment is performed here.
+Keep the existing nonnegative two-decimal entry syntax and error presentation.
+The remaining bound reflects exact representation, not an approved product limit.
+Review this focused change before replacing the obsolete ceiling test and adding
+exact safe-integer-boundary coverage or running relevant tests. Imported editing
+and check-domain design remain separate review cycles.
+
+Initial verification: parsing and validation tests passed, but both new direct SDK
+large-value persistence tests failed because `s.int()` rejects values above
+2,147,483,647. The original attribution of the ceiling as application-only was
+incorrect. Changed source storage to `s.bigint()` with a validated Number adapter;
+this revised schema implementation was subsequently reviewed and approved.
+
+Approved bigint verification: all 94 focused tests and the large-amount browser
+scenario pass, including remote SDK confirmation, exact boundary cents, reload
+and invalid-input persistence preservation. The source storage change is verified
+against fresh disposable stores only; existing environments still require a
+separate schema/data transition. No deployment, data reset or commit performed.
+
+## Imported transaction editing
+
+Follow the reviewed transaction edit ownership boundary and the model recorded in
+[transaction-editing.md](../008-actor-orchestration/transaction-editing.md#imported-transaction-editing-model).
+Bind immutable provenance from observed rows during validation, accept supported
+manual/imported variants in readiness and persistence guards, preserve absent
+imported payment methods, and enforce identity invariants in Jazz update rules.
+Existing import identity lookups skip known records, so they preserve edited values.
+Review the four-file implementation before tests; do not start the check-object
+redesign in this slice.
+
+Imported editing verification is complete: 178 focused unit/SDK tests, eight
+existing transaction-edit browser cases, two new offline imported-edit browser
+cases, and one repeat manual bank-sync case pass. Tests required fixture/locator
+corrections only; no production fixes. See the transaction-editing model for
+coverage and execution details. Check-object redesign remains a separate slice.

@@ -259,3 +259,62 @@ describe('income payment method permissions', () => {
 		await db.expectDenied((writer) => writer.update(app.transactions, row.id, { source: 'manual' }))
 	})
 })
+
+describe('exact large money storage', () => {
+	it.each([2_147_483_648, Number.MAX_SAFE_INTEGER])(
+		'persists %s minor units through the SDK authority without truncation',
+		async (amountMinor) => {
+			const row = await db
+				.insert(app.transactions, { ...transaction('expense'), amountMinor })
+				.wait({ tier: 'global' })
+			const saved = await db.one(app.transactions.where({ id: row.id }), { tier: 'remote' })
+			expect(saved?.amountMinor).toBe(amountMinor)
+		}
+	)
+})
+
+describe('immutable transaction provenance', () => {
+	it.each(['expense', 'income'] satisfies ('expense' | 'income')[])(
+		'allows %s annotations but rejects provider identity and source changes',
+		async (kind) => {
+			const row = await db
+				.insert(app.transactions, {
+					...transaction(kind),
+					source: 'simplefin',
+					externalId: `immutable-${kind}`
+				})
+				.wait({ tier: 'global' })
+			await db
+				.update(app.transactions, row.id, { description: 'User description', memo: 'User notes' })
+				.wait({ tier: 'global' })
+			await db.expectDenied((writer) =>
+				writer.update(app.transactions, row.id, { externalId: 'changed' })
+			)
+			await expect(
+				Promise.resolve().then(() =>
+					db.update(app.transactions, row.id, { externalId: null }).wait({ tier: 'global' })
+				)
+			).rejects.toThrow()
+			await db.expectDenied((writer) =>
+				writer.update(app.transactions, row.id, {
+					source: 'manual',
+					paymentMethod: kind === 'income' ? 'cash' : null
+				})
+			)
+			const saved = await db.one(app.transactions.where({ id: row.id }), { tier: 'remote' })
+			expect(saved).toMatchObject({
+				source: 'simplefin',
+				externalId: `immutable-${kind}`,
+				description: 'User description',
+				memo: 'User notes',
+				paymentMethod: null
+			})
+		}
+	)
+	it('rejects converting a manual expense into a provider transaction', async () => {
+		const row = await db.insert(app.transactions, transaction('expense')).wait({ tier: 'global' })
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, row.id, { source: 'simplefin', externalId: 'forged' })
+		)
+	})
+})

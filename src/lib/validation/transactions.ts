@@ -101,6 +101,7 @@ type TransactionFormOptions = {
 	kind: TransactionRow['kind']
 	accounts: readonly Account[]
 	categories: readonly Category[]
+	transaction?: Pick<TransactionRow, 'source' | 'externalId'> | null
 }
 
 export function defaultTransactionCategory(
@@ -163,10 +164,14 @@ export function transactionFormSchema(getOptions: () => TransactionFormOptions) 
 				money: { amountMinor: fields.amount, currency: account.currency },
 				...(fields.description === undefined ? {} : { description: fields.description }),
 				...(fields.memo === undefined ? {} : { memo: fields.memo }),
-				source: { source: 'manual' },
+				source:
+					options.transaction?.source === 'simplefin'
+						? { source: 'simplefin', externalId: options.transaction.externalId }
+						: { source: 'manual' },
 				...(fields.tags === undefined ? {} : { tags: fields.tags })
 			}
-			if (options.kind === 'expense') return { ...base, kind: options.kind }
+			if (options.kind === 'expense' || options.transaction?.source === 'simplefin')
+				return { ...base, kind: options.kind }
 			return fields.paymentMethod === 'check'
 				? {
 						...base,

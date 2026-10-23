@@ -187,10 +187,23 @@ describe('transaction form schema', () => {
 		})
 	})
 
-	it.each(['', '-1', '1.234', '1e3', '21474836.48'])('rejects invalid amount %j', (amount) => {
-		expect(transactionFormSchema(() => options()).safeParse({ ...fields, amount }).success).toBe(
-			false
-		)
+	it.each(['', '-1', '1.234', '1e3', '90071992547409.92'])(
+		'rejects invalid amount %j',
+		(amount) => {
+			expect(transactionFormSchema(() => options()).safeParse({ ...fields, amount }).success).toBe(
+				false
+			)
+		}
+	)
+
+	it.each([
+		['21474836.48', 2_147_483_648],
+		['90071992547409.91', Number.MAX_SAFE_INTEGER]
+	])('accepts exact amount %s above the former ceiling', (amount, amountMinor) => {
+		expect(transactionFormSchema(() => options()).parse({ ...fields, amount }).money).toEqual({
+			amountMinor,
+			currency: 'USD'
+		})
 	})
 
 	it('accepts zero, omits blank memo, and uses the account currency', () => {
@@ -318,5 +331,39 @@ describe('transaction tag names', () => {
 		expect(transactionFormSchema(() => options()).safeParse({ ...fields, tags }).success).toBe(
 			false
 		)
+	})
+})
+
+describe('imported edit form provenance', () => {
+	it.each(['expense', 'income'] satisfies Options['kind'][])(
+		'uses the observed %s provenance and preserves missing payment method',
+		(kind) => {
+			const schema = transactionFormSchema(() => ({
+				...options(kind),
+				transaction: { source: 'simplefin', externalId: 'original-provider-id' }
+			}))
+			const result = schema.parse({
+				...fields,
+				source: 'manual',
+				externalId: 'forged',
+				paymentMethod: 'cash',
+				tags: ['Garden']
+			})
+			expect(result).toMatchObject({
+				kind,
+				source: { source: 'simplefin', externalId: 'original-provider-id' },
+				tags: ['Garden'],
+				description: 'Groceries',
+				memo: 'Market'
+			})
+			expect(result).not.toHaveProperty('paymentMethod')
+		}
+	)
+	it('rejects imported editing with missing provider identity', () => {
+		const schema = transactionFormSchema(() => ({
+			...options(),
+			transaction: { source: 'simplefin', externalId: null }
+		}))
+		expect(schema.safeParse(fields).success).toBe(false)
 	})
 })

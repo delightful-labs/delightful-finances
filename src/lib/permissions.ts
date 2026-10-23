@@ -263,8 +263,23 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((transaction) =>
 			allOf([
 				canWriteTransaction(transaction),
-				// Changing kind would invalidate existing tag assignments.
-				policy.transactions.exists.where({ id: transaction.id, kind: transaction.kind }),
+				// Preserve tenancy, kind and provenance so edits cannot break provider deduplication.
+				policy.transactions.exists.where({
+					id: transaction.id,
+					organizationId: transaction.organizationId,
+					kind: transaction.kind,
+					source: transaction.source
+				}),
+				anyOf([
+					allOf([
+						{ externalId: { isNull: true } },
+						policy.transactions.exists.where({ id: transaction.id, externalId: { isNull: true } })
+					]),
+					policy.transactions.exists.where({
+						id: transaction.id,
+						externalId: transaction.externalId
+					})
+				]),
 				// A check's selected detail cannot be replaced or shared with another transaction.
 				anyOf([
 					allOf([

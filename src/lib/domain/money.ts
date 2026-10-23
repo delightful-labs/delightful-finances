@@ -1,4 +1,3 @@
-export const MAX_AMOUNT_MINOR = 2_147_483_647
 export const AMOUNT_INPUT_PATTERN = String.raw`^(0|[1-9]\d*)(?:\.(\d{1,2}))?$`
 
 export type MoneyParseResult =
@@ -13,14 +12,12 @@ export function parseAmountMinor(input: string): MoneyParseResult {
 	const match = new RegExp(AMOUNT_INPUT_PATTERN).exec(value)
 	if (match === null) return { kind: 'invalid', reason: 'format' }
 
-	const whole = Number(match[1])
-	const fraction = Number((match[2] ?? '').padEnd(2, '0'))
-	const amountMinor = whole * 100 + fraction
-	if (!Number.isSafeInteger(amountMinor) || amountMinor > MAX_AMOUNT_MINOR) {
+	const amountMinor = BigInt(`${match[1]}${(match[2] ?? '').padEnd(2, '0')}`)
+	if (amountMinor > BigInt(Number.MAX_SAFE_INTEGER)) {
 		return { kind: 'invalid', reason: 'too-large' }
 	}
 
-	return { kind: 'valid', amountMinor }
+	return { kind: 'valid', amountMinor: Number(amountMinor) }
 }
 
 export function formatMoney(amountMinor: number, currency: string, locale = 'en-US'): string {
