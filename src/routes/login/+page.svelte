@@ -44,6 +44,12 @@
 	}
 </script>
 
-<svelte:head><title>{m['login.heading']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['login.heading']()} />
+<svelte:head
+	><title
+		>{m['actions.restore_subject']({ subject: m['nouns.account']({ count: 1 }) })} · {m[
+			'app.name'
+		]()}</title
+	></svelte:head
+>
+<PageHeader title={m['actions.restore_subject']({ subject: m['nouns.account']({ count: 1 }) })} />
 <LoginForm {restoring} {restoreError} {sessionError} onsubmit={restoreAccount} />

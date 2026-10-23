@@ -12,7 +12,7 @@
 		!active
 			? ''
 			: loading
-				? m['status.loading']({ subject: m['labels.workspaces']() })
+				? m['status.loading_subject']({ subject: m['nouns.workspace']({ count: 2 }) })
 				: m['workspace.unavailable']()
 	)
 </script>
@@ -21,6 +21,10 @@
 <ScreenReaderText role="alert">{failed ? message : ''}</ScreenReaderText>
 {#if active && !loading}
 	<p aria-hidden="true">{message}</p>
-	<p><AppLink href="/settings/workspace">{m['workspace.choose']()}</AppLink></p>
+	<p>
+		<AppLink href="/settings/workspace"
+			>{m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}</AppLink
+		>
+	</p>
 	<Button type="button" onclick={onRetry}>{m['actions.retry']()}</Button>
 {/if}

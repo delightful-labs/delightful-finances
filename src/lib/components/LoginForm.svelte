@@ -30,6 +30,8 @@
 		<p role="alert">{restoreError ? m['login.restore_error']() : m['login.session_error']()}</p>
 	{/if}
 	<Button type="submit" disabled={restoring}>
-		{restoring ? m['login.restoring']() : m['navigation.login']()}
+		{restoring
+			? m['status.restoring_subject']({ subject: m['nouns.account']({ count: 1 }) })
+			: m['navigation.login']()}
 	</Button>
 </form>

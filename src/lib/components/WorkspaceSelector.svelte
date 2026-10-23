@@ -7,7 +7,7 @@
 	let {
 		organizations,
 		organizationId,
-		label = m['workspace.current'](),
+		label = m['labels.current_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
 		onchange
 	}: {
 		organizations: readonly Pick<Organization, 'id' | 'name'>[]
@@ -25,7 +25,9 @@
 	value={selectedOrganizationId}
 	onchange={(event) => onchange(event.currentTarget.value)}
 >
-	<option value="" disabled>{m['workspace.choose']()}</option>
+	<option value="" disabled
+		>{m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}</option
+	>
 	{#each organizations as organization (organization.id)}
 		<option value={organization.id}>{workspaceLabel(organization, organizations)}</option>
 	{/each}

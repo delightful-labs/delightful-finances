@@ -31,7 +31,7 @@
 		editing: () => '',
 		invalid: () => m['workspace.name_required'](),
 		recovered: () => m['workspace.create_recovered'](),
-		complete: () => m['workspace.create_saved'](),
+		complete: () => m['status.saved_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
 		conflict: () => m['workspace.create_conflict'](),
 		failed: () => m['workspace.create_failed'](),
 		unresolved: () => m['workspace.create_unresolved']()
@@ -42,7 +42,7 @@
 
 <FormModal
 	{scope}
-	label={m['actions.create']({ subject: m['workspace.label']() })}
+	label={m['actions.create_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}
 	view={formView}
 	onopen={() => {
 		if (view.canCreateAnother) onNew()
@@ -56,7 +56,7 @@
 	{#snippet fields(form)}
 		<InputText
 			id="create-workspace-name"
-			label={m['labels.workspace_name']()}
+			label={m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })}
 			name="name"
 			bind:value={name}
 			required
@@ -74,12 +74,14 @@
 		{#if view.canCreateAnother}
 			{#if view.workspace}<p>
 					<AppLink href="/" query={{ workspace: view.workspace.id }}
-						>{m['actions.open']({ subject: m['workspace.label']() })}: {view.workspace
-							.name}</AppLink
+						>{m['actions.open_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}: {view
+							.workspace.name}</AppLink
 					>
 				</p>{/if}
 			<Button type="button" onclick={onNew}
-				>{m['actions.create_another']({ subject: m['workspace.label']() })}</Button
+				>{m['actions.create_another_subject']({
+					subject: m['nouns.workspace']({ count: 1 })
+				})}</Button
 			>
 		{/if}
 	{/snippet}

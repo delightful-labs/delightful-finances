@@ -48,7 +48,7 @@
 <Text id="avatar-help">{m['profile.avatar_description']()}</Text>
 <FormFeedback
 	{view}
-	subject={m['labels.profile']()}
+	subject={m['nouns.profile']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
 	invalidMessage={m['profile.name_invalid']()}
 	section="readiness"
@@ -59,8 +59,8 @@
 		{#snippet fields(view)}
 			<input type="hidden" name="action" value="upload" />
 			<InputAvatar
-				label={m['labels.avatar']()}
-				uploadLabel={m['actions.choose_image']()}
+				label={m['nouns.avatar']({ count: 1 })}
+				uploadLabel={m['actions.select_subject']({ subject: m['nouns.image']({ count: 1 }) })}
 				bind:value={
 					() => selectedFile,
 					(file) => {
@@ -73,8 +73,8 @@
 					}
 				}
 				removeLabel={selectedFile === savedFile
-					? m['actions.remove_avatar']()
-					: m['actions.clear_selected_image']()}
+					? m['actions.remove_subject']({ subject: m['nouns.avatar']({ count: 1 }) })
+					: m['actions.clear_selected_subject']({ subject: m['nouns.image']({ count: 1 }) })}
 				id="profile-avatar"
 				name="file"
 				accept={avatarMimeType.options.join(',')}
@@ -86,21 +86,18 @@
 		{#snippet controls(view)}
 			{#if selectedFile && selectedFile !== savedFile}
 				<Button type="submit" disabled={!view.canSubmit}>
-					{m['actions.save_subject']({ subject: m['labels.avatar']() })}
+					{m['actions.save_subject']({ subject: m['nouns.avatar']({ count: 1 }) })}
 				</Button>
 			{/if}
 		{/snippet}
 		{#snippet feedback(view)}
 			<FormFeedback
 				{view}
-				subject={m['labels.profile']()}
+				subject={m['nouns.profile']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
 				invalidMessage={m['profile.avatar_invalid']()}
 				successMessage={() =>
-					m['actions.saved_with_name']({
-						subject: m['labels.profile'](),
-						name: m['labels.avatar']()
-					})}
+					m['status.saved_subject']({ subject: m['nouns.avatar']({ count: 1 }) })}
 				section="result"
 			/>
 		{/snippet}

@@ -10,7 +10,7 @@
 </script>
 
 <fieldset>
-	<legend>{m['archive_filter.label']()}</legend>
+	<legend>{m['labels.status_subject']({ subject: m['nouns.archive']({ count: 1 }) })}</legend>
 	<label>
 		<input type="radio" name={groupName} bind:group={value} value="active" />
 		{m['archive_filter.active']()}

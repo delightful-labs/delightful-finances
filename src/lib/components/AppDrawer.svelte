@@ -82,7 +82,7 @@
 	id={drawerId}
 	heading={m['navigation.label']()}
 	headingHidden
-	closeLabel={m['navigation.close']()}
+	closeLabel={m['actions.close_subject']({ subject: m['navigation.label']() })}
 	showCloseButton={false}
 	style="--dui-drawer-height: calc(100vh - var(--dui-top-navigation-height)); --dui-drawer-top: var(--dui-top-navigation-height)"
 	bind:open={drawerOpen}
@@ -103,7 +103,7 @@
 					href="/expenses"
 					{pathname}
 					icon={ExpensesIcon}
-					label={m['labels.expenses']()}
+					label={m['nouns.expense']({ count: 2 })}
 					onclick={onNavigate}
 				/>
 			</li>
@@ -112,7 +112,7 @@
 					href="/income"
 					{pathname}
 					icon={IncomeIcon}
-					label={m['labels.income']()}
+					label={m['nouns.income']({ count: 1 })}
 					onclick={onNavigate}
 				/>
 			</li>
@@ -122,7 +122,7 @@
 					href="/settings/categories"
 					{pathname}
 					icon={CategoriesIcon}
-					label={m['labels.categories']()}
+					label={m['nouns.category']({ count: 2 })}
 					onclick={onNavigate}
 				/>
 			</li>
@@ -131,7 +131,7 @@
 					href="/settings/tags"
 					{pathname}
 					icon={TagsIcon}
-					label={m['labels.tags']()}
+					label={m['nouns.tag']({ count: 2 })}
 					onclick={onNavigate}
 				/>
 			</li>
@@ -139,19 +139,29 @@
 				<Details caretPosition="right">
 					{#snippet summary()}
 						<span id={filtersHeadingId}
-							><Icon class="menu-icon" icon={AccountsIcon} />{m['labels.accounts']()}</span
+							><Icon class="menu-icon" icon={AccountsIcon} />{m['nouns.account']({
+								count: 2
+							})}</span
 						>
 					{/snippet}
 					<div class="details-content-group">
 						<section class="details-content-section" aria-labelledby={filtersHeadingId}>
 							<QueryContent
 								queries={accountQueries}
-								loadingMessage={m['status.loading']({ subject: m['labels.accounts']() })}
-								errorMessage={m['errors.load']({ subject: m['labels.accounts']() })}
+								loadingMessage={m['status.loading_subject']({
+									subject: m['nouns.account']({ count: 2 })
+								})}
+								errorMessage={m['errors.load_subject']({
+									subject: m['nouns.account']({ count: 2 })
+								})}
 							>
 								{#if accounts.length > 0}
 									<fieldset class="account-filters">
-										<legend>{m['accounts.filters.legend']()}</legend>
+										<legend
+											>{m['actions.filter_subject']({
+												subject: m['nouns.account']({ count: 2 })
+											})}</legend
+										>
 										<ul>
 											<li class="account-filter">
 												<Checkbox
@@ -159,7 +169,9 @@
 													value="all"
 													checked={selectedAccountIds === null ||
 														accounts.every((account) => selectedAccountIds?.includes(account.id))}
-													label={m['accounts.filters.all']()}
+													label={m['labels.all_subjects']({
+														subjects: m['nouns.account']({ count: 2 })
+													})}
 													onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 												/>
 											</li>
@@ -180,7 +192,7 @@
 																type="button"
 																appearance="flat"
 																disabled={!canMoveAccount(account.id, 'up')}
-																aria-label={m['accounts.order.up']({ name: account.name })}
+																aria-label={m['actions.move_up_name']({ name: account.name })}
 																onclick={() => onMoveAccount(account.id, 'up')}
 																><Icon
 																	icon={ExpensesIcon}
@@ -191,7 +203,7 @@
 																type="button"
 																appearance="flat"
 																disabled={!canMoveAccount(account.id, 'down')}
-																aria-label={m['accounts.order.down']({ name: account.name })}
+																aria-label={m['actions.move_down_name']({ name: account.name })}
 																onclick={() => onMoveAccount(account.id, 'down')}
 																><Icon
 																	icon={IncomeIcon}
@@ -211,31 +223,35 @@
 											aria-pressed={editingAccountOrder}
 											onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
 											>{editingAccountOrder
-												? m['accounts.order.done']()
-												: m['accounts.order.edit']()}</Button
+												? m['actions.done']()
+												: m['actions.edit_subject']({
+														subject: m['nouns.order']({ count: 1 })
+													})}</Button
 										>
 									{/if}
 								{:else}
-									<p>{m['actions.empty']({ name: m['labels.accounts']() })}</p>
+									<p>
+										{m['labels.no_subjects_yet']({ subjects: m['nouns.account']({ count: 2 }) })}
+									</p>
 								{/if}
 							</QueryContent>
 							{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
 								<Button type="button" {disabled} onclick={open}>
-									<Icon class="menu-icon" icon={AddIcon} />{m['actions.add']({
-										name: m['labels.account']()
+									<Icon class="menu-icon" icon={AddIcon} />{m['actions.add_subject']({
+										subject: m['nouns.account']({ count: 1 })
 									})}
 								</Button>
 							{/snippet}
 							{@render accountCreation(accountCreationTrigger)}
 						</section>
 					</div>
-					<Navigation label={m['labels.accounts']()}>
+					<Navigation label={m['nouns.account']({ count: 2 })}>
 						<li>
 							<AppNavigationLink
 								href="/accounts"
 								{pathname}
 								icon={EditIcon}
-								label={m['accounts.manage']()}
+								label={m['actions.manage_subject']({ subject: m['nouns.account']({ count: 2 }) })}
 								onclick={onNavigate}
 							/>
 						</li>
@@ -251,8 +267,12 @@
 						<div class="details-content-section">
 							<QueryContent
 								queries={organizationQueries}
-								loadingMessage={m['status.loading']({ subject: m['labels.workspaces']() })}
-								errorMessage={m['errors.load']({ subject: m['labels.workspaces']() })}
+								loadingMessage={m['status.loading_subject']({
+									subject: m['nouns.workspace']({ count: 2 })
+								})}
+								errorMessage={m['errors.load_subject']({
+									subject: m['nouns.workspace']({ count: 2 })
+								})}
 							>
 								<WorkspaceSelector
 									{organizations}
@@ -268,7 +288,7 @@
 								href="/settings/workspace"
 								{pathname}
 								icon={WorkspaceIcon}
-								label={m['labels.workspaces']()}
+								label={m['nouns.workspace']({ count: 2 })}
 								onclick={onNavigate}
 							/>
 						</li>
@@ -286,7 +306,7 @@
 								href="/account"
 								{pathname}
 								icon={AccountIcon}
-								label={m['labels.account']()}
+								label={m['nouns.account']({ count: 1 })}
 								onclick={onNavigate}
 							/>
 						</li>

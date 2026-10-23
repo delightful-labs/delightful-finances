@@ -86,7 +86,7 @@
 										<Text
 											size="sm"
 											as="span"
-											aria-label={m['transactions.daily_total']({
+											aria-label={m['transactions.daily_total_amount']({
 												amount: formatMoney(amount, currency, getLocale())
 											})}
 										>
@@ -113,22 +113,25 @@
 		{#if pageCount > 1}
 			<Pagination label={m['transactions.pagination.label']()}>
 				<PaginationLink
-					label={m['transactions.pagination.previous']()}
+					label={m['labels.previous_subject']({ subject: m['nouns.page']({ count: 1 }) })}
 					href={pageHref(page - 1)}
 					disabled={page === 1}>‹</PaginationLink
 				>
 				{#each pageNumbers as number, index (number)}
 					{#if index > 0 && number - (pageNumbers[index - 1] ?? number) > 1}
-						<PaginationLink label={m['transactions.pagination.more']()} ellipsis>…</PaginationLink>
+						<PaginationLink
+							label={m['labels.more_subjects']({ subjects: m['nouns.page']({ count: 2 }) })}
+							ellipsis>…</PaginationLink
+						>
 					{/if}
 					<PaginationLink
-						label={m['transactions.pagination.page']({ page: number })}
+						label={m['labels.page_number']({ number: number })}
 						href={pageHref(number)}
 						current={page === number}>{number}</PaginationLink
 					>
 				{/each}
 				<PaginationLink
-					label={m['transactions.pagination.next']()}
+					label={m['labels.next_subject']({ subject: m['nouns.page']({ count: 1 }) })}
 					href={pageHref(page + 1)}
 					disabled={page === pageCount}>›</PaginationLink
 				>

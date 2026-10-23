@@ -33,7 +33,9 @@
 <div class="transaction-workspace" data-desktop={desktop}>
 	<div class="transaction-content" class:index>
 		{#if !desktop && listHref}
-			<AppLink href={listHref}>{m['transactions.back_to_list']()}</AppLink>
+			<AppLink href={listHref}
+				>{m['actions.back_to_subject']({ subject: m['nouns.list']({ count: 1 }) })}</AppLink
+			>
 		{/if}
 		{#if desktop}
 			<div class="drawer-toggle" hidden={drawerOpen}>
@@ -44,7 +46,9 @@
 					onclick={() => (drawerOpen = true)}
 				>
 					<Icon icon={ListIcon} /><ScreenReaderText
-						>{m['transactions.drawer.open']()}</ScreenReaderText
+						>{m['actions.open_subject']({
+							subject: m['nouns.transaction']({ count: 2 })
+						})}</ScreenReaderText
 					>
 				</Button>
 			</div>
@@ -55,8 +59,12 @@
 		<Drawer
 			id={drawerId}
 			side="right"
-			heading={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
-			closeLabel={m['transactions.drawer.close']()}
+			heading={kind === 'income'
+				? m['nouns.income']({ count: 1 })
+				: m['nouns.expense']({ count: 2 })}
+			closeLabel={m['actions.close_subject']({
+				subject: m['nouns.transaction']({ count: 2 })
+			})}
 			bind:open={drawerOpen}
 		>
 			{@render list(false)}

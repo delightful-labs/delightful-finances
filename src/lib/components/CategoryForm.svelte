@@ -25,7 +25,7 @@
 
 <FormFeedback
 	{view}
-	subject={m['labels.category']()}
+	subject={m['nouns.category']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
 	invalidMessage={m['categories.validation_error']()}
 	section="readiness"
@@ -33,7 +33,7 @@
 />
 <FormModal
 	{scope}
-	label={m['actions.add']({ name: m['labels.category']() })}
+	label={m['actions.add_subject']({ subject: m['nouns.category']({ count: 1 }) })}
 	{view}
 	{onopen}
 	{onsubmit}
@@ -41,32 +41,35 @@
 >
 	{#snippet fields(form)}
 		<InputText
-			label={m['labels.category_name']()}
+			label={m['labels.subject_name']({ subject: m['nouns.category']({ count: 1 }) })}
 			id="category-name"
 			name="name"
 			required
 			disabled={!form.fieldsEditable}
 		/>
 		<Select
-			label={m['labels.transaction_type']()}
+			label={m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })}
 			id="category-kind"
 			name="kind"
 			required
 			disabled={!form.fieldsEditable}
 			defaultValue="expense"
 		>
-			<option value="expense">{m['labels.expenses']()}</option>
-			<option value="income">{m['labels.income']()}</option>
+			<option value="expense">{m['nouns.expense']({ count: 2 })}</option>
+			<option value="income">{m['nouns.income']({ count: 1 })}</option>
 		</Select>
 	{/snippet}
 	{#snippet feedback(view)}
 		<FormFeedback
 			{view}
-			subject={m['labels.category']()}
+			subject={m['nouns.category']({ count: 1 })}
 			reasonText={(reason) => formReasonText[reason]()}
 			invalidMessage={m['categories.validation_error']()}
 			successMessage={(value) =>
-				m['actions.saved_with_name']({ subject: m['labels.category'](), name: value.name })}
+				m['status.saved_subject_name']({
+					subject: m['nouns.category']({ count: 1 }),
+					name: value.name
+				})}
 			section="all"
 		/>
 	{/snippet}

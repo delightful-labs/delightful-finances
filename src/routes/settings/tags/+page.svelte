@@ -113,14 +113,14 @@
 </script>
 
 <svelte:head>
-	<title>{m['labels.tags']()} · {m['app.name']()}</title>
+	<title>{m['nouns.tag']({ count: 2 })} · {m['app.name']()}</title>
 </svelte:head>
 
-<PageHeader title={m['labels.tags']()} />
+<PageHeader title={m['nouns.tag']({ count: 2 })} />
 <QueryContent
 	queries={[membership, tags, categories]}
-	loadingMessage={m['status.loading']({ subject: m['labels.tags']() })}
-	errorMessage={m['errors.load']({ subject: m['labels.tags']() })}
+	loadingMessage={m['status.loading_subject']({ subject: m['nouns.tag']({ count: 2 }) })}
+	errorMessage={m['errors.load_subject']({ subject: m['nouns.tag']({ count: 2 }) })}
 >
 	{#if filters.activeOrganizationId && membership.current}
 		<TagList

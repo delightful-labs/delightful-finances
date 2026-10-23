@@ -8,7 +8,6 @@
 		"failed": "The update could not be completed. You can try again."
 	},
 	"archive_filter": {
-		"label": "Archive status",
 		"active": "Default (not archived)",
 		"archived": "Archived only",
 		"all": "All"
@@ -50,9 +49,6 @@
 	"workspace": {
 		"loading": "Getting your workspaces ready…",
 		"setup_error": "Your workspaces could not be prepared.",
-		"label": "Workspace",
-		"current": "Current workspace",
-		"select_workspace": "Select a workspace.",
 		"name_required": "Enter a workspace name.",
 		"rename_restricted": "Only workspace owners and admins can change the name.",
 		"rename_session_unavailable": "Workspace editing is unavailable until your session is ready. If your session changed, reopen this page.",
@@ -64,14 +60,12 @@
 		"rename_interrupted_saved": "The name was saved before the operation ended.",
 		"rename_unknown": "The final save result could not be confirmed. Check the workspace name before trying again.",
 		"create_working": "Preparing your workspace…",
-		"create_saved": "Workspace saved",
 		"create_recovered": "An unfinished creation attempt was found. Retry uses the same workspace identity.",
 		"create_conflict": "This creation attempt conflicts with existing records. Retry to reconcile without overwriting data.",
 		"create_failed": "Workspace creation could not finish. Check local storage and retry the same attempt.",
 		"create_unresolved": "The save result is unknown. Retry to check the same workspace before issuing another write.",
 		"create_unavailable": "Workspace creation needs a ready login profile.",
-		"choose": "Choose a workspace",
-		"unavailable": "This workspace or transaction is unavailable. Choose a workspace you can access.",
+		"unavailable": "This workspace or transaction is unavailable. Select a workspace you can access.",
 		"integrity_working": "Checking required workspace records…",
 		"integrity_partial": "Some required workspace records need repair. An administrator may be needed to repair profile attribution.",
 		"integrity_failed": "Required workspace records could not be verified. Retry to check again.",
@@ -94,77 +88,250 @@
 		"label": "Main navigation",
 		"overview": "Overview",
 		"settings": "Settings",
-		"login": "Login",
-		"close": "Close navigation",
-		"toggle": "Toggle navigation"
+		"login": "Login"
+	},
+	"nouns": {
+		"account": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Account",
+					"countPlural=*": "Accounts"
+				}
+			}
+		],
+		"transaction": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Transaction",
+					"countPlural=*": "Transactions"
+				}
+			}
+		],
+		"workspace": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Workspace",
+					"countPlural=*": "Workspaces"
+				}
+			}
+		],
+		"category": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Category",
+					"countPlural=*": "Categories"
+				}
+			}
+		],
+		"tag": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Tag",
+					"countPlural=*": "Tags"
+				}
+			}
+		],
+		"profile": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Profile",
+					"countPlural=*": "Profiles"
+				}
+			}
+		],
+		"avatar": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Avatar",
+					"countPlural=*": "Avatars"
+				}
+			}
+		],
+		"image": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Image",
+					"countPlural=*": "Images"
+				}
+			}
+		],
+		"income": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Income",
+					"countPlural=*": "Income"
+				}
+			}
+		],
+		"expense": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Expense",
+					"countPlural=*": "Expenses"
+				}
+			}
+		],
+		"passkey": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Passkey",
+					"countPlural=*": "Passkeys"
+				}
+			}
+		],
+		"check": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Check",
+					"countPlural=*": "Checks"
+				}
+			}
+		],
+		"payment": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Payment",
+					"countPlural=*": "Payments"
+				}
+			}
+		],
+		"page": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Page",
+					"countPlural=*": "Pages"
+				}
+			}
+		],
+		"list": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "List",
+					"countPlural=*": "Lists"
+				}
+			}
+		],
+		"order": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Order",
+					"countPlural=*": "Orders"
+				}
+			}
+		],
+		"archive": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Archive",
+					"countPlural=*": "Archives"
+				}
+			}
+		]
 	},
 	"labels": {
 		"cash": "Cash",
-		"accounts": "Accounts",
 		"actions": "Actions",
-		"account_name": "Account name",
-		"workspace_name": "Workspace name",
-		"account_type": "Account type",
 		"currency": "Currency",
 		"date": "Date",
 		"amount": "Amount",
 		"description": "Description",
 		"memo": "Memo (additional notes)",
-		"account": "Account",
-		"category": "Category",
-		"income": "Income",
-		"expenses": "Expenses",
-		"category_name": "Category name",
-		"transaction_type": "Transaction type",
-		"workspaces": "Workspaces",
-		"workspace_settings": "Workspace settings",
-		"transactions": "Transactions",
-		"transaction": "Transaction",
-		"categories": "Categories",
-		"tags": "Tags",
-		"tag": "Tag",
-		"tag_name": "Tag name",
-		"profile": "Profile",
 		"display_name": "Display name",
-		"avatar": "Avatar"
+		"linked_name": "Linked to {name}",
+		"no_subjects_yet": "No {subjects} yet.",
+		"all_subjects": "All {subjects}",
+		"subject_name": "{subject} name",
+		"subject_type": "{subject} type",
+		"subject_settings": "{subject} settings",
+		"subject_details": "{subject} details",
+		"subject_recovery": "{subject} recovery",
+		"current_subject": "Current {subject}",
+		"selected_subjects": "Selected {subjects}",
+		"no_subject": "No {subject}",
+		"currency_code": "Currency: {code}",
+		"page_number": "Page {number}",
+		"subject_number": "{subject} number",
+		"subject_date": "{subject} date",
+		"subject_method": "{subject} method",
+		"previous_subject": "Previous {subject}",
+		"next_subject": "Next {subject}",
+		"more_subjects": "More {subjects}",
+		"sample_subject_number": "Sample {subject} {number}",
+		"status_subject": "{subject} status"
 	},
 	"actions": {
-		"create": "Create {subject}",
-		"add_another": "Add another {subject}",
 		"save_subject": "Save {subject}",
-		"create_another": "Create another {subject}",
-		"open": "Open {subject}",
 		"close": "Close",
-		"empty": "No {name} yet.",
-		"add": "Add {name}",
-		"archive": "Archive {name}",
 		"cancel": "Cancel",
 		"archive_button": "Archive",
 		"save": "Save",
 		"retry": "Try again",
-		"saved_with_name": "{subject} {name} saved.",
-		"saved": "{subject} saved.",
-		"archived": "{subject} {name} archived.",
-		"remove_avatar": "Remove avatar",
-		"clear_selected_image": "Clear selected image",
-		"choose_image": "Choose image"
+		"create_subject": "Create {subject}",
+		"add_another_subject": "Add another {subject}",
+		"create_another_subject": "Create another {subject}",
+		"open_subject": "Open {subject}",
+		"move_up_name": "Move {name} up",
+		"move_down_name": "Move {name} down",
+		"add_subject": "Add {subject}",
+		"archive_subject": "Archive {subject}",
+		"select_subject": "Select {subject}",
+		"select_existing_subject": "Select existing {subject}",
+		"filter_subject": "Filter {subject}",
+		"manage_subject": "Manage {subject}",
+		"discover_subject": "Discover {subject}",
+		"remove_subject": "Remove {subject}",
+		"close_subject": "Close {subject}",
+		"toggle_subject": "Toggle {subject}",
+		"clear_selected_subject": "Clear selected {subject}",
+		"link_existing_subject": "Link to existing {subject}",
+		"add_subject_name": "Add {subject} “{name}”",
+		"restore_subject": "Restore {subject}",
+		"show_subject": "Show {subject}",
+		"disconnect_subject": "Disconnect {subject}",
+		"add_sample_count_kind_subjects": "Add {count} sample {kind} {subjects}",
+		"remove_name": "Remove {name}",
+		"edit_subject": "Edit {subject}",
+		"done": "Done",
+		"back_to_subject": "Back to {subject}"
 	},
 	"accounts": {
-		"manage": "Manage Accounts",
 		"type": {
 			"bank": "Bank",
 			"card": "Card"
-		},
-		"currency_usd": "Currency: USD",
-		"filters": {
-			"legend": "Filter Accounts",
-			"all": "All accounts"
-		},
-		"order": {
-			"edit": "Edit order",
-			"done": "Done",
-			"up": "Move {name} up",
-			"down": "Move {name} down"
 		},
 		"create_session_unavailable": "Account creation is unavailable until your session is ready. If your session changed, reopen this page.",
 		"create_restricted": "Only workspace owners and admins can add accounts.",
@@ -178,47 +345,25 @@
 		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
 	},
 	"transactions": {
-		"back_to_list": "Back to list",
-		"drawer": {
-			"open": "Open transaction list",
-			"close": "Close transaction list"
-		},
 		"samples": {
-			"add_income": "Add 25 sample income transactions",
-			"add_expenses": "Add 25 sample expense transactions",
 			"description": "Development tool: saves real sample transactions to the first selected writable account in this workspace.",
-			"saved": "Saved {count} of 25 sample transactions.",
-			"failed": "Stopped after saving {count} of 25. Select a writable active account and make sure a category is available before trying again.",
-			"transaction_description": "Sample transaction {number}"
+			"saved_count": "Saved {count} of 25 sample transactions.",
+			"failed_count": "Stopped after saving {count} of 25. Select a writable active account and make sure a category is available before trying again."
 		},
 		"pagination": {
-			"label": "Transaction pages",
-			"previous": "Previous page",
-			"next": "Next page",
-			"more": "More pages",
-			"page": "Page {page}"
+			"label": "Transaction pages"
 		},
 		"empty": {
 			"title": "Your recent activity will appear here."
 		},
 		"no_accounts_selected": "Turn on an account to see its transactions.",
-		"select_account": "Select an account",
-		"select_category": "Select a category",
 		"payment": {
-			"method": "Payment method",
 			"check": "Check",
 			"transfer": "Transfer",
 			"electronic": "Electronic"
 		},
-		"check": {
-			"number": "Check number",
-			"date": "Check date"
-		},
 		"no_accounts": "Add an account before recording a transaction.",
 		"validation_error": "Check the transaction details and try again.",
-		"daily_total": "Daily total: {amount}",
-		"unavailable_item": "{subject} unavailable",
-		"details": "Transaction details",
 		"metadata": "Metadata",
 		"unavailable": "This transaction is unavailable in the selected workspace.",
 		"created_by": "Created by",
@@ -231,20 +376,17 @@
 		"date_invalid": "Enter a valid transaction date.",
 		"payment_invalid": "Select a payment method.",
 		"check_number_invalid": "Enter the check number.",
-		"check_date_invalid": "Enter a valid check date."
+		"check_date_invalid": "Enter a valid check date.",
+		"daily_total_amount": "Daily total: {amount}"
 	},
 	"login": {
-		"heading": "Restore an account",
 		"description": "Enter the recovery phrase for an existing local-first account.",
 		"recovery_phrase": "Recovery phrase",
 		"restore_error": "The account could not be restored. Check the recovery phrase and try again.",
-		"session_error": "The account could not be restored. Please try again.",
-		"restoring": "Restoring account…"
+		"session_error": "The account could not be restored. Please try again."
 	},
 	"recovery": {
-		"heading": "Account recovery",
 		"description": "Save this phrase somewhere private so you can restore your account on another device.",
-		"show": "Show recovery phrase",
 		"hide": "I saved the phrase",
 		"phrase_label": "Your recovery phrase",
 		"warning": "Anyone with this phrase can access your account and finances. Keep it private.",
@@ -262,29 +404,28 @@
 		"validation_error": "Enter a category name and select income or expense."
 	},
 	"status": {
-		"loading": "Loading {subject}…",
-		"archiving": "Archiving {subject}…"
+		"saved_subject": "{subject} saved.",
+		"saved_subject_name": "{subject} {name} saved.",
+		"archived_subject_name": "{subject} {name} archived.",
+		"loading_subject": "Loading {subject}…",
+		"archiving_subject": "Archiving {subject}…",
+		"unavailable_subject": "{subject} unavailable",
+		"restoring_subject": "Restoring {subject}…",
+		"selected_subject_name": "{subject} {name} selected.",
+		"removed_subject_name": "{subject} {name} removed."
 	},
 	"errors": {
 		"not_found_title": "Page not found",
 		"not_found_description": "The page you’re looking for could not be found.",
 		"unexpected_title": "Something went wrong",
 		"unexpected_description": "The page could not be loaded. Please try again.",
-		"back_to_overview": "Back to overview",
-		"save": "Could not save {subject}. Please try again.",
-		"load": "Could not load {subject}. Please try again.",
-		"archive": "Could not archive {subject}. Please try again."
+		"save_subject": "Could not save {subject}. Please try again.",
+		"load_subject": "Could not load {subject}. Please try again.",
+		"archive_subject": "Could not archive {subject}. Please try again.",
+		"already_selected_subject_name": "{subject} {name} is already selected."
 	},
 	"tags": {
-		"no_category": "No category",
-		"validation_error": "Enter a tag name and select an available category or no category.",
-		"input": {
-			"remove": "Remove {name}",
-			"selected": "Selected tags",
-			"added": "Tag {name} selected.",
-			"removed": "Tag {name} removed.",
-			"duplicate": "Tag {name} is already selected."
-		}
+		"validation_error": "Enter a tag name and select an available category or no category."
 	},
 	"profile": {
 		"name_invalid": "Enter a valid display name.",
@@ -294,11 +435,9 @@
 		"avatar_description": "PNG, JPEG, or WebP, up to 10 MB. Images are resized for your avatar."
 	},
 	"bank": {
-		"add_provider_account": "Add account “{name}”",
 		"title": "Bank sync",
 		"setup_progress": "Bank connection setup progress",
 		"step_token": "Enter setup token",
-		"step_create": "Create passkey",
 		"step_encrypt": "Test encryption",
 		"step_verify": "Test unlocking",
 		"step_connect": "Connect",
@@ -309,14 +448,11 @@
 		"restricted": "Select a workspace where you are an owner or admin to manage your own bank connection.",
 		"token": "SimpleFIN Bridge setup token",
 		"passkey_help": "First create a passkey. We will then explain two separate tests: encrypting a harmless sample and unlocking it again. Your SimpleFIN token is claimed only after both tests pass and you choose to save the connection.",
-		"discover": "Discover accounts",
 		"sync": "Sync now (last 90 days)",
-		"disconnect": "Disconnect bank sync",
 		"setup_offline": "Bank sync setup is not available offline. Connect to the internet to continue.",
 		"sync_offline": "Sync is not available offline. Connect to the internet to sync your bank transactions.",
 		"lost_passkey": "Lost passkey?",
 		"recovery": "Reconnect with a new setup token and passkey. Imported data and mappings remain. Disconnect also requires revoking access at SimpleFIN to invalidate previously copied credentials.",
-		"idle": "{step} to begin.",
 		"locked": "Locked. Each action requires your original passkey.",
 		"waiting": "Waiting for encrypted credentials to replicate, or reconnection is required.",
 		"working": "Waiting for passkey verification or completing your requested operation…",
@@ -326,7 +462,6 @@
 		"claim_failure": "The setup token could not be claimed. It may already have been used or compromised; revoke it at SimpleFIN and obtain a new token.",
 		"save_failure": "The token was consumed but the encrypted connection was not saved. Revoke this connection at SimpleFIN and reconnect with a new token.",
 		"passkey_failure": "Passkey encryption could not be verified. Your setup token has not been claimed. Use a compatible browser and password manager.",
-		"result": "Last sync: {time}. Outcome: {outcome}. Imported: {imported}; already present: {existing}; omitted: {omitted}.",
 		"succeeded": "Succeeded",
 		"partial": "Partial",
 		"failed": "Failed",
@@ -337,10 +472,7 @@
 		"provider_failure": "SimpleFIN could not complete the request. Check connectivity or reauthorize your accounts at SimpleFIN, then retry manually.",
 		"mapping_failure": "A mapped account is archived, unavailable or ambiguous. Discover accounts and map each provider account to an active local account, then retry manually.",
 		"invalid_setup_token": "This setup token is invalid or uses an unsupported SimpleFIN address. Paste the complete setup token from SimpleFIN Bridge. No provider request was made and the token has not been claimed.",
-		"use_existing": "Or link to an existing account",
-		"choose_existing": "Choose an existing account",
-		"linked_account": "Linked to {name}",
-		"account_already_linked": "This local account is already linked to another provider account. Add a new account or choose an unlinked account.",
+		"account_already_linked": "This local account is already linked to another provider account. Add a new account or select an unlinked account.",
 		"setup_creating_title": "Step 2: Create your passkey",
 		"setup_creating_body": "Choose your password manager and approve passkey creation. This passkey will protect your SimpleFIN connection. Your setup token has not been claimed.",
 		"setup_encrypt_title": "Step 3: Test encryption",
@@ -355,6 +487,8 @@
 		"setup_save_body": "Both tests passed. Continue to claim your one-use SimpleFIN token, encrypt the credential and save the connection. This step does not fetch accounts or transactions.",
 		"setup_save_action": "Connect and save securely",
 		"setup_saving_title": "Saving your connection",
-		"setup_saving_body": "Claiming your SimpleFIN token and saving the encrypted credential. The connection will be locked when setup finishes."
+		"setup_saving_body": "Claiming your SimpleFIN token and saving the encrypted credential. The connection will be locked when setup finishes.",
+		"idle_step": "{step} to begin.",
+		"result_time_outcome_imported_existing_omitted": "Last sync: {time}. Outcome: {outcome}. Imported: {imported}; already present: {existing}; omitted: {omitted}."
 	}
 }

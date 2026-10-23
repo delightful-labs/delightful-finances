@@ -29,7 +29,9 @@
 		aria-expanded={drawerOpen}
 		onclick={onToggle}
 	>
-		<ScreenReaderText>{m['navigation.toggle']()}</ScreenReaderText>
+		<ScreenReaderText
+			>{m['actions.toggle_subject']({ subject: m['navigation.label']() })}</ScreenReaderText
+		>
 		{#if drawerOpen}
 			<Icon style="width: 1.5rem; height: 1.5rem;" icon={CloseIcon} />
 		{:else}

@@ -18,16 +18,18 @@
 
 <div>
 	<Button type="button" disabled={busy} onclick={onadd}
-		>{kind === 'income'
-			? m['transactions.samples.add_income']()
-			: m['transactions.samples.add_expenses']()}</Button
+		>{m['actions.add_sample_count_kind_subjects']({
+			count: 25,
+			kind: kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 1 }),
+			subjects: m['nouns.transaction']({ count: 25 })
+		})}</Button
 	>
 	<Text>{m['transactions.samples.description']()}</Text>
 	{#if busy || saved > 0 || failed}
 		<Text role="status"
 			>{failed
-				? m['transactions.samples.failed']({ count: saved })
-				: m['transactions.samples.saved']({ count: saved })}</Text
+				? m['transactions.samples.failed_count']({ count: saved })
+				: m['transactions.samples.saved_count']({ count: saved })}</Text
 		>
 	{/if}
 </div>

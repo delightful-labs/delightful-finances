@@ -1,6 +1,7 @@
 # Repository working agreements
 
 - Follow `.specify/memory/constitution.md` and the active feature artifacts under `specs/`. Before designing or changing complex state, read `.specify/memory/xstate.md`.
+- Before adding or changing localized strings, read `.specify/memory/localization.md`. Consolidate reusable action/label structures, use shared plural nouns, and name variable-bearing keys and inputs consistently (for example, `actions.select_subject: "Select {subject}"`).
 - Do not use `switch` statements or `case` clauses; use discriminated-union narrowing, lookup records, or clear conditional expressions.
 - Work on one task at a time. Do not start another task until the current change has been shown to the user and reviewed.
 - Use a small related set of files per focused review cycle, typically 4–6 implementation files. Multiple routes/components may change together. Discuss larger batches first; do not edit dozens of files without explicit authorization.

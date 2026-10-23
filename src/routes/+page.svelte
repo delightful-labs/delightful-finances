@@ -13,10 +13,10 @@
 <nav aria-label={m['navigation.label']()}>
 	<ul>
 		<li>
-			<AppLink href="/expenses">{m['labels.expenses']()}</AppLink>
+			<AppLink href="/expenses">{m['nouns.expense']({ count: 2 })}</AppLink>
 		</li>
 		<li>
-			<AppLink href="/income">{m['labels.income']()}</AppLink>
+			<AppLink href="/income">{m['nouns.income']({ count: 1 })}</AppLink>
 		</li>
 	</ul>
 </nav>

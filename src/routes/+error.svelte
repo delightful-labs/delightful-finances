@@ -22,5 +22,9 @@
 			? m['errors.not_found_description']()
 			: m['errors.unexpected_description']()}
 	</Text>
-	<Text><AppLink href={resolve('/')}>{m['errors.back_to_overview']()}</AppLink></Text>
+	<Text
+		><AppLink href={resolve('/')}
+			>{m['actions.back_to_subject']({ subject: m['navigation.overview']() })}</AppLink
+		></Text
+	>
 </main>

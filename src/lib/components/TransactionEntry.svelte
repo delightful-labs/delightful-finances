@@ -126,20 +126,21 @@
 
 <svelte:head
 	><title
-		>{m['actions.add']({
-			name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+		>{m['actions.add_subject']({
+			subject:
+				kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })
 		})} · {m['app.name']()}</title
 	></svelte:head
 >
 <PageHeader
-	title={m['actions.add']({
-		name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+	title={m['actions.add_subject']({
+		subject: kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })
 	})}
 />
 
 <FormFeedback
 	view={form.view}
-	subject={m['labels.transaction']()}
+	subject={m['nouns.transaction']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
 	invalidMessage={m['transactions.validation_error']()}
 	section={form.view.readiness.kind === 'ready' ? 'readiness' : 'all'}
