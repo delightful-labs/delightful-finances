@@ -64,14 +64,21 @@ export function createApplicationReadinessMachine(
 		typeof actors,
 		{},
 		{},
-		{ acceptStartup: undefined; shuttingDown: undefined },
+		{
+			acceptStartup: undefined
+			shuttingDown: undefined
+			retryObserverFailed: undefined
+			retryStartupFailed: undefined
+		},
 		never,
 		string
 	>({
 		actors,
 		guards: {
 			acceptStartup: or([stateIn('opening'), stateIn('startupFailed')]),
-			shuttingDown: stateIn('closing')
+			shuttingDown: or([stateIn('closing'), stateIn({ running: { retrying: 'closing' } })]),
+			retryObserverFailed: stateIn({ running: { retrying: 'observerFailed' } }),
+			retryStartupFailed: stateIn({ running: { retrying: 'startupFailed' } })
 		}
 	})
 	const attach = workflow.assign(({ context, spawn }) => ({
@@ -90,6 +97,20 @@ export function createApplicationReadinessMachine(
 		enqueue.assign({ workspace: undefined, attachment: undefined })
 		enqueue.raise({ type: 'ATTACH_PENDING' })
 	})
+	// These states retain the parent's issued retry while its observer and workspace drain.
+	const retryDrain = workflow.createStateConfig({
+		entry: [stopChild('sessionObserver'), shutDownWorkspace],
+		on: {
+			SESSION_OBSERVED: {},
+			SESSION_OBSERVER_FAILED: {},
+			'xstate.error.actor.sessionObserver': {},
+			ATTACH_WORKSPACE: {},
+			ATTACH_PENDING: {},
+			RETRY: {},
+			START: {}
+		}
+	})
+
 	return workflow.createMachine({
 		id: 'application-readiness',
 		initial: 'opening',
@@ -191,6 +212,7 @@ export function createApplicationReadinessMachine(
 			running: {
 				initial: 'checking',
 				invoke: {
+					id: 'sessionObserver',
 					src: 'observeSession',
 					input: ({ context }) => required(context.session),
 					onError: '#application-readiness.settlingObserverFailure'
@@ -219,11 +241,75 @@ export function createApplicationReadinessMachine(
 					closed: {},
 					transitioning: {},
 					retrying: {
+						initial: 'active',
 						invoke: {
 							src: 'retrySession',
 							input: ({ context }) => required(context.session),
-							onDone: 'checking',
-							onError: 'failed'
+							onDone: [
+								{ guard: 'shuttingDown', target: '#application-readiness.closing' },
+								{
+									guard: 'retryStartupFailed',
+									target: '#application-readiness.settlingStartupFailure'
+								},
+								{
+									guard: 'retryObserverFailed',
+									target: '#application-readiness.settlingObserverFailure'
+								},
+								{ target: 'checking' }
+							],
+							onError: [
+								{ guard: 'shuttingDown', target: '#application-readiness.closing' },
+								{
+									guard: 'retryStartupFailed',
+									target: '#application-readiness.settlingStartupFailure'
+								},
+								{
+									guard: 'retryObserverFailed',
+									target: '#application-readiness.settlingObserverFailure'
+								},
+								{ target: 'failed' }
+							]
+						},
+						on: {
+							START: {},
+							RETRY: {},
+							SESSION_OBSERVED: { actions: assign({ status: ({ event }) => event.status }) },
+							SESSION_OBSERVER_FAILED: '.observerFailed',
+							'xstate.error.actor.sessionObserver': '.observerFailed',
+							'xstate.error.actor.startup': '.startupFailed',
+							'xstate.error.actor.*': {
+								guard: ({ context, event }) => context.workspace?.id === event.actorId,
+								target: '.observerFailed',
+								actions: release
+							},
+							SHUTDOWN: '.closing'
+						},
+						states: {
+							active: {},
+							observerFailed: retryDrain,
+							startupFailed: {
+								...retryDrain,
+								on: {
+									...retryDrain.on,
+									'xstate.error.actor.startup': {},
+									'xstate.error.actor.*': {
+										guard: ({ context, event }) => context.workspace?.id === event.actorId,
+										actions: release
+									}
+								}
+							},
+							closing: {
+								...retryDrain,
+								on: {
+									...retryDrain.on,
+									'xstate.error.actor.startup': {},
+									SHUTDOWN: {},
+									'xstate.error.actor.*': {
+										guard: ({ context, event }) => context.workspace?.id === event.actorId,
+										actions: release
+									}
+								}
+							}
 						}
 					}
 				}

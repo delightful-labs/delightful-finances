@@ -34,11 +34,13 @@ Bank orchestration is complete through the focused review cycles below. D001's s
       The four-file [avatar save implementation](avatar-preparation.md) is reviewed and verified with no
       shared form framework changes: 208 relevant unit tests, 12 browser checks and static checks pass.
 
-## Deferred: application/session supervision — do not implement now
+## Resumed: application/session supervision — focused review cycles
 
-- [ ] D007 Audit root/session attachment, retry, observer failure, replacement and supervision contracts beyond the minimal workspace boundary wiring (FR-014).
+- [x] D007 Audit root/session attachment, retry, observer failure, replacement and supervision contracts beyond the minimal workspace boundary wiring (FR-014). Source audit complete in [session-audit.md](session-audit.md); audit reviewed; recovery/drain design remains pending.
 - [ ] D008 After separate scope approval, implement justified supervision changes with explicit live/completed/failed dependent handling (FR-014).
+      Retry ownership is reviewed and verified in one production file; see [session audit](session-audit.md). Recovery/SDK drain design remains pending.
 - [ ] D009 Review that implementation, then verify startup acquisition, observer failure, session retry, replacement races and application teardown (FR-014).
+      Retry ownership is verified: 88 relevant unit tests, four startup/session recovery browser checks and static checks pass. Recovery/SDK drain verification remains pending.
 
 ## Deferred: inspection and architecture follow-through — do not implement now
 

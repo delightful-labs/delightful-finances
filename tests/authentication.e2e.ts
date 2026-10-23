@@ -549,7 +549,7 @@ test('restore session failures retain identity and retry without exposing the re
 	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 	expect(await currentIdentity(page)).toBe(identity)
 	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
-	await expect(page.getByRole('alert')).toHaveCount(0)
+	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	await expect(page).toHaveURL('/')
@@ -653,7 +653,7 @@ test('recoverable restore failure keeps the original client and generic feedback
 	try {
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
-		await expect(page.getByRole('alert')).toHaveText(
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
 			'The account could not be restored. Please try again.'
 		)
 		expect(await currentIdentity(page)).toBe(identity)

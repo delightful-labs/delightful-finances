@@ -7,18 +7,38 @@ import {
 } from './application-readiness.js'
 import type { WorkspaceAttachment } from './readiness.js'
 
-const { workspaceStart } = vi.hoisted(() => ({ workspaceStart: vi.fn() }))
+const { workspaceStart, workspaceControls } = vi.hoisted(() => ({
+	workspaceStart: vi.fn(),
+	workspaceControls: new Map<string, { close: () => void; crash: () => void }>()
+}))
 
 // Delay workspace acknowledgement so shutdown races can be exercised deterministically.
 vi.mock('./readiness.js', () => ({
 	createWorkspaceReadinessMachine: () =>
-		setup<{ value: undefined }, { type: 'SHUTDOWN' }>({}).createMachine({
+		setup<{ value: undefined }, { type: 'SHUTDOWN' } | { type: 'ACK_CLOSE' } | { type: 'CRASH' }>(
+			{}
+		).createMachine({
 			context: { value: undefined },
 			initial: 'active',
-			entry: workspaceStart,
+			entry: [
+				workspaceStart,
+				({ self }) => {
+					workspaceControls.set(self.id, {
+						close: () => self.send({ type: 'ACK_CLOSE' }),
+						crash: () => self.send({ type: 'CRASH' })
+					})
+				}
+			],
+			on: {
+				CRASH: {
+					actions: () => {
+						throw new Error('private workspace crash')
+					}
+				}
+			},
 			states: {
 				active: { on: { SHUTDOWN: 'closing' } },
-				closing: { on: { SHUTDOWN: 'closed' } },
+				closing: { on: { ACK_CLOSE: 'closed' } },
 				closed: {
 					type: 'final',
 					entry: sendParent(({ self }) => ({ type: 'WORKSPACE_CLOSED', actor: self }))
@@ -31,7 +51,14 @@ type Session = JazzSession<JazzClient>
 const actors: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
+	workspaceControls.clear()
 })
+function control(actor: { id: string }) {
+	const value = workspaceControls.get(actor.id)
+	if (!value) throw new Error('Expected workspace test controls')
+	return value
+}
+
 function session() {
 	let notify = () => {}
 	const unsubscribe = vi.fn()
@@ -137,7 +164,7 @@ describe('application readiness supervision', () => {
 		actor.send({ type: 'SHUTDOWN' })
 		actor.send({ type: 'xstate.error.actor.startup', actorId: 'startup', error: new Error('late') })
 		expect(actor.getSnapshot().matches('closing')).toBe(true)
-		workspace.send({ type: 'SHUTDOWN' })
+		control(workspace).close()
 		expect(actor.getSnapshot().status).toBe('done')
 	})
 
@@ -169,7 +196,7 @@ describe('application readiness supervision', () => {
 		expect(workspace.getSnapshot().matches('closing')).toBe(true)
 		actor.send({ type: 'RETRY' })
 		expect(current.subscribe).toHaveBeenCalledTimes(1)
-		workspace.send({ type: 'SHUTDOWN' })
+		control(workspace).close()
 		expect(actor.getSnapshot().matches('observerFailed')).toBe(true)
 		expect(actor.getSnapshot().context.workspace).toBeUndefined()
 		actor.send({ type: 'RETRY' })
@@ -185,6 +212,8 @@ describe('application readiness supervision', () => {
 		actor.send({ type: 'SHUTDOWN' })
 		actor.send({ type: 'RETRY' })
 		actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+		expect(actor.getSnapshot().matches('closing')).toBe(true)
+		control(workspace).close()
 		expect(actor.getSnapshot().status).toBe('done')
 		expect(workspace.getSnapshot().status).toBe('done')
 		expect(current.subscribe).toHaveBeenCalledTimes(1)
@@ -202,7 +231,7 @@ describe('application readiness supervision', () => {
 		await Promise.resolve()
 		expect(actor.getSnapshot().matches('closing')).toBe(true)
 		expect(current.subscribe).not.toHaveBeenCalled()
-		workspace.send({ type: 'SHUTDOWN' })
+		control(workspace).close()
 		expect(actor.getSnapshot().status).toBe('done')
 	})
 
@@ -258,7 +287,7 @@ describe('application readiness supervision', () => {
 		const previousAttachment = actor.getSnapshot().context.attachment
 		if (!previousAttachment) throw new Error('Missing attachment')
 		attach(actor)
-		previous.send({ type: 'SHUTDOWN' })
+		control(previous).close()
 		const replacement = actor.getSnapshot().context.workspace
 		expect(replacement).not.toBe(previous)
 		actor.send({ type: 'DETACH_WORKSPACE', attachment: previousAttachment })
@@ -280,7 +309,7 @@ describe('application readiness supervision', () => {
 		if (!pending) throw new Error('Missing pending attachment')
 		expect(selectAttachedWorkspace(actor.getSnapshot(), pending)).toBeUndefined()
 		actor.send({ type: 'DETACH_WORKSPACE', attachment: pending })
-		previous.send({ type: 'SHUTDOWN' })
+		control(previous).close()
 		expect(actor.getSnapshot().context.pending).toBeUndefined()
 		expect(actor.getSnapshot().context.workspace).toBeUndefined()
 		expect(actor.getSnapshot().context.attachment).toBeUndefined()
@@ -295,5 +324,175 @@ describe('application readiness supervision', () => {
 		expect(selectAttachedWorkspace(actor.getSnapshot(), attachment)).toBe(workspace)
 		expect(workspace.getSnapshot().matches('active')).toBe(true)
 		expect(actor.getSnapshot().context.pending).toBeUndefined()
+	})
+})
+
+describe('issued session retry ownership', () => {
+	function retrying() {
+		const current = session()
+		const pending = Promise.withResolvers<void>()
+		const retry = vi.spyOn(current.value, 'retry').mockReturnValue(pending.promise)
+		const open = vi.fn(async () => current.value)
+		const actor = start(open, current.value)
+		const workspace = attach(actor)
+		actor.send({ type: 'RETRY' })
+		expect(retry).toHaveBeenCalledOnce()
+		return { current, pending, retry, open, actor, workspace }
+	}
+
+	it.each(['ready', 'signed-out', 'error', 'closed', 'transitioning'] satisfies ReturnType<
+		Session['getSnapshot']
+	>['status'][])(
+		'keeps the issued retry through %s observations and ignores duplicate commands',
+		async (status) => {
+			const f = retrying()
+			f.current.getSnapshot.mockReturnValue({ status })
+			f.current.notify()
+			f.actor.send({ type: 'RETRY' })
+			f.actor.send({ type: 'START' })
+			expect(f.actor.getSnapshot().matches({ running: { retrying: 'active' } })).toBe(true)
+			expect(f.actor.getSnapshot().context.status).toBe(status)
+			expect(f.retry).toHaveBeenCalledOnce()
+			expect(f.current.subscribe).toHaveBeenCalledOnce()
+			expect(f.current.unsubscribe).not.toHaveBeenCalled()
+			f.pending.resolve()
+			await waitFor(f.actor, (s) => !s.matches({ running: 'retrying' }))
+			expect(f.actor.getSnapshot().context.status).toBe(status)
+			expect(f.open).not.toHaveBeenCalled()
+			expect(f.current.value.close).not.toHaveBeenCalled()
+		}
+	)
+
+	it('reports a rejected retry even without an SDK error observation and permits a fresh retry', async () => {
+		const f = retrying()
+		f.current.notify()
+		f.pending.reject(new Error('private retry failure'))
+		await waitFor(f.actor, (s) => s.hasTag('startup-error'))
+		expect(f.actor.getSnapshot().matches({ running: 'failed' })).toBe(true)
+		expect(f.actor.getSnapshot().context.status).toBe('ready')
+		expect(JSON.stringify(f.actor.getSnapshot().context)).not.toContain('private retry failure')
+		f.retry.mockResolvedValueOnce()
+		f.actor.send({ type: 'RETRY' })
+		await waitFor(f.actor, (s) => s.matches({ running: 'ready' }))
+		expect(f.retry).toHaveBeenCalledTimes(2)
+	})
+
+	it.each([
+		{ interruption: 'shutdown', settleFirst: true, reject: false },
+		{ interruption: 'shutdown', settleFirst: false, reject: false },
+		{ interruption: 'shutdown', settleFirst: true, reject: true },
+		{ interruption: 'shutdown', settleFirst: false, reject: true },
+		{ interruption: 'observer', settleFirst: true, reject: false },
+		{ interruption: 'observer', settleFirst: false, reject: false },
+		{ interruption: 'observer', settleFirst: true, reject: true },
+		{ interruption: 'observer', settleFirst: false, reject: true }
+	])(
+		'drains retry and workspace on $interruption (settle first: $settleFirst, reject: $reject)',
+		async ({ interruption, settleFirst, reject }) => {
+			const f = retrying()
+			if (interruption === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
+			else {
+				f.current.getSnapshot.mockImplementationOnce(() => {
+					throw new Error('private snapshot failure')
+				})
+				f.current.notify()
+			}
+			expect(f.current.unsubscribe).toHaveBeenCalledOnce()
+			expect(f.workspace.getSnapshot().matches('closing')).toBe(true)
+			const original = f.actor.getSnapshot().context.attachment
+			if (!original) throw new Error('Expected original attachment')
+			f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...original } })
+			f.actor.send({ type: 'RETRY' })
+			f.actor.send({ type: 'START' })
+			f.actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+			expect(f.actor.getSnapshot().context.pending).toBeUndefined()
+			expect(f.retry).toHaveBeenCalledOnce()
+			if (!settleFirst) {
+				control(f.workspace).close()
+				expect(f.actor.getSnapshot().status).toBe('active')
+				expect(f.actor.getSnapshot().context.workspace).toBeUndefined()
+			}
+			if (reject) f.pending.reject(new Error('private retry failure'))
+			else f.pending.resolve()
+			if (settleFirst) {
+				await waitFor(f.actor, (s) => !s.matches({ running: 'retrying' }))
+				expect(f.actor.getSnapshot().status).toBe('active')
+				expect(f.actor.getSnapshot().context.workspace).toBe(f.workspace)
+				control(f.workspace).close()
+			}
+			if (interruption === 'shutdown') {
+				await waitFor(f.actor, (s) => s.status === 'done')
+			} else {
+				await waitFor(f.actor, (s) => s.matches('observerFailed'))
+				f.actor.send({ type: 'RETRY' })
+				expect(f.actor.getSnapshot().matches({ running: 'ready' })).toBe(true)
+				expect(f.current.subscribe).toHaveBeenCalledTimes(2)
+			}
+			expect(f.open).not.toHaveBeenCalled()
+			expect(f.current.value.close).not.toHaveBeenCalled()
+		}
+	)
+
+	it.each(['startup', 'sessionObserver'])(
+		'retains retry on unexpected %s actor failure',
+		async (actorId) => {
+			const f = retrying()
+			f.actor.send({
+				type: `xstate.error.actor.${actorId}`,
+				actorId,
+				error: new Error('private actor failure')
+			})
+			expect(f.actor.getSnapshot().matches({ running: 'retrying' })).toBe(true)
+			expect(f.current.unsubscribe).toHaveBeenCalledOnce()
+			control(f.workspace).close()
+			expect(f.actor.getSnapshot().status).toBe('active')
+			f.pending.resolve()
+			await waitFor(f.actor, (s) =>
+				s.matches(actorId === 'startup' ? 'startupActorFailed' : 'observerFailed')
+			)
+			f.actor.send({ type: 'RETRY' })
+			await waitFor(f.actor, (s) => s.matches({ running: 'ready' }))
+			expect(f.retry).toHaveBeenCalledOnce()
+		}
+	)
+
+	it('releases a crashed workspace but retains the retry until settlement', async () => {
+		const f = retrying()
+		control(f.workspace).crash()
+		expect(f.actor.getSnapshot().context.workspace).toBeUndefined()
+		expect(f.actor.getSnapshot().matches({ running: { retrying: 'observerFailed' } })).toBe(true)
+		f.pending.resolve()
+		await waitFor(f.actor, (s) => s.matches('observerFailed'))
+	})
+
+	it('keeps shutdown priority through late actor errors, observations and workspace failure', async () => {
+		const f = retrying()
+		f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+		f.actor.send({
+			type: 'xstate.error.actor.startup',
+			actorId: 'startup',
+			error: new Error('private')
+		})
+		f.actor.send({ type: 'SHUTDOWN' })
+		f.actor.send({
+			type: 'xstate.error.actor.startup',
+			actorId: 'startup',
+			error: new Error('late')
+		})
+		f.actor.send({
+			type: 'xstate.error.actor.sessionObserver',
+			actorId: 'sessionObserver',
+			error: new Error('late')
+		})
+		f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+		f.actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+		f.actor.send({ type: 'RETRY' })
+		control(f.workspace).crash()
+		expect(f.actor.getSnapshot().matches({ running: { retrying: 'closing' } })).toBe(true)
+		expect(f.actor.getSnapshot().context.workspace).toBeUndefined()
+		f.pending.reject(new Error('late retry failure'))
+		await waitFor(f.actor, (s) => s.status === 'done')
+		expect(f.retry).toHaveBeenCalledOnce()
+		expect(f.current.subscribe).toHaveBeenCalledOnce()
 	})
 })
