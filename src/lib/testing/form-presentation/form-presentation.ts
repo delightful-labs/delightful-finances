@@ -9,7 +9,7 @@ import type {
 } from '../../form-contract.js'
 import type { ScopedFormOptions } from '../../machines/scoped-form.js'
 
-export type Facts = { scope: string; allowed: boolean }
+export type Facts = { scope: string; allowed: boolean; publish?: boolean; broken?: boolean }
 type Values = { name: string }
 type Result = FormOperationResult<void, string>
 
@@ -79,8 +79,9 @@ export function harnessOptions(controls: {
 			snapshot: ReturnType<typeof availability.getInitialSnapshot>
 		): FormCapability<string, string> => {
 			const { revision, facts } = snapshot.context.observation
+			if (facts.broken) throw new Error('Synthetic readiness projection failure')
 			return {
-				revision,
+				revision: facts.publish === false ? -1 : revision,
 				scope: facts.scope,
 				readiness: facts.allowed ? { kind: 'ready' } : { kind: 'blocked', reason: 'readOnly' }
 			}

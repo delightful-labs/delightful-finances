@@ -1,5 +1,13 @@
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
-import { assign, fromPromise, setup, stateIn, type ActorLogic, type Snapshot } from 'xstate'
+import {
+	assign,
+	enqueueActions,
+	fromPromise,
+	setup,
+	stateIn,
+	type ActorLogic,
+	type Snapshot
+} from 'xstate'
 import type {
 	FormCapability,
 	FormChildEvent,
@@ -37,6 +45,7 @@ export function createScopedFormWriteMachine<
 	type Context = {
 		request: Input['request'] | undefined
 		observation: FormObservation<Observation> | undefined
+		assessmentError: { generation: number } | undefined
 		assessmentGeneration: number
 		capability: FormCapability<Scope, Reason> | undefined
 		result: Output | undefined
@@ -57,7 +66,7 @@ export function createScopedFormWriteMachine<
 		Event,
 		typeof actors,
 		{},
-		{},
+		{ observeAssessmentError: undefined },
 		{
 			closing: undefined
 			invalidated: undefined
@@ -69,6 +78,16 @@ export function createScopedFormWriteMachine<
 		Output
 	>({
 		actors,
+		actions: {
+			observeAssessmentError: enqueueActions(({ self, context, enqueue }) => {
+				enqueue.assign({
+					assessmentError:
+						self.getSnapshot().children.review?.getSnapshot().status === 'error'
+							? { generation: context.assessmentGeneration }
+							: undefined
+				})
+			})
+		},
 		guards: {
 			closing: stateIn({ writing: 'closing' }),
 			invalidated: stateIn({ writing: 'invalidated' }),
@@ -87,7 +106,12 @@ export function createScopedFormWriteMachine<
 		observation: ({ context, event }) =>
 			event.type === 'OBSERVE' ? event.observation : context.observation
 	})
-	const clear = form.assign({ request: undefined, observation: undefined, capability: undefined })
+	const clear = form.assign({
+		request: undefined,
+		observation: undefined,
+		capability: undefined,
+		assessmentError: undefined
+	})
 	const interrupted = (outcome: FormInterruption) =>
 		form.createStateConfig({
 			type: 'final',
@@ -133,6 +157,7 @@ export function createScopedFormWriteMachine<
 		context: ({ input }) => ({
 			request: input.request,
 			observation: input.observation,
+			assessmentError: undefined,
 			assessmentGeneration: 0,
 			capability: undefined,
 			result: undefined
@@ -174,11 +199,28 @@ export function createScopedFormWriteMachine<
 				]
 			},
 			authorizing: {
+				initial: 'pending',
+				states: {
+					pending: {},
+					checkingError: {
+						always: [
+							{
+								guard: ({ context }) =>
+									context.assessmentError?.generation === context.assessmentGeneration,
+								target: '#scoped-form-write.failed',
+								actions: assign({ result: () => prewriteFailure })
+							},
+							{ target: 'pending' }
+						]
+					}
+				},
 				entry: assign({
 					assessmentGeneration: ({ context }) => context.assessmentGeneration + 1,
+					assessmentError: undefined,
 					capability: undefined
 				}),
 				invoke: {
+					id: 'review',
 					src: 'review',
 					input: ({ context }) => ({
 						observation: {
@@ -201,6 +243,11 @@ export function createScopedFormWriteMachine<
 					onDone: [
 						{
 							guard: ({ context, event }) =>
+								event.output.token !== undefined &&
+								event.output.token.generation < context.assessmentGeneration
+						},
+						{
+							guard: ({ context, event }) =>
 								event.output.kind === 'assessed' &&
 								event.output.token.requestId === request(context).id &&
 								event.output.token.scopeRevision === request(context).scopeRevision &&
@@ -215,7 +262,7 @@ export function createScopedFormWriteMachine<
 						},
 						{ target: 'failed', actions: assign({ result: () => prewriteFailure }) }
 					],
-					onError: { target: 'failed', actions: assign({ result: () => prewriteFailure }) }
+					onError: { target: '.checkingError', actions: 'observeAssessmentError' }
 				},
 				on: { OBSERVE: { target: 'checkingScope', actions: observe } }
 			},

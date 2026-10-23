@@ -1,6 +1,7 @@
 # Scoped form readiness contract and migration design
 
-Status: four-file adapter migration implemented for review. Tests await implementation approval.
+Status: implementation reviewed and scoped verification passed. The reviewed adapter was committed
+as `52552b1`; subsequent queued-assessment race fixes and verification remain uncommitted.
 The verified submission progress work was committed separately as `eb0eba0`.
 Installed XState version inspected: 5.33.2.
 
@@ -145,7 +146,7 @@ Its writing invocation still spans pending/cancelling/invalidated/closing and pr
   constitute error supervision. A thrown public selector fails its adapter and is supervised by
   the consumer's `invoke.onError`, rather than moving the selector into an unawaited async action.
 - Watch failure completion has `kind: failed`; the form treats watcher `onDone` as failed readiness.
-  Assessment failure completion has `kind: failed`; the operation reports failure/notStarted and
+  Assessment failure completion has `kind: failed` and its assessment token; the operation reports failure/notStarted and
   must not treat it as an ordinary blocked capability. Neither result exposes private error payloads.
 - Before write issuance, CANCEL/INVALIDATE/SHUTDOWN can stop the pure assessment immediately.
   After issuance, the existing write owner must await resolve/reject and retain original scope.
@@ -202,16 +203,63 @@ Larger direct-domain migrations remain excluded.
 - `scoped-form-write.ts` invokes the same adapter for fresh submitted-intent assessment, consumes
   only a matching typed invocation result, and fails closed before write issuance for failed or
   inconsistent completion. It no longer reads a review snapshot or private capability context.
-  Its actual writing invocation and settlement/interruption transitions are unchanged.
+  Its actual writing invocation and settlement/interruption transitions are unchanged. Obsolete
+  assessed/failed completions are ignored before current-result classification.
 - Recursive source review found no new promise actor, I/O workflow or resource handling hidden in
   the adapter: projection, scope comparison, report construction and finite output are pure; sending
   and forwarding are leaf message actions. Existing `observe`, `assessmentObservation`, selectors,
   write effects and completion helpers remain at their documented boundaries. Transaction/avatar
   resource ownership remains unfinished work, as identified in the source audit.
 
-Focused Prettier, `git diff --check` and `pnpm check:tests` passed. `pnpm check` found no production diagnostics, but
-failed on two existing sends of the removed `CAPABILITY_UPDATED` event in `scoped-form.test.ts`.
-Those test calls need the new `FORM_CAPABILITY_REPORTED` contract and watch generation; they have
-been left unchanged until implementation review under the repository test gate. No successful
-full type check or runtime verification is claimed for this slice yet. After approval, update
-those tests and add the protocol/error/race coverage listed above before committing this change.
+## Queued assessment replacement fix
+
+Runtime verification exposed a replacement race: a subscription can deliver a newer observation
+when an old assessment becomes done/error, before the old invocation notification reaches its
+parent. Merely rejecting the old success as invalid caused the fallback transition to fail the
+replacement assessment. The same problem applied to normal failed output and actor errors.
+
+Finite failure output now carries the captured assessment token. The operation consumes older
+assessment generations without changing state, while current failed or inconsistent completions
+still fail closed before write issuance. The review invocation has an explicit child ID.
+
+For an actor error, the owning transition records a generation-specific failure fact only if the
+currently owned review actor is itself in error. `authorizing.checkingError` then either enters
+failed or returns to pending while retaining the replacement invocation on the authorizing parent.
+This uses direct-child liveness, not private readiness policy. No independent lifecycle flag is
+introduced: context retains the observed failure generation; states own the decision and lifetime.
+No extra public operation command or event is introduced. Terminal cleanup clears the failure fact.
+
+Tests reproduce queued success, normal failure and actor error with real source/adapter/operation
+actors and reentrant observation delivery. Each keeps the replacement assessment alive, issues no
+premature write, and allows exactly one write after the current assessment completes.
+
+## Approved verification
+
+- 211 unit tests passed across 12 focused files: readiness adapter, scoped owner/submission/progress/
+  write/completion, controller lifecycle, and the workspace rename, transaction entry, management,
+  profile and account creation consumers. This includes 32 new readiness tests capturing real typed
+  reports and finite results, provisional/stale/wrong-scope projections, same-revision watcher retry,
+  A → B → A, source startup/later crash/completion, projection errors, actual settlement and queued
+  assessment replacement. The two old event sends were migrated to the explicit report contract.
+- Nine form browser checks passed in one run: access/reset, modal behavior, scope replacement,
+  actual account creation, offline workspace rename/reload, validation/progress/cleanup and the two
+  new readiness withdrawal and failure/drain/retry scenarios. The actual transaction edit check
+  then passed on a focused rerun after aligning its old button-label locator with current UI copy;
+  it covers repeated offline saves and retained archived tags. Its startup wait now matches the
+  existing 30-second allowance. No product label or presentation behavior changed.
+- `pnpm check` passed with zero errors/warnings. `pnpm check:tests`, focused Prettier and
+  `git diff --check` passed. No browser server ran concurrently with unit/Svelte regeneration.
+
+Commands:
+
+```sh
+pnpm exec vitest run src/lib/machines/scoped-form-readiness.test.ts src/lib/machines/scoped-form.test.ts src/lib/machines/scoped-form-write.test.ts src/lib/machines/scoped-form-submission.test.ts src/lib/machines/scoped-form-progress.test.ts src/lib/machines/scoped-form-completion.test.ts src/lib/forms.test.ts src/lib/machines/workspace-rename.test.ts src/lib/machines/transaction-entry.test.ts src/lib/machines/management.test.ts src/lib/machines/profile.test.ts src/lib/machines/account-creation.test.ts
+pnpm exec playwright test --config playwright.config.ts '^/Users/matthewjamesderocher/Projects/delightful-finances/tests/(form-presentation|transaction-edit).e2e.ts$' --workers=1 --grep 'scoped fields|modal preserves|scope replacement|existing account modal|shared edit mode|submission reports|readiness|always-visible form'
+pnpm exec playwright test --config playwright.config.ts '^/Users/matthewjamesderocher/Projects/delightful-finances/tests/transaction-edit.e2e.ts$' --workers=1 --grep 'always-visible form'
+```
+
+Absolute file-path filters exclude the hidden `.delta/worktrees` test copies; adjust the checkout
+prefix locally. Browser checks use disposable agent storage. Source/error/report interleavings are
+controlled in unit actors; browser scenarios use the shared controller and actual form components,
+with real Jazz writes in the app scenarios. These are scoped results, not a full application/PWA
+run. Transaction persistence resource ownership and avatar preparation remain unfinished work.

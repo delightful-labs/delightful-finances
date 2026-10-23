@@ -63,7 +63,9 @@ export function createScopedFormReadinessMachine<
 		output: ({ context }) => {
 			if (context.delivery.kind === 'assessment' && context.capability)
 				return { kind: 'assessed', token: context.delivery.token, capability: context.capability }
-			return { kind: 'failed' }
+			return context.delivery.kind === 'assessment'
+				? { kind: 'failed', token: context.delivery.token }
+				: { kind: 'failed' }
 		},
 		states: {
 			observing: {

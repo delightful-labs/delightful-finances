@@ -67,7 +67,7 @@ export type FormAssessmentToken = {
 }
 export type FormReadinessResult<Scope, Reason> =
 	| { kind: 'assessed'; token: FormAssessmentToken; capability: FormCapability<Scope, Reason> }
-	| { kind: 'failed' }
+	| { kind: 'failed'; token?: FormAssessmentToken }
 export type FormRequest<Scope> = {
 	id: number
 	scope: Scope

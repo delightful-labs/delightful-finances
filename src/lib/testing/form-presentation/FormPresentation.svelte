@@ -45,6 +45,14 @@
 
 <!-- Test-only controls expose observations and settlement, never a production route. -->
 <button onclick={() => (facts = { ...facts, allowed: !facts.allowed })}>Toggle access</button>
+<button onclick={() => (facts = { ...facts, publish: false })}>Hold readiness</button>
+<button onclick={() => (facts = { ...facts, publish: true })}>Release readiness</button>
+<button onclick={() => (facts = { ...facts, broken: true })}>Fail readiness</button>
+<button onclick={() => (facts = { ...facts, broken: false })}>Repair readiness</button>
+<button onclick={form.retryReadiness} disabled={!form.view.canRetryReadiness}
+	>Retry readiness</button
+>
+<p data-testid="readiness">{form.view.readiness.kind}</p>
 <button onclick={() => (facts = { ...facts, scope: facts.scope === 'a' ? 'b' : 'a' })}
 	>Replace scope</button
 >

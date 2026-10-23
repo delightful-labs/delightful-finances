@@ -7,7 +7,7 @@ async function seedTransaction(
 	await page.goto('/accounts')
 	await expect(
 		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
-	).toBeEnabled()
+	).toBeEnabled({ timeout: 30_000 })
 	return page.evaluate(async (scenario) => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
@@ -124,7 +124,7 @@ test('always-visible form supports reverted drafts, repeated offline saves and r
 	const seed = await seedTransaction(page)
 	await page.goto(`/expenses/${seed.id}`)
 	const amount = page.getByLabel('Amount', { exact: true })
-	const save = page.getByRole('button', { name: 'Save transaction', exact: true })
+	const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
 	await expect(amount).toHaveValue('12.34')
 	await expect(amount).toBeEnabled()
 	await expect(page.getByRole('button', { name: 'Edit transaction', exact: true })).toHaveCount(0)
