@@ -121,8 +121,8 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 - [ ] T039 Revisit responsive layout, keyboard/focus behavior, and interaction states after the planned post-MVP design and layout revision. Existing shell behavior has focused responsive/keyboard coverage; perform the broader review against the revised design rather than polishing the current layout prematurely.
 - [ ] Revisit Jazz pending/sync-completion observability and the app-shell status indicator when the SDK exposes a supported whole-device signal. The current shell reports only local mode, browser offline state, or sync configuration; do not claim a completed sync. See the deferred sync-status observability investigation in plan.md.
 - [ ] Add GitHub Actions CI for application checks, unit tests, and Playwright suites. Existing package scripts and Playwright configurations are available; workflow setup and reliable execution are deferred beyond MVP. Latest attempted local run: app/service-worker checks, browser-test type checks, 264 unit tests, 15 authentication tests, production build, and six PWA tests passed. Base Playwright, permissions, and workspace runs did not pass; investigate stale test discovery/readiness selectors and Jazz dev-server startup/connection before adding required CI gates.
-- [ ] T043 Implement server-side SimpleFIN claim and scheduled/on-demand import worker with idempotent external IDs; include unit and Playwright coverage.
-- [ ] T044 Build SimpleFIN account linking and transaction import UI; include unit and Playwright coverage.
+- T043 **Superseded** by constitution VI and [002-manual-bank-sync](../002-manual-bank-sync/spec.md): the original server-side claim/import-worker task is retired. Explicit client-initiated setup, passkey-protected credentials and manual imports are tracked under feature 002; scheduled/automatic imports are outside the approved design.
+- T044 **Superseded tracking**: account linking and explicit manual import requirements, implementation and verification are tracked in [002-manual-bank-sync](../002-manual-bank-sync/spec.md) and its [tasks](../002-manual-bank-sync/tasks.md), rather than as an independent deferred MVP task. This reference does not declare every feature-002 requirement complete.
 - [ ] T045 Implement transaction image upload and attachment UI using Jazz blob APIs; include unit and Playwright coverage.
 - [ ] T046 Implement transaction batch/template flows; include unit and Playwright coverage.
 - [ ] T047 Add business-org creation, invite UX, and fine-grained account grant management; include unit and Playwright coverage.
@@ -444,3 +444,8 @@ and two new income/expense integrity cases) against disposable in-memory Jazz on
 port 5180. Existing tag fixtures now specify their required kind. `pnpm check`,
 `pnpm check:tests`, focused Prettier and `git diff --check` pass. No production
 changes were needed during verification; nothing was deployed or committed.
+
+## SimpleFIN documentation reconciliation
+
+- [x] Align MVP SimpleFIN requirements, architecture, credential-access assumptions and obsolete backlog entries with constitution VI and spec 002.
+- [ ] Review this documentation-only reconciliation; unfinished sync-indicator, merge and sharing features remain outside this cycle.

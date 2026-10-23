@@ -15,7 +15,7 @@ Build a local-first personal finance MVP using SvelteKit/Svelte 5 and Jazz v2. E
 **Target Platform**: Responsive browser/PWA
 **Project Type**: Web application
 **Performance Goals**: Common reads and writes operate against local Jazz state without waiting for network.
-**Constraints**: No `any`; no `as` casts; no floating-point money; no Tailwind; all UI strings through Paraglide; do not expose SimpleFIN Access URLs to ordinary client replicas.
+**Constraints**: No `any`; no `as` casts; no floating-point money; no Tailwind; all UI strings through Paraglide; replicate only passkey-protected SimpleFIN ciphertext and non-secret unlock metadata; keep usable credentials transient.
 **Scale/Scope**: Personal USD MVP, with forward-compatible org membership, account grants, provider metadata, attachment, and batch schema.
 
 ## Constitution Check
@@ -25,7 +25,7 @@ Build a local-first personal finance MVP using SvelteKit/Svelte 5 and Jazz v2. E
 - **Financial integrity**: integer minor units, ISO currency, explicit transaction kind and references.
 - **Access control**: organization tenancy and grant-aware Jazz permissions are part of the initial schema.
 - **Accessible/localized UI**: semantic HTML controls, native CSS, Paraglide, responsive design.
-- **Secrets**: SimpleFIN claiming/fetching is server-side; setup tokens are transient and Access URLs admin-only.
+- **Secrets**: Follow constitution VI and [002-manual-bank-sync](../002-manual-bank-sync/spec.md): client-initiated setup/discovery/manual sync, transient setup tokens, passkey compatibility verified before claiming, ciphertext-only credential persistence, and fresh passkey verification for each explicit credential-using operation. Admin membership alone does not permit decryption.
 - **Evolution**: additive Jazz migrations and related tables for check details, attachments, batches, and provider links.
 - **Testability**: isolate domain logic and Jazz boundary adapters so they can be unit-tested; provide stable browser flows and fixtures for Playwright coverage.
 
@@ -42,19 +42,22 @@ flowchart TB
   end
   Sync[Jazz sync and permissions]
   Cloud[Jazz Cloud]
-  Worker[Future SimpleFIN sync worker]
+  Provider[SimpleFIN provider]
+  Relay[Stateless CORS relay when required]
   UI --> Local
   UI --> Flow
   Local <--> Sync
   Sync <--> Cloud
-  Worker --> Sync
+  Flow --> Provider
+  Flow --> Relay
+  Relay --> Provider
 ```
 
 - Jazz owns data, authentication, local persistence, sync, and authorization. Permission checks filter reads and reject illegal writes.
 - XState models multi-step transaction composition (including check details) and tag picker flows. Simple toggles and current org selection use Svelte state.
 - Paraglide provides all labels, errors, and other visible text.
 - Use SvelteKit's native service worker with prerendered public page shells and a web app manifest. Cache only public shells/build assets; do not intercept Jazz data, authentication, or synchronization. Workbox is deferred. Show sync/pending state without blocking local work.
-- SimpleFIN claim and fetch are future server-side worker operations. Never broadcast the Access URL through normal user replicas.
+- SimpleFIN setup, account discovery and manual sync follow [002-manual-bank-sync](../002-manual-bank-sync/spec.md). Client workflows may use a stateless CORS relay without credential retention. Persist only encrypted Access URLs and non-secret unlock metadata; discard transient plaintext and usable key references when an operation ends or its identity/workspace/lifetime changes. Only explicit Sync now may fetch transactions; no startup, setup, reconnection, timer or automatic retry may fetch them.
 
 ## Data Design
 
@@ -70,7 +73,7 @@ flowchart TB
 - `transactions`: account and org references; integer `amountMinor`; kind expense/income; ISO currency; category; date `bookedOn`; source; optional description/memo/externalId/batchId; income payment method.
 - `transactionTags`: many-to-many transaction/tag relation with an explicit `organizationId`. Insert permissions require transaction edit access and verify that both referenced rows match that workspace; newly assigned tags must be active. Read/delete checks retain archived-tag history while enforcing transaction access. Link updates are denied; reassignment uses delete/insert. Ten real-server permission checks pass, including same-transaction assignment, archived history, cross-workspace rejection, and role/grant access. The user authorized resetting pre-alpha development data and migration history. No migration files or snapshots are retained during this pre-alpha stage. Future schema changes must either provide migrations or receive explicit authorization for another data reset.
 - `checkDetails`: required number/date in a dedicated record selected by transactions.checkDetailsId. Detail rows carry explicit organizationId/accountId references; insertion requires write access to the matching active account. createTransaction inserts the detail before its parent in one database transaction using the same preallocated row ID. Parent insert/update policies require the selected detail to exist and match transaction ID, account ID, and organization ID, closing the initial missing/shared-reference gap without circular authorization. Selection is singular and immutable; detail updates preserve transaction/account/workspace and match the selected parent; detail deletion is denied. Reads follow account grants. Authorized unselected detail candidates may exist through direct writes, but cannot become a second selected detail or be shared by another transaction. App creation writes both together; a server-rejected parent rolls back both records. After explicit reset/test authorization, the development database and app namespace were reset and this schema/policy published successfully. Verification on 2026-10-15: 106 focused unit tests, 10 check-detail integrity/access browser scenarios, 13 transaction form/detail/tag browser scenarios, and application/test/worker static checks pass. Coverage includes absent/shared/wrong-account/wrong-workspace initial references, concurrent selections, required date, edits, reassignment/deletion, atomic rollback, all role/grant cases, and offline tag workflows. Concurrent dependent writes may return cascade_rejected after an authoritative permission rejection; tests assert both rejection and unchanged selection. No migration files are retained.
-- `simplefinConnections`: org connection status and Access URL, readable only by owner/admin.
+- `simplefinConnections`: org connection status, connecting owner, ciphertext and non-secret unlock metadata, readable only by owner/admin. The legacy `accessUrl` column contains only an empty sentinel on new writes. Administrative record access does not grant passkey decryption access.
 - `simplefinAccountLinks`: org/account to provider account mapping.
 - `transactionAttachments`, Jazz file tables, `transactionBatches`, `batchTemplates`: schema/policy stubs for later features.
 
@@ -84,7 +87,7 @@ flowchart TB
 - Member/viewer with `accountAccessMode: all`: all org accounts.
 - Member/viewer with `accountAccessMode: selected`: only explicitly granted accounts; zero grants means no account access.
 - Grants are effective only while the user is an active organization member; viewers remain read-only even if a grant row has write access.
-- SimpleFIN credential fields: org owner/admin only, independent of access to normal financial data.
+- SimpleFIN connection records: org owner/admin read access, with writes restricted to the connecting owner who retains owner/admin authority. Credential use additionally requires the connecting identity and its passkey, bound to the organization/connection. Normal financial-data access does not grant credential use.
 - Writes must validate organization/account/category relationships; unauthorized writes are rejected.
 
 ## Project Layout
@@ -112,7 +115,7 @@ Use a shared XState form machine for validation/save lifecycles, with invoked pr
 ## Implementation Phases
 
 1. **Scaffold**: create the Jazz SvelteKit app; establish strict TypeScript, semantic HTML controls, XState, Paraglide, and PWA baseline.
-2. **Schema and permissions**: implement complete forward-compatible domain schema, checks/invariants, org/account-grant access rules, and admin-only SimpleFIN secret access.
+2. **Schema and permissions**: implement complete forward-compatible domain schema, checks/invariants, org/account-grant access rules, and admin-only SimpleFIN connection-record access with separately passkey-protected credentials.
 3. **Authentication and workspace**: wire Jazz auth; first login creates profile, personal org, owner membership, and required categories.
 4. **Accounts**: create/list/archive UI for USD ledgers; preserve historical data.
 5. **Transactions and organization**: implement transaction form, check details, categories/tags, typeahead, XState flows, and org shell.
@@ -128,7 +131,7 @@ Use a shared XState form machine for validation/save lifecycles, with invoked pr
 ## Risks and Decisions to Resolve During Implementation
 
 - Keep authorization rules aligned with the explicit `accountAccessMode` field; grants are effective only for active organization members, and viewers remain read-only.
-- The chosen SimpleFIN credential storage model is not end-to-end secret against users able to read the record or operate the worker; limit readers and document operational access.
+- Passkey encryption protects replicated SimpleFIN credentials from membership-only access. Malicious application code while unlocked, and a stateless relay handling a request, can still access a transient usable credential. Lost-passkey recovery is explicit reconnection with a new setup token/passkey; device compatibility and synced-passkey support require actual-device verification under spec 002.
 - PWA caching must avoid stale app code conflicting with synchronized local data.
 - Confirm exact check-specific fields and any Jazz file-table requirements when implementing those stubs.
 
@@ -398,3 +401,12 @@ permission tests using the SDK test authority, all 32 browser permission scenari
 application/service-worker and browser-test type checks, focused formatting and
 whitespace checks. The browser run used disposable in-memory Jazz on port 5180;
 no deployment or commit was performed.
+
+## SimpleFIN documentation reconciliation
+
+Updated the original MVP server-worker/administrative-secret assumptions to match
+the constitution and spec 002. Their explicit client/passkey/manual-sync design
+is authoritative; this does not infer intended behavior from code alone. Removed
+obsolete worker tasks from the open MVP backlog by marking them superseded, not
+completed. No implementation, provider operation, deployment, or unfinished
+feature work is part of this documentation-only review cycle.
