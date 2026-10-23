@@ -1,12 +1,12 @@
-# Deferred actor orchestration tasks
+# Actor orchestration tasks
 
 The workspace phase (W001–W012) is complete, reviewed and verified. Its ownership, contracts and
 cleanup model are documented in [plan.md](plan.md) and the
 [workspace architecture](../006-multiple-workspaces/plan.md). Completed implementation checklists
 and historical test-count logs are omitted.
 
-Completed bank work and remaining deferred tasks are recorded below. Retaining them is not authorization to start a broader refactor.
-Each remaining subsystem needs its own audit and implementation review, followed by approved relevant tests.
+All subsystems were explicitly resumed after their audits. The user authorized D010–D012 as one
+combined implementation and verification batch. Completion evidence is recorded below and in the linked plans.
 Bank orchestration is complete through the focused review cycles below. D001's source audit is recorded in
 [bank-audit.md](bank-audit.md); implementation scope remains subject to review.
 
@@ -21,7 +21,7 @@ Bank orchestration is complete through the focused review cycles below. D001's s
       [Availability/history reports](bank-reports.md) are reviewed and verified.
 - [x] D003 Review that implementation, then verify cancellation, identity/scope replacement, partial results, observer errors, provider request races and resource cleanup (FR-014).
 
-## Resumed: generic form orchestration — focused review cycles
+## Completed: generic form orchestration — focused review cycles
 
 - [x] D004 Audit scoped-form availability/submission/write/completion composition, forwarding wrappers, snapshot copying and shutdown ownership (FR-014). Source findings and proposed review slices are in [form-audit.md](form-audit.md); no runtime verification claimed.
 - [x] D005 After separate scope approval, implement only justified form boundary changes; retain original write scope and independently owned completion effects (FR-014).
@@ -42,8 +42,16 @@ Bank orchestration is complete through the focused review cycles below. D001's s
 - [x] D009 Review that implementation, then verify startup acquisition, observer failure, session retry, replacement races and application teardown (FR-014).
       Retry ownership is verified: 88 relevant unit tests, four startup/session recovery browser checks and static checks pass. Recovery/SDK drain is verified with migrated fixtures: 102 relevant unit tests, nine browser checks and static checks pass.
 
-## Deferred: inspection and architecture follow-through — do not implement now
+## Completed: inspection and architecture follow-through — final combined batch
 
-- [ ] D010 Design opt-in actor-system inspection of lifetimes and event causality with sensitive payloads excluded (FR-015).
-- [ ] D011 After separate scope approval, implement and review diagnostics; then verify correlation and absence of credentials/private payloads (FR-015).
-- [ ] D012 Reconcile lessons from completed subsystem audits into orchestration memory and remove only abstractions demonstrated to be redundant. Record final ownership diagrams and remaining exceptions (FR-013–FR-015).
+- [x] D010 Design opt-in actor-system inspection of lifetimes and event causality with sensitive payloads excluded (FR-015). Design and review are recorded in [inspection.md](inspection.md).
+- [x] D011 After separate scope approval, implement and review diagnostics; then verify correlation and absence of credentials/private payloads (FR-015). Implemented and source-reviewed under the combined authorization; 1,049 unit tests, 21 browser checks, static checks and the production build pass. See [inspection.md](inspection.md).
+- [x] D012 Reconcile lessons from completed subsystem audits into orchestration memory and remove only abstractions demonstrated to be redundant. Record final ownership diagrams and remaining exceptions (FR-013–FR-015). Completed in [architecture.md](architecture.md), XState memory and the workspace plan; removed only unused startup status commands and workspace snapshot forwarding.
+
+## Completion
+
+All workspace and D001–D012 orchestration work is complete. The user separately authorized the final
+combined design/implementation/verification pass. Final validation: 1,049 unit tests across 68 src/lib
+files, 21 relevant browser checks, both static checks, Prettier, diff checks and production build.
+Browser coverage is scoped to diagnostics, shared forms and recovery; historical domain checks remain
+linked to their focused implementation plans. No full unrelated finance/PWA browser rerun is claimed.

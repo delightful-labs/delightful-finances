@@ -63,38 +63,6 @@ describe('session startup', () => {
 		}
 	})
 
-	it('tracks SDK failures and readiness without invoking account operations', () => {
-		const open = vi.fn(async () => {})
-		const actor = createActor(createSessionStartupMachine(open)).start()
-		try {
-			actor.send({ type: 'SESSION_FAILED' })
-			expect(actor.getSnapshot().matches('error')).toBe(true)
-			actor.send({ type: 'SESSION_READY' })
-			expect(actor.getSnapshot().matches('ready')).toBe(true)
-			actor.send({ type: 'SESSION_FAILED' })
-			expect(actor.getSnapshot().matches('error')).toBe(true)
-			expect(open).not.toHaveBeenCalled()
-		} finally {
-			actor.stop()
-		}
-	})
-
-	it('ignores stale completion after an SDK-observed failure', async () => {
-		const pending = Promise.withResolvers<string>()
-		const actor = createActor(createSessionStartupMachine(() => pending.promise)).start()
-		try {
-			actor.send({ type: 'START' })
-			actor.send({ type: 'SESSION_FAILED' })
-			pending.resolve('stale session')
-			await pending.promise
-			await Promise.resolve()
-			expect(actor.getSnapshot().matches('error')).toBe(true)
-			expect(actor.getSnapshot().context.result).toBeUndefined()
-		} finally {
-			actor.stop()
-		}
-	})
-
 	it('ignores pending completion after its owner stops', async () => {
 		const pending = Promise.withResolvers<string>()
 		const actor = createActor(createSessionStartupMachine(() => pending.promise)).start()

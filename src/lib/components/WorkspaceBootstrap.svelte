@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { actorInspection } from '#lib/actor-inspection.js'
 	import { app } from '#lib/schema.js'
 	import { QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
@@ -50,7 +51,7 @@
 	}
 	const db = getDb()
 	const session = fromStore(getJazzSession())
-	const accountOrder = useMachine(accountOrderMachine)
+	const accountOrder = useMachine(accountOrderMachine, actorInspection())
 	const orderSnapshot = accountOrder.snapshot
 	let movedOrder = $state<{ key: string; ids: readonly string[] } | undefined>()
 	const orderKey = $derived(

@@ -1,3 +1,4 @@
+import { actorInspection } from '#lib/actor-inspection.js'
 import { onMount, untrack } from 'svelte'
 import { createActor, type Snapshot } from 'xstate'
 import {
@@ -45,7 +46,7 @@ export function createScopedFormController<
 				AvailabilitySnapshot,
 				OperationSnapshot
 			>(bound),
-			{ input: bound.observe() }
+			{ input: bound.observe(), ...actorInspection() }
 		)
 	)
 	let formSnapshot = $state.raw(actor.getSnapshot())

@@ -1,7 +1,6 @@
 import { assign, fromPromise, setup } from 'xstate'
 
-type StartupEvent =
-	{ type: 'START' } | { type: 'RETRY' } | { type: 'SESSION_FAILED' } | { type: 'SESSION_READY' }
+type StartupEvent = { type: 'START' } | { type: 'RETRY' }
 
 export function createSessionStartupMachine<Result>(
 	start: () => Promise<Result>,
@@ -16,11 +15,6 @@ export function createSessionStartupMachine<Result>(
 		id: 'session-startup',
 		initial: existing === undefined ? 'waiting' : 'ready',
 		context: { result: existing },
-		// SDK observations also cover failures initiated outside this UI actor.
-		on: {
-			SESSION_FAILED: { target: '.error' },
-			SESSION_READY: { target: '.ready' }
-		},
 		states: {
 			waiting: { on: { START: 'starting' } },
 			starting: {

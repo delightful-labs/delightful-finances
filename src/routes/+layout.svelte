@@ -19,7 +19,8 @@
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { queryLinksKey, type QueryLinkContext } from '#lib/query-links.js'
-	import { browser } from '$app/env'
+	import { browser, dev } from '$app/env'
+	import { actorInspection, initializeActorInspection } from '#lib/actor-inspection.js'
 	import { workspaceRoute } from '#lib/domain/workspace-routes.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { getCurrentJazzSession, getOrCreateJazzSession } from '#lib/jazz-session.js'
@@ -63,6 +64,7 @@
 		initial: 'local-first'
 	} satisfies JazzSessionConfig
 
+	initializeActorInspection(browser && dev)
 	const actor = createActor(
 		createApplicationReadinessMachine(
 			() => getOrCreateJazzSession(jazzConfig),
@@ -71,7 +73,8 @@
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
 				navigate: (destination) => goto(destination)
 			}
-		)
+		),
+		actorInspection()
 	).start()
 	const snapshot = readable(actor.getSnapshot(), (set) => {
 		const subscription = actor.subscribe(set)

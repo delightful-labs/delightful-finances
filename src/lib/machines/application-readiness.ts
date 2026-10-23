@@ -120,9 +120,7 @@ export function createApplicationReadinessMachine(
 	})
 	const attach = workflow.assign(({ context, spawn }) => ({
 		attachment: context.pending,
-		workspace: spawn(createWorkspaceReadinessMachine(required(context.pending)), {
-			syncSnapshot: true
-		}),
+		workspace: spawn(createWorkspaceReadinessMachine(required(context.pending))),
 		pending: undefined
 	}))
 	const shutDownWorkspace = workflow.enqueueActions(({ context, enqueue }) => {
