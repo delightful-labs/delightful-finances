@@ -6,7 +6,7 @@ import { generateAuthSecret } from 'jazz-tools'
 async function createAccount(page: Page, name: string) {
 	await page.goto('/accounts')
 	await prepareSidebar(page)
-	await expect(page.getByLabel('Current workspace', { exact: true })).not.toHaveValue('')
+	await expect(page.getByLabel('Current Workspace', { exact: true })).not.toHaveValue('')
 	const dialog = await openCreationModal(page, 'Add Account')
 	await dialog.getByLabel('Account name').fill(name)
 	await dialog.getByLabel('Account type').selectOption('bank')
@@ -34,7 +34,7 @@ for (const { name, phrase } of invalidPhrases) {
 		// Confirm each fixture is invalid using Jazz's own recovery validator.
 		expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
 		await createAccount(page, 'Retained checking')
-		const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+		const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 		await page.goto(`/login?workspace=${workspaceId}`)
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
@@ -44,13 +44,13 @@ for (const { name, phrase } of invalidPhrases) {
 		await expect(page).toHaveURL(`/login?workspace=${workspaceId}`)
 		await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
-		await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
+		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 
 		await page.goto(`/accounts?workspace=${workspaceId}`)
 		await page.reload()
-		await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
+		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 		await expect(
-			page.getByLabel('Current workspace', { exact: true }).locator('option:not([value=""])')
+			page.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
 		).toHaveCount(1)
 		await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(1)
 	})
@@ -62,9 +62,9 @@ test('restores existing workspace data without duplicates or previous identity a
 	baseURL
 }) => {
 	await createAccount(page, 'Original checking')
-	const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+	const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show recovery phrase' }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
 	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
 	await page.getByRole('button', { name: 'Close', exact: true }).click()
 
@@ -74,11 +74,11 @@ test('restores existing workspace data without duplicates or previous identity a
 		await createAccount(otherPage, 'Previous identity checking')
 		await restoreAccount(otherPage, phrase)
 		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
-		await expect(otherPage.getByLabel('Current workspace', { exact: true })).toHaveValue(
+		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
 			workspaceId
 		)
 		await expect(
-			otherPage.getByLabel('Current workspace', { exact: true }).locator('option:not([value=""])')
+			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
 		).toHaveCount(1)
 		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await expect(
@@ -89,11 +89,11 @@ test('restores existing workspace data without duplicates or previous identity a
 		await restoreAccount(otherPage, phrase)
 		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await otherPage.reload()
-		await expect(otherPage.getByLabel('Current workspace', { exact: true })).toHaveValue(
+		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
 			workspaceId
 		)
 		await expect(
-			otherPage.getByLabel('Current workspace', { exact: true }).locator('option:not([value=""])')
+			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
 		).toHaveCount(1)
 		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await expect(
@@ -112,7 +112,7 @@ test('restores existing workspace data without duplicates or previous identity a
 test('recovery modal clears its content and confirmation on every dismissal', async ({ page }) => {
 	await createAccount(page, 'Recovery modal checking')
 	await page.goto('/account')
-	const show = page.getByRole('button', { name: 'Show recovery phrase' })
+	const show = page.getByRole('button', { name: 'Show Recovery phrase' })
 	const dialog = page.getByRole('dialog', { name: 'Account recovery' })
 	const phrase = page.getByLabel('Your recovery phrase', { exact: true })
 	const confirmation = page.getByLabel('I saved this phrase somewhere safe.')
@@ -196,7 +196,7 @@ test('profile name follows the recovered identity across devices', async ({
 			})
 		)
 		.toBe('Recovered owner')
-	await page.getByRole('button', { name: 'Show recovery phrase' }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
 	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
 	await page.getByRole('button', { name: 'Close', exact: true }).click()
 	const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
@@ -270,11 +270,15 @@ async function avatarImage(page: Page, width: number, height: number, noisy = fa
 	return { name: 'avatar.png', mimeType: 'image/png', buffer: Buffer.from(bytes) }
 }
 
-async function waitForAvatar(page: Page, width: number, height: number) {
-	const image = page
+function avatarPreview(page: Page) {
+	return page
 		.getByRole('group')
 		.filter({ has: page.getByLabel('Avatar', { exact: true }) })
 		.locator('img')
+}
+
+async function waitForAvatar(page: Page, width: number, height: number) {
+	const image = avatarPreview(page)
 	await expect(image).toBeVisible()
 	await expect
 		.poll(() =>
@@ -292,7 +296,7 @@ async function uploadAvatar(
 	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
 	await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
 	await expect(
-		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Avatar saved.' })
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved.' })
 	).toHaveCount(1)
 }
 
@@ -322,11 +326,7 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	await page.reload()
 	await waitForAvatar(page, 256, 128)
 	expect(await avatarRecord(page)).toEqual(first)
-	const reloadedUrl = await page
-		.getByRole('group')
-		.filter({ has: page.getByLabel('Avatar', { exact: true }) })
-		.locator('img')
-		.getAttribute('src')
+	const reloadedUrl = await avatarPreview(page).getAttribute('src')
 	await uploadAvatar(page, await avatarImage(page, 120, 240), true)
 	await waitForAvatar(page, 120, 240)
 	await expect
@@ -338,18 +338,9 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	expect(replacement.checksum).not.toBe(first.checksum)
 	expect(replacement.id).toBe(first.id)
 	expect(replacement.displayName).toBe(first.displayName)
-	const replacementUrl = await page
-		.getByRole('group')
-		.filter({ has: page.getByLabel('Avatar', { exact: true }) })
-		.locator('img')
-		.getAttribute('src')
-	await page.getByRole('button', { name: 'Remove avatar', exact: true }).click()
-	await expect(
-		page
-			.getByRole('group')
-			.filter({ has: page.getByLabel('Avatar', { exact: true }) })
-			.locator('img')
-	).toHaveCount(0)
+	const replacementUrl = await avatarPreview(page).getAttribute('src')
+	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).click()
+	await expect(avatarPreview(page)).toHaveCount(0)
 	await expect
 		.poll(() =>
 			page.evaluate((url) => url !== null && window.avatarRevokedUrls.includes(url), replacementUrl)
@@ -403,13 +394,8 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 		await waitForAvatar(page, 100, 100)
 		const local = await avatarRecord(page)
 		expect(local.byteLength).toBeGreaterThan(0)
-		await page.getByRole('button', { name: 'Remove avatar', exact: true }).click()
-		await expect(
-			page
-				.getByRole('group')
-				.filter({ has: page.getByLabel('Avatar', { exact: true }) })
-				.locator('img')
-		).toHaveCount(0)
+		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).click()
+		await expect(avatarPreview(page)).toHaveCount(0)
 		expect((await avatarRecord(page)).byteLength).toBe(0)
 	} finally {
 		await page.context().setOffline(false)
@@ -427,7 +413,7 @@ test('avatar follows account recovery on another device', async ({ page, browser
 	await waitForAvatar(page, 128, 256)
 	const original = await avatarRecord(page)
 	await expect.poll(() => avatarRecord(page, true)).toEqual(original)
-	await page.getByRole('button', { name: 'Show recovery phrase' }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
 	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
 	await page.getByRole('button', { name: 'Close', exact: true }).click()
 	const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
@@ -497,7 +483,9 @@ test('startup network failures can retry repeatedly without replacing the saved 
 	await expect(retry).toBeVisible()
 	failing = false
 	await retry.click()
-	await expect(page.getByRole('button', { name: 'Toggle navigation', exact: true })).toBeVisible()
+	await expect(
+		page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
+	).toBeVisible()
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')
 	await expect(
@@ -511,7 +499,7 @@ test('restore session failures retain identity and retry without exposing the re
 	await createAccount(page, 'Session retained checking')
 	const identity = await currentIdentity(page)
 	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show recovery phrase', exact: true }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
 	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
 	await page.getByRole('button', { name: 'Close', exact: true }).click()
 	const messages: string[] = []
@@ -621,7 +609,7 @@ test('recoverable restore failure keeps the original client and generic feedback
 	await createAccount(page, 'Recoverable checking')
 	const identity = await currentIdentity(page)
 	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show recovery phrase', exact: true }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
 	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
 	await page.getByRole('button', { name: 'Close', exact: true }).click()
 	await page.goto('/login')
@@ -684,9 +672,9 @@ test('recovery navigation failure retries navigation without restoring the accou
 }) => {
 	await createAccount(page, 'Navigation retained checking')
 	const identity = await currentIdentity(page)
-	const workspaceId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+	const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show recovery phrase', exact: true }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
 	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
 	await page.getByRole('button', { name: 'Close', exact: true }).click()
 	await page.goto('/login')
@@ -727,7 +715,7 @@ test('recovery navigation failure retries navigation without restoring the accou
 	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue('')
 	await page.getByRole('button', { name: 'Try again', exact: true }).click()
 	await expect(page).toHaveURL((url) => url.pathname === '/')
-	await expect(page.getByLabel('Current workspace', { exact: true })).toHaveValue(workspaceId)
+	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 	expect(await page.evaluate(() => window.recoveryNavigationTest)).toEqual({
 		restoreCalls: 1,
 		navigationFailures: 1

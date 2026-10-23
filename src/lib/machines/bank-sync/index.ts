@@ -298,7 +298,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 								]
 							},
 							disconnected: {
-								meta: { status: { key: 'bank.idle', stepKey: bankSetupSteps[0].labelKey } }
+								meta: { status: { key: 'bank.idle_step', stepKey: bankSetupSteps[0].labelKey } }
 							},
 							locked: { meta: { status: { key: 'bank.locked' } } },
 							waiting: { meta: { status: { key: 'bank.waiting' } } },

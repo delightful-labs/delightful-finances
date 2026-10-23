@@ -72,7 +72,7 @@ test('offline disables both sync buttons and reconnect setup; reconnecting makes
 	await page
 		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
 		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
-	await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
+	await page.getByRole('button', { name: 'Create Passkey', exact: true }).click()
 	await page.getByRole('button', { name: 'Test encryption with my passkey', exact: true }).click()
 	await page.getByRole('button', { name: 'Test unlocking with my passkey', exact: true }).click()
 	await page.getByRole('button', { name: 'Connect and save securely', exact: true }).click()

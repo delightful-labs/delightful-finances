@@ -29,9 +29,10 @@
 	const formId = $props.id()
 	const explanations: Record<AccountCreationReason, () => string> = {
 		sessionUnavailable: () => m['accounts.create_session_unavailable'](),
-		selectWorkspace: () => m['workspace.select_workspace'](),
-		loadFailed: () => m['errors.load']({ subject: m['labels.accounts']() }),
-		loading: () => m['status.loading']({ subject: m['labels.accounts']() }),
+		selectWorkspace: () =>
+			m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
+		loadFailed: () => m['errors.load_subject']({ subject: m['nouns.account']({ count: 2 }) }),
+		loading: () => m['status.loading_subject']({ subject: m['nouns.account']({ count: 2 }) }),
 		duplicateName: () => m['forms.duplicate_name'](),
 		readOnly: () => m['accounts.create_restricted']()
 	}
@@ -39,7 +40,7 @@
 
 <FormFeedback
 	{view}
-	subject={m['labels.account']()}
+	subject={m['nouns.account']({ count: 1 })}
 	reasonText={(reason) => explanations[reason]()}
 	invalidMessage={m['accounts.validation_error']()}
 	section="readiness"
@@ -52,39 +53,46 @@
 	{onopen}
 	{onsubmit}
 	{onreset}
-	label={m['actions.add']({ name: m['labels.account']() })}
+	label={m['actions.add_subject']({ subject: m['nouns.account']({ count: 1 }) })}
 >
 	{#snippet fields(form)}
 		<InputText
-			label={m['labels.account_name']()}
+			label={m['labels.subject_name']({ subject: m['nouns.account']({ count: 1 }) })}
 			id={`${formId}-name`}
 			name="name"
 			required
 			disabled={!form.fieldsEditable}
 		/>
 		<Select
-			label={m['labels.account_type']()}
+			label={m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })}
 			id={`${formId}-kind`}
 			name="kind"
 			required
 			disabled={!form.fieldsEditable}
 			defaultValue=""
 		>
-			<option value="" disabled>{m['labels.account_type']()}</option>
+			<option value="" disabled
+				>{m['actions.select_subject']({
+					subject: m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })
+				})}</option
+			>
 			<option value="cash">{m['labels.cash']()}</option>
 			<option value="bank">{m['accounts.type.bank']()}</option>
 			<option value="card">{m['accounts.type.card']()}</option>
 		</Select>
-		<p>{m['accounts.currency_usd']()}</p>
+		<p>{m['labels.currency_code']({ code: 'USD' })}</p>
 	{/snippet}
 	{#snippet feedback(view)}
 		<FormFeedback
 			{view}
-			subject={m['labels.account']()}
+			subject={m['nouns.account']({ count: 1 })}
 			reasonText={(reason) => explanations[reason]()}
 			invalidMessage={m['accounts.validation_error']()}
 			successMessage={(value) =>
-				m['actions.saved_with_name']({ subject: m['labels.account'](), name: value.name })}
+				m['status.saved_subject_name']({
+					subject: m['nouns.account']({ count: 1 }),
+					name: value.name
+				})}
 		/>
 	{/snippet}
 </FormModal>

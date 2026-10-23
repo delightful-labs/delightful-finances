@@ -35,7 +35,7 @@ async function create(page: Page, name: string) {
 	const dialog = await openCreationModal(page, 'Create Workspace')
 	await dialog.getByLabel('Workspace name', { exact: true }).fill(name)
 	await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
-	await expect(dialog.getByRole('status').filter({ hasText: /^Workspace saved$/ })).toBeVisible()
+	await expect(dialog.getByRole('status').filter({ hasText: /^Workspace saved\.$/ })).toBeVisible()
 	const href = await page
 		.getByRole('link', { name: `Open Workspace: ${name}`, exact: true })
 		.getAttribute('href')
@@ -101,7 +101,7 @@ test('submitted workspace creation keeps Close and accessible progress without e
 		await gate.evaluate((control) => control.release())
 		await gate.dispose()
 	}
-	await expect(dialog.getByRole('status')).toHaveText('Workspace saved')
+	await expect(dialog.getByRole('status')).toHaveText('Workspace saved.')
 })
 
 test('workspace creation keeps its announcement regions mounted through success and reset', async ({
@@ -118,7 +118,7 @@ test('workspace creation keeps its announcement regions mounted through success 
 	if (!originalStatus || !originalAlert) throw new Error('Missing persistent announcement regions')
 
 	await create(page, 'Announcement workspace')
-	await expect(status).toHaveText('Workspace saved')
+	await expect(status).toHaveText('Workspace saved.')
 	await expect(alert).toHaveText('')
 	expect(await originalStatus.evaluate((node) => node.isConnected)).toBe(true)
 	expect(await originalAlert.evaluate((node) => node.isConnected)).toBe(true)
@@ -140,9 +140,10 @@ test('both workspace selectors preserve the settings page and synchronize their 
 	const created = await create(page, 'Business')
 	await closeCreationModal(page)
 	await prepareSidebar(page)
-	const manager = page.getByLabel('Choose a workspace', { exact: true })
-	const drawer = page.getByLabel('Current workspace', { exact: true })
+	const manager = page.getByLabel('Select Workspace', { exact: true })
+	const drawer = page.getByLabel('Current Workspace', { exact: true })
 	const businessId = workspaceId(created)
+	await expect(manager.locator('option:not([disabled])')).toHaveCount(2)
 	const personalId = await manager
 		.locator('option:not([disabled])')
 		.evaluateAll(
@@ -164,7 +165,7 @@ test('both workspace selectors preserve the settings page and synchronize their 
 	await page.goto('/expenses?workspace=77777777-7777-4777-8777-777777777777')
 	await prepareSidebar(page)
 	await expect(drawer).toHaveValue('')
-	await expect(drawer.locator('option:checked')).toHaveText('Choose a workspace')
+	await expect(drawer.locator('option:checked')).toHaveText('Select Workspace')
 })
 
 test('switching away and back clears account filters while ordinary navigation preserves them', async ({
@@ -190,7 +191,7 @@ test('switching away and back clears account filters while ordinary navigation p
 		return first.id
 	}, secondId)
 	await prepareSidebar(page)
-	const selector = page.getByLabel('Current workspace', { exact: true })
+	const selector = page.getByLabel('Current Workspace', { exact: true })
 	await selectWorkspace(selector, firstId)
 	const drawer = page.locator('aside.site-drawer')
 	const cash = drawer.getByRole('checkbox', { name: 'Filter cash', exact: true })
@@ -198,7 +199,7 @@ test('switching away and back clears account filters while ordinary navigation p
 	await cash.uncheck()
 	await expect(checking).toBeChecked()
 	await expect(
-		drawer.getByRole('checkbox', { name: 'All accounts', exact: true })
+		drawer.getByRole('checkbox', { name: 'All Accounts', exact: true })
 	).not.toBeChecked()
 
 	await drawer.getByRole('link', { name: 'Expenses', exact: true }).click()
@@ -214,7 +215,7 @@ test('switching away and back clears account filters while ordinary navigation p
 	await expect(page).toHaveURL(`/expenses?workspace=${firstId}`)
 	await expect(cash).toBeChecked()
 	await expect(checking).toBeChecked()
-	await expect(drawer.getByRole('checkbox', { name: 'All accounts', exact: true })).toBeChecked()
+	await expect(drawer.getByRole('checkbox', { name: 'All Accounts', exact: true })).toBeChecked()
 })
 
 test('creates duplicate-named isolated workspaces without switching, and reconciles reload', async ({
@@ -229,7 +230,7 @@ test('creates duplicate-named isolated workspaces without switching, and reconci
 	await page.reload()
 	await expect(
 		page
-			.getByLabel('Choose a workspace', { exact: true })
+			.getByLabel('Select Workspace', { exact: true })
 			.locator('option')
 			.filter({ hasText: 'Same · ' })
 	).toHaveCount(2)
@@ -319,7 +320,7 @@ test('keeps URL scope across tabs/history and discards unfinished transaction in
 	await page.goto(`/expenses/new?workspace=${firstId}`)
 	await page.getByLabel('Description', { exact: true }).fill('Discard this input')
 	await prepareSidebar(page)
-	await selectWorkspace(page.getByLabel('Current workspace', { exact: true }), secondId)
+	await selectWorkspace(page.getByLabel('Current Workspace', { exact: true }), secondId)
 	await expect(page).toHaveURL(`/expenses?workspace=${secondId}`)
 	await expect(page.getByText(`Ledger ${secondId}`, { exact: true })).toBeVisible()
 	await page.goBack()
@@ -345,7 +346,7 @@ test('creates while warm offline and preserves the attempt through reconnection 
 	await page.reload()
 	await expect(
 		page
-			.getByLabel('Choose a workspace', { exact: true })
+			.getByLabel('Select Workspace', { exact: true })
 			.locator(`option[value="${workspaceId(href)}"]`)
 	).toHaveText('Offline workspace')
 	await harness(page)
@@ -416,7 +417,7 @@ test('reload recovers a journaled attempt without replay, then retry uses the or
 	await page.reload()
 	await expect(
 		page
-			.getByLabel('Choose a workspace', { exact: true })
+			.getByLabel('Select Workspace', { exact: true })
 			.locator(`option[value="${organizationId}"]`)
 	).toHaveText('Recovered workspace')
 	await harness(page)
@@ -472,7 +473,7 @@ test('unavailable explicit scope stays unavailable and legacy details resolve th
 	await expect(
 		page
 			.getByRole('main')
-			.getByText('This workspace or transaction is unavailable. Choose a workspace you can access.')
+			.getByText('This workspace or transaction is unavailable. Select Workspace you can access.')
 	).toBeVisible()
 	await expect(page).toHaveURL(/\/expenses\?workspace=77777777-7777-4777-8777-777777777777$/)
 })
@@ -550,7 +551,7 @@ test('repairs profile links without creating missing categories and preserves wo
 	await page.reload()
 	await expect(
 		page
-			.getByLabel('Choose a workspace', { exact: true })
+			.getByLabel('Select Workspace', { exact: true })
 			.locator(`option[value="${workspaceId(href)}"]`)
 	).toHaveText('Edited after creation')
 	await harness(page)
@@ -619,13 +620,13 @@ test('lost membership does not resurrect the initial workspace or select a repla
 	await page.goto(`/expenses?workspace=${workspaceId}`)
 	await expect(
 		page.getByRole('main').getByRole('status').filter({
-			hasText: 'This workspace or transaction is unavailable. Choose a workspace you can access.'
+			hasText: 'This workspace or transaction is unavailable. Select Workspace you can access.'
 		})
 	).toBeVisible()
 	await page.reload()
 	await expect(
 		page.getByRole('main').getByRole('status').filter({
-			hasText: 'This workspace or transaction is unavailable. Choose a workspace you can access.'
+			hasText: 'This workspace or transaction is unavailable. Select Workspace you can access.'
 		})
 	).toBeVisible()
 	await harness(page)
@@ -734,7 +735,7 @@ test('has one management link and preserves workspace scope in copyable sidebar 
 		'aria-current',
 		'page'
 	)
-	const choice = page.getByLabel('Choose a workspace', { exact: true })
+	const choice = page.getByLabel('Select Workspace', { exact: true })
 	const id = await choice.locator('option:not([disabled])').first().getAttribute('value')
 	if (!id) throw new Error('Missing workspace choice')
 	await choice.selectOption(id)
@@ -742,7 +743,7 @@ test('has one management link and preserves workspace scope in copyable sidebar 
 	await expect(
 		page.getByRole('main').getByRole('textbox', { name: 'Workspace name', exact: true })
 	).toBeEnabled()
-	await expect(sidebar.getByLabel('Current workspace', { exact: true })).toHaveValue(id)
+	await expect(sidebar.getByLabel('Current Workspace', { exact: true })).toHaveValue(id)
 	const expenses = sidebar.getByRole('link', { name: 'Expenses', exact: true })
 	await expect(expenses).toHaveAttribute('href', `/expenses?workspace=${id}`)
 	const copied = await expenses.getAttribute('href')
@@ -773,9 +774,7 @@ for (const duplicate of [false, true]) {
 		await expect(
 			page
 				.getByRole('main')
-				.getByText(
-					'This workspace or transaction is unavailable. Choose a workspace you can access.'
-				)
+				.getByText('This workspace or transaction is unavailable. Select Workspace you can access.')
 		).toBeVisible()
 		await expect(page).toHaveURL(href)
 	})

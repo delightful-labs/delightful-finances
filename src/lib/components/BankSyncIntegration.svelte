@@ -92,8 +92,8 @@
 {#snippet bankView()}
 	<QueryContent
 		{queries}
-		loadingMessage={m['status.loading']({ subject: m['bank.title']() })}
-		errorMessage={m['errors.load']({ subject: m['bank.title']() })}
+		loadingMessage={m['status.loading_subject']({ subject: m['bank.title']() })}
+		errorMessage={m['errors.load_subject']({ subject: m['bank.title']() })}
 	>
 		{#key `${userId}:${organizationId}`}
 			<BankSync

@@ -117,7 +117,7 @@
 			<button
 				class="drawer-dismiss"
 				type="button"
-				aria-label={m['navigation.close']()}
+				aria-label={m['actions.close_subject']({ subject: m['navigation.label']() })}
 				onclick={() => {
 					drawerOpen = false
 					document.getElementById(toggleId)?.focus()

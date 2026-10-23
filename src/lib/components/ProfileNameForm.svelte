@@ -24,11 +24,11 @@
 	} = $props()
 </script>
 
-<Heading level="h2">{m['labels.profile']()}</Heading>
+<Heading level="h2">{m['nouns.profile']({ count: 1 })}</Heading>
 <Text>{m['profile.name_description']()}</Text>
 <FormFeedback
 	{view}
-	subject={m['labels.profile']()}
+	subject={m['nouns.profile']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
 	invalidMessage={m['profile.name_invalid']()}
 	section="readiness"
@@ -52,12 +52,12 @@
 		{#snippet feedback(view)}
 			<FormFeedback
 				{view}
-				subject={m['labels.profile']()}
+				subject={m['nouns.profile']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
 				invalidMessage={m['profile.name_invalid']()}
 				successMessage={() =>
-					m['actions.saved_with_name']({
-						subject: m['labels.profile'](),
+					m['status.saved_subject_name']({
+						subject: m['nouns.profile']({ count: 1 }),
 						name: m['labels.display_name']()
 					})}
 				section="result"

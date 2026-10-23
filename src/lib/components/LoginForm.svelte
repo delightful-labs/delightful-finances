@@ -52,7 +52,7 @@
 		{restoring
 			? navigationOnly
 				? m['login.opening_destination']()
-				: m['login.restoring']()
+				: m['status.restoring_subject']({ subject: m['nouns.account']({ count: 1 }) })
 			: m['navigation.login']()}
 	</Button>
 </form>

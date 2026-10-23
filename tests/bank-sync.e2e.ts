@@ -123,9 +123,9 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	await page.goto('/settings/banks')
 	const input = page.locator('#simplefin-token')
 	await expect(input).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByRole('button', { name: 'Discover accounts', exact: true })).toHaveCount(0)
+	await expect(page.getByRole('button', { name: 'Discover Accounts', exact: true })).toHaveCount(0)
 	await input.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
-	await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
+	await page.getByRole('button', { name: 'Create Passkey', exact: true }).click()
 	await page.getByRole('button', { name: 'Test encryption with my passkey', exact: true }).click()
 	await page.getByRole('button', { name: 'Test unlocking with my passkey', exact: true }).click()
 	await expect(
@@ -133,12 +133,12 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	).toBeVisible()
 	expect(operations).toEqual([])
 	await page.getByRole('button', { name: 'Connect and save securely', exact: true }).click()
-	const discover = page.getByRole('button', { name: 'Discover accounts', exact: true })
+	const discover = page.getByRole('button', { name: 'Discover Accounts', exact: true })
 	await expect(discover).toBeEnabled()
 	expect(operations).toEqual(['claim'])
 	await discover.click()
 	const addChecking = page.getByRole('button', {
-		name: 'Add account “Provider Checking”',
+		name: 'Add Account “Provider Checking”',
 		exact: true
 	})
 	await expect(addChecking).toBeEnabled()
@@ -148,7 +148,7 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	await expect(addChecking).toHaveCount(0)
 	// The first linked account must never become a destination for savings.
 	await expect(page.getByRole('combobox')).toHaveCount(0)
-	await page.getByRole('button', { name: 'Add account “Provider Savings”', exact: true }).click()
+	await page.getByRole('button', { name: 'Add Account “Provider Savings”', exact: true }).click()
 	await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
 	const sync = page
 		.getByRole('main')
@@ -181,7 +181,7 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	).toBeVisible()
 	await expect(sync).toBeEnabled()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover', 'sync'])
-	await page.getByRole('button', { name: 'Disconnect bank sync', exact: true }).click()
+	await page.getByRole('button', { name: 'Disconnect Bank sync', exact: true }).click()
 	await expect(discover).toHaveCount(0)
 	await expect(sync).toHaveCount(0)
 })
@@ -217,7 +217,7 @@ test('lock actor startup failure clears setup and allows an explicit new attempt
 	})
 	await page.goto('/settings/banks')
 	const input = page.getByLabel('SimpleFIN Bridge setup token', { exact: true })
-	const create = page.getByRole('button', { name: 'Create passkey', exact: true })
+	const create = page.getByRole('button', { name: 'Create Passkey', exact: true })
 	const token = btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token')
 	await input.fill(token)
 	await create.click()
@@ -267,7 +267,7 @@ test('cancelled passkey creation ignores a late success and releases the bank lo
 	})
 	await page.goto('/settings/banks')
 	const input = page.getByLabel('SimpleFIN Bridge setup token', { exact: true })
-	const create = page.getByRole('button', { name: 'Create passkey', exact: true })
+	const create = page.getByRole('button', { name: 'Create Passkey', exact: true })
 	const encrypt = page.getByRole('button', { name: 'Test encryption with my passkey', exact: true })
 	const token = btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token')
 	await input.fill(token)
@@ -337,14 +337,14 @@ test('maps and remaps a provider account to existing accounts without creating d
 		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
 		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
 	for (const name of [
-		'Create passkey',
+		'Create Passkey',
 		'Test encryption with my passkey',
 		'Test unlocking with my passkey',
 		'Connect and save securely'
 	]) {
 		await page.getByRole('button', { name, exact: true }).click()
 	}
-	const discover = page.getByRole('button', { name: 'Discover accounts', exact: true })
+	const discover = page.getByRole('button', { name: 'Discover Accounts', exact: true })
 	await expect(discover).toBeEnabled()
 	await discover.click()
 	const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Provider Checking' })
@@ -355,7 +355,7 @@ test('maps and remaps a provider account to existing accounts without creating d
 	await existing.selectOption({ label: 'Existing checking' })
 	await expect(row.getByText('Linked to Existing checking', { exact: true })).toBeVisible()
 	await expect(
-		row.getByRole('button', { name: 'Add account “Provider Checking”', exact: true })
+		row.getByRole('button', { name: 'Add Account “Provider Checking”', exact: true })
 	).toHaveCount(0)
 	await existing.selectOption({ label: 'Replacement checking' })
 	await expect(row.getByText('Linked to Replacement checking', { exact: true })).toBeVisible()
@@ -436,16 +436,16 @@ test('cancels a pending sync, ignores its late response, and imports only on a n
 		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
 		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
 	for (const name of [
-		'Create passkey',
+		'Create Passkey',
 		'Test encryption with my passkey',
 		'Test unlocking with my passkey',
 		'Connect and save securely'
 	]) {
 		await page.getByRole('button', { name, exact: true }).click()
 	}
-	const discover = page.getByRole('button', { name: 'Discover accounts', exact: true })
+	const discover = page.getByRole('button', { name: 'Discover Accounts', exact: true })
 	await discover.click()
-	await page.getByRole('button', { name: 'Add account “Cancelled Checking”', exact: true }).click()
+	await page.getByRole('button', { name: 'Add Account “Cancelled Checking”', exact: true }).click()
 	await expect(page.getByText('Linked to Cancelled Checking', { exact: true })).toBeVisible()
 	const main = page.getByRole('main')
 	const sync = main.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })

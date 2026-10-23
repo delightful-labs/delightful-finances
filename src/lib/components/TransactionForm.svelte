@@ -93,7 +93,7 @@
 		{#snippet fields(form)}
 			{#if form.content.kind !== 'success'}
 				<Select
-					label={m['labels.account']()}
+					label={m['nouns.account']({ count: 1 })}
 					id="transaction-account"
 					aria-describedby="transaction-account-feedback"
 					aria-invalid={fieldInvalid(issues, 'accountId') || undefined}
@@ -101,11 +101,15 @@
 					required
 					defaultValue={initialTransaction?.accountId ?? defaultAccountId ?? ''}
 				>
-					<option value="" disabled>{m['transactions.select_account']()}</option>
+					<option value="" disabled
+						>{m['actions.select_subject']({ subject: m['nouns.account']({ count: 1 }) })}</option
+					>
 					{#if initialTransaction && !accounts.some((account) => account.id === initialTransaction?.accountId)}
 						<option value={initialTransaction.accountId} disabled
 							>{initialTransaction.accountName ??
-								m['transactions.unavailable_item']({ subject: m['labels.account']() })}</option
+								m['status.unavailable_subject']({
+									subject: m['nouns.account']({ count: 1 })
+								})}</option
 						>
 					{/if}
 					{#each accounts as account (account.id)}
@@ -125,7 +129,7 @@
 				/>
 
 				<Select
-					label={m['labels.category']()}
+					label={m['nouns.category']({ count: 1 })}
 					id="transaction-category"
 					aria-describedby="transaction-category-feedback"
 					aria-invalid={fieldInvalid(issues, 'categoryId') || undefined}
@@ -134,12 +138,14 @@
 					defaultValue={initialTransaction?.categoryId ?? defaultCategoryId ?? ''}
 				>
 					<option value="" disabled>
-						{m['transactions.select_category']()}
+						{m['actions.select_subject']({ subject: m['nouns.category']({ count: 1 }) })}
 					</option>
 					{#if initialTransaction && !categories.some((category) => category.id === initialTransaction?.categoryId)}
 						<option value={initialTransaction.categoryId} disabled
 							>{initialTransaction.categoryName ??
-								m['transactions.unavailable_item']({ subject: m['labels.category']() })}</option
+								m['status.unavailable_subject']({
+									subject: m['nouns.category']({ count: 1 })
+								})}</option
 						>
 					{/if}
 					{#each categories as category (category.id)}
@@ -174,7 +180,7 @@
 				/>
 
 				<InputDate
-					label={m['labels.date']()}
+					label={m['nouns.date']({ count: 1 })}
 					id="transaction-date"
 					aria-describedby="transaction-date-feedback"
 					aria-invalid={fieldInvalid(issues, 'bookedOn') || undefined}
@@ -189,7 +195,7 @@
 
 				{#if kind === 'income' && (mode === 'create' || initialTransaction?.paymentMethod)}
 					<Select
-						label={m['transactions.payment.method']()}
+						label={m['labels.subject_method']({ subject: m['nouns.payment']({ count: 1 }) })}
 						id="transaction-payment-method"
 						aria-describedby="transaction-payment-method-feedback"
 						aria-invalid={fieldInvalid(issues, 'paymentMethod') || undefined}
@@ -229,7 +235,7 @@
 
 					{#if activeCheckFieldsKey === 'check'}
 						<InputText
-							label={m['transactions.check.number']()}
+							label={m['labels.subject_number']({ subject: m['nouns.check']({ count: 1 }) })}
 							id="check-number"
 							aria-describedby="check-number-feedback"
 							aria-invalid={fieldInvalid(issues, 'checkNumber') || undefined}
@@ -245,7 +251,7 @@
 						/>
 
 						<InputDate
-							label={m['transactions.check.date']()}
+							label={m['labels.subject_date']({ subject: m['nouns.check']({ count: 1 }) })}
 							id="check-date"
 							aria-describedby="check-date-feedback"
 							aria-invalid={fieldInvalid(issues, 'checkDate') || undefined}
@@ -290,7 +296,9 @@
 			{/if}
 			{#if form.content.kind === 'success' && mode === 'create'}
 				<Button type="reset"
-					>{m['actions.add_another']({ subject: m['labels.transaction']() })}</Button
+					>{m['actions.add_another_subject']({
+						subject: m['nouns.transaction']({ count: 1 })
+					})}</Button
 				>
 			{:else if mode === 'create' || view.readiness.kind === 'ready'}
 				<Button type="submit" variant="primary" disabled={!form.canSubmit}>
@@ -298,14 +306,14 @@
 					view.feedback.result.outcome === 'failed' &&
 					view.feedback.result.code === 'completionFailed'
 						? m['actions.retry']()
-						: m['actions.save_subject']({ subject: m['labels.transaction']() })}
+						: m['actions.save_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
 				</Button>
 			{/if}
 		{/snippet}
 		{#snippet feedback(view)}
 			<FormFeedback
 				{view}
-				subject={m['labels.transaction']()}
+				subject={m['nouns.transaction']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
 				invalidMessage={m['transactions.validation_error']()}
 				section="result"

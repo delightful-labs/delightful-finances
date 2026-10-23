@@ -143,7 +143,7 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 }) => {
 	test.setTimeout(60_000)
 	await page.goto('/settings/workspace')
-	const workspace = page.getByRole('combobox', { name: 'Choose a workspace', exact: true })
+	const workspace = page.getByRole('combobox', { name: 'Select Workspace', exact: true })
 	await expect(workspace).toBeEnabled({ timeout: 30_000 })
 	await workspace.selectOption({ label: 'Personal workspace' })
 	const name = page.getByRole('main').getByRole('textbox', { name: 'Workspace name', exact: true })

@@ -38,10 +38,11 @@
 
 <FormFeedback
 	view={archiveView}
-	subject={m['labels.category']()}
+	subject={m['nouns.category']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
 	invalidMessage={m['categories.validation_error']()}
-	successMessage={(name) => m['actions.archived']({ subject: m['labels.category'](), name })}
+	successMessage={(name) =>
+		m['status.archived_subject_name']({ subject: m['nouns.category']({ count: 1 }), name })}
 	action="archive"
 	section="result"
 />
@@ -49,13 +50,17 @@
 <ArchiveFilter bind:value={archiveFilter} />
 
 {#if loading || visibleCategories.length}
-	<Table caption={m['labels.categories']()}>
+	<Table caption={m['nouns.category']({ count: 2 })}>
 		<thead
 			><tr>
-				<th scope="col">{m['labels.category_name']()}</th>
-				<th scope="col">{m['labels.transaction_type']()}</th>
-				<th scope="col">{m['labels.transactions']()}</th>
-				<th scope="col">{m['labels.tags']()}</th>
+				<th scope="col"
+					>{m['labels.subject_name']({ subject: m['nouns.category']({ count: 1 }) })}</th
+				>
+				<th scope="col"
+					>{m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })}</th
+				>
+				<th scope="col">{m['nouns.transaction']({ count: 2 })}</th>
+				<th scope="col">{m['nouns.tag']({ count: 2 })}</th>
 				<th scope="col">{m['labels.actions']()}</th>
 			</tr></thead
 		>
@@ -63,7 +68,11 @@
 			{#each visibleCategories as category (category.id)}
 				<tr>
 					<th scope="row">{category.name}</th>
-					<td>{category.kind === 'expense' ? m['labels.expenses']() : m['labels.income']()}</td>
+					<td
+						>{category.kind === 'expense'
+							? m['nouns.expense']({ count: 2 })
+							: m['nouns.income']({ count: 1 })}</td
+					>
 					<td>{numbers.format(counts.get(category.id)?.transactions ?? 0)}</td>
 					<td>{numbers.format(counts.get(category.id)?.tags ?? 0)}</td>
 					<td
@@ -71,7 +80,7 @@
 							<Button
 								type="button"
 								disabled={!archiveView.canSubmit}
-								aria-label={m['actions.archive']({ name: category.name })}
+								aria-label={m['actions.archive_subject']({ subject: category.name })}
 								onclick={() => onArchive(category.id)}
 								><Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />{m[
 									'actions.archive_button'
@@ -84,5 +93,5 @@
 		</tbody>
 	</Table>
 {:else}
-	<p>{m['actions.empty']({ name: m['labels.categories']() })}</p>
+	<p>{m['labels.no_subjects_yet']({ subjects: m['nouns.category']({ count: 2 }) })}</p>
 {/if}

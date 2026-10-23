@@ -6,7 +6,11 @@
 	import WifiNoIcon from 'tdesign-icons-svg/src/wifi-no.svg?component'
 	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
-	import { bankSetupSteps, type BankPresentation } from '#lib/bank-presentation-contract.js'
+	import {
+		bankSetupSteps,
+		type BankPresentation,
+		type BankStepLabelKey
+	} from '#lib/bank-presentation-contract.js'
 	let {
 		browserOffline,
 		view,
@@ -44,16 +48,21 @@
 	const setupView = $derived(view.mode.kind === 'setup' ? view.mode.stage : null)
 
 	let token = $state('')
+	function stepLabel(key: BankStepLabelKey) {
+		return key === 'actions.create_subject'
+			? m[key]({ subject: m['nouns.passkey']({ count: 1 }) })
+			: m[key]()
+	}
 	const statusText = $derived(
-		status?.key === 'bank.idle'
-			? m[status.key]({ step: m[status.stepKey]() })
+		status?.key === 'bank.idle_step'
+			? m[status.key]({ step: stepLabel(status.stepKey) })
 			: status
 				? m[status.key]()
 				: ''
 	)
 	const outcomeText = $derived(
 		outcome
-			? m['bank.result']({
+			? m['bank.result_time_outcome_imported_existing_omitted']({
 					time: outcome.time.toLocaleString(),
 					outcome: m[outcome.outcomeKey](),
 					imported: outcome.imported,
@@ -65,7 +74,7 @@
 	const setupSteps = $derived<ComponentProps<typeof Stepper>['steps']>(
 		bankSetupSteps.map((step, index) => ({
 			...step,
-			label: m[step.labelKey](),
+			label: stepLabel(step.labelKey),
 			status: index < setupStep ? 'completed' : index === setupStep ? 'current' : 'upcoming'
 		}))
 	)
@@ -143,7 +152,9 @@
 							disabled={busy}
 						/>
 					</div>
-					<Button type="submit" disabled={busy || !token.trim()}>{m['bank.step_create']()}</Button>
+					<Button type="submit" disabled={busy || !token.trim()}
+						>{m['actions.create_subject']({ subject: m['nouns.passkey']({ count: 1 }) })}</Button
+					>
 				</form>
 			{/if}
 		</div>
@@ -153,7 +164,7 @@
 <div class="bank-flow">
 	<h1>{m['bank.title']()}</h1>
 	<p>{m['bank.manual_only']()}</p>
-	{#if status && !(browserOffline && status?.key === 'bank.idle')}
+	{#if status && !(browserOffline && status?.key === 'bank.idle_step')}
 		<p role="status" aria-live="polite">{statusText}</p>
 	{/if}
 	{#if outcomeText}<p>{outcomeText}</p>{/if}
@@ -170,7 +181,7 @@
 		{#if view.mode.kind === 'connected'}
 			<Button type="button" onclick={onDiscover} disabled={busy}>
 				<Icon style="width: 1em; height: 1em;" icon={SearchIcon} />
-				{m['bank.discover']()}
+				{m['actions.discover_subject']({ subject: m['nouns.account']({ count: 2 }) })}
 			</Button>
 
 			{#if busy}<Button type="button" onclick={onCancel}>{m['actions.cancel']()}</Button>{/if}
@@ -179,24 +190,33 @@
 					<li>
 						<p>{provider.name}</p>
 						{#if provider.mapping.kind === 'linked'}
-							<p>{m['bank.linked_account']({ name: provider.mapping.account.name })}</p>
+							<p>{m['labels.linked_name']({ name: provider.mapping.account.name })}</p>
 						{:else if provider.mapping.kind === 'broken'}
 							<p>{m['bank.mapping_failure']()}</p>
 						{:else}
 							<Button type="button" disabled={busy} onclick={() => onCreateAccount(provider.id)}
-								>{m['bank.add_provider_account']({ name: provider.name })}</Button
+								>{m['actions.add_subject_name']({
+									subject: m['nouns.account']({ count: 1 }),
+									name: provider.name
+								})}</Button
 							>
 						{/if}
 						{#if provider.showExisting}
 							<Select
-								label={m['bank.use_existing']()}
+								label={m['actions.link_existing_subject']({
+									subject: m['nouns.account']({ count: 1 })
+								})}
 								value={provider.selectedAccountId}
 								disabled={busy}
 								onchange={(event) => {
 									if (event.currentTarget.value) onMap(provider.id, event.currentTarget.value)
 								}}
 							>
-								<option value="" disabled>{m['bank.choose_existing']()}</option>
+								<option value="" disabled
+									>{m['actions.select_existing_subject']({
+										subject: m['nouns.account']({ count: 1 })
+									})}</option
+								>
 								{#each provider.availableAccounts as account (account.id)}<option value={account.id}
 										>{account.name}</option
 									>{/each}
@@ -218,7 +238,7 @@
 					{m['bank.sync']()}
 				</Button>
 				<Button type="button" onclick={onDisconnect} disabled={busy}
-					>{m['bank.disconnect']()}</Button
+					>{m['actions.disconnect_subject']({ subject: m['bank.title']() })}</Button
 				>
 			</div>
 			{#if browserOffline}

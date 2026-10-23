@@ -133,13 +133,13 @@
 
 <PageContent>
 	{#if showHeading}<PageHeader
-			title={kind === 'income' ? m['labels.income']() : m['labels.expenses']()}
+			title={kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })}
 		/>{/if}
 
 	<QueryContent
 		queries={[transactions, accounts, categories, tags, links]}
-		loadingMessage={m['status.loading']({ subject: m['labels.transactions']() })}
-		errorMessage={m['errors.load']({ subject: m['labels.transactions']() })}
+		loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
+		errorMessage={m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
 	>
 		{#if (accounts.current ?? []).filter((account) => !account.archivedAt).length === 0}
 			<Message message={m['transactions.no_accounts']()} />
@@ -162,7 +162,7 @@
 
 <FloatingActionLink
 	href={newHref}
-	label={m['actions.add']({
-		name: kind === 'income' ? m['labels.income']() : m['labels.expenses']()
+	label={m['actions.add_subject']({
+		subject: kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })
 	})}
 />

@@ -33,13 +33,16 @@
 	<div bind:this={inputHost}>
 		<TagInput
 			name="tags"
-			label={m['labels.tags']()}
-			addLabel={m['actions.add']({ name: m['labels.tag']() })}
-			removeLabel={(name) => m['tags.input.remove']({ name })}
-			selectedTagsLabel={m['tags.input.selected']()}
-			addedMessage={(name) => m['tags.input.added']({ name })}
-			removedMessage={(name) => m['tags.input.removed']({ name })}
-			duplicateMessage={(name) => m['tags.input.duplicate']({ name })}
+			label={m['nouns.tag']({ count: 2 })}
+			addLabel={m['actions.add_subject']({ subject: m['nouns.tag']({ count: 1 }) })}
+			removeLabel={(name) => m['actions.remove_name']({ name })}
+			selectedTagsLabel={m['labels.selected_subjects']({ subjects: m['nouns.tag']({ count: 2 }) })}
+			addedMessage={(name) =>
+				m['status.selected_subject_name']({ subject: m['nouns.tag']({ count: 1 }), name })}
+			removedMessage={(name) =>
+				m['status.removed_subject_name']({ subject: m['nouns.tag']({ count: 1 }), name })}
+			duplicateMessage={(name) =>
+				m['errors.already_selected_subject_name']({ subject: m['nouns.tag']({ count: 1 }), name })}
 			suggestions={[...suggestions]}
 			bind:value={selectedTags}
 			{disabled}

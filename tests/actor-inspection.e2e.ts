@@ -42,7 +42,7 @@ test('opt-in inspection covers independent actor roots, redacts private data and
 			)
 		}, marker)
 	).toBe(true)
-	await page.getByRole('button', { name: 'Show recovery phrase', exact: true }).click()
+	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
 	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
 	expect(
 		await page.evaluate(

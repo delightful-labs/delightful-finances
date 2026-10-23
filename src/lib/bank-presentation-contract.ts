@@ -8,7 +8,7 @@ export type BankSetupView =
 	| 'save'
 	| 'saving'
 export type BankStatusKey =
-	| 'bank.idle'
+	| 'bank.idle_step'
 	| 'bank.locked'
 	| 'bank.waiting'
 	| 'bank.restricted'
@@ -30,20 +30,21 @@ export type BankStatusKey =
 	| 'bank.mapping_failure'
 export type BankStepLabelKey =
 	| 'bank.step_token'
-	| 'bank.step_create'
+	| 'actions.create_subject'
 	| 'bank.step_encrypt'
 	| 'bank.step_verify'
 	| 'bank.step_connect'
 type SetupStep = { id: string; labelKey: BankStepLabelKey }
 export const bankSetupSteps = [
 	{ id: 'token', labelKey: 'bank.step_token' },
-	{ id: 'create', labelKey: 'bank.step_create' },
+	{ id: 'create', labelKey: 'actions.create_subject' },
 	{ id: 'encrypt', labelKey: 'bank.step_encrypt' },
 	{ id: 'verify', labelKey: 'bank.step_verify' },
 	{ id: 'connect', labelKey: 'bank.step_connect' }
 ] satisfies [SetupStep, ...SetupStep[]]
 export type BankStatus =
-	{ key: 'bank.idle'; stepKey: BankStepLabelKey } | { key: Exclude<BankStatusKey, 'bank.idle'> }
+	| { key: 'bank.idle_step'; stepKey: BankStepLabelKey }
+	| { key: Exclude<BankStatusKey, 'bank.idle_step'> }
 export type LastSync = {
 	time: Date
 	outcomeKey: 'bank.succeeded' | 'bank.partial' | 'bank.failed'

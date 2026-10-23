@@ -2,7 +2,8 @@ import { m } from './paraglide/messages.js'
 /** Presentation-only localization shared by the domain form views. */
 export const formReasonText = {
 	sessionUnavailable: () => m['forms.session_unavailable'](),
-	selectWorkspace: () => m['workspace.select_workspace'](),
+	selectWorkspace: () =>
+		m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
 	loading: () => m['forms.loading'](),
 	loadFailed: () => m['forms.load_failed'](),
 	readOnly: () => m['forms.read_only'](),

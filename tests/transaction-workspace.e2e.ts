@@ -178,7 +178,7 @@ for (const desktop of [true, false]) {
 				const observer = new MutationObserver(() => {
 					if (
 						location.pathname.endsWith('/new') &&
-						/Add another transaction|Transaction saved\./.test(
+						/Add another Transaction|Transaction saved\./.test(
 							document.querySelector('main')?.textContent ?? ''
 						)
 					) {
@@ -230,9 +230,9 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	const main = page.getByRole('main')
 	const drawer = main.locator('aside[data-side="right"]')
 	await expect(drawer).toHaveAttribute('data-open', 'true')
-	await drawer.getByRole('button', { name: 'Close transaction list', exact: true }).click()
+	await drawer.getByRole('button', { name: 'Close Transactions', exact: true }).click()
 	await expect(drawer).toHaveAttribute('aria-hidden', 'true')
-	const reopen = main.getByRole('button', { name: 'Open transaction list', exact: true })
+	const reopen = main.getByRole('button', { name: 'Open Transactions', exact: true })
 	await reopen.click()
 	await drawer.locator('.entries a').first().focus()
 	await page.keyboard.press('Escape')
