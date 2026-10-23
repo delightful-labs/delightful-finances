@@ -17,6 +17,7 @@
 	import SessionStartup from '#lib/components/SessionStartup.svelte'
 	import WorkspaceBootstrap from '#lib/components/WorkspaceBootstrap.svelte'
 	import { page } from '$app/state'
+	import { goto } from '$app/navigation'
 	import { queryLinksKey, type QueryLinkContext } from '#lib/query-links.js'
 	import { browser } from '$app/env'
 	import { workspaceRoute } from '#lib/domain/workspace-routes.js'
@@ -65,7 +66,11 @@
 	const actor = createActor(
 		createApplicationReadinessMachine(
 			() => getOrCreateJazzSession(jazzConfig),
-			getCurrentJazzSession()
+			getCurrentJazzSession(),
+			{
+				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
+				navigate: (destination) => goto(destination)
+			}
 		)
 	).start()
 	const snapshot = readable(actor.getSnapshot(), (set) => {
@@ -93,7 +98,9 @@
 	<SessionStartup />
 {:else if jazzSession}
 	<JazzSessionProvider session={jazzSession} fallback={startup}>
-		<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
+		{#key startupState.current.context.attachmentRevision}
+			<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
+		{/key}
 	</JazzSessionProvider>
 {:else}
 	<JazzStartup

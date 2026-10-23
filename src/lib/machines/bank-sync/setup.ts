@@ -1,5 +1,5 @@
 import type { EventObject } from 'xstate'
-import { assign, fromPromise, setup } from 'xstate'
+import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { ErrorActorEvent } from 'xstate'
 import { createBankTrace, type BankTrace } from '#lib/integrations/diagnostics.js'
 import {
@@ -44,8 +44,12 @@ type Context = {
 	accessUrl: string | undefined
 	error: unknown
 	completion: Output | undefined
+	settlement: 'notStarted' | 'locallyPersisted' | 'unresolved'
 }
-type Output = { kind: 'complete' | 'cancelled' } | { kind: 'failed'; error: unknown }
+type Output =
+	| { kind: 'complete' }
+	| { kind: 'cancelled'; settlement: Context['settlement'] }
+	| { kind: 'failed'; error: unknown; settlement: Context['settlement'] }
 type Event =
 	BankEvent | LockEvent | ErrorActorEvent | { type: 'CREDENTIAL_CHANGED'; fingerprint: string }
 function baseFor(context: Context) {
@@ -99,7 +103,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 		typeof actors,
 		{},
 		{},
-		{},
+		{ isDraining: undefined; isFailing: undefined },
 		never,
 		string,
 		Input,
@@ -107,7 +111,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 		EventObject,
 		BankViewMeta
 	>({
-		actors
+		actors,
+		guards: {
+			isDraining: stateIn({ saving: { persisting: 'draining' } }),
+			isFailing: stateIn({ saving: { persisting: 'failing' } })
+		}
 	})
 	const failure = (context: Context, error: unknown) => {
 		context.base?.trace.failed('setup.failed', error)
@@ -136,6 +144,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 			material: undefined,
 			accessUrl: undefined,
 			error: undefined,
+			settlement: 'notStarted',
 			completion: undefined
 		}),
 		output: ({ context }) => required(context.completion),
@@ -497,6 +506,23 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 						}
 					},
 					persisting: {
+						entry: assign({ settlement: 'unresolved' }),
+						initial: 'working',
+						states: {
+							working: {},
+							draining: {
+								entry: clear,
+								on: { CANCEL: {}, LOCK_FAILED: {}, CREDENTIAL_CHANGED: {} }
+							},
+							failing: {
+								entry: clear,
+								on: { LOCK_FAILED: {}, CREDENTIAL_CHANGED: {} }
+							}
+						},
+						on: {
+							CANCEL: '.draining',
+							LOCK_FAILED: { target: '.failing', actions: fail }
+						},
 						invoke: {
 							src: 'persist',
 							input: ({ context }) => {
@@ -511,13 +537,39 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 							},
 							onDone: [
 								{
+									guard: 'isDraining',
+									target: '#bank-setup.cancelled',
+									actions: assign({ settlement: ({ event }) => event.output.settlement })
+								},
+								{
+									guard: 'isFailing',
+									target: '#bank-setup.settlingFailure',
+									actions: assign({ settlement: ({ event }) => event.output.settlement })
+								},
+								{
 									guard: ({ event }) => event.output.error !== undefined,
 									target: '#bank-setup.settlingFailure',
-									actions: assign({ error: ({ event }) => event.output.error })
+									actions: assign({
+										error: ({ event }) => event.output.error,
+										settlement: ({ event }) => event.output.settlement
+									})
 								},
-								{ target: '#bank-setup.complete' }
+								{
+									target: '#bank-setup.complete',
+									actions: assign({ settlement: ({ event }) => event.output.settlement })
+								}
 							],
-							onError: { target: '#bank-setup.settlingFailure', actions: fail }
+							onError: [
+								{
+									guard: 'isDraining',
+									target: '#bank-setup.cancelled',
+									actions: assign({ settlement: 'unresolved' })
+								},
+								{
+									target: '#bank-setup.settlingFailure',
+									actions: [assign({ settlement: 'unresolved' }), fail]
+								}
+							]
 						}
 					}
 				}
@@ -537,7 +589,12 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 			complete: { type: 'final', entry: [assign({ completion: { kind: 'complete' } }), clear] },
 			cancelled: {
 				type: 'final',
-				entry: [assign({ completion: { kind: 'cancelled' } }), clear]
+				entry: [
+					assign({
+						completion: ({ context }) => ({ kind: 'cancelled', settlement: context.settlement })
+					}),
+					clear
+				]
 			},
 			settlingFailure: {
 				always: [
@@ -552,7 +609,13 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 			failed: {
 				type: 'final',
 				entry: [
-					assign({ completion: ({ context }) => ({ kind: 'failed', error: context.error }) }),
+					assign({
+						completion: ({ context }) => ({
+							kind: 'failed',
+							error: context.error,
+							settlement: context.settlement
+						})
+					}),
 					clear
 				]
 			}

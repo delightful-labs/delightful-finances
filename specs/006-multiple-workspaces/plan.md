@@ -98,6 +98,6 @@ that a final full application/PWA suite was rerun after every increment. See val
 [quickstart.md](quickstart.md).
 
 Sharing/capability administration, invitations, ownership changes, departure, archive and account
-merge are future work. Keep their approved decisions in the specification. Bank, generic-form,
-application/session and diagnostics audits remain unchecked in
-[008 tasks](../008-actor-orchestration/tasks.md). Completing this feature does not authorize them.
+merge are future work. Keep their approved decisions in the specification. Bank, generic-form, application/session and diagnostics follow-through are recorded in
+[008 tasks](../008-actor-orchestration/tasks.md) and the [final ownership map](../008-actor-orchestration/architecture.md).
+They were separately resumed by the user; completing the workspace feature alone did not authorize them.

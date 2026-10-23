@@ -1,10 +1,10 @@
 # Feature Specification: Actor Orchestration Boundaries
 
-**Feature Branch**: Existing `feature/multiple-workspaces`; no new branch created.
+**Feature Branch**: `feature/xstate-orchestration`.
 
 **Created**: 2026-10-22
 
-**Status**: Workspace phase implemented and verified after review. Broader phases remain deferred and unchecked.
+**Status**: Workspace phase implemented and verified after review. Bank setup, mapping, write settlement and availability/history reports are reviewed and verified. The generic form source audit is complete; submission progress reports, the readiness adapter and transaction creation/editing ownership are reviewed and verified. Avatar save ownership is reviewed and verified; generic form boundary work is complete. Application/session supervision, including retry ownership and recovery/workspace drain coordination, is reviewed and verified. Final architecture reconciliation is complete and verified. The custom inspector was subsequently removed at the user’s request; no replacement is configured.
 
 **Input**: Specify clearer actor ownership, lifetimes, communication and cleanup. Implement only workspace-related orchestration now; retain unfinished work for other areas in the repository.
 
@@ -55,7 +55,7 @@ A user can retry workspace failures or leave the app without new work starting d
 3. **Given** shutdown or identity replacement is underway, **When** a late success, observation or retry arrives, **Then** it cannot reopen work or override shutdown intent.
 4. **Given** integrity repair has only a profile-attribution issue, **When** its result is published, **Then** finance remains usable under the existing policy and the issue remains visible.
 
-### User Story 4 — Extend the same discipline beyond workspaces (Priority: P3, deferred)
+### User Story 4 — Extend the same discipline beyond workspaces (Priority: P3, completed after resumption)
 
 A maintainer can later improve bank, form and application orchestration using documented ownership and communication boundaries without reopening the workspace design.
 
@@ -100,7 +100,7 @@ A maintainer can later improve bank, form and application orchestration using do
 
 - **FR-013**: Bank orchestration, generic forms and application/session orchestration MUST remain separate unchecked follow-up scopes until explicitly resumed.
 - **FR-014**: Each deferred subsystem MUST receive its own ownership/lifetime audit before refactoring; known workspace patterns MUST NOT be copied mechanically without checking its resource semantics.
-- **FR-015**: Later cross-subsystem diagnostics MUST make actor relationships and event causality inspectable without exposing provider credentials or private finance payloads.
+- **FR-015**: If cross-subsystem diagnostics are added, they MUST make actor relationships and event causality inspectable without exposing provider credentials or private finance payloads.
 
 ### Key Entities
 
@@ -126,3 +126,12 @@ A maintainer can later improve bank, form and application orchestration using do
 - [Multiple workspaces](../006-multiple-workspaces/spec.md) remains authoritative for existing product behavior.
 - [Workspace architecture](../006-multiple-workspaces/plan.md#actor-ownership) records the implemented ownership model; broader boundaries and unchecked follow-ups are in [plan.md](plan.md) and [tasks.md](tasks.md).
 - The user authorized the workspace implementation as one combined review batch. Tests still follow implementation review. This spec is not authorization for a broad application rewrite.
+
+## Final completion
+
+The user explicitly resumed each later subsystem and authorized D010–D012 together as one design,
+implementation and verification batch. [All tasks](tasks.md) are complete. Final ownership, cleanup
+and retained SDK/platform limits are in [architecture.md](architecture.md). The subsequent user-directed removal of custom
+inspection and the future tooling boundary are documented in [inspection.md](inspection.md). Historical checks before removal
+passed: 1,049 src/lib unit tests, 21 focused browser checks, both static checks and production build.
+This is scoped orchestration completion, not a claim that unrelated product/PWA browser suites were rerun.

@@ -5,15 +5,21 @@ async function seed(page: Page, count = 0) {
 	await expect(
 		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
 	).toBeEnabled()
-	await page.evaluate(async (count) => {
+	return page.evaluate(async (count) => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
-		const dataPath = '/src/lib/data.ts'
+		const persistencePath = '/src/lib/machines/transaction-create-persistence.ts'
+		const xstatePath = '/node_modules/.vite/deps/xstate.js'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
 		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
 			sessionPath
 		)
-		const { createTransaction }: typeof import('../src/lib/data.js') = await import(dataPath)
+		const {
+			createTransactionPersistenceMachine
+		}: typeof import('../src/lib/machines/transaction-create-persistence.js') = await import(
+			persistencePath
+		)
+		const { createActor, toPromise }: typeof import('xstate') = await import(xstatePath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		const [organization] = await db.all(app.organizations)
@@ -32,7 +38,7 @@ async function seed(page: Page, count = 0) {
 		const category = categories[0]
 		if (!category) throw new Error('Missing expense category')
 		for (let index = 0; index < count; index++) {
-			const result = await createTransaction(db, {
+			const values: import('../src/lib/domain/transaction.js').AppTransaction = {
 				organizationId: organization.id,
 				accountId: account.id,
 				categoryId: category.id,
@@ -42,10 +48,46 @@ async function seed(page: Page, count = 0) {
 				description: `Seed ${index}`,
 				source: { source: 'manual' },
 				tags: []
-			})
-			if ('error' in result) throw new Error(result.error)
+			}
+			const facts = {
+				identityId: getCurrentJazzSession()?.getSnapshot().account?.id ?? null,
+				organizationId: organization.id,
+				binding: db,
+				kind: values.kind,
+				sessionReady: true,
+				loading: false,
+				failed: false,
+				membership: null,
+				grants: [],
+				accounts: [account],
+				categories,
+				tags: []
+			}
+			const actor = createActor(createTransactionPersistenceMachine(db), {
+				input: {
+					request: { id: index, scopeRevision: 0, scope: facts, values },
+					observation: { revision: 0, facts }
+				}
+			}).start()
+			const result = await toPromise(actor)
+			if (result.outcome !== 'succeeded') throw new Error('Seed creation failed')
 		}
+		return organization.id
 	}, count)
+}
+
+async function expectWorkspaceUrl(
+	page: Page,
+	path: string,
+	workspaceId: string,
+	pageNumber?: string
+) {
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === path &&
+			url.searchParams.get('workspace') === workspaceId &&
+			url.searchParams.get('page') === (pageNumber ?? null)
+	)
 }
 
 async function savedCount(page: Page, description: string) {
@@ -67,11 +109,11 @@ for (const desktop of [true, false]) {
 		const base = kind === 'income' ? '/income' : '/expenses'
 		const label = kind === 'income' ? 'Add Income' : 'Add Expenses'
 		for (const valid of [false, true]) {
-			test(`${desktop ? 'desktop' : 'mobile'} ${kind} Cancel returns to Overview without saving ${valid ? 'a valid' : 'an invalid'} draft`, async ({
+			test(`${desktop ? 'desktop' : 'mobile'} ${kind} Cancel returns to its section without saving ${valid ? 'a valid' : 'an invalid'} draft`, async ({
 				page
 			}) => {
 				await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
-				await seed(page)
+				const workspaceId = await seed(page)
 				await page.goto(`${base}/new`)
 				const main = page.getByRole('main')
 				const amount = main.getByLabel('Amount', { exact: true })
@@ -90,8 +132,13 @@ for (const desktop of [true, false]) {
 					main.getByRole('button', { name: 'Save Transaction', exact: true })
 				).toHaveClass(/\bprimary\b/)
 				await cancel.click()
-				await expect(page).toHaveURL('/')
-				await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+				await expectWorkspaceUrl(page, base, workspaceId)
+				await expect(
+					main.getByRole('heading', {
+						name: kind === 'income' ? 'Income' : 'Expenses',
+						exact: true
+					})
+				).toBeVisible()
 				await expect.poll(() => savedCount(page, 'Cancelled draft')).toBe(0)
 			})
 		}
@@ -100,7 +147,7 @@ for (const desktop of [true, false]) {
 			context
 		}) => {
 			await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
-			await seed(page)
+			const workspaceId = await seed(page)
 			await page.goto(base)
 			const main = page.getByRole('main')
 			const drawer = main.locator('aside[data-side="right"]')
@@ -109,11 +156,11 @@ for (const desktop of [true, false]) {
 				await expect(main.locator('.transaction-content')).toHaveText('', { useInnerText: true })
 			} else await expect(drawer).toHaveCount(0)
 			await main.getByRole('link', { name: label, exact: true }).click()
-			await expect(page).toHaveURL(`${base}/new`)
+			await expectWorkspaceUrl(page, `${base}/new`, workspaceId)
 			const amount = main.getByLabel('Amount', { exact: true })
 			await expect(amount).toBeEnabled()
 			await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-			await expect(page).toHaveURL(`${base}/new`)
+			await expectWorkspaceUrl(page, `${base}/new`, workspaceId)
 			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(0)
 			if (desktop) await expect(drawer).toBeVisible()
 			else await expect(main.locator('.entries')).toHaveCount(0)
@@ -142,17 +189,22 @@ for (const desktop of [true, false]) {
 			})
 			await context.setOffline(true)
 			await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-			await expect(page).toHaveURL(base)
+			await expectWorkspaceUrl(page, base, workspaceId)
 			await expect(main.getByText('Saved directly', { exact: true })).toBeVisible()
 			expect(await page.locator('html').getAttribute('data-creation-flash')).toBe('no')
 			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(1)
 			await context.setOffline(false)
 			await page.goBack()
-			await expect(page).toHaveURL(base)
+			await expectWorkspaceUrl(page, base, workspaceId)
 			await page.goForward()
-			await expect(page).toHaveURL(base)
+			await expectWorkspaceUrl(page, base, workspaceId)
 			await main.getByRole('link', { name: /Transaction details:.*Saved directly/ }).click()
-			await expect(page).toHaveURL(new RegExp(`${base}/[^/]+$`))
+			await expect(page).toHaveURL(
+				(url) =>
+					url.pathname.startsWith(`${base}/`) &&
+					!url.pathname.endsWith('/new') &&
+					url.searchParams.get('workspace') === workspaceId
+			)
 			await expect(amount).toHaveValue('12.34')
 			await expect(amount).toBeEnabled()
 			await expect(main.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveClass(
@@ -161,7 +213,7 @@ for (const desktop of [true, false]) {
 			await amount.fill('15.00')
 			await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 			await expect(main.getByText('Transaction saved.', { exact: true })).toBeVisible()
-			await expect(page).not.toHaveURL(base)
+			await expect(page).not.toHaveURL((url) => url.pathname === base)
 			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(1)
 			await page.reload()
 			await expect(amount).toHaveValue('15.00')
@@ -173,13 +225,11 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	page
 }) => {
 	await page.setViewportSize({ width: 1440, height: 900 })
-	await seed(page, 26)
+	const workspaceId = await seed(page, 26)
 	await page.goto('/expenses')
 	const main = page.getByRole('main')
 	const drawer = main.locator('aside[data-side="right"]')
 	await expect(drawer).toHaveAttribute('data-open', 'true')
-	const workspaceId = new URL(page.url()).searchParams.get('workspace')
-	expect(workspaceId).not.toBeNull()
 	await drawer.getByRole('button', { name: 'Close Transactions', exact: true }).click()
 	await expect(drawer).toHaveAttribute('aria-hidden', 'true')
 	const reopen = main.getByRole('button', { name: 'Open Transactions', exact: true })
@@ -195,7 +245,7 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	await expect(day).not.toHaveAttribute('open', '')
 	await day.locator('summary').click()
 	await drawer.getByRole('link', { name: 'Page 2', exact: true }).click()
-	await expect(page).toHaveURL(`/expenses?workspace=${workspaceId}&page=2`)
+	await expectWorkspaceUrl(page, '/expenses', workspaceId, '2')
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 	const item = drawer.locator('.entries > li').first()
 	await expect(item.getByRole('link')).toHaveCount(1)
@@ -225,12 +275,49 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	await expect(drawer).toHaveAttribute('data-open', 'true')
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 	await drawer.getByRole('link', { name: 'Add Expenses', exact: true }).click()
-	await expect(page).toHaveURL(
-		(url) =>
-			url.pathname === '/expenses/new' &&
-			url.searchParams.get('workspace') === workspaceId &&
-			url.searchParams.get('page') === '2'
-	)
+	await expectWorkspaceUrl(page, '/expenses/new', workspaceId, '2')
 	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('')
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 })
+
+for (const kind of ['income', 'expense']) {
+	test(`sample ${kind} batches persist 25 items offline and can run again`, async ({
+		page,
+		context
+	}) => {
+		await seed(page)
+		const trigger = page.getByRole('button', { name: 'Developer menu', exact: true })
+		await trigger.focus()
+		await trigger.click()
+		const dialog = page.getByRole('dialog', { name: 'Developer menu', exact: true })
+		const add = dialog.getByRole('button', {
+			name: `Add 25 sample ${kind} transactions`,
+			exact: true
+		})
+		await expect(add).toBeEnabled()
+		await context.setOffline(true)
+		try {
+			for (const count of [25, 50]) {
+				await add.click()
+				await expect(dialog.getByRole('status')).toHaveText('Saved 25 of 25 sample transactions.')
+				await expect(add).toBeEnabled()
+				await expect
+					.poll(() =>
+						page.evaluate(async (kind) => {
+							const schemaPath = '/src/lib/schema.ts'
+							const sessionPath = '/src/lib/jazz-session.ts'
+							const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+							const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+								await import(sessionPath)
+							const db = getCurrentJazzSession()?.getSnapshot().client?.db
+							if (!db) throw new Error('Missing database')
+							return (await db.all(app.transactions)).filter((row) => row.kind === kind).length
+						}, kind)
+					)
+					.toBe(count)
+			}
+		} finally {
+			await context.setOffline(false)
+		}
+	})
+}

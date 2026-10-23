@@ -1,4 +1,4 @@
-import { assign, fromPromise, sendParent, setup } from 'xstate'
+import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { createAccountImportMachine } from './import-account.js'
@@ -7,6 +7,8 @@ import {
 	emptyCounts,
 	type Dependencies,
 	type ImportCounts,
+	type ImportResult,
+	type ImportSettlement,
 	type OperationWork,
 	type ProgressEvent,
 	type ProviderResponse
@@ -22,13 +24,25 @@ type Context = Input & {
 	counts: ImportCounts
 	accountCounts: ImportCounts
 	error: unknown
+	settlement: ImportSettlement
+	result: ImportResult | undefined
 }
-type Output = { counts: ImportCounts; error: unknown }
+type Output = ImportResult
 function combinedCounts(previous: ImportCounts, current: ImportCounts): ImportCounts {
 	return {
 		imported: previous.imported + current.imported,
 		existing: previous.existing + current.existing,
 		omitted: previous.omitted + current.omitted
+	}
+}
+
+// Replace transient child progress with its final totals exactly once.
+function accountReport(context: Context, result: ImportResult) {
+	return {
+		counts: combinedCounts(context.counts, result.counts),
+		accountCounts: emptyCounts(),
+		error: result.error,
+		settlement: result.settlement
 	}
 }
 
@@ -49,8 +63,20 @@ export function createImportMachine(dependencies: Dependencies) {
 		),
 		account: createAccountImportMachine(dependencies)
 	}
-	return setup<Context, ProgressEvent, typeof actors, {}, {}, {}, never, string, Input, Output>({
-		actors
+	return setup<
+		Context,
+		ProgressEvent | { type: 'CANCEL' },
+		typeof actors,
+		{},
+		{},
+		{ isCancelling: undefined },
+		never,
+		string,
+		Input,
+		Output
+	>({
+		actors,
+		guards: { isCancelling: stateIn({ processingAccount: 'cancelling' }) }
 	}).createMachine({
 		id: 'bank-import',
 		context: ({ input }) => ({
@@ -60,14 +86,14 @@ export function createImportMachine(dependencies: Dependencies) {
 			index: 0,
 			counts: emptyCounts(),
 			accountCounts: emptyCounts(),
-			error: undefined
+			error: undefined,
+			settlement: 'settled',
+			result: undefined
 		}),
 		initial: 'loadingMappings',
-		output: ({ context }) => ({
-			counts: combinedCounts(context.counts, context.accountCounts),
-			error: context.error
-		}),
+		output: ({ context }) => required(context.result),
 		on: {
+			CANCEL: '.cancelled',
 			IMPORT_PROGRESS: {
 				actions: [
 					assign({ accountCounts: ({ event }) => event.counts }),
@@ -127,7 +153,20 @@ export function createImportMachine(dependencies: Dependencies) {
 				]
 			},
 			processingAccount: {
+				initial: 'working',
+				states: { working: {}, cancelling: { on: { CANCEL: {} } } },
+				on: {
+					CANCEL: {
+						target: '.cancelling',
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.account
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					}
+				},
 				invoke: {
+					id: 'account',
 					src: 'account',
 					input: ({ context }) => ({
 						work: context.work,
@@ -137,23 +176,36 @@ export function createImportMachine(dependencies: Dependencies) {
 					}),
 					onDone: [
 						{
-							guard: ({ event }) => event.output.error !== undefined,
+							guard: 'isCancelling',
+							target: 'cancelled',
+							actions: assign(({ context, event }) => accountReport(context, event.output))
+						},
+						{
+							guard: ({ event }) => event.output.kind === 'cancelled',
+							target: 'cancelled',
+							actions: assign(({ context, event }) => accountReport(context, event.output))
+						},
+						{
+							guard: ({ event }) => event.output.kind === 'failed',
 							target: 'failed',
-							actions: assign({
-								counts: ({ context, event }) => combinedCounts(context.counts, event.output.counts),
-								accountCounts: emptyCounts(),
-								error: ({ event }) => event.output.error
-							})
+							actions: assign(({ context, event }) => accountReport(context, event.output))
 						},
 						{
 							target: 'advanceAccount',
-							actions: assign({
-								counts: ({ context, event }) => combinedCounts(context.counts, event.output.counts),
-								accountCounts: emptyCounts()
-							})
+							actions: assign(({ context, event }) => accountReport(context, event.output))
 						}
 					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: [
+						{
+							guard: 'isCancelling',
+							target: 'cancelled',
+							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+						},
+						{
+							target: 'failed',
+							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+						}
+					]
 				}
 			},
 			advanceAccount: {
@@ -163,12 +215,43 @@ export function createImportMachine(dependencies: Dependencies) {
 				],
 				always: 'nextAccount'
 			},
-			complete: { type: 'final' },
-			accountConflict: {
+			complete: {
 				type: 'final',
+				entry: assign({
+					result: ({ context }) => ({
+						kind: 'complete',
+						counts: combinedCounts(context.counts, context.accountCounts),
+						error: undefined,
+						settlement: 'settled'
+					})
+				})
+			},
+			cancelled: {
+				type: 'final',
+				entry: assign({
+					result: ({ context }) => ({
+						kind: 'cancelled',
+						counts: combinedCounts(context.counts, context.accountCounts),
+						error: context.error,
+						settlement: context.settlement
+					})
+				})
+			},
+			accountConflict: {
+				always: 'failed',
 				entry: assign({ error: () => new Error('account_already_linked') })
 			},
-			failed: { type: 'final' }
+			failed: {
+				type: 'final',
+				entry: assign({
+					result: ({ context }) => ({
+						kind: 'failed',
+						counts: combinedCounts(context.counts, context.accountCounts),
+						error: context.error,
+						settlement: context.settlement
+					})
+				})
+			}
 		}
 	})
 }

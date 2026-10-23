@@ -9,6 +9,15 @@ import type { fetchAccounts } from '#lib/integrations/simplefin.js'
 export type Connection = schema.RowOf<typeof app.simplefinConnections>
 export type ProviderSummary = { id: string; name: string; currency: string }
 export type ImportCounts = { imported: number; existing: number; omitted: number }
+export type ImportSettlement = 'settled' | 'unresolved'
+export type ImportResult =
+	| { kind: 'complete'; counts: ImportCounts; error: undefined; settlement: 'settled' }
+	| {
+			kind: 'cancelled' | 'failed'
+			counts: ImportCounts
+			error: unknown
+			settlement: ImportSettlement
+	  }
 export type ProviderResponse = Awaited<ReturnType<typeof fetchAccounts>>
 export type BankCommand =
 	| { type: 'DISCOVER' }

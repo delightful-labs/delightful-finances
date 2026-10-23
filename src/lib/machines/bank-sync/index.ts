@@ -1,9 +1,13 @@
 import type { BankPresentation } from '#lib/bank-presentation-contract.js'
 import type { ActorRefFrom, EventObject, SnapshotFrom } from 'xstate'
-import { assign, getInitialSnapshot, raise, sendTo, setup, stateIn } from 'xstate'
-import { bankAvailabilityMachine, availabilityObservation } from './availability.js'
+import { assign, raise, sendTo, setup, stateIn } from 'xstate'
+import {
+	bankAvailabilityMachine,
+	type AvailabilityEvent,
+	type AvailabilityReport
+} from './availability.js'
 import { accountOptionsMachine, type ProviderAccountView } from './account-options.js'
-import { bankHistoryMachine } from './history.js'
+import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { required } from './identity.js'
 import { createBankSetupMachine } from './setup.js'
 import { createBankOperationMachine } from './operation.js'
@@ -32,6 +36,8 @@ import {
 export type { BankEvent, BankCommand } from './types.js'
 type Event =
 	| BankEvent
+	| AvailabilityEvent
+	| HistoryEvent
 	| ProgressEvent
 	| { type: 'OBSERVED'; source: BankSource }
 	| { type: 'SHUTDOWN' }
@@ -40,12 +46,14 @@ type Event =
 			type: 'ENVIRONMENT_CHANGED'
 			environment: BankEnvironment
 			data: BankData
-			availability: SnapshotFrom<typeof bankAvailabilityMachine>
+			availability: AvailabilityReport
 	  }
 type Context = BankData & {
+	source: BankSource
+	generation: number
 	lastSync: LastSync | undefined
 	mappingActors: ReadonlyMap<string, ActorRefFrom<typeof accountOptionsMachine>>
-	availability: SnapshotFrom<typeof bankAvailabilityMachine>
+	availability: AvailabilityReport | undefined
 	environment: BankEnvironment
 	command: BankCommand | undefined
 	setupToken: string | undefined
@@ -84,11 +92,15 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		actors,
 		guards: {
 			isNeutral: stateIn({ ready: 'neutral' }),
-			canConnect: ({ context }) => context.availability.hasTag('allowed'),
-			canOperate: ({ context }) => context.availability.hasTag('show-sync')
+			canConnect: ({ context }) => context.availability?.canConnect === true,
+			canOperate: ({ context }) => context.availability?.canOperate === true
 		}
 	})
 	const clear = workflow.assign({ command: undefined, setupToken: undefined })
+	const cancelOperation = workflow.enqueueActions(({ self, enqueue }) => {
+		const child = self.getSnapshot().children.operation
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'CANCEL' })
+	})
 	const refreshMappings = workflow.enqueueActions(({ context, enqueue }) => {
 		for (const actor of context.mappingActors.values()) enqueue.stopChild(actor)
 		enqueue.assign(({ context, spawn }) => ({
@@ -118,10 +130,10 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 	)
 	const updateEnvironment = workflow.enqueueActions(({ enqueue }) => {
 		enqueue(assignEnvironment)
-		enqueue.sendTo('history', ({ event }) => ({
+		enqueue.sendTo('history', ({ context, event }) => ({
 			type: 'OBSERVED',
-			connection:
-				event.type === 'ENVIRONMENT_CHANGED' ? event.availability.context.connection : undefined
+			generation: context.generation,
+			connection: event.type === 'ENVIRONMENT_CHANGED' ? event.availability?.connection : undefined
 		}))
 		enqueue(refreshMappings)
 	})
@@ -133,35 +145,41 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			{
 				id: 'availability',
 				src: 'availability',
-				input: ({ context }) => context.availability.context.source,
-				onError: { actions: raise({ type: 'SHUTDOWN' }) },
-				onSnapshot: {
-					actions: raise(({ event }) => ({
-						type: 'ENVIRONMENT_CHANGED',
-						availability: event.snapshot,
-						environment: bankEnvironment(availabilityObservation(event.snapshot)),
-						data: bankData(event.snapshot.context.source)
-					}))
-				}
+				input: ({ context, self }) => ({
+					...context.source,
+					generation: context.generation,
+					recipient: self
+				}),
+				onError: { actions: raise({ type: 'SHUTDOWN' }) }
 			},
 			{
 				id: 'history',
 				src: 'history',
-				input: ({ context }) => context.availability.context.connection,
-				onError: { actions: raise({ type: 'SHUTDOWN' }) },
-				onSnapshot: { actions: assign({ lastSync: ({ event }) => event.snapshot.context.summary }) }
+				input: ({ context, self }) => ({
+					connection: undefined,
+					generation: context.generation,
+					recipient: self
+				}),
+				onError: { actions: raise({ type: 'SHUTDOWN' }) }
 			}
 		],
 		context: () => {
 			const source = inputs.read()
-			const availability = getInitialSnapshot(bankAvailabilityMachine, source)
 			return {
 				...bankData(source),
-				lastSync: getInitialSnapshot(bankHistoryMachine, availability.context.connection).context
-					.summary,
+				source,
+				generation: 0,
+				lastSync: undefined,
 				mappingActors: new Map(),
-				availability,
-				environment: bankEnvironment(availabilityObservation(availability)),
+				availability: undefined,
+				environment: bankEnvironment({
+					organizationId: source.organizationId,
+					userId: source.userId,
+					sessionReady: source.sessionReady,
+					allowed: false,
+					connected: false,
+					connection: undefined
+				}),
 				command: undefined,
 				setupToken: undefined,
 				error: undefined,
@@ -174,7 +192,32 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			'xstate.error.actor.*': { actions: raise({ type: 'SHUTDOWN' }) },
 			SHUTDOWN: { target: '.closed' },
 			OBSERVED: {
-				actions: sendTo('availability', ({ event }) => ({ type: 'OBSERVED', source: event.source }))
+				actions: [
+					assign(({ context, event }) => ({
+						source: event.source,
+						generation: context.generation + 1,
+						lastSync: undefined,
+						availability: undefined
+					})),
+					sendTo('availability', ({ context }) => ({
+						type: 'OBSERVED',
+						source: context.source,
+						generation: context.generation
+					}))
+				]
+			},
+			HISTORY_REPORTED: {
+				guard: ({ context, event }) => event.generation === context.generation,
+				actions: assign({ lastSync: ({ event }) => event.summary })
+			},
+			AVAILABILITY_REPORTED: {
+				guard: ({ context, event }) => event.report.generation === context.generation,
+				actions: raise(({ context, event }) => ({
+					type: 'ENVIRONMENT_CHANGED',
+					availability: event.report,
+					environment: event.report.environment,
+					data: bankData(context.source)
+				}))
 			},
 			ENVIRONMENT_CHANGED: [
 				{
@@ -454,8 +497,16 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				states: {
 					working: {},
 					cancelling: {},
-					resetting: { on: { CANCEL: {} } },
-					shuttingDown: { on: { CANCEL: {}, RESET: {}, SHUTDOWN: {}, ENVIRONMENT_CHANGED: {} } }
+					resetting: { on: { CANCEL: {}, IMPORT_PROGRESS: {} } },
+					shuttingDown: {
+						on: {
+							CANCEL: {},
+							RESET: {},
+							SHUTDOWN: {},
+							ENVIRONMENT_CHANGED: {},
+							IMPORT_PROGRESS: {}
+						}
+					}
 				},
 				tags: ['operating', 'busy'],
 				meta: { status: { key: 'bank.working' } },
@@ -477,7 +528,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							target: 'ready.neutral',
 							actions: assign({ error: undefined, counts: emptyCounts() })
 						},
-						{ guard: stateIn({ running: 'cancelling' }), target: 'ready.cancelled' },
+						{
+							guard: stateIn({ running: 'cancelling' }),
+							target: 'ready.cancelled',
+							actions: assign({ counts: ({ event }) => event.output.counts })
+						},
 						{
 							guard: ({ event }) => event.output.kind === 'cancelled',
 							target: 'ready.cancelled',
@@ -528,26 +583,18 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					]
 				},
 				on: {
-					SHUTDOWN: { target: '.shuttingDown', actions: sendTo('operation', { type: 'CANCEL' }) },
+					SHUTDOWN: { target: '.shuttingDown', actions: cancelOperation },
 					RESET: {
 						target: '.resetting',
-						actions: [
-							assign({ discovered: [] }),
-							refreshMappings,
-							sendTo('operation', { type: 'CANCEL' })
-						]
+						actions: [assign({ discovered: [] }), refreshMappings, cancelOperation]
 					},
-					CANCEL: { target: '.cancelling', actions: sendTo('operation', { type: 'CANCEL' }) },
+					CANCEL: { target: '.cancelling', actions: cancelOperation },
 					ENVIRONMENT_CHANGED: [
 						{
 							guard: ({ context, event }) =>
 								context.environment.scopeKey !== event.environment.scopeKey,
 							target: '.resetting',
-							actions: [
-								assign({ discovered: [] }),
-								updateEnvironment,
-								sendTo('operation', { type: 'CANCEL' })
-							]
+							actions: [assign({ discovered: [] }), updateEnvironment, cancelOperation]
 						},
 						{
 							guard: ({ context, event }) =>
@@ -555,7 +602,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 									event.environment.credentialFingerprint &&
 								(context.command?.type === 'SYNC' || context.command?.type === 'DISCOVER'),
 							target: '.cancelling',
-							actions: [updateEnvironment, sendTo('operation', { type: 'CANCEL' })]
+							actions: [updateEnvironment, cancelOperation]
 						},
 						{ actions: updateEnvironment }
 					],
@@ -574,15 +621,16 @@ export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBa
 		snapshot.children.operation?.getSnapshot()
 	)
 	return {
-		mode: snapshot.context.availability.hasTag('show-restricted')
-			? { kind: 'restricted' }
-			: snapshot.context.availability.hasTag('show-setup')
-				? {
-						kind: 'setup',
-						step: metadata.setupStep ?? 0,
-						stage: snapshot.matches('setup') ? (metadata.setupView ?? null) : null
-					}
-				: { kind: 'connected', recovery: 'available' },
+		mode:
+			!snapshot.context.availability || snapshot.context.availability.mode === 'restricted'
+				? { kind: 'restricted' }
+				: snapshot.context.availability.mode === 'setup'
+					? {
+							kind: 'setup',
+							step: metadata.setupStep ?? 0,
+							stage: snapshot.matches('setup') ? (metadata.setupView ?? null) : null
+						}
+					: { kind: 'connected', recovery: 'available' },
 		activity: snapshot.hasTag('busy')
 			? { kind: 'working', indicator: metadata.loadingProvider ? 'provider' : 'general' }
 			: { kind: 'idle' },

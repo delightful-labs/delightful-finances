@@ -1,10 +1,11 @@
-import { assign, fromPromise, setup } from 'xstate'
+import { assign, fromPromise, enqueueActions, setup } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { stableUuid } from '#lib/data.js'
 import type { appAccountSchema } from '#lib/validation/accounts.js'
 import { createAuthorizationMachine } from './authorization.js'
 import { required } from './identity.js'
+import { accountWriteTransaction, type MappingInterruption } from './account-write-transaction.js'
 import {
 	credentialAuthorization,
 	type Dependencies,
@@ -53,56 +54,11 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 			stableUuid(input.work.scope.organizationId, `simplefin-link:${input.provider.id}`)
 		),
 		authorize: createAuthorizationMachine(dependencies),
-		// Recheck inside the atomic write: preflight states cannot prevent concurrent changes.
-		commit: fromPromise<void, { request: AccountWrite; linkId: string }>(
-			async ({ input, signal }) => {
-				const { request, linkId } = input
-				const { work, provider, accountId } = request
-				const result = await db.transaction(async (tx) => {
-					const links = await tx.all(
-						app.simplefinAccountLinks.where({
-							organizationId: work.scope.organizationId,
-							simplefinAccountId: provider.id
-						})
-					)
-					if (links.length > 1) throw new Error('mapping')
-					if (request.kind === 'create' && links.length) return
-					const destination = await tx.all(
-						app.simplefinAccountLinks.where({
-							organizationId: work.scope.organizationId,
-							accountId
-						})
-					)
-					if (destination.some((link) => link.simplefinAccountId !== provider.id))
-						throw new Error('account_already_linked')
-					const account = (await tx.all(app.accounts.where({ id: accountId })))[0]
-					if (
-						account &&
-						(account.organizationId !== work.scope.organizationId ||
-							account.archivedAt ||
-							(request.kind === 'create' && account.currency !== provider.currency))
-					)
-						throw new Error('mapping')
-					if (request.kind === 'map' && !account) throw new Error('mapping')
-					signal.throwIfAborted()
-					if (request.kind === 'create' && !account)
-						tx.insert(app.accounts, request.values, { id: accountId })
-					const values = {
-						organizationId: work.scope.organizationId,
-						connectionId: work.current.id,
-						simplefinAccountId: provider.id,
-						accountId
-					}
-					if (links[0]) tx.update(app.simplefinAccountLinks, links[0].id, values)
-					else tx.insert(app.simplefinAccountLinks, values, { id: linkId })
-				})
-				await result.wait({ tier: 'local' })
-			}
-		)
+		transaction: accountWriteTransaction
 	}
 	return setup<
 		Context,
-		{ type: 'WRITE' },
+		{ type: 'WRITE' } | MappingInterruption,
 		typeof actors,
 		{},
 		{},
@@ -122,6 +78,10 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 			error: undefined
 		}),
 		initial: 'loadingProviderLinks',
+		on: {
+			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
+			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+		},
 		output: ({ context }) =>
 			context.error === undefined
 				? { ok: true, value: undefined }
@@ -275,10 +235,47 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 				}
 			},
 			committing: {
+				on: {
+					CANCEL: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.transaction
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'CANCEL' })
+						})
+					},
+					SHUTDOWN: {
+						actions: enqueueActions(({ self, enqueue }) => {
+							const child = self.getSnapshot().children.transaction
+							if (child?.getSnapshot().status === 'active')
+								enqueue.sendTo(child, { type: 'SHUTDOWN' })
+						})
+					}
+				},
 				invoke: {
-					src: 'commit',
-					input: ({ context }) => ({ request: context.request, linkId: required(context.linkId) }),
-					onDone: 'complete',
+					id: 'transaction',
+					src: 'transaction',
+					input: ({ context }) => ({
+						db,
+						request: context.request,
+						linkId: required(context.linkId)
+					}),
+					onDone: [
+						{
+							guard: ({ event }) => event.output.outcome === 'failed',
+							target: 'failed',
+							actions: assign({
+								error: ({ event }) =>
+									event.output.outcome === 'failed' ? event.output.error : undefined
+							})
+						},
+						{
+							guard: ({ event }) =>
+								event.output.outcome === 'cancelled' || event.output.outcome === 'closed',
+							target: 'failed',
+							actions: assign({ error: () => new Error('disconnected') })
+						},
+						{ target: 'complete' }
+					],
 					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
 				}
 			},

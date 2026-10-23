@@ -1,46 +1,198 @@
-import { assign, fromPromise, setup } from 'xstate'
+import {
+	assign,
+	enqueueActions,
+	fromPromise,
+	setup,
+	stateIn,
+	type ActorLogic,
+	type Snapshot
+} from 'xstate'
+import type { AppTransaction } from '#lib/domain/transaction.js'
+import type { FormChildEvent, FormOperationInput, FormOperationResult } from '#lib/form-contract.js'
+import type {
+	TransactionEntryObservation,
+	TransactionEntryReason,
+	TransactionEntryScope
+} from '#lib/transaction-entry-contract.js'
 
-// One local write per invocation. Leaving the screen stops subsequent writes;
-// an already issued local transaction can still finish.
-type Input = { create: (index: number) => Promise<void> }
-type Context = Input & { saved: number }
-const write = fromPromise<void, Input & { index: number }>(({ input }) => input.create(input.index))
-export const sampleTransactionsMachine = setup<
-	Context,
-	{ type: 'ADD' } | { type: 'CANCEL' },
-	{ write: typeof write },
-	{},
-	{},
-	{},
-	never,
-	string,
-	Input
->({ actors: { write } }).createMachine({
-	context: ({ input }) => ({ saved: 0, create: input.create }),
-	initial: 'idle',
-	states: {
-		idle: { on: { ADD: { target: 'saving', actions: assign({ saved: 0 }) } } },
-		saving: {
-			on: { CANCEL: 'cancelled' },
-			invoke: {
-				src: 'write',
-				input: ({ context }) => ({ create: context.create, index: context.saved }),
-				onDone: { target: 'next', actions: assign({ saved: ({ context }) => context.saved + 1 }) },
-				onError: [
+type CreationInput = FormOperationInput<
+	AppTransaction,
+	TransactionEntryScope,
+	TransactionEntryObservation
+>
+type Result = FormOperationResult<void, TransactionEntryReason>
+type Event = FormChildEvent<TransactionEntryObservation> | { type: 'ADD' }
+type Context = { saved: number; request: CreationInput | undefined; lastResult: Result | undefined }
+
+/** Batch iteration owns the current creation child until its transaction has settled. */
+export function createSampleTransactionsMachine<PersistenceSnapshot extends Snapshot<Result>>(
+	operation: ActorLogic<
+		PersistenceSnapshot,
+		FormChildEvent<TransactionEntryObservation>,
+		CreationInput
+	>,
+	prepare: (index: number) => CreationInput
+) {
+	const actors = {
+		prepare: fromPromise(({ input }: { input: number }) => Promise.resolve(prepare(input))),
+		write: operation
+	}
+	const model = setup<
+		Context,
+		Event,
+		typeof actors,
+		{},
+		{ forward: undefined },
+		{
+			closing: undefined
+			interrupted: undefined
+		}
+	>({
+		actors,
+		actions: {
+			forward: enqueueActions(({ self, event, enqueue }) => {
+				const child = self.getSnapshot().children.write
+				if (event.type !== 'ADD' && child?.getSnapshot().status === 'active')
+					enqueue.sendTo(child, event)
+			})
+		},
+		guards: {
+			closing: stateIn({ saving: 'closing' }),
+			interrupted: stateIn({ saving: 'interrupted' })
+		}
+	})
+	return model.createMachine({
+		initial: 'idle',
+		context: { saved: 0, request: undefined, lastResult: undefined },
+		on: { SHUTDOWN: '.closed', CANCEL: '.cancelled' },
+		states: {
+			idle: {
+				on: { ADD: { target: 'preparing', actions: assign({ saved: 0, lastResult: undefined }) } }
+			},
+			preparing: {
+				invoke: {
+					src: 'prepare',
+					input: ({ context }) => context.saved,
+					onDone: { target: 'saving', actions: assign({ request: ({ event }) => event.output }) },
+					onError: {
+						target: 'assessingFailure',
+						actions: assign({
+							lastResult: (): Result => ({
+								outcome: 'failed',
+								code: 'validationFailed',
+								settlement: 'notStarted'
+							})
+						})
+					}
+				},
+				on: { INVALIDATE: 'assessingFailure' }
+			},
+			saving: {
+				initial: 'pending',
+				invoke: {
+					id: 'write',
+					src: 'write',
+					input: ({ context }) => {
+						if (!context.request) throw new Error('Missing sample request')
+						return context.request
+					},
+					onDone: [
+						{
+							guard: 'closing',
+							target: 'closed',
+							actions: assign({
+								lastResult: ({ event }) => event.output,
+								saved: ({ context, event }) =>
+									context.saved + (event.output?.settlement === 'locallyPersisted' ? 1 : 0)
+							})
+						},
+						{
+							guard: 'interrupted',
+							target: 'assessingFailure',
+							actions: assign({
+								lastResult: ({ event }) => event.output,
+								saved: ({ context, event }) =>
+									context.saved + (event.output?.settlement === 'locallyPersisted' ? 1 : 0)
+							})
+						},
+						{
+							guard: ({ event }) => event.output?.outcome === 'succeeded',
+							target: 'next',
+							actions: assign({
+								lastResult: ({ event }) => event.output,
+								saved: ({ context }) => context.saved + 1
+							})
+						},
+						{
+							target: 'assessingFailure',
+							actions: assign({
+								lastResult: ({ event }) => event.output,
+								saved: ({ context, event }) =>
+									context.saved + (event.output?.settlement === 'locallyPersisted' ? 1 : 0)
+							})
+						}
+					],
+					onError: [
+						{
+							guard: 'closing',
+							target: 'closed',
+							actions: assign({
+								lastResult: (): Result => ({
+									outcome: 'failed',
+									code: 'operationFailed',
+									settlement: 'unknown'
+								})
+							})
+						},
+						{
+							target: 'assessingFailure',
+							actions: assign({
+								lastResult: (): Result => ({
+									outcome: 'failed',
+									code: 'operationFailed',
+									settlement: 'unknown'
+								})
+							})
+						}
+					]
+				},
+				on: {
+					OBSERVE: { actions: 'forward' },
+					INVALIDATE: { target: '.interrupted', actions: 'forward' },
+					CANCEL: { target: '.interrupted', actions: 'forward' },
+					SHUTDOWN: { target: '.closing', actions: 'forward' }
+				},
+				states: {
+					pending: {},
+					interrupted: { on: { CANCEL: {}, INVALIDATE: {} } },
+					closing: { on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: {}, OBSERVE: {} } }
+				}
+			},
+			next: {
+				entry: assign({ request: undefined }),
+				always: [
+					{ guard: ({ context }) => context.saved === 25, target: 'complete' },
+					{ target: 'preparing' }
+				]
+			},
+			assessingFailure: {
+				entry: assign({ request: undefined }),
+				always: [
 					{ guard: ({ context }) => context.saved > 0, target: 'partial' },
 					{ target: 'failure' }
 				]
-			}
-		},
-		next: {
-			always: [
-				{ guard: ({ context }) => context.saved === 25, target: 'complete' },
-				{ target: 'saving' }
-			]
-		},
-		complete: { on: { ADD: { target: 'saving', actions: assign({ saved: 0 }) } } },
-		partial: { on: { ADD: { target: 'saving', actions: assign({ saved: 0 }) } } },
-		failure: { on: { ADD: 'saving' } },
-		cancelled: { type: 'final' }
-	}
-})
+			},
+			complete: {
+				on: { ADD: { target: 'preparing', actions: assign({ saved: 0, lastResult: undefined }) } }
+			},
+			partial: {
+				on: { ADD: { target: 'preparing', actions: assign({ saved: 0, lastResult: undefined }) } }
+			},
+			failure: {
+				on: { ADD: { target: 'preparing', actions: assign({ saved: 0, lastResult: undefined }) } }
+			},
+			cancelled: { type: 'final', entry: assign({ request: undefined }) },
+			closed: { type: 'final', entry: assign({ request: undefined }) }
+		}
+	})
+}

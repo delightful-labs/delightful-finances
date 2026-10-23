@@ -1,10 +1,13 @@
 import { assign, setup, type SnapshotFrom } from 'xstate'
 import type { ProfileObservation, ProfileReason, ProfileScope } from '#lib/profile-contract.js'
 import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
+import { createProfileAvatarMachine } from './profile-avatar.js'
+import type { ScopedFormOptions } from './scoped-form.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 import {
 	profileNameFormSchema,
 	profileAvatarFormSchema,
+	profileAvatarValuesSchema,
 	avatarMimeType
 } from '#lib/validation/identity.js'
 import type { z } from 'zod'
@@ -100,7 +103,7 @@ export function createProfileFormOptions(deps: {
 	saveAvatar: (
 		id: string,
 		user: string,
-		values: z.output<typeof profileAvatarFormSchema>
+		values: z.output<typeof profileAvatarValuesSchema>
 	) => Promise<unknown>
 }) {
 	const availability = createProfileAvailability(deps.binding)
@@ -137,8 +140,8 @@ export function createProfileFormOptions(deps: {
 			await deps.saveName(profileId, identityId, request.values.displayName ?? null)
 		}
 	})
-	const avatar = createSingleWriteFormOptions<
-		z.output<typeof profileAvatarFormSchema>,
+	const avatarWrite = createSingleWriteFormOptions<
+		z.output<typeof profileAvatarValuesSchema>,
 		void,
 		ProfileReason,
 		ProfileScope,
@@ -146,17 +149,34 @@ export function createProfileFormOptions(deps: {
 		SnapshotFrom<typeof availability>
 	>({
 		...common,
+		schema: profileAvatarValuesSchema,
+		write: async ({ request }) => {
+			const { profileId, identityId } = request.scope
+			if (profileId === null || identityId === null) throw new Error('Missing authorized profile')
+			await deps.saveAvatar(profileId, identityId, request.values)
+		}
+	})
+	const avatarOperation = createProfileAvatarMachine({
+		write: avatarWrite.operation,
+		scopeOf: profileScope,
+		sameScope: sameProfileScope
+	})
+	const avatar = {
+		...common,
 		successContent: 'retain',
 		schema: profileAvatarFormSchema,
+		operation: avatarOperation,
 		resetOnSuccess: true,
 		mode: 'edit',
 		initialValues: (f) =>
 			f.profile?.avatarData
 				? {
-						avatarData: Uint8Array.from(f.profile.avatarData),
-						avatarMimeType: avatarMimeType.safeParse(f.profile.avatarMimeType).data ?? 'image/png'
+						action: 'upload',
+						file: new File([Uint8Array.from(f.profile.avatarData)], 'avatar', {
+							type: avatarMimeType.safeParse(f.profile.avatarMimeType).data ?? 'image/png'
+						})
 					}
-				: { avatarData: null, avatarMimeType: null },
+				: { action: 'remove' },
 		valuesEqual: (draft, initial) =>
 			!(
 				typeof draft === 'object' &&
@@ -166,13 +186,17 @@ export function createProfileFormOptions(deps: {
 					'file' in draft &&
 					draft.file instanceof File &&
 					draft.file.size > 0) ||
-					(draft.action === 'remove' && initial.avatarData !== null))
-			),
-		write: async ({ request }) => {
-			const { profileId, identityId } = request.scope
-			if (profileId === null || identityId === null) throw new Error('Missing authorized profile')
-			await deps.saveAvatar(profileId, identityId, request.values)
-		}
-	})
+					(draft.action === 'remove' && initial.action === 'upload'))
+			)
+	} satisfies ScopedFormOptions<
+		z.output<typeof profileAvatarFormSchema>,
+		void,
+		ProfileReason,
+		ProfileScope,
+		ProfileObservation,
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<typeof avatarOperation>
+	>
+
 	return { name, avatar }
 }

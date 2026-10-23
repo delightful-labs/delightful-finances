@@ -1,8 +1,9 @@
-import { assign, fromPromise, setup } from 'xstate'
+import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { createAuthorizationMachine } from './authorization.js'
 import { required } from './identity.js'
+import type { MappingInterruption } from './account-write-transaction.js'
 import {
 	credentialAuthorization,
 	type Dependencies,
@@ -33,19 +34,23 @@ export function createAccountUnlinkMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		{ type: 'UNLINK' },
+		{ type: 'UNLINK' } | MappingInterruption,
 		typeof actors,
 		{},
 		{},
-		{},
+		{ isDraining: undefined },
 		never,
 		string,
 		Input,
 		Result<undefined>
-	>({ actors }).createMachine({
+	>({ actors, guards: { isDraining: stateIn({ removingLink: 'draining' }) } }).createMachine({
 		id: 'bank-account-unlink',
 		context: ({ input }) => ({ ...input, links: [], index: 0, error: undefined }),
 		initial: 'loadingLinks',
+		on: {
+			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
+			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+		},
 		output: ({ context }) =>
 			context.error === undefined
 				? { ok: true, value: undefined }
@@ -84,14 +89,35 @@ export function createAccountUnlinkMachine(dependencies: Dependencies) {
 				}
 			},
 			removingLink: {
+				initial: 'working',
+				states: {
+					working: {},
+					draining: { on: { CANCEL: {}, SHUTDOWN: {} } }
+				},
+				on: {
+					CANCEL: {
+						target: '.draining',
+						actions: assign({ error: () => new Error('disconnected') })
+					},
+					SHUTDOWN: {
+						target: '.draining',
+						actions: assign({ error: () => new Error('disconnected') })
+					}
+				},
 				invoke: {
 					src: 'remove',
 					input: ({ context }) => required(context.links[context.index]),
-					onDone: {
-						target: 'choosingLink',
-						actions: assign({ index: ({ context }) => context.index + 1 })
-					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: [
+						{ guard: 'isDraining', target: 'failed' },
+						{
+							target: 'choosingLink',
+							actions: assign({ index: ({ context }) => context.index + 1 })
+						}
+					],
+					onError: [
+						{ guard: 'isDraining', target: 'failed' },
+						{ target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					]
 				}
 			},
 			complete: { type: 'final' },

@@ -1,4 +1,13 @@
-import { assign, fromPromise, setup, stateIn, type ActorLogic, type Snapshot } from 'xstate'
+import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
+import {
+	assign,
+	enqueueActions,
+	fromPromise,
+	setup,
+	stateIn,
+	type ActorLogic,
+	type Snapshot
+} from 'xstate'
 import type {
 	FormCapability,
 	FormChildEvent,
@@ -8,85 +17,88 @@ import type {
 	FormOperationResult
 } from '#lib/form-contract.js'
 
-/** One effect only. Domain decisions belong in the supplied assessment actor. */
+/** Exactly one persistence implementation: a leaf effect or a resource-owning actor. */
+export type FormPersistence<
+	Values,
+	Result,
+	Reason,
+	Scope,
+	Observation,
+	PersistenceSnapshot extends Snapshot<FormOperationResult<Result, Reason>>
+> =
+	| {
+			write: (input: FormOperationInput<Values, Scope, Observation>) => Promise<Result>
+			persistence?: never
+	  }
+	| {
+			write?: never
+			persistence: ActorLogic<
+				PersistenceSnapshot,
+				FormChildEvent<Observation>,
+				FormOperationInput<Values, Scope, Observation>
+			>
+	  }
+
+/** Owns prewrite readiness and settlement; supplied effects retain their domain resource obligations. */
 export function createScopedFormWriteMachine<
 	Values,
 	Result,
 	Reason,
 	Scope,
 	Observation,
-	AvailabilitySnapshot extends Snapshot<unknown>
->(options: {
-	availability: ActorLogic<
-		AvailabilitySnapshot,
-		FormChildEvent<Observation>,
-		FormObservation<Observation>
+	AvailabilitySnapshot extends Snapshot<unknown>,
+	PersistenceSnapshot extends Snapshot<FormOperationResult<Result, Reason>> = Snapshot<
+		FormOperationResult<Result, Reason>
 	>
-	selectAvailability: (snapshot: AvailabilitySnapshot) => FormCapability<Scope, Reason>
-	scopeOf: (facts: Observation) => Scope
-	sameScope: (left: Scope, right: Scope) => boolean
-	observe: () => Observation
-	classifyBlocked: (reason: Reason) => 'denied' | 'unavailable'
-	write: (input: FormOperationInput<Values, Scope, Observation>) => Promise<Result>
-	assessmentObservation?: (input: FormOperationInput<Values, Scope, Observation>) => Observation
-	settlement: 'locallyPersisted' | 'confirmed'
-}) {
+>(
+	options: {
+		availability: ActorLogic<
+			AvailabilitySnapshot,
+			FormChildEvent<Observation>,
+			FormObservation<Observation>
+		>
+		selectAvailability: (snapshot: AvailabilitySnapshot) => FormCapability<Scope, Reason>
+		scopeOf: (facts: Observation) => Scope
+		sameScope: (left: Scope, right: Scope) => boolean
+		observe: () => Observation
+		classifyBlocked: (reason: Reason) => 'denied' | 'unavailable'
+		assessmentObservation?: (input: FormOperationInput<Values, Scope, Observation>) => Observation
+		settlement: 'locallyPersisted' | 'confirmed'
+	} & FormPersistence<Values, Result, Reason, Scope, Observation, PersistenceSnapshot>
+) {
 	type Input = FormOperationInput<Values, Scope, Observation>
 	type Output = FormOperationResult<Result, Reason>
 	type Context = {
 		request: Input['request'] | undefined
 		observation: FormObservation<Observation> | undefined
+		assessmentError: { generation: number } | undefined
+		assessmentGeneration: number
 		capability: FormCapability<Scope, Reason> | undefined
 		result: Output | undefined
 	}
 	type Event = FormChildEvent<Observation>
-	const review = setup<
-		{
-			observation: FormObservation<Observation>
-			capability: FormCapability<Scope, Reason> | undefined
-		},
-		FormChildEvent<Observation>,
-		{ source: typeof options.availability },
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<Observation>
-	>({ actors: { source: options.availability } }).createMachine({
-		context: ({ input }) => ({ observation: input, capability: undefined }),
-		initial: 'watching',
-		states: {
-			watching: {
-				invoke: {
-					src: 'source',
-					input: ({ context }) => context.observation,
-					onSnapshot: {
-						guard: ({ event }) => event.snapshot.status === 'active',
-						actions: assign({
-							capability: ({ event }) => options.selectAvailability(event.snapshot)
-						})
-					},
-					onError: 'failed',
-					onDone: 'failed'
-				}
-			},
-			failed: { type: 'final' }
-		}
-	})
+	const review = createScopedFormReadinessMachine<Scope, Reason, Observation, AvailabilitySnapshot>(
+		options
+	)
 	const actors = {
 		refresh: fromPromise<FormObservation<Observation>, FormObservation<Observation>>(
 			async ({ input }) => ({ revision: input.revision, facts: options.observe() })
 		),
 		review,
-		write: fromPromise<Result, Input>(({ input }) => options.write(input))
+		write:
+			options.persistence ??
+			fromPromise<Output, Input>(async ({ input }) => {
+				if (!options.write) throw new Error('Missing persistence operation')
+				const value = await options.write(input)
+				return { outcome: 'succeeded', value, settlement: options.settlement }
+			})
 	}
 	const form = setup<
 		Context,
 		Event,
 		typeof actors,
 		{},
-		{},
+		{ observeAssessmentError: undefined; interruptWrite: undefined },
 		{
 			closing: undefined
 			invalidated: undefined
@@ -98,6 +110,22 @@ export function createScopedFormWriteMachine<
 		Output
 	>({
 		actors,
+		actions: {
+			interruptWrite: enqueueActions(({ self, event, enqueue }) => {
+				const child = self.getSnapshot().children.write
+				if (child?.getSnapshot().status === 'active') {
+					enqueue.sendTo(child, event.type === 'OBSERVE' ? { type: 'INVALIDATE' } : event)
+				}
+			}),
+			observeAssessmentError: enqueueActions(({ self, context, enqueue }) => {
+				enqueue.assign({
+					assessmentError:
+						self.getSnapshot().children.review?.getSnapshot().status === 'error'
+							? { generation: context.assessmentGeneration }
+							: undefined
+				})
+			})
+		},
 		guards: {
 			closing: stateIn({ writing: 'closing' }),
 			invalidated: stateIn({ writing: 'invalidated' }),
@@ -116,7 +144,12 @@ export function createScopedFormWriteMachine<
 		observation: ({ context, event }) =>
 			event.type === 'OBSERVE' ? event.observation : context.observation
 	})
-	const clear = form.assign({ request: undefined, observation: undefined, capability: undefined })
+	const clear = form.assign({
+		request: undefined,
+		observation: undefined,
+		capability: undefined,
+		assessmentError: undefined
+	})
 	const interrupted = (outcome: FormInterruption) =>
 		form.createStateConfig({
 			type: 'final',
@@ -133,6 +166,7 @@ export function createScopedFormWriteMachine<
 			entry: [
 				form.assign({
 					result: ({ context }): Output => {
+						if (context.result) return context.result
 						const readiness = context.capability?.readiness
 						if (readiness?.kind !== 'blocked') throw new Error('Missing write capability')
 						return { outcome, reason: readiness.reason, settlement: 'notStarted' }
@@ -141,10 +175,8 @@ export function createScopedFormWriteMachine<
 				clear
 			]
 		})
-	function success(outcome: FormInterruption | 'succeeded', value: Result): Output {
-		return outcome === 'succeeded'
-			? { outcome, value, settlement: options.settlement }
-			: { outcome, settlement: options.settlement }
+	function interruptedResult(outcome: FormInterruption, result: Output | undefined): Output {
+		return { outcome, settlement: result?.settlement ?? 'unknown' }
 	}
 	function failure(outcome: FormInterruption | 'failed'): Output {
 		return outcome === 'failed'
@@ -162,6 +194,8 @@ export function createScopedFormWriteMachine<
 		context: ({ input }) => ({
 			request: input.request,
 			observation: input.observation,
+			assessmentError: undefined,
+			assessmentGeneration: 0,
 			capability: undefined,
 			result: undefined
 		}),
@@ -202,31 +236,70 @@ export function createScopedFormWriteMachine<
 				]
 			},
 			authorizing: {
+				initial: 'pending',
+				states: {
+					pending: {},
+					checkingError: {
+						always: [
+							{
+								guard: ({ context }) =>
+									context.assessmentError?.generation === context.assessmentGeneration,
+								target: '#scoped-form-write.failed',
+								actions: assign({ result: () => prewriteFailure })
+							},
+							{ target: 'pending' }
+						]
+					}
+				},
+				entry: assign({
+					assessmentGeneration: ({ context }) => context.assessmentGeneration + 1,
+					assessmentError: undefined,
+					capability: undefined
+				}),
 				invoke: {
+					id: 'review',
 					src: 'review',
 					input: ({ context }) => ({
-						...observation(context),
-						facts:
-							options.assessmentObservation?.({
-								request: request(context),
-								observation: observation(context)
-							}) ?? observation(context).facts
-					}),
-					onSnapshot: {
-						guard: ({ context, event }) => {
-							const capability = event.snapshot.context.capability
-							return (
-								event.snapshot.status === 'active' &&
-								capability !== undefined &&
-								capability.revision === observation(context).revision &&
-								options.sameScope(capability.scope, request(context).scope)
-							)
+						observation: {
+							...observation(context),
+							facts:
+								options.assessmentObservation?.({
+									request: request(context),
+									observation: observation(context)
+								}) ?? observation(context).facts
 						},
-						target: 'deciding',
-						actions: assign({ capability: ({ event }) => event.snapshot.context.capability })
-					},
-					onError: { target: 'failed', actions: assign({ result: () => prewriteFailure }) },
-					onDone: { target: 'failed', actions: assign({ result: () => prewriteFailure }) }
+						delivery: {
+							kind: 'assessment',
+							token: {
+								requestId: request(context).id,
+								scopeRevision: request(context).scopeRevision,
+								generation: context.assessmentGeneration
+							}
+						}
+					}),
+					onDone: [
+						{
+							guard: ({ context, event }) =>
+								event.output.token !== undefined &&
+								event.output.token.generation < context.assessmentGeneration
+						},
+						{
+							guard: ({ context, event }) =>
+								event.output.kind === 'assessed' &&
+								event.output.token.requestId === request(context).id &&
+								event.output.token.scopeRevision === request(context).scopeRevision &&
+								event.output.token.generation === context.assessmentGeneration &&
+								event.output.capability.revision === observation(context).revision &&
+								options.sameScope(event.output.capability.scope, request(context).scope),
+							target: 'deciding',
+							actions: assign({
+								capability: ({ event }) =>
+									event.output.kind === 'assessed' ? event.output.capability : undefined
+							})
+						},
+						{ target: 'failed', actions: assign({ result: () => prewriteFailure }) }
+					],
+					onError: { target: '.checkingError', actions: 'observeAssessmentError' }
 				},
 				on: { OBSERVE: { target: 'checkingScope', actions: observe } }
 			},
@@ -262,21 +335,25 @@ export function createScopedFormWriteMachine<
 						{
 							guard: 'closing',
 							target: 'closed',
-							actions: assign({ result: ({ event }) => success('closed', event.output) })
+							actions: assign({ result: ({ event }) => interruptedResult('closed', event.output) })
 						},
 						{
 							guard: 'invalidated',
 							target: 'scopeChanged',
-							actions: assign({ result: ({ event }) => success('scopeChanged', event.output) })
+							actions: assign({
+								result: ({ event }) => interruptedResult('scopeChanged', event.output)
+							})
 						},
 						{
 							guard: 'cancelling',
 							target: 'cancelled',
-							actions: assign({ result: ({ event }) => success('cancelled', event.output) })
+							actions: assign({
+								result: ({ event }) => interruptedResult('cancelled', event.output)
+							})
 						},
 						{
-							target: 'succeeded',
-							actions: assign({ result: ({ event }) => success('succeeded', event.output) })
+							target: 'settled',
+							actions: assign({ result: ({ event }) => event.output ?? failure('failed') })
 						}
 					],
 					onError: [
@@ -299,9 +376,9 @@ export function createScopedFormWriteMachine<
 					]
 				},
 				on: {
-					CANCEL: '.cancelling',
-					INVALIDATE: '.invalidated',
-					SHUTDOWN: '.closing',
+					CANCEL: { target: '.cancelling', actions: 'interruptWrite' },
+					INVALIDATE: { target: '.invalidated', actions: 'interruptWrite' },
+					SHUTDOWN: { target: '.closing', actions: 'interruptWrite' },
 					OBSERVE: [
 						{
 							guard: ({ context, event }) =>
@@ -310,7 +387,7 @@ export function createScopedFormWriteMachine<
 									options.scopeOf(event.observation.facts)
 								),
 							target: '.invalidated',
-							actions: observe
+							actions: [observe, 'interruptWrite']
 						},
 						{ actions: observe }
 					]
@@ -322,6 +399,25 @@ export function createScopedFormWriteMachine<
 					closing: { on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: {}, OBSERVE: {} } }
 				}
 			},
+			settled: {
+				always: [
+					{ guard: ({ context }) => context.result?.outcome === 'succeeded', target: 'succeeded' },
+					{ guard: ({ context }) => context.result?.outcome === 'denied', target: 'denied' },
+					{
+						guard: ({ context }) => context.result?.outcome === 'unavailable',
+						target: 'unavailable'
+					},
+					{ guard: ({ context }) => context.result?.outcome === 'cancelled', target: 'cancelled' },
+					{ guard: ({ context }) => context.result?.outcome === 'closed', target: 'closed' },
+					{
+						guard: ({ context }) => context.result?.outcome === 'scopeChanged',
+						target: 'scopeChanged'
+					},
+					{ guard: ({ context }) => context.result?.outcome === 'partial', target: 'partial' },
+					{ target: 'failed' }
+				]
+			},
+			partial: { type: 'final', entry: clear },
 			succeeded: { type: 'final', entry: clear },
 			denied: blocked('denied'),
 			unavailable: blocked('unavailable'),

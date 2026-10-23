@@ -1,9 +1,7 @@
 import {
 	assign,
-	enqueueActions,
 	fromPromise,
 	raise,
-	sendParent,
 	and,
 	setup,
 	stateIn,
@@ -14,6 +12,7 @@ import {
 import type { z } from 'zod'
 import type {
 	FormCapability,
+	FormCapabilityReportEvent,
 	FormMode,
 	FormChildEvent,
 	FormObservation,
@@ -21,9 +20,11 @@ import type {
 	FormOperationResult,
 	FormRequest,
 	FormResult,
-	ScopedFormView
+	ScopedFormView,
+	FormSubmissionProgressEvent
 } from '#lib/form-contract.js'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
+import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 
 export type ScopedFormOptions<
 	Values,
@@ -82,20 +83,20 @@ export function createScopedFormMachine<
 		Observation,
 		OperationSnapshot
 	>(options)
-	type SubmissionSnapshot = SnapshotFrom<typeof submission>
 	type Context = {
 		observation: FormObservation<Observation> | undefined
 		scope: { value: Scope } | undefined
 		scopeRevision: number
+		watchGeneration: number
 		capability: FormCapability<Scope, Reason> | undefined
 		request: FormRequest<Scope> | undefined
 		sequence: number
 		result: FormResult<Result, Reason> | undefined
-		submission: SubmissionSnapshot | undefined
 		draftRevision: number
 		draft: unknown
 	}
 	type Event =
+		| FormSubmissionProgressEvent
 		| { type: 'OBSERVE'; observation: Observation }
 		| { type: 'SUBMIT'; values: unknown }
 		| { type: 'CHANGE'; values: unknown }
@@ -111,52 +112,13 @@ export function createScopedFormMachine<
 					| 'OBSERVATION_CHANGED'
 					| 'CAPABILITY_ACCEPTED'
 		  }
-		| { type: 'CAPABILITY_UPDATED'; capability: FormCapability<Scope, Reason> }
-	const availability = setup<
-		{ observation: FormObservation<Observation> },
-		FormChildEvent<Observation>,
-		{ source: typeof options.availability },
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<Observation>
-	>({ actors: { source: options.availability } }).createMachine({
-		id: 'scoped-form-availability',
-		initial: 'watching',
-		context: ({ input }) => ({ observation: input }),
-		states: {
-			watching: {
-				invoke: {
-					id: 'source',
-					src: 'source',
-					input: ({ context }) => context.observation,
-					onSnapshot: {
-						guard: ({ event }) => event.snapshot.status === 'active',
-						actions: sendParent(({ event }) => ({
-							type: 'CAPABILITY_UPDATED',
-							capability: options.selectAvailability(event.snapshot)
-						}))
-					},
-					onError: 'failed',
-					onDone: 'failed'
-				},
-				on: {
-					OBSERVE: {
-						actions: [
-							assign({ observation: ({ event }) => event.observation }),
-							enqueueActions(({ self, event, enqueue }) => {
-								const child = self.getSnapshot().children.source
-								if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, event)
-							})
-						]
-					}
-				}
-			},
-			failed: { type: 'final' }
-		}
-	})
+		| FormCapabilityReportEvent<Scope, Reason>
+	const availability = createScopedFormReadinessMachine<
+		Scope,
+		Reason,
+		Observation,
+		AvailabilitySnapshot
+	>(options)
 	const completion = fromPromise<void, { scope: Scope }>(async ({ input, signal }) => {
 		if (!options.complete) throw new Error('Missing form completion effect')
 		await options.complete(input.scope, signal)
@@ -231,11 +193,11 @@ export function createScopedFormMachine<
 			observation: { revision: 0, facts: input },
 			scope: { value: options.scopeOf(input) },
 			scopeRevision: 0,
+			watchGeneration: 0,
 			capability: undefined,
 			request: undefined,
 			sequence: 0,
 			result: undefined,
-			submission: undefined,
 			draftRevision: 0,
 			draft: undefined
 		}),
@@ -252,6 +214,7 @@ export function createScopedFormMachine<
 								!options.sameScope(context.scope.value, options.scopeOf(event.observation)),
 							actions: [
 								assign({
+									capability: undefined,
 									observation: ({ context, event }) => ({
 										revision: requireObservation(context).revision + 1,
 										facts: event.observation
@@ -270,6 +233,7 @@ export function createScopedFormMachine<
 						{
 							actions: [
 								assign({
+									capability: undefined,
 									observation: ({ context, event }) => ({
 										revision: requireObservation(context).revision + 1,
 										facts: event.observation
@@ -280,12 +244,13 @@ export function createScopedFormMachine<
 							]
 						}
 					],
-					CAPABILITY_UPDATED: [
+					FORM_CAPABILITY_REPORTED: [
 						{ guard: 'closing' },
 						{
 							guard: and([
 								'availabilityWatching',
 								({ context, event }) =>
+									event.generation === context.watchGeneration &&
 									event.capability.revision === context.observation?.revision &&
 									context.scope !== undefined &&
 									options.sameScope(event.capability.scope, context.scope.value)
@@ -295,7 +260,7 @@ export function createScopedFormMachine<
 								raise({ type: 'CAPABILITY_ACCEPTED' }),
 								workflow.enqueueActions(({ event, enqueue }) => {
 									if (
-										event.type === 'CAPABILITY_UPDATED' &&
+										event.type === 'FORM_CAPABILITY_REPORTED' &&
 										event.capability.readiness.kind === 'blocked'
 									)
 										enqueue.raise({ type: 'INVALIDATE' })
@@ -309,12 +274,23 @@ export function createScopedFormMachine<
 						initial: 'watching',
 						states: {
 							watching: {
+								entry: assign({
+									watchGeneration: ({ context }) => context.watchGeneration + 1,
+									capability: undefined
+								}),
 								initial: 'awaiting',
 								states: { awaiting: {}, current: {} },
 								invoke: {
 									id: 'availability',
 									src: 'availability',
-									input: ({ context }) => requireObservation(context),
+									input: ({ context, self }) => ({
+										observation: requireObservation(context),
+										delivery: {
+											kind: 'watch',
+											generation: context.watchGeneration,
+											recipient: self
+										}
+									}),
 									onError: 'failed',
 									onDone: 'failed'
 								},
@@ -385,11 +361,14 @@ export function createScopedFormMachine<
 								invoke: {
 									id: 'submission',
 									src: 'submission',
-									input: ({ context }) => {
+									input: ({ context, self }) => {
 										if (!context.request) throw new Error('Missing form request')
-										return { request: context.request, observation: requireObservation(context) }
+										return {
+											request: context.request,
+											observation: requireObservation(context),
+											recipient: self
+										}
 									},
-									onSnapshot: { actions: assign({ submission: ({ event }) => event.snapshot }) },
 									onDone: [
 										{ guard: 'closing', target: 'closed' },
 										{
@@ -400,8 +379,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'scopeChanged', settlement: event.output.settlement }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -412,8 +390,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'cancelled', settlement: event.output.settlement }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -424,8 +401,7 @@ export function createScopedFormMachine<
 											target: 'completion',
 											actions: assign({
 												result: ({ event }) => event.output,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -443,8 +419,7 @@ export function createScopedFormMachine<
 													options.resetOnSuccess && event.output.outcome === 'succeeded'
 														? context.draftRevision + 1
 														: context.draftRevision,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										}
 									],
@@ -458,8 +433,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'scopeChanged', settlement: 'unknown' }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -470,8 +444,7 @@ export function createScopedFormMachine<
 													context.request?.scopeRevision === context.scopeRevision
 														? { outcome: 'cancelled', settlement: 'unknown' }
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										},
 										{
@@ -485,8 +458,7 @@ export function createScopedFormMachine<
 																settlement: 'unknown'
 															}
 														: undefined,
-												request: undefined,
-												submission: undefined
+												request: undefined
 											})
 										}
 									]
@@ -498,7 +470,35 @@ export function createScopedFormMachine<
 									SHUTDOWN: { target: '.closing', actions: command('SHUTDOWN') }
 								},
 								states: {
-									pending: { tags: 'can-open' },
+									pending: {
+										tags: 'can-open',
+										initial: 'awaitingProgress',
+										states: {
+											awaitingProgress: {},
+											validating: { tags: 'validating' },
+											operating: {}
+										},
+										on: {
+											FORM_SUBMISSION_PROGRESS: [
+												{
+													guard: ({ context, event }) =>
+														context.request?.id === event.requestId &&
+														context.request.scopeRevision === event.scopeRevision &&
+														context.scopeRevision === event.scopeRevision &&
+														event.progress === 'validating',
+													target: '.validating'
+												},
+												{
+													guard: ({ context, event }) =>
+														context.request?.id === event.requestId &&
+														context.request.scopeRevision === event.scopeRevision &&
+														context.scopeRevision === event.scopeRevision &&
+														event.progress === 'operating',
+													target: '.operating'
+												}
+											]
+										}
+									},
 									cancelling: { tags: 'can-open', on: { CANCEL: {} } },
 									invalidated: {
 										tags: 'can-open',
@@ -511,7 +511,7 @@ export function createScopedFormMachine<
 											INVALIDATE: {},
 											AVAILABILITY_FAILED: {},
 											OBSERVE: {},
-											CAPABILITY_UPDATED: {}
+											FORM_CAPABILITY_REPORTED: {}
 										}
 									}
 								}
@@ -559,7 +559,6 @@ export function createScopedFormMachine<
 					capability: undefined,
 					request: undefined,
 					result: undefined,
-					submission: undefined,
 					draft: undefined
 				})
 			}
@@ -602,7 +601,7 @@ export function selectScopedFormView<
 		'successContent'
 	>
 ): ScopedFormView<Result, Reason> {
-	const { capability, result, submission } = snapshot.context
+	const { capability, result } = snapshot.context
 	const closing = snapshot.matches({ open: { workflow: { active: 'closing' } } })
 	const invalidated = snapshot.matches({ open: { workflow: { active: 'invalidated' } } })
 	const cancelling = snapshot.matches({ open: { workflow: { active: 'cancelling' } } })
@@ -635,7 +634,7 @@ export function selectScopedFormView<
 						kind: 'settling',
 						reason: closing ? 'closed' : invalidated ? 'scopeChanged' : 'cancelled'
 					}
-				: submission?.hasTag('validating')
+				: snapshot.hasTag('validating')
 					? { kind: 'validating' }
 					: snapshot.matches({ open: { workflow: 'active' } }) || navigationPending
 						? { kind: 'operating' }

@@ -1,4 +1,4 @@
-import { assign, fromPromise, setup } from 'xstate'
+import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { stableUuid } from '#lib/data.js'
@@ -49,6 +49,12 @@ export type TransactionResult =
 	| { kind: 'existing' }
 	| { kind: 'imported' }
 	| { kind: 'failed'; error: unknown }
+	| { kind: 'unresolved'; error: unknown }
+	| {
+			kind: 'cancelled'
+			settlement: 'notStarted' | 'locallyPersisted' | 'unresolved'
+			error: unknown
+	  }
 type Context = Input & {
 	parsed: ReturnType<typeof providerTransactionSchema.safeParse>
 	transaction: Transaction | undefined
@@ -61,6 +67,7 @@ type Context = Input & {
 	id: string | undefined
 	error: unknown
 	result: TransactionResult | undefined
+	settlement: 'notStarted' | 'locallyPersisted' | 'unresolved'
 }
 function externalId(context: Context) {
 	return JSON.stringify([
@@ -86,16 +93,16 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		{ type: 'PROCESS' },
+		{ type: 'PROCESS' } | { type: 'CANCEL' },
 		typeof actors,
 		{},
 		{},
-		{},
+		{ isCancelling: undefined },
 		never,
 		string,
 		Input,
 		TransactionResult
-	>({ actors }).createMachine({
+	>({ actors, guards: { isCancelling: stateIn({ persisting: 'cancelling' }) } }).createMachine({
 		id: 'bank-import-transaction',
 		context: ({ input }) => ({
 			...input,
@@ -109,10 +116,12 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 			values: undefined,
 			id: undefined,
 			error: undefined,
+			settlement: 'notStarted',
 			result: undefined
 		}),
 		initial: 'checkingSchema',
 		output: ({ context }) => required(context.result),
+		on: { CANCEL: '.cancelled' },
 		states: {
 			checkingSchema: {
 				always: [
@@ -295,12 +304,47 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 				}
 			},
 			persisting: {
+				initial: 'working',
+				entry: assign({ settlement: 'unresolved' }),
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {} } }
+				},
+				on: { CANCEL: '.cancelling' },
 				invoke: {
 					src: 'persist',
 					input: ({ context }) => ({ id: required(context.id), values: required(context.values) }),
-					onDone: 'imported',
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: [
+						{
+							guard: 'isCancelling',
+							target: 'cancelled',
+							actions: assign({ settlement: 'locallyPersisted' })
+						},
+						{ target: 'imported', actions: assign({ settlement: 'locallyPersisted' }) }
+					],
+					onError: [
+						{
+							guard: 'isCancelling',
+							target: 'cancelled',
+							actions: assign({ error: ({ event }) => event.error })
+						},
+						{ target: 'unresolved', actions: assign({ error: ({ event }) => event.error }) }
+					]
 				}
+			},
+			cancelled: {
+				type: 'final',
+				entry: assign({
+					result: ({ context }) => ({
+						kind: 'cancelled',
+						settlement: context.settlement,
+						error: context.error
+					})
+				})
+			},
+			unresolved: {
+				type: 'final',
+				entry: assign({ result: ({ context }) => ({ kind: 'unresolved', error: context.error }) })
 			},
 			invalidSchema: {
 				type: 'final',

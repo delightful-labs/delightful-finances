@@ -19,7 +19,7 @@ async function restoreAccount(page: Page, phrase: string) {
 	await page.goto('/login')
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL((url) => url.pathname === '/')
 	await prepareSidebar(page)
 }
 
@@ -35,22 +35,22 @@ for (const { name, phrase } of invalidPhrases) {
 		expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
 		await createAccount(page, 'Retained checking')
 		const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
-		await page.goto('/login')
+		await page.goto(`/login?workspace=${workspaceId}`)
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
-		await expect(page.getByRole('alert')).toHaveText(
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
 			'The account could not be restored. Check the recovery phrase and try again.'
 		)
-		await expect(page).toHaveURL('/login')
+		await expect(page).toHaveURL(`/login?workspace=${workspaceId}`)
 		await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
 		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 
-		await page.goto('/accounts')
+		await page.goto(`/accounts?workspace=${workspaceId}`)
 		await page.reload()
 		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 		await expect(
-			page.getByLabel('Current Workspace', { exact: true }).locator('option')
+			page.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
 		).toHaveCount(1)
 		await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(1)
 	})
@@ -66,42 +66,43 @@ test('restores existing workspace data without duplicates or previous identity a
 	await page.goto('/account')
 	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
 	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
-	await page.getByLabel('I saved this phrase somewhere safe.').check()
-	await page.getByRole('button', { name: 'I saved the phrase' }).click()
+	await page.getByRole('button', { name: 'Close', exact: true }).click()
 
 	const otherContext = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
 	try {
 		const otherPage = await otherContext.newPage()
 		await createAccount(otherPage, 'Previous identity checking')
 		await restoreAccount(otherPage, phrase)
+		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
 			workspaceId
 		)
 		await expect(
-			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option')
+			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
 		).toHaveCount(1)
-		await otherPage.goto('/accounts')
+		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await expect(
 			otherPage.getByRole('cell', { name: 'Original checking', exact: true })
 		).toBeVisible()
 		await expect(otherPage.getByText('Previous identity checking', { exact: true })).toHaveCount(0)
 
 		await restoreAccount(otherPage, phrase)
+		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await otherPage.reload()
 		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
 			workspaceId
 		)
 		await expect(
-			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option')
+			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
 		).toHaveCount(1)
-		await otherPage.goto('/accounts')
+		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await expect(
 			otherPage.getByRole('cell', { name: 'Original checking', exact: true })
 		).toHaveCount(1)
 		await expect(otherPage.getByText('Previous identity checking', { exact: true })).toHaveCount(0)
-		await otherPage.goto('/expenses/new')
+		await otherPage.goto(`/expenses/new?workspace=${workspaceId}`)
 		await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(6)
-		await otherPage.goto('/incomes/new')
+		await otherPage.goto(`/income/new?workspace=${workspaceId}`)
 		await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(4)
 	} finally {
 		await otherContext.close()
@@ -150,7 +151,9 @@ async function saveDisplayName(page: Page, name: string) {
 	await expect(page.getByLabel('Display name', { exact: true })).toBeEnabled()
 	await page.getByLabel('Display name', { exact: true }).fill(name)
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Profile Display name saved.')
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+	).toHaveCount(1)
 }
 
 test('profile name trims, survives reload, and can be cleared', async ({ page }) => {
@@ -160,7 +163,9 @@ test('profile name trims, survives reload, and can be cleared', async ({ page })
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
 	await page.getByLabel('Display name', { exact: true }).fill('  ')
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Profile Display name saved.')
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+	).toHaveCount(1)
 	await page.reload()
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
 })
@@ -363,14 +368,16 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 	]) {
 		await page.getByLabel('Avatar', { exact: true }).setInputFiles(file)
 		await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
-		await expect(page.getByRole('alert')).toHaveText(
-			'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+			file.name === 'broken.png'
+				? 'Could not save Profile. Please try again.'
+				: 'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
 		)
 		expect(await avatarRecord(page)).toEqual(initial)
 	}
 	await uploadAvatar(page, await avatarImage(page, 80, 40))
 	await waitForAvatar(page, 80, 40)
-	await expect(page.getByRole('alert')).toHaveCount(0)
+	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 })
 
 test('avatar can upload, replace, and remove while offline', async ({ page }) => {
@@ -531,10 +538,10 @@ test('restore session failures retain identity and retry without exposing the re
 	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 	expect(await currentIdentity(page)).toBe(identity)
 	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
-	await expect(page.getByRole('alert')).toHaveCount(0)
+	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL((url) => url.pathname === '/')
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')
 	await expect(
@@ -635,7 +642,7 @@ test('recoverable restore failure keeps the original client and generic feedback
 	try {
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
-		await expect(page.getByRole('alert')).toHaveText(
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
 			'The account could not be restored. Please try again.'
 		)
 		expect(await currentIdentity(page)).toBe(identity)
@@ -648,8 +655,73 @@ test('recoverable restore failure keeps the original client and generic feedback
 	}
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/')
+	await expect(page).toHaveURL((url) => url.pathname === '/')
 	expect(await currentIdentity(page)).toBe(identity)
 	await page.goto('/accounts')
 	await expect(page.getByRole('cell', { name: 'Recoverable checking', exact: true })).toBeVisible()
+})
+
+declare global {
+	interface Window {
+		recoveryNavigationTest: { restoreCalls: number; navigationFailures: number }
+	}
+}
+
+test('recovery navigation failure retries navigation without restoring the account again', async ({
+	page
+}) => {
+	await createAccount(page, 'Navigation retained checking')
+	const identity = await currentIdentity(page)
+	const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+	await page.goto('/account')
+	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+	await page.getByRole('button', { name: 'Close', exact: true }).click()
+	await page.goto('/login')
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+	await page.evaluate(async () => {
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const session = getCurrentJazzSession()
+		if (!session) throw new Error('Session unavailable')
+		window.recoveryNavigationTest = { restoreCalls: 0, navigationFailures: 0 }
+		// Count each SDK restore transition through its public subscription.
+		session.subscribe(() => {
+			if (session.getSnapshot().pending === 'restoreLocalFirst')
+				window.recoveryNavigationTest.restoreCalls += 1
+		})
+
+		const NativeURL = URL
+		window.URL = class extends NativeURL {
+			constructor(url: string | URL, base?: string | URL) {
+				// Fail before the router starts committing history or updating its internal route state.
+				if (url === '/') {
+					window.URL = NativeURL
+					window.recoveryNavigationTest.navigationFailures += 1
+					throw new TypeError('Simulated destination parsing failure')
+				}
+				super(url, base)
+			}
+		}
+	})
+	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
+	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+		'Your account was restored, but the destination could not be opened. Try again or use the navigation links.'
+	)
+	expect(await currentIdentity(page)).toBe(identity)
+	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue('')
+	await page.getByRole('button', { name: 'Try again', exact: true }).click()
+	await expect(page).toHaveURL((url) => url.pathname === '/')
+	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
+	expect(await page.evaluate(() => window.recoveryNavigationTest)).toEqual({
+		restoreCalls: 1,
+		navigationFailures: 1
+	})
+	await page.goto(`/accounts?workspace=${workspaceId}`)
+	await expect(
+		page.getByRole('cell', { name: 'Navigation retained checking', exact: true })
+	).toBeVisible()
 })

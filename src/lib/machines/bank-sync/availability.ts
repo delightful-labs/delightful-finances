@@ -1,11 +1,35 @@
-import { assign, getInitialSnapshot, raise, setup, stateIn } from 'xstate'
-import type { SnapshotFrom } from 'xstate'
+import { assign, enqueueActions, getInitialSnapshot, raise, setup, stateIn } from 'xstate'
+import type { ActorRef, Snapshot, SnapshotFrom } from 'xstate'
 import { canManageBankCredentials } from '#lib/domain/organization-permissions.js'
-import type { BankSource, Connection, Observation } from './types.js'
+import {
+	bankEnvironment,
+	type BankEnvironment,
+	type BankSource,
+	type Connection,
+	type Observation
+} from './types.js'
 
-type Context = { source: BankSource; connection: Connection | undefined }
+export type AvailabilityReport = {
+	generation: number
+	mode: 'restricted' | 'setup' | 'connected'
+	canConnect: boolean
+	canOperate: boolean
+	connection: Connection | undefined
+	environment: BankEnvironment
+}
+export type AvailabilityEvent = { type: 'AVAILABILITY_REPORTED'; report: AvailabilityReport }
+type Input = BankSource & {
+	generation?: number
+	recipient?: ActorRef<Snapshot<unknown>, AvailabilityEvent>
+}
+type Context = {
+	source: BankSource
+	connection: Connection | undefined
+	generation: number
+	recipient: ActorRef<Snapshot<unknown>, AvailabilityEvent> | undefined
+}
 type Event =
-	| { type: 'OBSERVED'; source: BankSource }
+	| { type: 'OBSERVED'; source: BankSource; generation?: number }
 	| { type: 'REEVALUATE' }
 	| { type: 'CHECK_CONTROLS' }
 	| { type: 'SETUP_STARTED' }
@@ -22,12 +46,39 @@ export const bankAvailabilityMachine = setup<
 	Event,
 	{},
 	{},
-	{},
+	{ publish: { mode: AvailabilityReport['mode'] } },
 	{ accessAllowed: undefined; credentialReady: undefined },
 	never,
 	string,
-	BankSource
+	Input
 >({
+	actions: {
+		publish: enqueueActions(
+			({ context, check, enqueue }, params: { mode: AvailabilityReport['mode'] }) => {
+				if (!context.recipient) return
+				const allowed = check('accessAllowed')
+				const connected = check('credentialReady')
+				enqueue.sendTo(context.recipient, {
+					type: 'AVAILABILITY_REPORTED',
+					report: {
+						generation: context.generation,
+						mode: params.mode,
+						canConnect: allowed,
+						canOperate: params.mode === 'connected',
+						connection: context.connection,
+						environment: bankEnvironment({
+							organizationId: context.source.organizationId,
+							userId: context.source.userId,
+							sessionReady: context.source.sessionReady,
+							allowed,
+							connected,
+							connection: context.connection
+						})
+					}
+				})
+			}
+		)
+	},
 	guards: {
 		accessAllowed: stateIn({ access: 'allowed' }),
 		credentialReady: stateIn({ credential: 'ready' })
@@ -35,12 +86,18 @@ export const bankAvailabilityMachine = setup<
 }).createMachine({
 	id: 'bank-availability',
 	type: 'parallel',
-	context: ({ input }) => ({ source: input, connection: selectedConnection(input) }),
+	context: ({ input }) => ({
+		source: input,
+		connection: selectedConnection(input),
+		generation: input.generation ?? 0,
+		recipient: input.recipient
+	}),
 	on: {
 		OBSERVED: {
 			actions: [
 				assign(({ event }) => ({
 					source: event.source,
+					generation: event.generation ?? 0,
 					connection: selectedConnection(event.source)
 				})),
 				raise({ type: 'REEVALUATE' })
@@ -184,9 +241,15 @@ export const bankAvailabilityMachine = setup<
 				checkingCredential: {
 					always: [{ guard: 'credentialReady', target: 'connected' }, { target: 'needsSetup' }]
 				},
-				restricted: { tags: 'show-restricted' },
-				connected: { tags: ['show-sync', 'show-connected', 'show-recovery'] },
-				needsSetup: { tags: 'show-setup' },
+				restricted: {
+					tags: 'show-restricted',
+					entry: { type: 'publish', params: { mode: 'restricted' } }
+				},
+				connected: {
+					tags: ['show-sync', 'show-connected', 'show-recovery'],
+					entry: { type: 'publish', params: { mode: 'connected' } }
+				},
+				needsSetup: { tags: 'show-setup', entry: { type: 'publish', params: { mode: 'setup' } } },
 				setup: {
 					initial: 'checkingAccess',
 					on: { CHECK_CONTROLS: '.checkingAccess' },
@@ -194,8 +257,11 @@ export const bankAvailabilityMachine = setup<
 						checkingAccess: {
 							always: [{ guard: 'accessAllowed', target: 'active' }, { target: 'restricted' }]
 						},
-						active: { tags: 'show-setup' },
-						restricted: { tags: 'show-restricted' }
+						active: { tags: 'show-setup', entry: { type: 'publish', params: { mode: 'setup' } } },
+						restricted: {
+							tags: 'show-restricted',
+							entry: { type: 'publish', params: { mode: 'restricted' } }
+						}
 					}
 				}
 			}

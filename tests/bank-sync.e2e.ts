@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openCreationModal } from './helpers/ui.js'
 
 async function installPasskey(page: Page) {
 	await page.addInitScript(() => {
@@ -159,7 +160,17 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	await page.reload()
 	await expect(discover).toBeEnabled()
+	const savedHistory = page
+		.getByRole('main')
+		.getByText(/Last sync:.*Imported: 0; already present: 2; omitted: 2/)
+	await expect(savedHistory).toBeVisible()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
+	// A new discovery uses the current capability report without replacing saved sync history.
+	await discover.click()
+	await expect(page.getByText('Linked to Provider Checking', { exact: true })).toBeVisible()
+	await expect(discover).toBeEnabled()
+	await expect(savedHistory).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover'])
 	failSync = true
 	await sync.click()
 	await expect(
@@ -167,9 +178,9 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 			.getByRole('main')
 			.getByRole('status')
 			.filter({ hasText: 'SimpleFIN could not complete the request' })
-	).toContainText('SimpleFIN could not complete the request')
+	).toBeVisible()
 	await expect(sync).toBeEnabled()
-	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'sync'])
+	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover', 'sync'])
 	await page.getByRole('button', { name: 'Disconnect Bank sync', exact: true }).click()
 	await expect(discover).toHaveCount(0)
 	await expect(sync).toHaveCount(0)
@@ -212,7 +223,7 @@ test('lock actor startup failure clears setup and allows an explicit new attempt
 	await create.click()
 	await expect(
 		page.getByRole('main').getByRole('status').filter({ hasText: 'No automatic retry will occur' })
-	).toContainText('No automatic retry will occur')
+	).toBeVisible()
 	await expect(input).toHaveValue('')
 	await expect(create).toBeDisabled()
 	await input.fill(token)
@@ -273,4 +284,183 @@ test('cancelled passkey creation ignores a late success and releases the bank lo
 	await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 	await expect(input).toHaveValue('')
 	expect(errors).toEqual([])
+})
+
+test('maps and remaps a provider account to existing accounts without creating duplicates', async ({
+	page
+}) => {
+	await installPasskey(page)
+	await page.goto('/accounts')
+	for (const name of ['Existing checking', 'Replacement checking']) {
+		const dialog = await openCreationModal(page, 'Add Account')
+		await dialog.getByLabel('Account name', { exact: true }).fill(name)
+		await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
+		await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+		await expect(dialog.getByRole('status')).toContainText(name)
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await expect(dialog).toBeHidden()
+	}
+	const operations: string[] = []
+	await page.route('**/api/simplefin', async (route) => {
+		const body: unknown = route.request().postDataJSON()
+		if (
+			!body ||
+			typeof body !== 'object' ||
+			!('operation' in body) ||
+			typeof body.operation !== 'string'
+		)
+			throw new Error('Invalid provider command')
+		operations.push(body.operation)
+		if (body.operation === 'claim') {
+			await route.fulfill({
+				contentType: 'text/plain',
+				body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+			})
+			return
+		}
+		await route.fulfill({
+			json: {
+				errors: [],
+				accounts: [
+					{
+						id: 'existing-checking',
+						name: 'Provider Checking',
+						currency: 'USD',
+						org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' }
+					}
+				]
+			}
+		})
+	})
+	await page.goto('/settings/banks')
+	await page
+		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+	for (const name of [
+		'Create Passkey',
+		'Test encryption with my passkey',
+		'Test unlocking with my passkey',
+		'Connect and save securely'
+	]) {
+		await page.getByRole('button', { name, exact: true }).click()
+	}
+	const discover = page.getByRole('button', { name: 'Discover Accounts', exact: true })
+	await expect(discover).toBeEnabled()
+	await discover.click()
+	const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Provider Checking' })
+	const existing = row.getByRole('combobox', {
+		name: 'Or link to an existing account',
+		exact: true
+	})
+	await existing.selectOption({ label: 'Existing checking' })
+	await expect(row.getByText('Linked to Existing checking', { exact: true })).toBeVisible()
+	await expect(
+		row.getByRole('button', { name: 'Add Account “Provider Checking”', exact: true })
+	).toHaveCount(0)
+	await existing.selectOption({ label: 'Replacement checking' })
+	await expect(row.getByText('Linked to Replacement checking', { exact: true })).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover'])
+	await page.reload()
+	await expect(discover).toBeEnabled()
+	expect(operations).toEqual(['claim', 'discover'])
+	await discover.click()
+	await expect(row.getByText('Linked to Replacement checking', { exact: true })).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover', 'discover'])
+	await page.goto('/accounts')
+	const table = page.getByRole('table', { name: 'Accounts', exact: true })
+	await expect(table.getByRole('row')).toHaveCount(3)
+	await expect(table.getByRole('cell', { name: 'Existing checking', exact: true })).toBeVisible()
+	await expect(table.getByRole('cell', { name: 'Replacement checking', exact: true })).toBeVisible()
+})
+
+test('cancels a pending sync, ignores its late response, and imports only on a new explicit sync', async ({
+	page
+}) => {
+	await installPasskey(page)
+	const operations: string[] = []
+	const pending = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const completed = Promise.withResolvers<void>()
+	let syncs = 0
+	await page.route('**/api/simplefin', async (route) => {
+		const body: unknown = route.request().postDataJSON()
+		if (
+			!body ||
+			typeof body !== 'object' ||
+			!('operation' in body) ||
+			typeof body.operation !== 'string'
+		)
+			throw new Error('Invalid provider command')
+		operations.push(body.operation)
+		if (body.operation === 'claim') {
+			await route.fulfill({
+				contentType: 'text/plain',
+				body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+			})
+			return
+		}
+		const sync = body.operation === 'sync'
+		if (sync) syncs += 1
+		const delayed = sync && syncs === 1
+		if (delayed) {
+			pending.resolve()
+			await release.promise
+		}
+		await route.fulfill({
+			json: {
+				errors: [],
+				accounts: [
+					{
+						id: 'cancelled-checking',
+						name: 'Cancelled Checking',
+						currency: 'USD',
+						org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' },
+						transactions: sync
+							? [
+									{
+										id: 'cancelled-expense',
+										amount: '-12.34',
+										posted: 1792000000,
+										description: 'Cancelled provider expense'
+									}
+								]
+							: []
+					}
+				]
+			}
+		})
+		if (delayed) completed.resolve()
+	})
+	await page.goto('/settings/banks')
+	await page
+		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+	for (const name of [
+		'Create Passkey',
+		'Test encryption with my passkey',
+		'Test unlocking with my passkey',
+		'Connect and save securely'
+	]) {
+		await page.getByRole('button', { name, exact: true }).click()
+	}
+	const discover = page.getByRole('button', { name: 'Discover Accounts', exact: true })
+	await discover.click()
+	await page.getByRole('button', { name: 'Add Account “Cancelled Checking”', exact: true }).click()
+	await expect(page.getByText('Linked to Cancelled Checking', { exact: true })).toBeVisible()
+	const main = page.getByRole('main')
+	const sync = main.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+	await sync.click()
+	await pending.promise
+	await main.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await expect(sync).toBeEnabled()
+	release.resolve()
+	await completed.promise
+	expect(operations).toEqual(['claim', 'discover', 'sync'])
+	await expect(main.getByText(/Imported:/)).toHaveCount(0)
+	await sync.click()
+	await expect(main.getByText(/Imported: 1; already present: 0; omitted: 0/)).toBeVisible()
+	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
+	await page.reload()
+	await expect(discover).toBeEnabled()
+	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 })

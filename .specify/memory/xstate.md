@@ -266,3 +266,23 @@ The SvelteKit plugin used by unit tests regenerates the same environment files a
 Finish unit/Svelte checks before starting a browser run; concurrent regeneration can replace a live
 server's Jazz environment and produce misleading startup failures. Use the isolated in-memory Jazz
 configuration in `playwright.bank-sync.config.ts` for reproducible bank/readiness browser checks.
+
+## Inspect without changing ownership
+
+The completed [orchestration ownership map](../../specs/008-actor-orchestration/architecture.md)
+records the application, bank and independent form roots. Keep diagnostic instrumentation at existing
+actor creation boundaries; an inspection requirement does not justify reparenting actors or adding a
+registry, bus or generic supervisor. Use XState's built-in inspection API and evaluate Stately
+Inspector before adding custom tooling. The custom trace adapter was removed at the user's request.
+Any future inspection integration must exclude credentials and private finance payloads; no inspector
+is currently configured.
+
+Shared SDK session ownership is distinct from a rendered layout's actor lifetime. Coordinate known
+identity-changing SDK calls after workspace drain; retain issued calls until settlement, and reattach
+even when a recoverable SDK failure retains the same client. Do not extend that guarantee to external
+SDK calls or all formerly mounted route actors without an explicit ownership protocol. Keep navigation
+failure separate from successful identity restoration; retrying navigation must not repeat mutation.
+
+Remove forwarding/status protocols only after finding their actual production consumer. Startup
+acquisition does not also need unused SDK-status commands, and a parent with no snapshot consumer
+does not need syncSnapshot merely to preserve its child's lifetime or render a subscribed integration.

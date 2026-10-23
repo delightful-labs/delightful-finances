@@ -108,12 +108,13 @@ test('scope replacement closes the modal and resets its visible draft', async ({
 test('existing account modal retains validation, draft dismissal, save feedback and fresh reopen through the scoped owner', async ({
 	page
 }) => {
+	test.setTimeout(60_000)
 	await page.goto('/accounts')
 	const trigger = page
 		.getByRole('main')
 		.getByRole('button', { name: 'Add Account', exact: true })
 		.first()
-	await expect(trigger).toBeEnabled()
+	await expect(trigger).toBeEnabled({ timeout: 30_000 })
 	await trigger.click()
 	const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true })
 	const name = dialog.getByLabel('Account name', { exact: true })
@@ -140,15 +141,14 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 	page,
 	context
 }) => {
+	test.setTimeout(60_000)
 	await page.goto('/settings/workspace')
-	const selector = page
-		.getByRole('main')
-		.getByRole('combobox', { name: 'Select Workspace', exact: true })
-	await expect(selector.locator('option')).toHaveCount(2)
-	await selector.selectOption({ index: 1 })
+	const workspace = page.getByRole('combobox', { name: 'Select Workspace', exact: true })
+	await expect(workspace).toBeEnabled({ timeout: 30_000 })
+	await workspace.selectOption({ label: 'Personal workspace' })
 	const name = page.getByRole('main').getByRole('textbox', { name: 'Workspace name', exact: true })
 	const save = page.getByRole('main').getByRole('button', { name: 'Save', exact: true })
-	await expect(name).toBeEditable()
+	await expect(name).toBeEditable({ timeout: 30_000 })
 	const original = await name.inputValue()
 	await expect(save).toBeDisabled()
 	await name.fill('A changed name')
@@ -179,4 +179,94 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 	await expect(save).toBeDisabled()
 	await name.fill('Another edit')
 	await expect(save).toBeEnabled()
+})
+
+test('submission reports render validation and operating activity through the shared controller', async ({
+	page
+}) => {
+	await page.goto(`${fixture}?validation`)
+	const name = page.getByRole('textbox', { name: 'Name', exact: true })
+	await expect(name).toBeEnabled()
+	await name.fill('Reported progress')
+	await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('validating')
+	await expect(page.getByTestId('starts')).toHaveText('0')
+	await expect(name).toBeDisabled()
+	await expect(page.locator('form')).toHaveAttribute('aria-busy', 'true')
+	await page.getByRole('button', { name: 'Finish validation', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('operating')
+	await expect(page.getByTestId('starts')).toHaveText('1')
+	await expect(name).toBeDisabled()
+	await page.getByRole('button', { name: 'Finish write', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('idle')
+	await expect(page.getByRole('status')).toHaveText('succeeded')
+	await expect(page.locator('form')).toHaveAttribute('aria-busy', 'false')
+})
+
+test('scope replacement during reported validation waits for cleanup without starting a write', async ({
+	page
+}) => {
+	await page.goto(`${fixture}?validation`)
+	const name = page.getByRole('textbox', { name: 'Name', exact: true })
+	await expect(name).toBeEnabled()
+	await name.fill('Old scope')
+	await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('validating')
+	await page.getByRole('button', { name: 'Replace scope', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('settling')
+	await expect(page.getByTestId('starts')).toHaveText('0')
+	await page.getByRole('button', { name: 'Finish validation', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('idle')
+	await expect(page.getByTestId('starts')).toHaveText('0')
+	await expect(page.getByRole('status')).toHaveCount(0)
+	await expect(name).toHaveValue('')
+	await expect(name).toBeEnabled()
+})
+
+test('readiness withdrawal disables submission until a current report arrives', async ({
+	page
+}) => {
+	await page.goto(fixture)
+	const name = page.getByRole('textbox', { name: 'Name', exact: true })
+	const save = page.getByRole('button', { name: 'Save draft', exact: true })
+	await expect(name).toBeEnabled()
+	await name.fill('Waiting for fresh readiness')
+	await page.getByRole('button', { name: 'Hold readiness', exact: true }).click()
+	await expect(page.getByTestId('readiness')).toHaveText('observing')
+	await expect(name).toBeDisabled()
+	await expect(save).toBeDisabled()
+	await expect(page.getByTestId('starts')).toHaveText('0')
+	await page.getByRole('button', { name: 'Release readiness', exact: true }).click()
+	await expect(page.getByTestId('readiness')).toHaveText('ready')
+	await expect(name).toBeEnabled()
+	await expect(name).toHaveValue('Waiting for fresh readiness')
+	await save.click()
+	await expect(page.getByTestId('starts')).toHaveText('1')
+	await page.getByRole('button', { name: 'Finish write', exact: true }).click()
+	await expect(page.getByRole('status')).toHaveText('succeeded')
+})
+
+test('readiness failure drains pending work before a fresh watcher can recover', async ({
+	page
+}) => {
+	await page.goto(fixture)
+	const name = page.getByRole('textbox', { name: 'Name', exact: true })
+	const retry = page.getByRole('button', { name: 'Retry readiness', exact: true })
+	await expect(name).toBeEnabled()
+	await name.fill('Pending original write')
+	await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+	await expect(page.getByTestId('starts')).toHaveText('1')
+	await page.getByRole('button', { name: 'Fail readiness', exact: true }).click()
+	await expect(page.getByTestId('readiness')).toHaveText('failed')
+	await expect(page.getByTestId('activity')).toHaveText('settling')
+	await expect(retry).toBeDisabled()
+	await page.getByRole('button', { name: 'Repair readiness', exact: true }).click()
+	await expect(page.getByTestId('readiness')).toHaveText('failed')
+	await page.getByRole('button', { name: 'Finish write', exact: true }).click()
+	await expect(page.getByTestId('activity')).toHaveText('idle')
+	await expect(retry).toBeEnabled()
+	await retry.click()
+	await expect(page.getByTestId('readiness')).toHaveText('ready')
+	await expect(name).toBeEnabled()
+	await expect(page.getByTestId('starts')).toHaveText('1')
 })

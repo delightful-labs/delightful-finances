@@ -12,14 +12,16 @@ describe('scoped form ownership', () => {
 		f.actor.send({ type: 'OBSERVE', observation: { ...ready, publish: false } })
 		expect(f.view().readiness).toEqual({ kind: 'observing' })
 		f.actor.send({
-			type: 'CAPABILITY_UPDATED',
+			type: 'FORM_CAPABILITY_REPORTED',
+			generation: f.actor.getSnapshot().context.watchGeneration,
 			capability: { revision: 1, scope: ready.scope, readiness: { kind: 'ready' } }
 		})
 		f.submit()
 		expect(f.view().canSubmit).toBe(false)
 		expect(f.started).not.toHaveBeenCalled()
 		f.actor.send({
-			type: 'CAPABILITY_UPDATED',
+			type: 'FORM_CAPABILITY_REPORTED',
+			generation: f.actor.getSnapshot().context.watchGeneration,
 			capability: { revision: 2, scope: 'other', readiness: { kind: 'ready' } }
 		})
 		expect(f.view().canSubmit).toBe(false)
@@ -194,10 +196,10 @@ describe('scoped form ownership', () => {
 			observation: undefined,
 			scope: undefined,
 			request: undefined,
-			submission: undefined,
 			result: undefined,
 			capability: undefined
 		})
+		expect(f.actor.getSnapshot().context).not.toHaveProperty('submission')
 		expect(f.view().readiness.kind).toBe('closed')
 	})
 

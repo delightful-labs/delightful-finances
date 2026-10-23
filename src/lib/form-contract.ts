@@ -54,11 +54,32 @@ export type FormCapability<Scope, Reason> = {
 	scope: Scope
 	readiness: FormReadiness<Reason>
 }
+/** Public adapter protocols; the actor binding is carried by the invocation recipient. */
+export type FormCapabilityReportEvent<Scope, Reason> = {
+	type: 'FORM_CAPABILITY_REPORTED'
+	generation: number
+	capability: FormCapability<Scope, Reason>
+}
+export type FormAssessmentToken = {
+	requestId: number
+	scopeRevision: number
+	generation: number
+}
+export type FormReadinessResult<Scope, Reason> =
+	| { kind: 'assessed'; token: FormAssessmentToken; capability: FormCapability<Scope, Reason> }
+	| { kind: 'failed'; token?: FormAssessmentToken }
 export type FormRequest<Scope> = {
 	id: number
 	scope: Scope
 	scopeRevision: number
 	values: unknown
+}
+/** Submission-owned progress, scoped to one request and its original scope lifetime. */
+export type FormSubmissionProgressEvent = {
+	type: 'FORM_SUBMISSION_PROGRESS'
+	requestId: number
+	scopeRevision: number
+	progress: 'validating' | 'operating'
 }
 export type FormChildEvent<Observation> =
 	| { type: 'OBSERVE'; observation: FormObservation<Observation> }

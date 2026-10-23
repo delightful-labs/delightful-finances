@@ -1,3 +1,11 @@
+import {
+	createTransactionEditPersistenceMachine,
+	type TransactionEditDb
+} from './transaction-edit-persistence.js'
+import {
+	createTransactionPersistenceMachine,
+	type CreationDb
+} from './transaction-create-persistence.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
@@ -225,13 +233,11 @@ export function selectTransactionEntryAvailability(
 		readiness: state === 'ready' ? { kind: 'ready' } : { kind: 'blocked', reason: state }
 	}
 }
-export function createTransactionEntryFormOptions(deps: {
+type TransactionFormPolicyDependencies = {
 	binding: object
 	observe: () => TransactionEntryObservation
-	create: (value: AppTransaction) => Promise<void>
-	navigate?: (destination: string, signal: AbortSignal) => Promise<void>
-	save?: (transactionId: TransactionDetail['id'], value: AppTransaction) => Promise<void>
-}) {
+}
+function transactionFormPolicy(deps: TransactionFormPolicyDependencies) {
 	const availability = createTransactionEntryAvailability(deps.binding)
 	const common = {
 		availability,
@@ -243,49 +249,64 @@ export function createTransactionEntryFormOptions(deps: {
 			reason === 'readOnly' ? 'denied' : 'unavailable'
 	}
 	const schema = transactionFormSchema(() => deps.observe())
-	const createOptions = () => {
-		const options = createSingleWriteFormOptions<
-			AppTransaction,
-			void,
-			TransactionEntryReason,
-			TransactionEntryScope,
-			TransactionEntryObservation,
-			SnapshotFrom<typeof availability>
-		>({
-			...common,
-			schema,
-			mode: 'create',
-			successContent: 'replace',
-			assessmentObservation: ({ request, observation }) => ({
-				...observation.facts,
-				intent: request.values
-			}),
-			write: async ({ request }) => deps.create(request.values)
-		})
-		const navigate = deps.navigate
-		return navigate
-			? {
-					...options,
-					complete: (scope: TransactionEntryScope, signal: AbortSignal) =>
-						navigate(
-							workspaceHref(
-								scope.organizationId,
-								scope.kind === 'income' ? '/income' : '/expenses'
-							),
-							signal
-						)
-				}
-			: options
-	}
+	return { common, schema }
+}
 
-	if (!deps.save) return createOptions()
+export function createTransactionEntryFormOptions(
+	deps: TransactionFormPolicyDependencies & {
+		db: CreationDb
+		navigate?: (destination: string, signal: AbortSignal) => Promise<void>
+	}
+) {
+	const { common, schema } = transactionFormPolicy(deps)
+	const availability = common.availability
+	const persistence = createTransactionPersistenceMachine(deps.db)
+	const options = createSingleWriteFormOptions<
+		AppTransaction,
+		void,
+		TransactionEntryReason,
+		TransactionEntryScope,
+		TransactionEntryObservation,
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<typeof persistence>
+	>({
+		...common,
+		schema,
+		mode: 'create',
+		successContent: 'replace',
+		assessmentObservation: ({ request, observation }) => ({
+			...observation.facts,
+			intent: request.values
+		}),
+		persistence
+	})
+	const navigate = deps.navigate
+	return navigate
+		? {
+				...options,
+				complete: (scope: TransactionEntryScope, signal: AbortSignal) =>
+					navigate(
+						workspaceHref(scope.organizationId, scope.kind === 'income' ? '/income' : '/expenses'),
+						signal
+					)
+			}
+		: options
+}
+
+export function createTransactionEditFormOptions(
+	deps: TransactionFormPolicyDependencies & { db: TransactionEditDb }
+) {
+	const { common, schema } = transactionFormPolicy(deps)
+	const availability = common.availability
+	const persistence = createTransactionEditPersistenceMachine(deps.db)
 	return createSingleWriteFormOptions<
 		AppTransaction,
 		void,
 		TransactionEntryReason,
 		TransactionEntryScope,
 		TransactionEntryObservation,
-		SnapshotFrom<typeof availability>
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<typeof persistence>
 	>({
 		...common,
 		schema,
@@ -321,11 +342,7 @@ export function createTransactionEntryFormOptions(deps: {
 			...observation.facts,
 			intent: request.values
 		}),
-		write: async ({ request }) => {
-			const id = request.scope.transactionId
-			if (!id) throw new Error('Missing transaction save operation')
-			await deps.save?.(id, request.values)
-		}
+		persistence
 	})
 }
 

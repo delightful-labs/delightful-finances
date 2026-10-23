@@ -188,7 +188,7 @@ test('workspace changes exit editing, isolate saved order and ignore archived ac
 	await expect(accounts.locator('li.account-filter')).toHaveText(['All Accounts', 'Echo', 'Delta'])
 })
 
-for (const route of ['/expenses/new', '/incomes/new']) {
+for (const route of ['/expenses/new', '/income/new']) {
 	test(`direct navigation to ${route} defaults to the saved first account`, async ({ page }) => {
 		await addAccount(page, 'Alpha')
 		await addAccount(page, 'Bravo')
