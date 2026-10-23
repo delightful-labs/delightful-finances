@@ -24,7 +24,9 @@ test('archives the chosen account locally, preserves other accounts, and survive
 	// Archiving is a local write and must remain useful offline.
 	await context.setOffline(true)
 	await archive.click()
-	await expect(main.getByRole('status')).toContainText('Archive checking')
+	await expect(main.getByRole('status').filter({ hasText: 'Archive checking' })).toHaveText(
+		'Account Archive checking archived.'
+	)
 	await expect(archive).toHaveCount(0)
 	await expect(
 		main.getByRole('button', { name: 'Archive Keep savings', exact: true })

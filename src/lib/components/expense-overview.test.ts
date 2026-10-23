@@ -76,7 +76,7 @@ describe('expense overview presentation', () => {
 		expect(html).not.toContain('$5.30')
 	})
 	it('handles empty periods and unavailable historical category names', () => {
-		expect(overview([])).toContain('No expenses in this time period.')
+		expect(overview([])).toContain('No Expenses in this time period.')
 		expect(overview([row('historical', '2026-10-23', 100, 'removed')])).toContain(
 			'Category unavailable'
 		)
@@ -87,13 +87,13 @@ describe('expense overview presentation', () => {
 				items: [{ key: 'food', label: 'Food', value: 1234, color: 'red' }],
 				selectedKey: 'food',
 				currency: 'USD',
-				allLabel: 'All categories',
+				allLabel: 'All Categories',
 				onselect: () => {},
 				onclear: () => {}
 			}
 		}).body
 		expect(html).toMatch(/aria-pressed="true"/)
 		expect(html).toContain('$12.34')
-		expect(html).toContain('All categories')
+		expect(html).toContain('All Categories')
 	})
 })

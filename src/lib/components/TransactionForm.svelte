@@ -180,7 +180,7 @@
 				/>
 
 				<InputDate
-					label={m['labels.date']()}
+					label={m['nouns.date']({ count: 1 })}
 					id="transaction-date"
 					aria-describedby="transaction-date-feedback"
 					aria-invalid={fieldInvalid(issues, 'bookedOn') || undefined}

@@ -74,7 +74,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 	}) => {
 		await page.goto('/settings/workspace')
 		await expect(page.getByLabel('Workspace name')).toBeEditable()
-		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+		const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 		if (!baseURL) throw new Error('Missing browser base URL')
 		const context = await browser.newContext({ baseURL })
 		try {
@@ -115,13 +115,13 @@ for (const role of ['admin', 'member', 'viewer']) {
 			)
 			await subject.goto('/accounts')
 			// Open Settings before selecting its native workspace control.
-			const toggle = subject.getByRole('button', { name: 'Toggle navigation', exact: true })
+			const toggle = subject.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 			if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
 			const settings = subject
 				.locator('aside details')
 				.filter({ has: subject.locator('summary').filter({ hasText: 'Settings' }) })
 			if ((await settings.getAttribute('open')) === null) await settings.locator('summary').click()
-			const selector = subject.getByLabel('Current workspace', { exact: true })
+			const selector = subject.getByLabel('Current Workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selector.selectOption(organizationId)
 			await subject

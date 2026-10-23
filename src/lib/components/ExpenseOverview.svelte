@@ -78,7 +78,12 @@
 </script>
 
 <section class="expense-overview" aria-labelledby={`${id}-title`}>
-	<Heading level="h2" id={`${id}-title`}>{m['overview_expenses.title']()}</Heading>
+	<Heading level="h2" id={`${id}-title`}
+		>{m['labels.subjects_by_subject']({
+			subjects: m['nouns.expense']({ count: 2 }),
+			subject: m['nouns.category']({ count: 1 })
+		})}</Heading
+	>
 	<div class="filters">
 		<DateRangeFilter
 			{start}
@@ -92,18 +97,25 @@
 		/>
 
 		{#if currencies.length > 1}<label
-				>{m['overview_expenses.currency']()}
+				>{m['labels.currency']()}
 				<select bind:value={selectedCurrency} onchange={() => (selectedCategory = null)}
 					>{#each currencies as code (code)}<option value={code}>{code}</option>{/each}</select
 				></label
 			>{/if}
 	</div>
-	{#if !validRange}<p role="status">{m['overview_expenses.invalid']()}</p>
-	{:else if expenses.length === 0}<Text>{m['overview_expenses.empty']()}</Text>
+	{#if !validRange}<p role="status">{m['errors.date_range_invalid']()}</p>
+	{:else if expenses.length === 0}<Text
+			>{m['labels.no_subjects_in_period']({ subjects: m['nouns.expense']({ count: 0 }) })}</Text
+		>
 	{:else}
 		<div class="results">
 			<div>
-				<Text>{m['overview_expenses.total']()}: {formatMoney(total, currency, getLocale())}</Text>
+				<Text
+					>{m['labels.total_subject_amount']({
+						subject: m['nouns.expense']({ count: 2 }),
+						amount: formatMoney(total, currency, getLocale())
+					})}</Text
+				>
 				{#if total > 0}
 					<div class="chart" aria-label={m['overview_expenses.chart']()}>
 						{#key JSON.stringify(categoryIds)}
@@ -122,7 +134,7 @@
 					items={slices}
 					selectedKey={activeCategory}
 					{currency}
-					allLabel={m['overview_expenses.all']()}
+					allLabel={m['labels.all_subjects']({ subjects: m['nouns.category']({ count: 2 }) })}
 					onselect={select}
 					onclear={() => (selectedCategory = null)}
 				/>
@@ -131,7 +143,9 @@
 				<Heading level="h3" id={`${id}-transactions`}
 					>{activeCategory
 						? slices.find((slice) => slice.key === activeCategory)?.label
-						: m['overview_expenses.transactions']()}</Heading
+						: m['labels.subjects_in_period']({
+								subjects: m['nouns.expense']({ count: 2 })
+							})}</Heading
 				>
 				<TransactionItems
 					transactions={visible}

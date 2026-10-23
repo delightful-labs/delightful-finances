@@ -87,7 +87,7 @@ for (const desktop of [true, false]) {
 				await expect(cancel).toHaveAttribute('type', 'button')
 				await expect(cancel).not.toHaveClass(/\bprimary\b/)
 				await expect(
-					main.getByRole('button', { name: 'Save transaction', exact: true })
+					main.getByRole('button', { name: 'Save Transaction', exact: true })
 				).toHaveClass(/\bprimary\b/)
 				await cancel.click()
 				await expect(page).toHaveURL('/')
@@ -112,7 +112,7 @@ for (const desktop of [true, false]) {
 			await expect(page).toHaveURL(`${base}/new`)
 			const amount = main.getByLabel('Amount', { exact: true })
 			await expect(amount).toBeEnabled()
-			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 			await expect(page).toHaveURL(`${base}/new`)
 			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(0)
 			if (desktop) await expect(drawer).toBeVisible()
@@ -131,7 +131,7 @@ for (const desktop of [true, false]) {
 				const observer = new MutationObserver(() => {
 					if (
 						location.pathname.endsWith('/new') &&
-						/Add another transaction|Transaction saved\./.test(
+						/Add another Transaction|Transaction saved\./.test(
 							document.querySelector('main')?.textContent ?? ''
 						)
 					) {
@@ -141,7 +141,7 @@ for (const desktop of [true, false]) {
 				observer.observe(document.body, { childList: true, subtree: true })
 			})
 			await context.setOffline(true)
-			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 			await expect(page).toHaveURL(base)
 			await expect(main.getByText('Saved directly', { exact: true })).toBeVisible()
 			expect(await page.locator('html').getAttribute('data-creation-flash')).toBe('no')
@@ -155,11 +155,11 @@ for (const desktop of [true, false]) {
 			await expect(page).toHaveURL(new RegExp(`${base}/[^/]+$`))
 			await expect(amount).toHaveValue('12.34')
 			await expect(amount).toBeEnabled()
-			await expect(main.getByRole('button', { name: 'Save transaction', exact: true })).toHaveClass(
+			await expect(main.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveClass(
 				/\bprimary\b/
 			)
 			await amount.fill('15.00')
-			await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
+			await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 			await expect(main.getByText('Transaction saved.', { exact: true })).toBeVisible()
 			await expect(page).not.toHaveURL(base)
 			await expect.poll(() => savedCount(page, 'Saved directly')).toBe(1)
@@ -178,9 +178,11 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	const main = page.getByRole('main')
 	const drawer = main.locator('aside[data-side="right"]')
 	await expect(drawer).toHaveAttribute('data-open', 'true')
-	await drawer.getByRole('button', { name: 'Close transaction list', exact: true }).click()
+	const workspaceId = new URL(page.url()).searchParams.get('workspace')
+	expect(workspaceId).not.toBeNull()
+	await drawer.getByRole('button', { name: 'Close Transactions', exact: true }).click()
 	await expect(drawer).toHaveAttribute('aria-hidden', 'true')
-	const reopen = main.getByRole('button', { name: 'Open transaction list', exact: true })
+	const reopen = main.getByRole('button', { name: 'Open Transactions', exact: true })
 	await reopen.click()
 	await drawer.locator('.entries a').first().focus()
 	await page.keyboard.press('Escape')
@@ -193,7 +195,7 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	await expect(day).not.toHaveAttribute('open', '')
 	await day.locator('summary').click()
 	await drawer.getByRole('link', { name: 'Page 2', exact: true }).click()
-	await expect(page).toHaveURL('/expenses?page=2')
+	await expect(page).toHaveURL(`/expenses?workspace=${workspaceId}&page=2`)
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 	const item = drawer.locator('.entries > li').first()
 	await expect(item.getByRole('link')).toHaveCount(1)
@@ -210,7 +212,12 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 		chevron: 'rgb(38, 38, 38)'
 	})
 	await item.getByRole('link').click()
-	await expect(page).toHaveURL(/\/expenses\/[^/]+\?page=2$/)
+	await expect(page).toHaveURL(
+		(url) =>
+			/^\/expenses\/[^/]+$/.test(url.pathname) &&
+			url.searchParams.get('workspace') === workspaceId &&
+			url.searchParams.get('page') === '2'
+	)
 	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 	await page.reload()
@@ -218,7 +225,12 @@ test('desktop drawer closes/reopens and preserves pagination through selection, 
 	await expect(drawer).toHaveAttribute('data-open', 'true')
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 	await drawer.getByRole('link', { name: 'Add Expenses', exact: true }).click()
-	await expect(page).toHaveURL('/expenses/new?page=2')
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === '/expenses/new' &&
+			url.searchParams.get('workspace') === workspaceId &&
+			url.searchParams.get('page') === '2'
+	)
 	await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('')
 	await expect(drawer.locator('.entries > li')).toHaveCount(1)
 })

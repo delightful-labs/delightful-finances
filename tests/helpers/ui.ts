@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
 export async function openSidebarSection(page: Page, label: 'Accounts' | 'Settings') {
-	const toggle = page.getByRole('button', { name: 'Toggle navigation', exact: true })
+	const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 	await expect(toggle).toBeVisible()
 	if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
 	const section = page.locator('aside details').filter({

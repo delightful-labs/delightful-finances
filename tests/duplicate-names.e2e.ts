@@ -209,7 +209,7 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 			await tags.fill('Expense only')
 			await tags.press('Enter')
 		}
-		await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+		await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 		await expect(page.getByRole('main').getByRole('status')).toContainText('Transaction saved.')
 	}
 	const persisted = await page.evaluate(async (seed) => {
@@ -346,7 +346,7 @@ for (const entity of ['Category', 'Tag'] satisfies readonly ('Category' | 'Tag')
 		await all.check()
 		await expect(alpha).toBeVisible()
 		await expect(zulu).toBeVisible()
-		const selector = page.getByLabel('Current workspace', { exact: true })
+		const selector = page.getByLabel('Current Workspace', { exact: true })
 		const firstId = await selector.inputValue()
 		await selectWorkspace(selector, secondId)
 		await expect(alpha).toHaveCount(0)

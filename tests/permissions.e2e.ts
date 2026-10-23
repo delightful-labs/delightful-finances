@@ -107,14 +107,14 @@ async function start(page: Page) {
 test('cannot move a category into an unrelated workspace', async ({ page, browser }) => {
 	await start(page)
 	const targetOrganizationId = await page
-		.getByLabel('Current workspace', { exact: true })
+		.getByLabel('Current Workspace', { exact: true })
 		.inputValue()
 	const subjectContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 	try {
 		const subject = await subjectContext.newPage()
 		await start(subject)
 		const organizationId = await subject
-			.getByLabel('Current workspace', { exact: true })
+			.getByLabel('Current Workspace', { exact: true })
 			.inputValue()
 		const outcome = await subject.evaluate(
 			async ({ organizationId, targetOrganizationId }) => {
@@ -161,7 +161,7 @@ for (const scenario of scenarios) {
 			const subjectId = await subject.evaluate(() => window.workspacePermissionTest.userId)
 			if (!subjectId) throw new Error('Test identity is missing.')
 			const organizationId = await page
-				.getByLabel('Current workspace', { exact: true })
+				.getByLabel('Current Workspace', { exact: true })
 				.inputValue()
 			const fixture = await page.evaluate(
 				async ({ organizationId, subjectId, role, mode, grant }) => {
@@ -330,7 +330,7 @@ test('transaction tags enforce workspace consistency, active assignment, immutab
 	page
 }) => {
 	await start(page)
-	const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+	const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 	const result = await page.evaluate(async (organizationId) => {
 		const { app, db, userId } = window.workspacePermissionTest
 		const category = await db.one(
@@ -432,7 +432,7 @@ test('transaction tags enforce workspace consistency, active assignment, immutab
 for (const scenario of scenarios) {
 	test(`transaction tag permissions: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
-		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+		const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 		const subjectContext = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await subjectContext.newPage()
@@ -899,7 +899,7 @@ test('check detail references enforce initial integrity, edits, and single selec
 for (const scenario of scenarios) {
 	test(`check detail access: ${scenario.name}`, async ({ page, browser }) => {
 		await start(page)
-		const organizationId = await page.getByLabel('Current workspace', { exact: true }).inputValue()
+		const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
 		const context = await browser.newContext({ baseURL: new URL(page.url()).origin })
 		try {
 			const subject = await context.newPage()

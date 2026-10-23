@@ -4,7 +4,9 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
 	await page.goto('/')
-	await expect(page.getByRole('button', { name: 'Toggle navigation', exact: true })).toBeVisible()
+	await expect(
+		page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
+	).toBeVisible()
 	await page.evaluate(async () => {
 		await navigator.serviceWorker.ready
 	})
@@ -12,7 +14,9 @@ test.beforeEach(async ({ page }) => {
 	await expect
 		.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
 		.toBe(true)
-	await expect(page.getByRole('button', { name: 'Toggle navigation', exact: true })).toBeVisible()
+	await expect(
+		page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
+	).toBeVisible()
 })
 
 test('loads an unvisited page and reloads its shell offline', async ({ page, context }) => {
