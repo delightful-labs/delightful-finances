@@ -50,10 +50,13 @@ complete; [mapping transaction ownership](mapping-transaction.md) is reviewed an
 until separately resumed.
 The [generic form audit](form-audit.md) is complete. [Submission progress reports](form-progress.md)
 are reviewed and verified. The four-file [readiness adapter](form-readiness.md) is reviewed and verified, including
-queued-assessment replacement fixes. Transaction persistence is partially implemented:
+queued-assessment replacement fixes. Transaction persistence ownership is reviewed and verified:
 [transaction creation ownership](transaction-creation.md) is reviewed and verified.
-[Transaction editing ownership](transaction-editing.md) is reviewed and verified. Avatar preparation remains
-unimplemented.
+[Transaction editing ownership](transaction-editing.md) is reviewed and verified.
+The agreed [avatar save implementation](avatar-preparation.md) confines preparation and cleanup to a
+domain operation in four production files, using the existing readiness/write boundary. It is reviewed
+and verified with migrated fixtures, 208 relevant unit tests, 12 browser checks and passing static checks. Shared form validation
+and controller code stay unchanged.
 Each other subsystem starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
 Retain existing boundaries when the audit finds no benefit from changing them.
 

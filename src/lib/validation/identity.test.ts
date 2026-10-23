@@ -1,5 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
-import { resizeAvatar } from '../domain/avatar.js'
+import { describe, expect, it } from 'vitest'
 import {
 	appProfileSchema,
 	profileNameFormSchema,
@@ -64,8 +63,6 @@ describe('profile name validation', () => {
 	})
 })
 
-vi.mock('../domain/avatar.js', () => ({ resizeAvatar: vi.fn() }))
-
 describe('profile avatar validation', () => {
 	const avatar = { avatarData: new Uint8Array([1, 2, 3]), avatarMimeType: 'image/webp' }
 	it('accepts complete avatar values or complete removal', () => {
@@ -86,48 +83,25 @@ describe('profile avatar validation', () => {
 	])('rejects inconsistent or invalid stored avatar values %#', (values) => {
 		expect(profileAvatarValuesSchema.safeParse(values).success).toBe(false)
 	})
-	it('processes uploads above 256 KB and persists the encoder output', async () => {
+	it('accepts an upload above the stored-byte limit and strips unrelated fields without processing', () => {
 		const file = new File([new Uint8Array(MAX_AVATAR_BYTES + 1)], 'photo.png', {
 			type: 'image/png'
 		})
-		vi.mocked(resizeAvatar).mockResolvedValueOnce(
-			new Blob([avatar.avatarData], { type: 'image/webp' })
-		)
-		await expect(
-			profileAvatarFormSchema.parseAsync({ action: 'upload', file, userId: 'injected' })
-		).resolves.toEqual(avatar)
-		expect(resizeAvatar).toHaveBeenLastCalledWith(file)
+		expect(profileAvatarFormSchema.parse({ action: 'upload', file, userId: 'injected' })).toEqual({
+			action: 'upload',
+			file
+		})
 	})
 	it.each([
 		new File([], 'empty.png', { type: 'image/png' }),
 		new File(['svg'], 'photo.svg', { type: 'image/svg+xml' }),
 		new File([new Uint8Array(MAX_AVATAR_UPLOAD_BYTES + 1)], 'large.png', { type: 'image/png' })
-	])('rejects invalid file input before processing %#', async (file) => {
-		vi.mocked(resizeAvatar).mockClear()
-		expect((await profileAvatarFormSchema.safeParseAsync({ action: 'upload', file })).success).toBe(
-			false
-		)
-		expect(resizeAvatar).not.toHaveBeenCalled()
+	])('rejects invalid file drafts %#', (file) => {
+		expect(profileAvatarFormSchema.safeParse({ action: 'upload', file }).success).toBe(false)
 	})
-	it('removes an avatar without decoding a file', async () => {
-		vi.mocked(resizeAvatar).mockClear()
-		await expect(profileAvatarFormSchema.parseAsync({ action: 'remove' })).resolves.toEqual({
-			avatarData: null,
-			avatarMimeType: null
+	it('accepts a removal draft and strips unrelated fields synchronously', () => {
+		expect(profileAvatarFormSchema.parse({ action: 'remove', file: 'ignored' })).toEqual({
+			action: 'remove'
 		})
-		expect(resizeAvatar).not.toHaveBeenCalled()
-	})
-	it('propagates a decoder failure and rejects oversized encoded results', async () => {
-		const file = new File(['image'], 'photo.png', { type: 'image/png' })
-		vi.mocked(resizeAvatar).mockRejectedValueOnce(new Error('Invalid image bytes'))
-		await expect(profileAvatarFormSchema.parseAsync({ action: 'upload', file })).rejects.toThrow(
-			'Invalid image bytes'
-		)
-		vi.mocked(resizeAvatar).mockResolvedValueOnce(
-			new Blob([new Uint8Array(MAX_AVATAR_BYTES + 1)], { type: 'image/png' })
-		)
-		expect((await profileAvatarFormSchema.safeParseAsync({ action: 'upload', file })).success).toBe(
-			false
-		)
 	})
 })

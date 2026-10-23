@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { resizeAvatar } from '../domain/avatar.js'
 
 export const appWorkspaceSchema = z.strictObject({
 	name: z.string().trim().min(1),
@@ -81,20 +80,10 @@ export const profileAvatarValuesSchema = z.union([
 	avatarFields.extend({ avatarData: z.null(), avatarMimeType: z.null() })
 ])
 
-export const profileAvatarFormSchema = z
-	.discriminatedUnion('action', [
-		z.object({
-			action: z.literal('upload'),
-			file: z.file().min(1).max(MAX_AVATAR_UPLOAD_BYTES).mime(avatarMimeType.options)
-		}),
-		z.object({ action: z.literal('remove') })
-	])
-	.transform<unknown>(async (values) => {
-		if (values.action === 'remove') return { avatarData: null, avatarMimeType: null }
-		const avatar = await resizeAvatar(values.file)
-		return {
-			avatarData: new Uint8Array(await avatar.arrayBuffer()),
-			avatarMimeType: avatar.type
-		}
-	})
-	.pipe(profileAvatarValuesSchema)
+export const profileAvatarFormSchema = z.discriminatedUnion('action', [
+	z.object({
+		action: z.literal('upload'),
+		file: z.file().min(1).max(MAX_AVATAR_UPLOAD_BYTES).mime(avatarMimeType.options)
+	}),
+	z.object({ action: z.literal('remove') })
+])

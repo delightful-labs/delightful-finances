@@ -150,7 +150,9 @@ async function saveDisplayName(page: Page, name: string) {
 	await expect(page.getByLabel('Display name', { exact: true })).toBeEnabled()
 	await page.getByLabel('Display name', { exact: true }).fill(name)
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Profile Display name saved.')
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+	).toHaveCount(1)
 }
 
 test('profile name trims, survives reload, and can be cleared', async ({ page }) => {
@@ -160,7 +162,9 @@ test('profile name trims, survives reload, and can be cleared', async ({ page })
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
 	await page.getByLabel('Display name', { exact: true }).fill('  ')
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Profile Display name saved.')
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+	).toHaveCount(1)
 	await page.reload()
 	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
 })
@@ -266,7 +270,10 @@ async function avatarImage(page: Page, width: number, height: number, noisy = fa
 }
 
 async function waitForAvatar(page: Page, width: number, height: number) {
-	const image = page.getByRole('img', { name: 'Your avatar', exact: true })
+	const image = page
+		.getByRole('group')
+		.filter({ has: page.getByLabel('Avatar', { exact: true }) })
+		.locator('img')
 	await expect(image).toBeVisible()
 	await expect
 		.poll(() =>
@@ -282,7 +289,7 @@ async function uploadAvatar(
 	replace = false
 ) {
 	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
-	await page.getByRole('button', { name: 'Save avatar', exact: true }).click()
+	await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
 	await expect(
 		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Avatar saved.' })
 	).toHaveCount(1)
@@ -315,7 +322,9 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	await waitForAvatar(page, 256, 128)
 	expect(await avatarRecord(page)).toEqual(first)
 	const reloadedUrl = await page
-		.getByRole('img', { name: 'Your avatar', exact: true })
+		.getByRole('group')
+		.filter({ has: page.getByLabel('Avatar', { exact: true }) })
+		.locator('img')
 		.getAttribute('src')
 	await uploadAvatar(page, await avatarImage(page, 120, 240), true)
 	await waitForAvatar(page, 120, 240)
@@ -329,10 +338,17 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	expect(replacement.id).toBe(first.id)
 	expect(replacement.displayName).toBe(first.displayName)
 	const replacementUrl = await page
-		.getByRole('img', { name: 'Your avatar', exact: true })
+		.getByRole('group')
+		.filter({ has: page.getByLabel('Avatar', { exact: true }) })
+		.locator('img')
 		.getAttribute('src')
 	await page.getByRole('button', { name: 'Remove avatar', exact: true }).click()
-	await expect(page.getByRole('img', { name: 'Your avatar', exact: true })).toHaveCount(0)
+	await expect(
+		page
+			.getByRole('group')
+			.filter({ has: page.getByLabel('Avatar', { exact: true }) })
+			.locator('img')
+	).toHaveCount(0)
 	await expect
 		.poll(() =>
 			page.evaluate((url) => url !== null && window.avatarRevokedUrls.includes(url), replacementUrl)
@@ -340,7 +356,7 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 		.toBe(true)
 	await page.reload()
 	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
-	await expect(page.getByRole('button', { name: 'Save avatar', exact: true })).toHaveCount(0)
+	await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
 	const removed = await avatarRecord(page)
 	expect(removed).toEqual({ ...first, byteLength: 0, mimeType: null, checksum: null })
 	expect(firstUrl).toMatch(/^blob:/)
@@ -359,15 +375,17 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 		{ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') }
 	]) {
 		await page.getByLabel('Avatar', { exact: true }).setInputFiles(file)
-		await page.getByRole('button', { name: 'Save avatar', exact: true }).click()
-		await expect(page.getByRole('alert')).toHaveText(
-			'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
+		await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+			file.name === 'broken.png'
+				? 'Could not save Profile. Please try again.'
+				: 'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
 		)
 		expect(await avatarRecord(page)).toEqual(initial)
 	}
 	await uploadAvatar(page, await avatarImage(page, 80, 40))
 	await waitForAvatar(page, 80, 40)
-	await expect(page.getByRole('alert')).toHaveCount(0)
+	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 })
 
 test('avatar can upload, replace, and remove while offline', async ({ page }) => {
@@ -385,7 +403,12 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 		const local = await avatarRecord(page)
 		expect(local.byteLength).toBeGreaterThan(0)
 		await page.getByRole('button', { name: 'Remove avatar', exact: true }).click()
-		await expect(page.getByRole('img', { name: 'Your avatar', exact: true })).toHaveCount(0)
+		await expect(
+			page
+				.getByRole('group')
+				.filter({ has: page.getByLabel('Avatar', { exact: true }) })
+				.locator('img')
+		).toHaveCount(0)
 		expect((await avatarRecord(page)).byteLength).toBe(0)
 	} finally {
 		await page.context().setOffline(false)
@@ -393,7 +416,7 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 	await expect.poll(async () => (await avatarRecord(page, true)).byteLength).toBe(0)
 	await page.reload()
 	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
-	await expect(page.getByRole('button', { name: 'Save avatar', exact: true })).toHaveCount(0)
+	await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
 })
 
 test('avatar follows account recovery on another device', async ({ page, browser, baseURL }) => {

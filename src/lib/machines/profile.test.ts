@@ -106,7 +106,7 @@ describe('profile policy/editing', () => {
 		expect(
 			options.valuesEqual(
 				{ action: 'remove' },
-				{ avatarData: new Uint8Array([1]), avatarMimeType: 'image/png' }
+				{ action: 'upload', file: new File(['saved'], 'avatar.png', { type: 'image/png' }) }
 			)
 		).toBe(false)
 	})
