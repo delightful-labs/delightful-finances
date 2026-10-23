@@ -5,11 +5,10 @@
 	import {
 		applicableTransactionCategories,
 		applicableTransactionTags,
-		createTransactionEntryFormOptions,
+		createTransactionEditFormOptions,
 		writableTransactionAccounts
 	} from '#lib/machines/transaction-entry.js'
 	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
-	import { updateTransaction } from '#lib/data.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
@@ -145,13 +144,10 @@
 			tags: row.tags?.flatMap((link) => (link.tag?.name ? [link.tag.name] : [])) ?? []
 		}
 	})
-	const entryForm = createTransactionEntryFormOptions({
+	const entryForm = createTransactionEditFormOptions({
 		binding: db,
 		observe,
-		save: async (id, value) => {
-			const result = await updateTransaction(db, id, value)
-			if ('error' in result) throw new Error(result.error)
-		}
+		db
 	})
 	const entryController = createScopedFormController({ ...entryForm, arrayFields: () => ['tags'] })
 </script>

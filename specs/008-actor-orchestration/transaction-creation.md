@@ -1,7 +1,7 @@
 # Transaction creation ownership
 
 Status: implementation reviewed and verified. The creation slice of D005/D006 is complete;
-editing and avatar preparation remain separate unfinished slices.
+[editing](transaction-editing.md) is also reviewed and verified. Avatar preparation remains unfinished.
 
 ## Ownership
 
@@ -117,8 +117,8 @@ for completion before sending shutdown, then stops the actor after draining.
 Recursive source review covered all changed promise actors and their helpers. Validation and row
 planning are synchronous transformations; the staging leaf materializes the decided rows in one
 transaction. SDK acquisition, query, commit, local wait and rollback each have separate invocations.
-No production actor-to-promise bridge or callback transaction remains in creation. Editing's
-existing callback transaction is deliberately reserved for its later slice.
+No production actor-to-promise bridge or callback transaction remains in creation.
+[Editing ownership](transaction-editing.md) replaces the former editing callback in its separate slice.
 
 ## Approved verification
 

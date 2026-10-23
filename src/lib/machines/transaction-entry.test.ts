@@ -1,3 +1,4 @@
+import { editFixture, existingTransaction } from './transaction-edit.fixture.js'
 import { creationFixture } from './transaction-create.fixture.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createActor, getInitialSnapshot, waitFor } from 'xstate'
@@ -7,6 +8,7 @@ import type {
 } from '#lib/transaction-entry-contract.js'
 import {
 	createTransactionEntryAvailability,
+	createTransactionEditFormOptions,
 	selectTransactionEntryAvailability,
 	createTransactionEntryFormOptions,
 	transactionEntryScope,
@@ -146,10 +148,10 @@ describe('transaction edit policy and scope', () => {
 				transactionId,
 				transaction: { ...detail, kind, paymentMethod: kind === 'income' ? 'cash' : null }
 			} satisfies TransactionEntryObservation
-			const options = createTransactionEntryFormOptions({
+			const options = createTransactionEditFormOptions({
 				binding,
 				observe: () => f,
-				save: vi.fn()
+				db: creationFixture().db
 			})
 			if (options.mode !== 'edit') throw new Error('Expected edit mode')
 			const initial = options.initialValues(f)
@@ -187,11 +189,11 @@ describe('transaction edit policy and scope', () => {
 			transactionId,
 			transaction: { ...detail, kind: 'income', paymentMethod: 'cash' }
 		} satisfies TransactionEntryObservation
-		const save = vi.fn()
-		const options = createTransactionEntryFormOptions({
+		const storage = creationFixture()
+		const options = createTransactionEditFormOptions({
 			binding,
 			observe: () => f,
-			save
+			db: storage.db
 		})
 		const values: AppTransaction = {
 			...transaction,
@@ -211,7 +213,7 @@ describe('transaction edit policy and scope', () => {
 			outcome: 'unavailable',
 			reason: 'unavailableReference'
 		})
-		expect(save).not.toHaveBeenCalled()
+		expect(storage.beginTransaction).not.toHaveBeenCalled()
 		actor.stop()
 	})
 
@@ -486,6 +488,94 @@ describe('creation persistence composition', () => {
 					type === 'CANCEL' ? 'cancelled' : type === 'INVALIDATE' ? 'scopeChanged' : 'closed',
 				settlement: 'locallyPersisted'
 			})
+			expect(f.rollback).not.toHaveBeenCalled()
+		}
+	)
+})
+
+describe('edit persistence composition', () => {
+	it('rechecks revoked access before acquiring a transaction', async () => {
+		const f = editFixture()
+		const input = f.input()
+		const observation = { ...f.facts(), membership: null }
+		const options = createTransactionEditFormOptions({
+			binding: f.db,
+			db: f.db,
+			observe: () => observation
+		})
+		const actor = createActor(options.operation, { input }).start()
+		const done = await waitFor(actor, (s) => s.status === 'done')
+		expect(done.output).toMatchObject({ outcome: 'denied', settlement: 'notStarted' })
+		expect(f.beginTransaction).not.toHaveBeenCalled()
+	})
+	it('retains transaction-ID invalidation through switching away and back while a read drains', async () => {
+		const f = editFixture()
+		const original = f.facts()
+		const read = Promise.withResolvers<import('#lib/schema.js').TransactionRow[]>()
+		f.all.mockReset().mockReturnValue(read.promise)
+		const options = createTransactionEditFormOptions({
+			binding: f.db,
+			db: f.db,
+			observe: () => original
+		})
+		const actor = createActor(options.operation, { input: f.input() }).start()
+		await vi.waitFor(() => expect(f.all).toHaveBeenCalledOnce())
+		actor.send({
+			type: 'OBSERVE',
+			observation: { revision: 1, facts: { ...original, transactionId: 'other' } }
+		})
+		actor.send({ type: 'OBSERVE', observation: { revision: 2, facts: original } })
+		expect(actor.getSnapshot().status).toBe('active')
+		expect(f.rollback).not.toHaveBeenCalled()
+		read.resolve([existingTransaction])
+		const done = await waitFor(actor, (s) => s.status === 'done')
+		expect(done.output).toEqual({ outcome: 'scopeChanged', settlement: 'rejected' })
+		expect(f.update).not.toHaveBeenCalled()
+		expect(f.commit).not.toHaveBeenCalled()
+	})
+	it('preserves uncertain edit settlement as failure rather than successful form output', async () => {
+		const f = editFixture()
+		f.wait.mockRejectedValue(new Error('Local wait failed'))
+		const observation = f.facts()
+		const options = createTransactionEditFormOptions({
+			binding: f.db,
+			db: f.db,
+			observe: () => observation
+		})
+		const actor = createActor(options.operation, { input: f.input() }).start()
+		const done = await waitFor(actor, (s) => s.status === 'done')
+		expect(done.matches('failed')).toBe(true)
+		expect(done.output).toEqual({
+			outcome: 'failed',
+			code: 'operationFailed',
+			settlement: 'unknown'
+		})
+		expect(f.rollback).toHaveBeenCalledOnce()
+	})
+	it.each(['CANCEL', 'INVALIDATE', 'SHUTDOWN'] satisfies ('CANCEL' | 'INVALIDATE' | 'SHUTDOWN')[])(
+		'preserves locally persisted edit settlement when %s wins',
+		async (type) => {
+			const f = editFixture()
+			const persisted = Promise.withResolvers<void>()
+			f.wait.mockReturnValue(persisted.promise)
+			const observation = f.facts()
+			const options = createTransactionEditFormOptions({
+				binding: f.db,
+				db: f.db,
+				observe: () => observation
+			})
+			const actor = createActor(options.operation, { input: f.input() }).start()
+			await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
+			actor.send({ type })
+			expect(actor.getSnapshot().status).toBe('active')
+			persisted.resolve()
+			const done = await waitFor(actor, (s) => s.status === 'done')
+			expect(done.output).toEqual({
+				outcome:
+					type === 'CANCEL' ? 'cancelled' : type === 'INVALIDATE' ? 'scopeChanged' : 'closed',
+				settlement: 'locallyPersisted'
+			})
+			expect(f.update).toHaveBeenCalledOnce()
 			expect(f.rollback).not.toHaveBeenCalled()
 		}
 	)

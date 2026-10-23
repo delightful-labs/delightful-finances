@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { Transaction } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import {
 	archiveAccount,
@@ -8,16 +7,13 @@ import {
 	createTag,
 	createCategory,
 	createAccount,
-	updateTransaction,
 	saveProfileName,
 	saveProfileAvatar
 } from './data.js'
-import type { AppTransaction } from './domain/transaction.js'
 import { app, type Account, type Organization } from './schema.js'
 
 type Db = ReturnType<typeof getDb>
 const userId = '11111111-1111-4111-8111-111111111111'
-const profileId = '33333333-3333-4333-8333-333333333333'
 const organizationId = '22222222-2222-4222-8222-222222222222'
 const organization = {
 	id: organizationId,
@@ -26,22 +22,6 @@ const organization = {
 	defaultCurrency: 'USD',
 	ownerId: userId
 } satisfies Organization
-
-function setup() {
-	vi.spyOn(crypto, 'randomUUID').mockReturnValue(organizationId)
-	const transaction = new Transaction('mergeable', () => {
-		throw new Error('Unit tests must not open a database runtime.')
-	})
-	const insert = vi.spyOn(transaction, 'insert').mockReturnValue(organization)
-	const wait = vi.fn()
-	const db = { all: vi.fn(), transaction: vi.fn() } satisfies Pick<Db, 'all' | 'transaction'>
-	db.transaction.mockImplementation(async (write: Parameters<Db['transaction']>[0]) => {
-		const value = await write(transaction)
-		wait.mockResolvedValue(value)
-		return { wait }
-	})
-	return { db, insert, wait, transaction }
-}
 
 beforeEach(() => vi.restoreAllMocks())
 
@@ -281,59 +261,5 @@ describe('saveProfileAvatar', () => {
 		const rejection = expect(result).rejects.toThrow('Avatar write failed')
 		pending.reject(new Error('Avatar write failed'))
 		await rejection
-	})
-})
-
-describe('updateTransaction', () => {
-	const input: AppTransaction = {
-		organizationId,
-		accountId: userId,
-		categoryId: profileId,
-		kind: 'expense',
-		source: { source: 'manual' },
-		money: { amountMinor: 100, currency: 'USD' },
-		bookedOn: '2026-10-18',
-		tags: ['Historical']
-	}
-	const existing = {
-		id: profileId,
-		organizationId,
-		accountId: userId,
-		kind: 'expense',
-		source: 'manual',
-		paymentMethod: null
-	}
-	it.each([true, false])(
-		'preserves or removes archived assignments according to selection: %s',
-		async (retained) => {
-			const { db, transaction, insert, wait } = setup()
-			const update = vi.spyOn(transaction, 'update').mockReturnValue(undefined)
-			const remove = vi.spyOn(transaction, 'delete').mockReturnValue(undefined)
-			vi.spyOn(transaction, 'all')
-				.mockResolvedValueOnce([existing])
-				.mockResolvedValueOnce([{ id: 'link', tagId: 'archived-tag' }])
-				.mockResolvedValueOnce([{ id: 'archived-tag', name: 'Historical', archivedAt: new Date() }])
-				.mockResolvedValueOnce([])
-			await expect(
-				updateTransaction(db, profileId, { ...input, tags: retained ? ['Historical'] : [] })
-			).resolves.toEqual({ value: profileId })
-			expect(update).toHaveBeenCalledOnce()
-			expect(insert).not.toHaveBeenCalled()
-			if (retained) expect(remove).not.toHaveBeenCalled()
-			else expect(remove).toHaveBeenCalledExactlyOnceWith(app.transactionTags, 'link')
-			expect(wait).toHaveBeenCalledWith({ tier: 'local' })
-		}
-	)
-	it.each([
-		{ rows: [] },
-		{ rows: [{ ...existing, source: 'simplefin' }] },
-		{ rows: [{ ...existing, organizationId: 'other' }] }
-	])('rejects missing or incompatible existing rows before mutation', async ({ rows }) => {
-		const { db, transaction, insert } = setup()
-		const update = vi.spyOn(transaction, 'update').mockReturnValue(undefined)
-		vi.spyOn(transaction, 'all').mockResolvedValue(rows)
-		await expect(updateTransaction(db, profileId, input)).rejects.toThrow()
-		expect(update).not.toHaveBeenCalled()
-		expect(insert).not.toHaveBeenCalled()
 	})
 })

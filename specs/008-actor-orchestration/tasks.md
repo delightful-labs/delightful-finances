@@ -25,10 +25,12 @@ Bank orchestration is complete through the focused review cycles below. D001's s
 
 - [x] D004 Audit scoped-form availability/submission/write/completion composition, forwarding wrappers, snapshot copying and shutdown ownership (FR-014). Source findings and proposed review slices are in [form-audit.md](form-audit.md); no runtime verification claimed.
 - [ ] D005 After separate scope approval, implement only justified form boundary changes; retain original write scope and independently owned completion effects (FR-014).
-      The [submission progress report](form-progress.md) slice is reviewed and verified. The [readiness adapter](form-readiness.md) is reviewed and verified, including queued-assessment replacement fixes. [Transaction creation ownership](transaction-creation.md) is reviewed and verified; transaction editing and avatar preparation remain unimplemented.
+      The [submission progress report](form-progress.md) slice is reviewed and verified. The [readiness adapter](form-readiness.md) is reviewed and verified, including queued-assessment replacement fixes. [Transaction creation ownership](transaction-creation.md) and [transaction editing ownership](transaction-editing.md) are reviewed and verified; avatar preparation remains unimplemented.
 - [ ] D006 Review that implementation, then verify permission changes, input/reset/cancellation, submitted writes, completion failures and unmount draining (FR-014).
       [Transaction creation ownership](transaction-creation.md) is reviewed and verified with migrated
       fixtures, resource/interruption coverage and relevant unit/browser/static checks.
+      Transaction editing is also verified with migrated fixtures, guarded-domain/resource coverage,
+      composed-operation races and relevant unit/browser/static checks.
 
 ## Deferred: application/session supervision — do not implement now
 
