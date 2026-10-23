@@ -8,7 +8,6 @@ import {
 	createTag,
 	createCategory,
 	createAccount,
-	createTransaction,
 	updateTransaction,
 	saveProfileName,
 	saveProfileAvatar
@@ -114,63 +113,6 @@ describe('archiveAccount', () => {
 	})
 })
 
-describe('createTransaction normalization', () => {
-	const input: AppTransaction = {
-		kind: 'income',
-		source: { source: 'manual' },
-		paymentMethod: 'check',
-		accountId: 'account',
-		organizationId: organization.id,
-		categoryId: 'category',
-		bookedOn: '2026-10-13',
-		money: { amountMinor: 100, currency: 'USD' },
-		description: '  Invoice payment  ',
-		memo: '  Payment  ',
-		checkDetails: { checkNumber: ' 123 ', checkDate: '2026-10-12' }
-	}
-	it('persists normalized memo and check details', async () => {
-		const { db, insert } = setup()
-		await createTransaction(db, input)
-		expect(insert).toHaveBeenCalledWith(
-			app.transactions,
-			expect.objectContaining({
-				description: 'Invoice payment',
-				memo: 'Payment',
-				checkDetailsId: organization.id
-			}),
-			{ id: organization.id }
-		)
-		expect(insert).toHaveBeenCalledWith(
-			app.checkDetails,
-			{
-				transactionId: organization.id,
-				organizationId: organization.id,
-				accountId: input.accountId,
-				checkNumber: '123',
-				checkDate: '2026-10-12'
-			},
-			{ id: organization.id }
-		)
-		const tables = insert.mock.calls.map(([table]) => table)
-		expect(tables.indexOf(app.checkDetails)).toBeLessThan(tables.indexOf(app.transactions))
-	})
-
-	it('omits whitespace-only memos from writes', async () => {
-		const { db, insert } = setup()
-		await createTransaction(db, { ...input, description: ' ', memo: ' ' })
-		const values = insert.mock.calls.find(([table]) => table === app.transactions)?.[1]
-		expect(values).not.toHaveProperty('memo')
-		expect(values).not.toHaveProperty('description')
-	})
-	it('rejects invalid transactions without opening a write', async () => {
-		const { db } = setup()
-		await expect(createTransaction(db, { ...input, bookedOn: 'invalid' })).resolves.toEqual({
-			error: 'booked-on'
-		})
-		expect(db.transaction).not.toHaveBeenCalled()
-	})
-})
-
 describe('category persistence', () => {
 	it('creates a trimmed non-system category in the selected workspace and waits locally', async () => {
 		const wait = vi.fn().mockResolvedValue({ id: 'category' })
@@ -265,134 +207,6 @@ describe('tag persistence', () => {
 			update: vi.fn().mockReturnValue({ wait: vi.fn().mockRejectedValue(failure) })
 		} satisfies Pick<Db, 'update'>
 		await expect(archiveTag(db, 'tag')).rejects.toBe(failure)
-	})
-})
-
-describe('transaction tag persistence', () => {
-	const input: AppTransaction = {
-		kind: 'expense',
-		source: { source: 'manual' },
-		organizationId: organization.id,
-		accountId: 'account',
-		categoryId: '33333333-3333-4333-8333-333333333333',
-		bookedOn: '2026-10-14',
-		money: { amountMinor: 100, currency: 'USD' }
-	}
-	it('creates new tags with the transaction category and links all selected tags atomically', async () => {
-		const { db, transaction, insert, wait } = setup()
-		vi.spyOn(transaction, 'all').mockResolvedValue([])
-		await createTransaction(db, { ...input, tags: [' Garden ', 'Work', 'garden'] })
-		expect(db.transaction).toHaveBeenCalledTimes(1)
-		expect(insert.mock.calls.filter(([table]) => table === app.tags)).toHaveLength(2)
-		expect(insert).toHaveBeenCalledWith(app.tags, {
-			organizationId: organization.id,
-			name: 'garden',
-			kind: 'expense',
-			categoryId: input.categoryId,
-			archivedAt: null
-		})
-		expect(insert.mock.calls.filter(([table]) => table === app.transactionTags)).toHaveLength(2)
-		expect(insert).toHaveBeenCalledWith(app.transactionTags, {
-			organizationId: organization.id,
-			transactionId: organization.id,
-			tagId: organization.id
-		})
-		expect(wait).toHaveBeenCalledWith({ tier: 'local' })
-	})
-	it('reuses existing tags without changing their category', async () => {
-		const { db, transaction, insert } = setup()
-		vi.spyOn(transaction, 'all').mockResolvedValue([
-			{
-				id: 'existing',
-				organizationId: organization.id,
-				name: 'Garden',
-				kind: 'expense',
-				categoryId: 'original',
-				archivedAt: null
-			}
-		])
-		await createTransaction(db, { ...input, tags: ['garden'] })
-		expect(insert.mock.calls.filter(([table]) => table === app.tags)).toHaveLength(0)
-		expect(insert).toHaveBeenCalledWith(app.transactionTags, {
-			organizationId: organization.id,
-			transactionId: organization.id,
-			tagId: 'existing'
-		})
-	})
-	it('does not read or create tags when none are selected', async () => {
-		const { db, transaction, insert } = setup()
-		const read = vi.spyOn(transaction, 'all')
-		await createTransaction(db, { ...input, tags: [] })
-		expect(read).not.toHaveBeenCalled()
-		expect(insert).toHaveBeenCalledTimes(1)
-	})
-	it.each([
-		{ kind: 'expense', archivedAt: new Date(), organizationId: organization.id },
-		{ kind: 'income', archivedAt: null, organizationId: organization.id },
-		{ kind: null, archivedAt: null, organizationId: organization.id },
-		{ kind: 'expense', archivedAt: null, organizationId: 'other' }
-	])('creates a typed tag instead of reusing an ineligible existing tag: %j', async (patch) => {
-		const { db, transaction, insert } = setup()
-		vi.spyOn(transaction, 'all').mockResolvedValue([
-			{ id: 'old-tag', name: 'Garden', categoryId: null, ...patch }
-		])
-		await createTransaction(db, { ...input, tags: ['Garden'] })
-		expect(insert).toHaveBeenCalledWith(app.tags, {
-			organizationId: organization.id,
-			kind: 'expense',
-			name: 'Garden',
-			categoryId: input.categoryId,
-			archivedAt: null
-		})
-		expect(insert).not.toHaveBeenCalledWith(
-			app.transactionTags,
-			expect.objectContaining({ tagId: 'old-tag' })
-		)
-	})
-	it('rejects ambiguous active tag names at the transaction boundary', async () => {
-		const { db, transaction, wait } = setup()
-		vi.spyOn(transaction, 'all').mockResolvedValue([
-			{
-				id: 'one',
-				organizationId: organization.id,
-				kind: 'expense',
-				name: 'Garden',
-				archivedAt: null
-			},
-			{
-				id: 'two',
-				organizationId: organization.id,
-				kind: 'expense',
-				name: ' garden ',
-				archivedAt: null
-			}
-		])
-		await expect(createTransaction(db, { ...input, tags: ['Garden'] })).rejects.toThrow('ambiguous')
-		expect(wait).not.toHaveBeenCalled()
-	})
-	it('creates income tags with the income category and kind', async () => {
-		const { db, transaction, insert } = setup()
-		vi.spyOn(transaction, 'all').mockResolvedValue([])
-		await createTransaction(db, {
-			...input,
-			source: { source: 'manual' },
-			kind: 'income',
-			paymentMethod: 'cash',
-			tags: ['Salary']
-		})
-		expect(insert).toHaveBeenCalledWith(app.tags, {
-			organizationId: organization.id,
-			kind: 'income',
-			name: 'Salary',
-			categoryId: input.categoryId,
-			archivedAt: null
-		})
-	})
-	it('propagates failures persisting the complete transaction locally', async () => {
-		const { db, wait } = setup()
-		const failure = new Error('Persistence failed')
-		wait.mockRejectedValueOnce(failure)
-		await expect(createTransaction(db, input)).rejects.toBe(failure)
 	})
 })
 

@@ -17,7 +17,6 @@
 	import { formReasonText } from '#lib/form-messages.js'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
-	import { createTransaction } from '#lib/data.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
 	import {
@@ -116,10 +115,7 @@
 			signal.throwIfAborted()
 			return goto(destination, { replace: true })
 		},
-		create: async (transaction) => {
-			const result = await createTransaction(db, transaction)
-			if ('error' in result) throw new Error(result.error)
-		}
+		db
 	})
 	const form = createScopedFormController({ ...options, arrayFields: () => ['tags'] })
 </script>

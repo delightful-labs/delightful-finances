@@ -1,3 +1,7 @@
+import {
+	createTransactionPersistenceMachine,
+	type CreationDb
+} from './transaction-create-persistence.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
@@ -225,13 +229,19 @@ export function selectTransactionEntryAvailability(
 		readiness: state === 'ready' ? { kind: 'ready' } : { kind: 'blocked', reason: state }
 	}
 }
-export function createTransactionEntryFormOptions(deps: {
-	binding: object
-	observe: () => TransactionEntryObservation
-	create: (value: AppTransaction) => Promise<void>
-	navigate?: (destination: string, signal: AbortSignal) => Promise<void>
-	save?: (transactionId: TransactionDetail['id'], value: AppTransaction) => Promise<void>
-}) {
+export function createTransactionEntryFormOptions(
+	deps: {
+		binding: object
+		observe: () => TransactionEntryObservation
+		navigate?: (destination: string, signal: AbortSignal) => Promise<void>
+	} & (
+		| { db: CreationDb; save?: never }
+		| {
+				db?: never
+				save: (transactionId: TransactionDetail['id'], value: AppTransaction) => Promise<void>
+		  }
+	)
+) {
 	const availability = createTransactionEntryAvailability(deps.binding)
 	const common = {
 		availability,
@@ -244,13 +254,15 @@ export function createTransactionEntryFormOptions(deps: {
 	}
 	const schema = transactionFormSchema(() => deps.observe())
 	const createOptions = () => {
+		const persistence = createTransactionPersistenceMachine(requiredCreationDb(deps.db))
 		const options = createSingleWriteFormOptions<
 			AppTransaction,
 			void,
 			TransactionEntryReason,
 			TransactionEntryScope,
 			TransactionEntryObservation,
-			SnapshotFrom<typeof availability>
+			SnapshotFrom<typeof availability>,
+			SnapshotFrom<typeof persistence>
 		>({
 			...common,
 			schema,
@@ -260,7 +272,7 @@ export function createTransactionEntryFormOptions(deps: {
 				...observation.facts,
 				intent: request.values
 			}),
-			write: async ({ request }) => deps.create(request.values)
+			persistence
 		})
 		const navigate = deps.navigate
 		return navigate
@@ -285,7 +297,8 @@ export function createTransactionEntryFormOptions(deps: {
 		TransactionEntryReason,
 		TransactionEntryScope,
 		TransactionEntryObservation,
-		SnapshotFrom<typeof availability>
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<ReturnType<typeof createTransactionPersistenceMachine>>
 	>({
 		...common,
 		schema,
@@ -410,4 +423,9 @@ function validTransactionReferences(
 			(category) => category.id === transaction.categoryId
 		)
 	)
+}
+
+function requiredCreationDb(db: CreationDb | undefined): CreationDb {
+	if (!db) throw new Error('Missing creation database')
+	return db
 }

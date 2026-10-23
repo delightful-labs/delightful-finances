@@ -1,3 +1,4 @@
+import { creationFixture } from './transaction-create.fixture.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createActor, getInitialSnapshot, waitFor } from 'xstate'
 import type {
@@ -148,7 +149,6 @@ describe('transaction edit policy and scope', () => {
 			const options = createTransactionEntryFormOptions({
 				binding,
 				observe: () => f,
-				create: vi.fn(),
 				save: vi.fn()
 			})
 			if (options.mode !== 'edit') throw new Error('Expected edit mode')
@@ -191,7 +191,6 @@ describe('transaction edit policy and scope', () => {
 		const options = createTransactionEntryFormOptions({
 			binding,
 			observe: () => f,
-			create: vi.fn(),
 			save
 		})
 		const values: AppTransaction = {
@@ -313,8 +312,9 @@ describe('transaction entry prerequisites and authorization', () => {
 	)
 	it('rechecks changed grants and references on direct operation without issuing a write', async () => {
 		let f = facts()
-		const create = vi.fn(async () => undefined)
-		const options = createTransactionEntryFormOptions({ binding, observe: () => f, create })
+		const storage = creationFixture()
+		const create = storage.beginTransaction
+		const options = createTransactionEntryFormOptions({ binding, observe: () => f, db: storage.db })
 		const input = {
 			request: { id: 1, scope: transactionEntryScope(f), scopeRevision: 0, values: transaction },
 			observation: { revision: 0, facts: f }
@@ -348,12 +348,14 @@ describe('creation navigation', () => {
 			}
 			const persisted = Promise.withResolvers<void>()
 			const navigation = Promise.withResolvers<void>()
-			const create = vi.fn(() => persisted.promise)
+			const storage = creationFixture()
+			storage.wait.mockReturnValue(persisted.promise)
+			const create = storage.wait
 			const navigate = vi.fn((_destination: string, _signal: AbortSignal) => navigation.promise)
 			const options = createTransactionEntryFormOptions({
 				binding,
 				observe: () => observation,
-				create,
+				db: storage.db,
 				navigate
 			})
 			const actor = createActor(createScopedFormMachine(options), { input: observation }).start()
@@ -391,6 +393,100 @@ describe('creation navigation', () => {
 			} finally {
 				actor.stop()
 			}
+		}
+	)
+})
+
+describe('creation persistence composition', () => {
+	it('preserves failed persistence output after rollback rather than reporting success', async () => {
+		const f = creationFixture()
+		f.wait.mockRejectedValue(new Error('Local settlement failed'))
+		const observation = f.input().observation.facts
+		const options = createTransactionEntryFormOptions({
+			binding: f.db,
+			db: f.db,
+			observe: () => observation
+		})
+		const actor = createActor(options.operation, { input: f.input() }).start()
+		const done = await waitFor(actor, (s) => s.status === 'done')
+		expect(done.matches('failed')).toBe(true)
+		expect(done.output).toEqual({
+			outcome: 'failed',
+			code: 'operationFailed',
+			settlement: 'unknown'
+		})
+		expect(f.rollback).toHaveBeenCalledOnce()
+	})
+	it('retains a transaction acquired during a reentrant shutdown and waits for rollback', async () => {
+		const f = creationFixture()
+		const observation = f.input().observation.facts
+		const cleanup = Promise.withResolvers<boolean>()
+		f.rollback.mockReturnValue(cleanup.promise)
+		const options = createTransactionEntryFormOptions({
+			binding: f.db,
+			db: f.db,
+			observe: () => observation
+		})
+		const actor = createActor(options.operation, { input: f.input() })
+		f.beginTransaction.mockImplementation(() => {
+			actor.send({ type: 'SHUTDOWN' })
+			return f.transaction
+		})
+		actor.start()
+		await vi.waitFor(() => expect(f.rollback).toHaveBeenCalledOnce())
+		expect(actor.getSnapshot().status).toBe('active')
+		expect(f.insert).not.toHaveBeenCalled()
+		cleanup.resolve(true)
+		const done = await waitFor(actor, (s) => s.status === 'done')
+		expect(done.output).toEqual({ outcome: 'closed', settlement: 'rejected' })
+	})
+	it('invalidates the original scope while retaining the pending transaction read', async () => {
+		const f = creationFixture()
+		let observation = f.input().observation.facts
+		const read = Promise.withResolvers<[]>()
+		f.all.mockReturnValue(read.promise)
+		const options = createTransactionEntryFormOptions({
+			binding: f.db,
+			db: f.db,
+			observe: () => observation
+		})
+		const actor = createActor(options.operation, {
+			input: f.input({ ...f.input().request.values, tags: ['Garden'] })
+		}).start()
+		await vi.waitFor(() => expect(f.all).toHaveBeenCalledOnce())
+		observation = { ...observation, organizationId: 'other' }
+		actor.send({ type: 'OBSERVE', observation: { revision: 1, facts: observation } })
+		expect(actor.getSnapshot().matches({ writing: 'invalidated' })).toBe(true)
+		expect(f.rollback).not.toHaveBeenCalled()
+		read.resolve([])
+		const done = await waitFor(actor, (s) => s.status === 'done')
+		expect(done.output).toEqual({ outcome: 'scopeChanged', settlement: 'rejected' })
+		expect(f.insert).not.toHaveBeenCalled()
+	})
+	it.each(['CANCEL', 'INVALIDATE', 'SHUTDOWN'] satisfies ('CANCEL' | 'INVALIDATE' | 'SHUTDOWN')[])(
+		'preserves local settlement when %s races a committed creation',
+		async (type) => {
+			const f = creationFixture()
+			const observation = f.input().observation.facts
+			const persisted = Promise.withResolvers<void>()
+			f.wait.mockReturnValue(persisted.promise)
+			const options = createTransactionEntryFormOptions({
+				binding: f.db,
+				db: f.db,
+				observe: () => observation
+			})
+			const actor = createActor(options.operation, { input: f.input() }).start()
+			await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
+			actor.send({ type })
+			expect(actor.getSnapshot().status).toBe('active')
+			persisted.resolve()
+			const done = await waitFor(actor, (s) => s.status === 'done')
+			expect(done.output).toEqual({
+				outcome:
+					type === 'CANCEL' ? 'cancelled' : type === 'INVALIDATE' ? 'scopeChanged' : 'closed',
+				settlement: 'locallyPersisted'
+			})
+			expect(f.rollback).not.toHaveBeenCalled()
 		}
 	)
 })

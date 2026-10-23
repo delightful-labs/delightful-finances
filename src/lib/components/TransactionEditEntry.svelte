@@ -148,7 +148,6 @@
 	const entryForm = createTransactionEntryFormOptions({
 		binding: db,
 		observe,
-		create: async () => undefined,
 		save: async (id, value) => {
 			const result = await updateTransaction(db, id, value)
 			if ('error' in result) throw new Error(result.error)

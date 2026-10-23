@@ -5,9 +5,10 @@ import type {
 	FormChildEvent,
 	FormMode,
 	FormObservation,
+	FormOperationResult,
 	FormOperationInput
 } from '#lib/form-contract.js'
-import { createScopedFormWriteMachine } from './scoped-form-write.js'
+import { createScopedFormWriteMachine, type FormPersistence } from './scoped-form-write.js'
 import type { ScopedFormOptions } from './scoped-form.js'
 
 /** Composition only: policy states and effects are supplied by the domain. */
@@ -17,7 +18,10 @@ export function createSingleWriteFormOptions<
 	Reason,
 	Scope,
 	Observation,
-	AvailabilitySnapshot extends Snapshot<unknown>
+	AvailabilitySnapshot extends Snapshot<unknown>,
+	PersistenceSnapshot extends Snapshot<FormOperationResult<Result, Reason>> = Snapshot<
+		FormOperationResult<Result, Reason>
+	>
 >(
 	options: {
 		schema: z.ZodType<Values>
@@ -32,10 +36,10 @@ export function createSingleWriteFormOptions<
 		observe: () => Observation
 		classifyBlocked: (reason: Reason) => 'denied' | 'unavailable'
 		assessmentObservation?: (input: FormOperationInput<Values, Scope, Observation>) => Observation
-		write: (input: FormOperationInput<Values, Scope, Observation>) => Promise<Result>
 		successContent?: 'retain' | 'replace'
 		resetOnSuccess?: boolean
-	} & FormMode<Values, Observation>
+	} & FormMode<Values, Observation> &
+		FormPersistence<Values, Result, Reason, Scope, Observation, PersistenceSnapshot>
 ) {
 	const operation = createScopedFormWriteMachine<
 		Values,
@@ -43,9 +47,11 @@ export function createSingleWriteFormOptions<
 		Reason,
 		Scope,
 		Observation,
-		AvailabilitySnapshot
+		AvailabilitySnapshot,
+		PersistenceSnapshot
 	>({ ...options, settlement: 'locallyPersisted' })
-	return { ...options, operation } satisfies ScopedFormOptions<
+	const { write, persistence, ...formOptions } = options
+	return { ...formOptions, operation } satisfies ScopedFormOptions<
 		Values,
 		Result,
 		Reason,

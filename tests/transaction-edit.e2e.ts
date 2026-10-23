@@ -36,8 +36,14 @@ async function seedTransaction(
 				isSystem: false
 			})
 			.wait({ tier: 'local' })
-		const dataPath = '/src/lib/data.ts'
-		const { createTransaction }: typeof import('../src/lib/data.js') = await import(dataPath)
+		const persistencePath = '/src/lib/machines/transaction-create-persistence.ts'
+		const xstatePath = '/node_modules/.vite/deps/xstate.js'
+		const {
+			createTransactionPersistenceMachine
+		}: typeof import('../src/lib/machines/transaction-create-persistence.js') = await import(
+			persistencePath
+		)
+		const { createActor, toPromise }: typeof import('xstate') = await import(xstatePath)
 		const base = {
 			organizationId: organization.id,
 			accountId: account.id,
@@ -47,8 +53,7 @@ async function seedTransaction(
 			memo: 'Original memo',
 			tags: ['Historical']
 		}
-		const result = await createTransaction(
-			db,
+		const values: import('../src/lib/domain/transaction.js').AppTransaction =
 			scenario === 'check'
 				? {
 						...base,
@@ -65,9 +70,31 @@ async function seedTransaction(
 								? { source: 'simplefin', externalId: 'imported-edit-test' }
 								: { source: 'manual' }
 					}
-		)
-		if ('error' in result) throw new Error(result.error)
-		const transactionId = result.value.id
+		const facts = {
+			identityId: snapshot.account.id,
+			organizationId: organization.id,
+			binding: db,
+			kind: values.kind,
+			sessionReady: true,
+			loading: false,
+			failed: false,
+			membership: null,
+			grants: [],
+			accounts: [account],
+			categories: [category],
+			tags: []
+		}
+		const actor = createActor(createTransactionPersistenceMachine(db), {
+			input: {
+				request: { id: 1, scopeRevision: 0, scope: facts, values },
+				observation: { revision: 0, facts }
+			}
+		}).start()
+		const result = await toPromise(actor)
+		if (result.outcome !== 'succeeded') throw new Error('Seed creation failed')
+		const [saved] = await db.all(app.transactions.where({ accountId: account.id }))
+		if (!saved) throw new Error('Missing seeded transaction')
+		const transactionId = saved.id
 		const [link] = await db.all(app.transactionTags.where({ transactionId }))
 		if (!link) throw new Error('Missing tag assignment')
 		await db.update(app.tags, link.tagId, { archivedAt: new Date() }).wait({ tier: 'local' })
@@ -171,14 +198,14 @@ for (const scenario of ['viewer', 'imported', 'archived'] satisfies (
 		await expect(page.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
 			'Editable ledger'
 		)
-		await expect(page.getByRole('button', { name: 'Save transaction', exact: true })).toHaveCount(0)
+		await expect(page.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveCount(0)
 	})
 }
 
 test('removing a tag alone enables Save and persists removal', async ({ page }) => {
 	const seed = await seedTransaction(page)
 	await page.goto(`/expenses/${seed.id}`)
-	const save = page.getByRole('button', { name: 'Save transaction', exact: true })
+	const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
 	await expect(save).toBeDisabled()
 	await page.getByRole('button', { name: 'Remove Historical', exact: true }).click()
 	await expect(save).toBeEnabled()
@@ -195,7 +222,7 @@ test('check details can be edited while payment conversion is unavailable', asyn
 	const check = page.locator('[name="checkNumber"]')
 	await expect(check).toHaveValue('100')
 	await check.fill('101')
-	await page.getByRole('button', { name: 'Save transaction', exact: true }).click()
+	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await expect.poll(async () => (await persisted(page, seed.id)).checkNumber).toBe('101')
 })
 
