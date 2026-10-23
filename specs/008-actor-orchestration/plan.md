@@ -1,8 +1,8 @@
 # Actor orchestration boundaries
 
 Status: workspace phase complete and verified. Bank orchestration is complete through
-reviewed and verified focused cycles in [tasks.md](tasks.md). Generic form orchestration is reviewed and verified. Application/session supervision has resumed
-with its [source audit](session-audit.md); the one-file retry ownership change is reviewed and verified. Recovery/SDK drain design remains pending. Diagnostics remain deferred.
+reviewed and verified focused cycles in [tasks.md](tasks.md). Generic form orchestration is reviewed and verified. Application/session supervision is complete through its
+[source audit](session-audit.md); the one-file retry ownership change is reviewed and verified. The six-file [recovery/drain implementation](session-recovery.md) is reviewed and verified with 102 relevant unit tests, nine browser checks and passing static checks. Diagnostics remain deferred.
 [spec.md](spec.md) defines the requirements.
 The current workspace ownership tree and creation/integrity workflows are maintained in
 [the workspace architecture](../006-multiple-workspaces/plan.md#actor-ownership), rather than a
@@ -59,7 +59,7 @@ and verified with migrated fixtures, 208 relevant unit tests, 12 browser checks 
 and controller code stay unchanged.
 The [application/session audit](session-audit.md) records current ownership, retry lifetime and recovery/drain
 findings. The focused application retry change is reviewed and verified with 88 relevant unit tests, four browser checks and passing static checks; SDK integration and recovery
-need their own concrete design before implementation.
+are reviewed and verified in the [focused recovery/drain slice](session-recovery.md).
 Each other subsystem starts by identifying responsibilities, lifetimes, command/report contracts and resource owners.
 Retain existing boundaries when the audit finds no benefit from changing them.
 

@@ -1,7 +1,7 @@
 # Application/session ownership audit
 
 Status: D007 source audit complete. The focused D008/D009 retry ownership slice is reviewed and verified.
-Remaining recovery/drain design, implementation and verification stay unchecked.
+The six-file recovery/drain implementation is also reviewed and verified; D008/D009 are complete.
 
 ## Current ownership
 
@@ -192,4 +192,14 @@ The workspace fixture now requires a separate explicit cleanup acknowledgement, 
 commands cannot accidentally complete pending cleanup. Browser fixtures scope populated alerts to main
 content, excluding empty accessibility live regions. Production changes remain in the one reviewed
 application machine. This verifies retry ownership, not the separate SDK/domain drain ordering gap
-or the still-procedural login recovery workflow. D008/D009 remain open for those follow-up slices.
+or the still-procedural login recovery workflow. Those follow-up slices are verified in [session-recovery.md](session-recovery.md).
+
+## Recovery/drain design follow-up
+
+The [recovery/drain design](session-recovery.md) selects coordination before the two existing public
+SDK mutation entry points, avoiding private hooks or provider migration. It records the necessary
+same-client remount behavior, failure/secret/navigation outcomes and a six-file production scope.
+The six-file implementation is reviewed and verified. See that document for the state sequence,
+source inspection, fixture migration and 102 relevant unit/nine browser/static checks. The workspace
+pre-drain guarantee covers application-initiated restoration and retry, retaining shared session reuse.
+Startup snapshot coupling is retained because the audit established no need to replace that boundary.

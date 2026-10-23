@@ -4,32 +4,55 @@
 
 	let {
 		restoring,
+		navigationOnly,
 		restoreError,
 		sessionError = false,
+		navigationError,
+		canRetryNavigation,
+		draftRevision,
+		onRetryNavigation,
 		onsubmit
 	}: {
 		restoring: boolean
+		navigationOnly: boolean
 		restoreError: boolean
 		sessionError?: boolean
-		onsubmit: (event: SubmitEvent) => Promise<void>
+		navigationError: boolean
+		canRetryNavigation: boolean
+		draftRevision: number
+		onRetryNavigation: () => void
+		onsubmit: (event: SubmitEvent) => void
 	} = $props()
 </script>
 
 <p>{m['login.description']()}</p>
 
 <form {onsubmit}>
-	<Textarea
-		label={m['login.recovery_phrase']()}
-		id="recovery-phrase"
-		name="recoveryPhrase"
-		rows={4}
-		disabled={restoring}
-		required
-	></Textarea>
-	{#if sessionError || restoreError}
+	{#key draftRevision}
+		<Textarea
+			label={m['login.recovery_phrase']()}
+			id="recovery-phrase"
+			name="recoveryPhrase"
+			rows={4}
+			disabled={restoring}
+			required
+		></Textarea>
+	{/key}
+	{#if navigationError}
+		<p role="alert">{m['login.navigation_error']()}</p>
+		{#if canRetryNavigation}
+			<Button type="button" disabled={restoring} onclick={onRetryNavigation}
+				>{m['actions.retry']()}</Button
+			>
+		{/if}
+	{:else if sessionError || restoreError}
 		<p role="alert">{restoreError ? m['login.restore_error']() : m['login.session_error']()}</p>
 	{/if}
 	<Button type="submit" disabled={restoring}>
-		{restoring ? m['login.restoring']() : m['navigation.login']()}
+		{restoring
+			? navigationOnly
+				? m['login.opening_destination']()
+				: m['login.restoring']()
+			: m['navigation.login']()}
 	</Button>
 </form>

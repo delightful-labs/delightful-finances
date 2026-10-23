@@ -239,7 +239,9 @@
 		"recovery_phrase": "Recovery phrase",
 		"restore_error": "The account could not be restored. Check the recovery phrase and try again.",
 		"session_error": "The account could not be restored. Please try again.",
-		"restoring": "Restoring account…"
+		"restoring": "Restoring account…",
+		"opening_destination": "Opening your account…",
+		"navigation_error": "Your account was restored, but the destination could not be opened. Try again or use the navigation links."
 	},
 	"recovery": {
 		"heading": "Account recovery",
