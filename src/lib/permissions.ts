@@ -1,6 +1,7 @@
 import { schema as s } from 'jazz-tools'
 import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
 import { app, type OrganizationMember, type Tag, type TransactionRow } from './schema.js'
+import { checkReferenceCondition } from './check-reference-permissions.js'
 
 type Role = NonNullable<OrganizationMember['role']>
 type IdExpression = string | RowRefValue
@@ -14,6 +15,7 @@ type TransactionContext = Pick<
 	| 'kind'
 	| 'paymentMethod'
 	| 'checkDetailsId'
+	| 'checkId'
 >
 
 export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowedTo }) => {
@@ -107,19 +109,19 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		allOf([
 			canWriteAccount(transaction.accountId, transaction.organizationId),
 			transactionReferencesAreValid(transaction),
+			// Manual income still requires a chosen payment method.
+			anyOf([{ kind: 'expense' }, { source: 'simplefin' }, { paymentMethod: { isNull: false } }]),
 			anyOf([
-				{ kind: 'expense', checkDetailsId: { isNull: true } },
 				allOf([
-					{ kind: 'income', checkDetailsId: { isNull: true } },
-					anyOf([
-						{ source: 'simplefin', paymentMethod: { isNull: true } },
-						{ paymentMethod: 'cash' },
-						{ paymentMethod: 'transfer' },
-						{ paymentMethod: 'electronic' }
-					])
+					{ checkDetailsId: { isNull: true } },
+					checkReferenceCondition({
+						transaction,
+						checkExists: (where) => policy.checks.exists.where(where)
+					})
 				]),
 				allOf([
-					{ kind: 'income', paymentMethod: 'check' },
+					// Retain the existing detail workflow until form/persistence adoption.
+					{ kind: 'income', paymentMethod: 'check', checkId: { isNull: true } },
 					policy.checkDetails.exists.where({
 						id: transaction.checkDetailsId,
 						transactionId: transaction.id,
@@ -280,7 +282,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 						externalId: transaction.externalId
 					})
 				]),
-				// A check's selected detail cannot be replaced or shared with another transaction.
+				// Existing detail references retain their constraints during staged adoption.
 				anyOf([
 					allOf([
 						{ checkDetailsId: { isNull: true } },
@@ -344,6 +346,32 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			policy.tags.exists.where({ id: link.tagId, organizationId: link.organizationId })
 		])
 	)
+
+	policy.checks.allowRead.where((check) => canReadAccount(check.accountId, check.organizationId))
+	policy.checks.allowInsert.where((check) =>
+		allOf([
+			canWriteAccount(check.accountId, check.organizationId),
+			policy.accounts.exists.where({
+				id: check.accountId,
+				organizationId: check.organizationId,
+				archivedAt: { isNull: true }
+			})
+		])
+	)
+	policy.checks.allowUpdate
+		.whereOld((check) => canWriteAccount(check.accountId, check.organizationId))
+		.whereNew((check) =>
+			allOf([
+				canWriteAccount(check.accountId, check.organizationId),
+				// Shared-reference account movement needs a separate reviewed rule.
+				policy.checks.exists.where({
+					id: check.id,
+					organizationId: check.organizationId,
+					accountId: check.accountId
+				})
+			])
+		)
+	policy.checks.allowDelete.never()
 
 	policy.checkDetails.allowRead.where((details) =>
 		canReadAccount(details.accountId, details.organizationId)

@@ -4,6 +4,7 @@ import { accountsSchema } from './schema/accounts.js'
 import { attachmentsSchema } from './schema/attachments.js'
 import { batchesSchema } from './schema/batches.js'
 import { categoriesSchema } from './schema/categories.js'
+import { checksSchema } from './schema/checks.js'
 import { identitySchema } from './schema/identity.js'
 import { integrationsSchema } from './schema/integrations.js'
 import { tagsSchema } from './schema/tags.js'
@@ -15,6 +16,7 @@ const schema = {
 	...categoriesSchema,
 	...tagsSchema,
 	...transactionsSchema,
+	...checksSchema,
 	...integrationsSchema,
 	...attachmentsSchema,
 	...batchesSchema
@@ -29,6 +31,7 @@ export type Account = s.RowOf<typeof app.accounts>
 export type Category = s.RowOf<typeof app.categories>
 export type Tag = s.RowOf<typeof app.tags>
 export type TransactionRow = s.RowOf<typeof app.transactions>
+export type Check = s.RowOf<typeof app.checks>
 
 export const transactionDetailQuery = app.transactions
 	.select('*', '$createdBy', '$createdAt', '$updatedBy', '$updatedAt')

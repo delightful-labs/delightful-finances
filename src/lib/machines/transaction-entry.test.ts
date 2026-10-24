@@ -126,6 +126,7 @@ describe('transaction edit policy and scope', () => {
 		description: null,
 		memo: null,
 		paymentMethod: null,
+		checkId: null,
 		checkDetailsId: null,
 		batchId: null,
 		$createdBy: { account: 'user', identity: { issuer: 'test', subject: 'user' } },

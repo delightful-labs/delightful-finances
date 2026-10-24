@@ -24,6 +24,7 @@ function row(
 		description: id,
 		memo: null,
 		paymentMethod: null,
+		checkId: null,
 		checkDetailsId: null,
 		externalId: null,
 		batchId: null

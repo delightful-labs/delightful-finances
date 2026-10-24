@@ -91,3 +91,25 @@ Account movement needs a reviewed decision because a Check may now have several
 references. Do not auto-move its account scope when editing a single transaction.
 Keep the existing-check selector/catalog scope in review until persistence is sound.
 No data reset, deployment, commit or new written-check visual control is included.
+
+## Root schema and permission adoption review
+
+Three implementation files: schema.ts, schema/transactions.ts and permissions.ts.
+The root app now composes Checks, exposes optional transaction.checkId/check,
+and authorizes Check reads/writes through existing organization/account decisions.
+Metadata updates preserve Check organization/account, and deletion is denied to
+protect existing references. Transaction permissions compose reference compatibility
+with category/account/kind/provenance invariants. Legacy checkDetails references
+remain supported during the staged form conversion, but cannot coexist with checkId.
+The detail query and current UI still use the existing detail workflow.
+
+This is a declarative schema/policy change. It adds no actor, async helper, acquired
+resource or hidden orchestration. After review, verify actual root authority
+publication, role/grant behavior, missing/foreign references, optional methods for
+both kinds, multiple references, metadata/scope rules and existing legacy workflows.
+The isolated 79-test result is not proof of the newly composed root policies.
+No environment data reset, schema deployment or staged-save effect is included.
+
+Generated TransactionRow types also require mechanical checkId:null additions in
+five existing fixture/test files. No test cases or workflows are added by those
+fixture adjustments; they keep the additive schema adoption type-safe.

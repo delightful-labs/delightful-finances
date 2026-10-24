@@ -11,7 +11,7 @@ One focused reviewed slice at a time; no new tests before implementation review.
 - [x] Review this simplified implementation before its new tests.
 - [x] Test sequential SDK creation, compatible references, multiple permitted references and cross-scope rejection.
 - [ ] Verify organization roles and selected-account authorization during root-policy adoption.
-- [ ] Review a root schema/permission adoption batch; implement and test after review.
+- [x] Review a root schema/permission adoption batch; implement and test after review.
 - [ ] Resolve shared Check account-movement behavior before implementing dependent moves.
 - [ ] Implement and review staged-save statechart and resource ownership, then effects.
 - [ ] Test partial failure, stable-ID retries, uncertain settlement, cancellation, scope replacement and offline behavior.
@@ -28,3 +28,15 @@ Simplified-reference tests: 79 focused tests pass. Coverage includes both kinds,
 multiple transactions sharing one Check, direct write payment/reference validation,
 missing and cross-scope Check rejection, and direct transaction updates. Static and
 format checks pass. Staged persistence effects and retries remain unimplemented.
+
+Root adoption slice for review: composed checksSchema into the application, added
+optional transactions.checkId/check relation, and integrated the verified reference
+predicate with existing organization/account/category/provenance permissions.
+The existing checkDetails workflow remains available until persistence and forms
+are migrated; simultaneous checkId and checkDetailsId are rejected. Check scope
+is immutable for now; shared-reference account movement remains a separate task.
+Root adoption coverage: 29 authority tests pass across root permissions and isolated
+references. Tests cover selected-member writes, viewer reads/update denial, scope
+immutability, deletion denial, both transaction kinds and incompatible references.
+An existing test caught and fixed a manual-income payment-method regression.
+The complete role/grant matrix remains pending. Static checks pass.

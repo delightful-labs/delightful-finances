@@ -22,6 +22,7 @@ export const existingTransaction = {
 	description: null,
 	memo: null,
 	paymentMethod: null,
+	checkId: null,
 	checkDetailsId: null,
 	batchId: null
 } satisfies TransactionRow

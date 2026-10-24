@@ -125,6 +125,7 @@ describe('transaction import decisions', () => {
 			externalId: 'external',
 			paymentMethod: null,
 			batchId: null,
+			checkId: null,
 			checkDetailsId: null
 		}
 		const { actor, persist } = start(input, [row])
