@@ -1,3 +1,5 @@
+import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
+import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { z } from 'zod'
 import { appCheckSchema } from './validation/checks.js'
 import {
@@ -21,7 +23,7 @@ export const transactionCheckpointSchema = z.strictObject({
 		identityId: z.string().nullable(),
 		organizationId: z.string().nullable(),
 		binding: z.custom<object>((value) => typeof value === 'object' && value !== null),
-		kind: z.enum(['income', 'expense']),
+		kind: z.enum([INCOME, EXPENSE]),
 		transactionId: z.string().nullable().optional()
 	}),
 	accountId: z.uuid(),
@@ -59,9 +61,9 @@ export function parseSaveRequest(
 		(!sameSaveScope(recovery.scope, scope) ||
 			recovery.accountId !== parsed.accountId ||
 			(recovery.checkIntent === 'existing' &&
-				parsed.paymentMethod === 'check' &&
+				parsed.paymentMethod === PAYMENT_METHOD.CHECK &&
 				parsed.check.kind === 'new') ||
-			(parsed.paymentMethod === 'check' &&
+			(parsed.paymentMethod === PAYMENT_METHOD.CHECK &&
 				parsed.check.kind === 'existing' &&
 				recovery.checkId !== null &&
 				parsed.check.id !== recovery.checkId))
@@ -74,13 +76,13 @@ export function ledgerValues(
 	values: TransactionSaveValues,
 	checkId: string | null
 ): IndependentTransaction {
-	if (values.paymentMethod !== 'check') return values
+	if (values.paymentMethod !== PAYMENT_METHOD.CHECK) return values
 	const { check, ...base } = values
 	void check
 	return independentTransactionSchema.parse({ ...base, checkId })
 }
 export function desiredCheck(values: TransactionSaveValues) {
-	if (values.paymentMethod !== 'check' || !values.check.values) return undefined
+	if (values.paymentMethod !== PAYMENT_METHOD.CHECK || !values.check.values) return undefined
 	return appCheckSchema.parse({
 		...values.check.values,
 		organizationId: values.organizationId,

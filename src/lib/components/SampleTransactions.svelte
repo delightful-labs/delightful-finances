@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscriptionOne, QuerySubscription } from 'jazz-tools/svelte'
@@ -102,7 +103,7 @@
 			categoryId: category?.id,
 			bookedOn,
 			amount: `${Math.floor((100 + index * 137) / 100)}.${String((100 + index * 137) % 100).padStart(2, '0')}`,
-			paymentMethod: 'cash',
+			paymentMethod: PAYMENT_METHOD.CASH,
 			description: m['labels.sample_subject_number']({
 				subject: m['nouns.transaction']({ count: 1 }),
 				number: index + 1

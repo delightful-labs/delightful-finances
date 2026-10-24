@@ -1,3 +1,5 @@
+import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Organization } from '../schema.js'
@@ -50,8 +52,8 @@ const insert = fromPromise(
 				organizationId: attempt.organizationId,
 				userId: attempt.workspace.ownerId,
 				profileId: attempt.profileId,
-				role: 'owner',
-				accountAccessMode: 'all'
+				role: ORGANIZATION_ROLE.OWNER,
+				accountAccessMode: ACCOUNT_ACCESS.ALL
 			},
 			{ id: attempt.membershipId }
 		)

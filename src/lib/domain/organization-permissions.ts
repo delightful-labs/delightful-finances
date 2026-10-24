@@ -1,3 +1,5 @@
+import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import type { OrganizationMember } from '../schema.js'
 
 export function canManageBankCredentials(
@@ -6,7 +8,7 @@ export function canManageBankCredentials(
 ): boolean {
 	return (
 		membership?.organizationId === organizationId &&
-		(membership.role === 'owner' || membership.role === 'admin')
+		(membership.role === ORGANIZATION_ROLE.OWNER || membership.role === ORGANIZATION_ROLE.ADMIN)
 	)
 }
 
@@ -17,11 +19,12 @@ export function canWriteAccount(
 	grants: readonly { accountId: string; access: 'read' | 'write' }[]
 ): boolean {
 	if (membership?.organizationId !== organizationId) return false
-	if (membership.role === 'owner' || membership.role === 'admin') return true
+	if (membership.role === ORGANIZATION_ROLE.OWNER || membership.role === ORGANIZATION_ROLE.ADMIN)
+		return true
 	return (
-		membership.role === 'member' &&
-		(membership.accountAccessMode === 'all' ||
-			(membership.accountAccessMode === 'selected' &&
+		membership.role === ORGANIZATION_ROLE.MEMBER &&
+		(membership.accountAccessMode === ACCOUNT_ACCESS.ALL ||
+			(membership.accountAccessMode === ACCOUNT_ACCESS.SELECTED &&
 				grants.some((grant) => grant.accountId === accountId && grant.access === 'write')))
 	)
 }
@@ -32,6 +35,8 @@ export function canEditCategoriesAndTags(
 ): boolean {
 	return (
 		membership?.organizationId === organizationId &&
-		(membership.role === 'owner' || membership.role === 'admin' || membership.role === 'member')
+		(membership.role === ORGANIZATION_ROLE.OWNER ||
+			membership.role === ORGANIZATION_ROLE.ADMIN ||
+			membership.role === ORGANIZATION_ROLE.MEMBER)
 	)
 }

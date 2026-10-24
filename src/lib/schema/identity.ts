@@ -1,3 +1,5 @@
+import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { schema as s } from 'jazz-tools'
 import { avatarMimeType } from '../validation/identity.js'
 
@@ -40,8 +42,13 @@ export const identitySchema = {
 			organizationId: s.uuid(),
 			userId: s.uuid(),
 			profileId: s.uuid().optional(),
-			role: s.enum('owner', 'admin', 'member', 'viewer'),
-			accountAccessMode: s.enum('all', 'selected')
+			role: s.enum(
+				ORGANIZATION_ROLE.OWNER,
+				ORGANIZATION_ROLE.ADMIN,
+				ORGANIZATION_ROLE.MEMBER,
+				ORGANIZATION_ROLE.VIEWER
+			),
+			accountAccessMode: s.enum(ACCOUNT_ACCESS.ALL, ACCOUNT_ACCESS.SELECTED)
 		},
 		{
 			organization: s.rel('organizations', 'organizationId'),

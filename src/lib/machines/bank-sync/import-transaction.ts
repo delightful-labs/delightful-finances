@@ -1,4 +1,5 @@
-import type { TransactionKind } from '#lib/domain/transaction-kind.js'
+import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
+import { INCOME, EXPENSE, type TransactionKind } from '#lib/domain/transaction-kind.js'
 import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
@@ -34,7 +35,7 @@ type Values = {
 	amountMinor: number
 	currency: string
 	description: string
-	source: 'simplefin'
+	source: typeof TRANSACTION_SOURCE.SIMPLEFIN
 	externalId: string
 }
 type Omission =
@@ -110,7 +111,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 			parsed: providerTransactionSchema.safeParse(input.raw),
 			transaction: undefined,
 			amount: undefined,
-			kind: 'income',
+			kind: INCOME,
 			category: undefined,
 			date: undefined,
 			validated: undefined,
@@ -182,8 +183,8 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 					{ target: 'income' }
 				]
 			},
-			expense: { entry: assign({ kind: 'expense' }), always: 'selectingCategory' },
-			income: { entry: assign({ kind: 'income' }), always: 'selectingCategory' },
+			expense: { entry: assign({ kind: EXPENSE }), always: 'selectingCategory' },
+			income: { entry: assign({ kind: INCOME }), always: 'selectingCategory' },
 			selectingCategory: {
 				entry: assign({
 					category: ({ context }) => context.categories.find((row) => row.kind === context.kind)
@@ -221,7 +222,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 								currency: context.provider.currency
 							},
 							description: required(context.transaction).description,
-							source: { source: 'simplefin', externalId: externalId(context) }
+							source: { source: TRANSACTION_SOURCE.SIMPLEFIN, externalId: externalId(context) }
 						})
 				}),
 				always: [
@@ -243,7 +244,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 						),
 						currency: context.provider.currency,
 						description: required(context.transaction).description,
-						source: 'simplefin',
+						source: TRANSACTION_SOURCE.SIMPLEFIN,
 						externalId: externalId(context)
 					})
 				}),

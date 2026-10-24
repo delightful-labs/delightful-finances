@@ -1,3 +1,4 @@
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
 import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
 import type {
@@ -101,7 +102,8 @@ export function createWorkspaceRenameAvailability(binding: object) {
 						}) =>
 							facts.membership?.userId !== facts.identityId ||
 							facts.membership?.organizationId !== facts.organizationId ||
-							(facts.membership?.role !== 'owner' && facts.membership?.role !== 'admin'),
+							(facts.membership?.role !== ORGANIZATION_ROLE.OWNER &&
+								facts.membership?.role !== ORGANIZATION_ROLE.ADMIN),
 						target: 'readOnly'
 					},
 					{ target: 'ready' }

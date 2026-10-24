@@ -1,3 +1,4 @@
+import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { z } from 'zod'
 
 export const appWorkspaceSchema = z.strictObject({
@@ -19,7 +20,7 @@ export const workspaceCreationAttemptSchema = z.strictObject({
 			z.strictObject({
 				id: z.uuid(),
 				name: z.string().trim().min(1),
-				kind: z.enum(['expense', 'income']),
+				kind: z.enum([EXPENSE, INCOME]),
 				isSystem: z.boolean()
 			})
 		)
@@ -27,7 +28,7 @@ export const workspaceCreationAttemptSchema = z.strictObject({
 			if (new Set(categories.map((category) => category.id)).size !== categories.length) {
 				context.addIssue({ code: 'custom', message: 'Duplicate starter category identity' })
 			}
-			for (const kind of ['expense', 'income']) {
+			for (const kind of [EXPENSE, INCOME]) {
 				if (
 					categories.filter((category) => category.kind === kind && category.isSystem).length !== 1
 				) {

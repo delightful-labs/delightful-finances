@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 	import type { TransactionKind, TransactionPaymentEntry } from '#lib/domain/transaction-kind.js'
 	import {
 		Button,
@@ -70,12 +71,13 @@
 	$effect(() => {
 		void resetRevision
 		untrack(() => {
-			activeCheckFieldsKey = initialTransaction?.paymentMethod === 'check' ? 'check' : ''
+			activeCheckFieldsKey =
+				initialTransaction?.paymentMethod === PAYMENT_METHOD.CHECK ? PAYMENT_METHOD.CHECK : ''
 			selectedAccountId = initialTransaction?.accountId ?? defaultAccountId ?? ''
 		})
 	})
 	function syncPaymentMethod(element: HTMLSelectElement) {
-		activeCheckFieldsKey = element.value === 'check' ? 'check' : ''
+		activeCheckFieldsKey = element.value === PAYMENT_METHOD.CHECK ? PAYMENT_METHOD.CHECK : ''
 		void tick().then(() => element.dispatchEvent(new Event('input', { bubbles: true })))
 	}
 	const issues = $derived(
@@ -207,10 +209,12 @@
 						onchange={(event) => syncPaymentMethod(event.currentTarget)}
 					>
 						<option value="">{m['labels.unspecified']()}</option>
-						<option value="cash">{m['labels.cash']()}</option>
-						<option value="check">{m['transactions.payment.check']()}</option>
-						<option value="transfer">{m['transactions.payment.transfer']()}</option>
-						<option value="electronic">{m['transactions.payment.electronic']()}</option>
+						<option value={PAYMENT_METHOD.CASH}>{m['labels.cash']()}</option>
+						<option value={PAYMENT_METHOD.CHECK}>{m['transactions.payment.check']()}</option>
+						<option value={PAYMENT_METHOD.TRANSFER}>{m['transactions.payment.transfer']()}</option>
+						<option value={PAYMENT_METHOD.ELECTRONIC}
+							>{m['transactions.payment.electronic']()}</option
+						>
 					</Select>
 					<FieldFeedback
 						id="transaction-payment-method-feedback"
@@ -221,7 +225,7 @@
 
 					{#key resetRevision}
 						<TransactionCheckFields
-							active={activeCheckFieldsKey === 'check'}
+							active={activeCheckFieldsKey === PAYMENT_METHOD.CHECK}
 							{issues}
 							initialCheck={initialTransaction?.checkId && initialTransaction.check
 								? { id: initialTransaction.checkId, ...initialTransaction.check }

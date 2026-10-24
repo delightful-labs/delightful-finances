@@ -114,3 +114,107 @@ resolved pnpm Jazz assets. Agent-only Vite configuration now explicitly allows t
 resolved Jazz WASM and worker package directories. A new test's memo selector was
 also corrected to the existing localized accessible name before the passing run.
 The disposable agent server remains at http://127.0.0.1:5186.
+
+## Remaining UI kind constants review
+
+Adopt INCOME/EXPENSE in category/tag forms and lists, sample controls, and starter
+category values. Option/default/reset values, label branches and persisted defaults
+retain the same strings. Tag kind input stays a string because the shared Select
+binds string values. Preserve the unassigned-tag fallback and current noun forms.
+
+This focused cycle touches six implementation files. It introduces no async work,
+statechart changes, authorization decisions or message changes. Schema/validation,
+permission and bank-import literal adoption remain separate follow-up work.
+
+- [x] Replace UI/default income and expense literals with existing constants.
+- [x] Review this implementation before adding or running its tests.
+- [x] After approval, inspect management and workspace-creation unit coverage plus
+      creation-modals, duplicate-names and transaction-workspace browser tests for
+      category/tag selections, resets, starter kinds and sample action names.
+
+## Complete domain constant adoption review
+
+The user explicitly authorized the larger batch covering all suggested domain
+constants. Keep the previously reviewed page configuration and adopt domain-scoped
+values across the remaining production callers:
+
+| Domain              | Canonical values                                  |
+| ------------------- | ------------------------------------------------- |
+| Transaction kind    | Existing INCOME / EXPENSE                         |
+| Payment method      | PAYMENT_METHOD: CASH, CHECK, TRANSFER, ELECTRONIC |
+| Transaction source  | TRANSACTION_SOURCE: MANUAL, SIMPLEFIN             |
+| Organization role   | ORGANIZATION_ROLE: OWNER, ADMIN, MEMBER, VIEWER   |
+| Account access mode | ACCOUNT_ACCESS: ALL, SELECTED                     |
+| Account kind        | ACCOUNT_KIND: CASH, BANK, CARD                    |
+
+New constant modules are dependency-free frozen records with derived union types;
+account cash and payment cash have distinct owners. Schema/validation enums retain
+value order, optionality, null handling and defaults. Account schema already derives
+its kind values from canonical account validation, which now uses ACCOUNT_KIND.
+Permission expressions, import assignments, UI option values, navigation links and
+save/source comparisons use the shared values. No schema deployment or migration
+is needed or performed. Existing historical migrations/snapshots retain literals.
+
+Keep unrelated strings local: XState state/actor names, property paths, SDK method
+names, HTTP redirect modes, archive/filter sentinels, translation keys and stable
+SimpleFIN cryptographic/identity namespaces. They are different contracts even when
+their spelling matches a domain value. Test fixtures retain independent literals
+until their approved test review.
+
+### Machine-first gate and implementation audit
+
+This batch replaces literal operands and matching type aliases only; no new async
+operation, acquired resource, workflow decision or actor protocol is introduced.
+The existing save/check settlement, transaction rollback, authorization, cancellation,
+replacement and shutdown paths remain owned by their current machines. All changed
+actor bodies and helpers were compared after expanding constants and aliases back
+to their original literals. The only guard expression adjustment is workspace
+integrity's owner/admin membership check: use `some` equality rather than `includes`
+to accept the wider observed role union without a cast. Its accepted roles and
+missing-membership behavior are identical. The overview URL template now interpolates
+the existing expense path constant. No hidden orchestration was added.
+
+### Review and verification
+
+- [x] Adopt every suggested domain constant group and remaining production callers.
+- [x] Preserve enum order, permissions and actor behavior in static diff review.
+- [x] Compile localization and pass `pnpm check` with zero errors/warnings.
+- [x] Review this complete implementation before adding or running its tests.
+- [x] After approval, inspect validation account/category/tag/identity/transaction
+      unit suites; permissions, check-reference and organization-permissions suites;
+      workspace creation/integrity/rename, account creation, bank import, transaction
+      entry/save and independent persistence suites. Keep independent literal
+      expectations that verify persisted contracts.
+- [x] After approval, inspect the transaction cleanup browser suites plus creation
+      modals, permissions and bank-sync scenarios before selecting relevant runs.
+
+The earlier 53-unit/29-browser result applies to the preceding committed change,
+not this larger adoption batch. No tests have been added or run for this batch.
+
+## Domain adoption test review
+
+The user approved verification of the complete adoption. Existing unit fixtures and
+browser assertions use independent literal values for persisted contracts and
+expected authorization outcomes. Inspection found no contract drift requiring
+fixture changes. Retain those literal expectations rather than importing the
+constants under test or adding assertions that merely mirror each constant record.
+
+The focused unit run covers 29 suites (460 passing tests): account/category/tag/
+identity/transaction validation, permissions and Check references, organization
+permissions, starter workspace data, workspace creation/integrity/rename, account
+creation/access, management, transaction entry/save/persistence, bank imports,
+sample transactions and transaction page configuration. Test TypeScript checking
+also passes.
+
+The cleanup Playwright configuration now includes creation modals, duplicate-name
+rules, permissions and bank sync alongside its original transaction and overview
+suites. All scenarios reuse the isolated port 5186 server. The initial browser
+attempt stopped on app startup because unit tooling had regenerated shared
+SvelteKit environment files with an empty Jazz URL. Restarting only the known
+agent server restored the runtime configuration before the subsequent run.
+
+Final browser result: all 74 scenarios pass (4.4 minutes), including all seven
+selected browser suites. No production corrections or test assertion changes were
+needed. Formatting and `git diff --check` pass. The disposable agent server remains
+available at http://127.0.0.1:5186. These results apply to the complete domain
+constant adoption, superseding its earlier pending-verification status.

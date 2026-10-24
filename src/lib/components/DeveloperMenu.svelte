@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { onMount, setContext } from 'svelte'
 	import { fromStore } from 'svelte/store'
 	import { JazzSessionProvider, type JazzClient, type JazzSession } from 'jazz-tools/svelte'
@@ -37,13 +38,13 @@
 
 {#if import.meta.env.DEV}
 	<DeveloperMenuDialog {appId} {serverUrl} {browserOrigin} accountId={sessionSnapshot?.account?.id}>
-		<SampleTransactionControls kind="income" {...controls.income} />
-		<SampleTransactionControls kind="expense" {...controls.expense} />
+		<SampleTransactionControls kind={INCOME} {...controls.income} />
+		<SampleTransactionControls kind={EXPENSE} {...controls.expense} />
 	</DeveloperMenuDialog>
 	{#if session && !startup.current.hasTag('startup-error')}
 		<JazzSessionProvider {session} autoAttachDevTools={false}>
-			<SampleTransactions kind="income" />
-			<SampleTransactions kind="expense" />
+			<SampleTransactions kind={INCOME} />
+			<SampleTransactions kind={EXPENSE} />
 		</JazzSessionProvider>
 	{/if}
 {/if}

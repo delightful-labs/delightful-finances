@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { InputText, Select } from 'delightful-ui'
 	import type { Category } from '#lib/schema.js'
 	import type { ManagementView, ManagementScope } from '#lib/management-contract.js'
@@ -53,10 +54,10 @@
 			name="kind"
 			required
 			disabled={!form.fieldsEditable}
-			defaultValue="expense"
+			defaultValue={EXPENSE}
 		>
-			<option value="expense">{m['nouns.expense']({ count: 2 })}</option>
-			<option value="income">{m['nouns.income']({ count: 1 })}</option>
+			<option value={EXPENSE}>{m['nouns.expense']({ count: 2 })}</option>
+			<option value={INCOME}>{m['nouns.income']({ count: 1 })}</option>
 		</Select>
 	{/snippet}
 	{#snippet feedback(view)}

@@ -1,3 +1,5 @@
+import type { AccountKind } from '#lib/domain/account-kind.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
 import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
@@ -70,7 +72,8 @@ export const accountCreationAccessMachine = access.createMachine({
 				},
 				{
 					guard: ({ context }) =>
-						context.membership?.role === 'owner' || context.membership?.role === 'admin',
+						context.membership?.role === ORGANIZATION_ROLE.OWNER ||
+						context.membership?.role === ORGANIZATION_ROLE.ADMIN,
 					target: 'allowed'
 				},
 				{ target: 'denied' }
@@ -263,7 +266,7 @@ export function selectAccountCreationAvailability(
 	return snapshot.context.capability
 }
 
-type Values = { name: string; kind: 'cash' | 'bank' | 'card' }
+type Values = { name: string; kind: AccountKind }
 export function createAccountCreationFormOptions(dependencies: {
 	binding: object
 	observe: () => AccountCreationObservation

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
+	import { INCOME, type TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { Button, Text } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 	let {
@@ -21,7 +21,7 @@
 	<Button type="button" disabled={busy} onclick={onadd}
 		>{m['actions.add_sample_count_kind_subjects']({
 			count: 25,
-			kind: kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 1 }),
+			kind: kind === INCOME ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 1 }),
 			subjects: m['nouns.transaction']({ count: 25 })
 		})}</Button
 	>

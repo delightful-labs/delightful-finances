@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { EXPENSES_PATH } from '#lib/domain/transaction-kind.js'
 	import ExpensePieChart from './ExpensePieChart.svelte'
 	import { Heading, Text } from 'delightful-ui'
 	import DateRangeFilter from './DateRangeFilter.svelte'
@@ -151,7 +152,8 @@
 					transactions={visible}
 					{categoryNames}
 					{tagNamesByTransaction}
-					transactionHref={(transactionId) => `/expenses/${encodeURIComponent(transactionId)}`}
+					transactionHref={(transactionId) =>
+						`${EXPENSES_PATH}/${encodeURIComponent(transactionId)}`}
 				/>
 			</section>
 		</div>

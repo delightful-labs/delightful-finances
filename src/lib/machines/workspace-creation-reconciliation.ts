@@ -1,9 +1,14 @@
+import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { assign, fromPromise, setup } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Organization } from '../schema.js'
 import type { WorkspaceCreationAttempt } from '../domain/workspace-creation.js'
-type Input = { db: Pick<ReturnType<typeof getDb>, 'all'>; attempt: WorkspaceCreationAttempt }
+type Input = {
+	db: Pick<ReturnType<typeof getDb>, 'all'>
+	attempt: WorkspaceCreationAttempt
+}
 export type ReconciliationResult =
 	| { outcome: 'absent' | 'conflict' | 'profileUnavailable' }
 	| { outcome: 'matching'; workspace: Organization }
@@ -101,8 +106,8 @@ export const workspaceCreationReconciliation = setup<
 							member.organizationId === attempt.organizationId &&
 							member.userId === attempt.workspace.ownerId &&
 							member.profileId === attempt.profileId &&
-							member.role === 'owner' &&
-							member.accountAccessMode === 'all' &&
+							member.role === ORGANIZATION_ROLE.OWNER &&
+							member.accountAccessMode === ACCOUNT_ACCESS.ALL &&
 							attempt.categories
 								.filter((row) => row.isSystem)
 								.every((expected) =>

@@ -1,3 +1,4 @@
+import { INCOME, EXPENSE } from './transaction-kind.js'
 import { m } from '../paraglide/messages.js'
 import type { Category } from '../schema.js'
 
@@ -12,39 +13,39 @@ export function workspaceStarterCategories(): {
 		{
 			key: 'uncategorized',
 			name: m['defaults.categories.uncategorized'](),
-			kind: 'expense',
+			kind: EXPENSE,
 			isSystem: true
 		},
 		{
 			key: 'uncategorized',
 			name: m['defaults.categories.uncategorized'](),
-			kind: 'income',
+			kind: INCOME,
 			isSystem: true
 		},
 		{
 			key: 'groceries',
 			name: m['defaults.categories.groceries'](),
-			kind: 'expense',
+			kind: EXPENSE,
 			isSystem: false
 		},
-		{ key: 'housing', name: m['defaults.categories.housing'](), kind: 'expense', isSystem: false },
+		{ key: 'housing', name: m['defaults.categories.housing'](), kind: EXPENSE, isSystem: false },
 		{
 			key: 'transport',
 			name: m['defaults.categories.transport'](),
-			kind: 'expense',
+			kind: EXPENSE,
 			isSystem: false
 		},
 		{
 			key: 'other expense',
 			name: m['defaults.categories.other_expense'](),
-			kind: 'expense',
+			kind: EXPENSE,
 			isSystem: false
 		},
-		{ key: 'salary', name: m['defaults.categories.salary'](), kind: 'income', isSystem: false },
+		{ key: 'salary', name: m['defaults.categories.salary'](), kind: INCOME, isSystem: false },
 		{
 			key: 'other income',
 			name: m['defaults.categories.other_income'](),
-			kind: 'income',
+			kind: INCOME,
 			isSystem: false
 		}
 	]

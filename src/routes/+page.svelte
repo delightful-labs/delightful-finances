@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import { getContext } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
@@ -12,7 +13,7 @@
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
-					.where({ organizationId: filters.activeOrganizationId, kind: 'expense' })
+					.where({ organizationId: filters.activeOrganizationId, kind: EXPENSE })
 					.orderBy('bookedOn', 'desc')
 			: undefined
 	)
