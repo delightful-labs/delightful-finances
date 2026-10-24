@@ -190,6 +190,24 @@ These requirements record approved compatibility decisions. Backup export, encry
 4. An unsupported format, unreadable attachment, invalid amount, or broken relationship is rejected before restored-data writes begin.
 5. An interrupted restore remains visibly incomplete and outside ordinary finance use. Retrying resumes the same restoration without duplicate records; only completed restoration makes the workspace available for ordinary use.
 
+### Approved transaction attachment foundation (future functionality)
+
+These requirements record approved compatibility decisions. Attachment upload, download, lifecycle controls, and file cleanup remain deferred; existing placeholder tables do not establish implemented attachment support.
+
+- **FR-048 — Scope and access**: Attachments MUST belong to the whole transaction, including transactions with multiple allocations. Attachment read access MUST follow the transaction's account permissions; adding or removing attachments MUST require transaction-edit permission. Account sharing MUST include attachments on historical transactions within the recipient's authorized access, without granting access to unrelated files.
+- **FR-049 — Multiple original files**: A transaction MUST support multiple attachments, including images, PDFs, and other files. Each attachment MUST retain its original filename, file type, and contents and support downloading the original contents unchanged. Adding a file and removing an existing attachment MUST be separate actions; no replacement workflow is required.
+- **FR-050 — Offline and synchronization**: Users MUST be able to add attachments offline and synchronize them later. Previously downloaded file contents MUST remain available offline; attachments whose contents are not available locally MUST indicate that downloading is required. Pending or failed attachment uploads MUST NOT prevent saving the transaction. The app MUST clearly distinguish attachments that are not fully synchronized from completed synchronization and MUST NOT claim unavailable file contents are available offline.
+- **FR-051 — Removal and cleanup**: Removing an attachment MUST leave the transaction intact. Deleting a transaction MUST remove its attachments from ordinary access, subject to the eventual transaction deletion/undo policy. Physical file cleanup MUST preserve files still referenced elsewhere and MUST respect future retention and recovery rules; this foundation does not decide a retention period or promise immediate physical erasure.
+- **FR-052 — Stable identity**: Each attachment MUST have a stable identity preserved through synchronization, backup, restore, and merging. The identity MUST distinguish attachments independently of filenames or matching contents; future backup/restore and merge implementations MUST preserve attachment relationships without silently omitting files.
+
+**Acceptance scenarios for the future implementation**:
+
+1. A transaction with multiple allocations can have several attachments of different file types. Authorized users can download original contents with the retained filename and file type; attachments belong to the transaction rather than individual allocations.
+2. A user who can read the transaction can read its attachments, including historical attachments on a shared account. Adding or removing attachments requires transaction-edit permission; unrelated files remain inaccessible.
+3. A user saves a transaction with files while offline. The transaction remains saved while attachment synchronization is pending or failed, and the app reports that status. Downloaded files remain readable offline; missing local contents are identified as requiring download.
+4. Removing one attachment retains the transaction and its other attachments. Deleting the transaction removes its attachments from ordinary access without physically deleting file contents still referenced elsewhere or required by the eventual recovery policy.
+5. Adding or removing other files does not change an existing attachment's identity. Synchronization, backup, restore, and merging preserve attachment identities and relationships.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
