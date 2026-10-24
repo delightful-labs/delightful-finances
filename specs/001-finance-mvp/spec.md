@@ -208,6 +208,18 @@ These requirements record approved compatibility decisions. Attachment upload, d
 4. Removing one attachment retains the transaction and its other attachments. Deleting the transaction removes its attachments from ordinary access without physically deleting file contents still referenced elsewhere or required by the eventual recovery policy.
 5. Adding or removing other files does not change an existing attachment's identity. Synchronization, backup, restore, and merging preserve attachment identities and relationships.
 
+### Approved transaction history direction (future functionality)
+
+- **FR-053 — Visible history and restoration**: Authorized users MUST eventually be able to inspect earlier transaction versions and restore a selected version as a new edit. Restoration MUST preserve transaction identity and existing history rather than erase intervening edits, and MUST remain subject to current permissions, workspace lifecycle restrictions, and financial validation. A general-purpose conflict-resolution interface is deferred.
+- **FR-054 — History scope and SDK investigation**: Before implementation, verify the installed Jazz SDK's supported history/read/restore APIs and define a consistent transaction version across its main row and related allocations, tag assignments, and other associated records. Jazz synchronization reconciliation MUST NOT be assumed to enforce application financial invariants such as allocation totals or valid transfer pairs. Related-record version boundaries, restoration effects on shared references and transfer counterparts, and handling of concurrent changes during restoration remain unresolved design decisions; no complete transaction-history or revert capability is claimed by current creator/latest-editor metadata.
+- **FR-055 — Backup merge distinction**: Importing a backup into an existing workspace is not covered completely by the login-identity account-merge specification. Its future design SHOULD reuse applicable provenance, duplicate-detection, retry, and conflict-reporting rules from `003-account-data-merge`, but MUST explicitly define backup input, destination eligibility, and support for the complete included graph, including attachments, allocations, and transfer links. Restore into a new workspace remains the approved backup restore behavior; merging into an existing workspace remains deferred.
+
+**Acceptance expectations for future planning**:
+
+1. Restoring an earlier transaction version produces a new authorized edit while retaining the transaction ID and intervening history. Invalid financial combinations cannot be introduced by restoration.
+2. The history design explicitly establishes which related records belong to each displayed/restorable version and how concurrent changes are handled, based on verified SDK capabilities rather than assumptions about internal row history.
+3. Backup-to-existing-workspace merging is specified separately before implementation and does not silently omit related data or treat login-identity merge support as sufficient.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
@@ -216,6 +228,7 @@ These requirements record approved compatibility decisions. Attachment upload, d
 - Linked-transfer implementation and migration. The approved transfer foundation above uses linked expense/income transactions rather than a third transaction kind.
 - Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
 - Backup/restore implementation, including optional password encryption and incomplete-restore recovery. The approved foundation above records future compatibility requirements.
+- Transaction version-history/restoration UI and a general-purpose conflict-resolution interface. Supported history APIs and related-record restoration consistency require investigation before implementation.
 
 ## Data Model Invariants
 
