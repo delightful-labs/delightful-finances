@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transactionKindForPath, transactionPages } from '#lib/domain/transaction-kind.js'
+	import { m } from '#lib/paraglide/messages.js'
 	import type { Snippet } from 'svelte'
 	import { onNavigate } from '$app/navigation'
 	import { page } from '$app/state'
@@ -7,11 +9,11 @@
 
 	let { children }: { children: Snippet } = $props()
 	const pathname = $derived(page.url.pathname)
-	const kind = $derived(pathname.startsWith('/income') ? 'income' : 'expense')
-	const index = $derived(pathname === '/income' || pathname === '/expenses')
-	const listHref = $derived(
-		page.params.id ? `${kind === 'income' ? '/income' : '/expenses'}${page.url.search}` : undefined
-	)
+	const kind = $derived(transactionKindForPath(pathname))
+	const config = $derived(transactionPages[kind])
+	const heading = $derived(m[config.noun]({ count: config.count }))
+	const index = $derived(pathname === config.path)
+	const listHref = $derived(page.params.id ? `${config.path}${page.url.search}` : undefined)
 
 	onNavigate((navigation) => {
 		if (!navigation.to?.route.id?.startsWith('/(transactions)/')) return
@@ -31,9 +33,9 @@
 	})
 </script>
 
-<TransactionWorkspace {children} {index} {kind} {listHref}>
+<TransactionWorkspace {children} {index} {heading} {listHref}>
 	{#snippet list(showHeading)}
-		<TransactionView {kind} {showHeading} />
+		<TransactionView {kind} {heading} listPath={config.path} {showHeading} />
 	{/snippet}
 </TransactionWorkspace>
 

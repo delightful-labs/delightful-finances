@@ -11,13 +11,13 @@
 		children,
 		list,
 		index,
-		kind,
+		heading,
 		listHref
 	}: {
 		children: Snippet
 		list: Snippet<[boolean]>
 		index: boolean
-		kind: 'income' | 'expense'
+		heading: string
 		listHref?: string | undefined
 	} = $props()
 	let desktop = $state(false)
@@ -59,9 +59,7 @@
 		<Drawer
 			id={drawerId}
 			side="right"
-			heading={kind === 'income'
-				? m['nouns.income']({ count: 1 })
-				: m['nouns.expense']({ count: 2 })}
+			{heading}
 			closeLabel={m['actions.close_subject']({
 				subject: m['nouns.transaction']({ count: 2 })
 			})}
