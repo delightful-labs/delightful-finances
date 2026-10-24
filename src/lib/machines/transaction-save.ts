@@ -235,10 +235,6 @@ export function createTransactionSaveMachine(
 		model.assign({
 			checkpoint: ({ context }) => ({ ...required(context.checkpoint), [field]: value })
 		})
-	const gate = (next: string) =>
-		model.createStateConfig({
-			always: [{ guard: 'interrupted', target: 'finishing' }, { target: next }]
-		})
 	const terminal = (
 		outcome:
 			'succeeded' | 'failed' | 'partial' | 'unresolved' | 'cancelled' | 'scopeChanged' | 'closed'
@@ -352,14 +348,20 @@ export function createTransactionSaveMachine(
 										values: required(context.values),
 										scope: required(context.input).request.scope
 									}),
-									onDone: {
-										target: 'beforeObserve',
-										actions: assign({ checkpoint: ({ event }) => event.output })
-									},
+									onDone: [
+										{
+											guard: 'interrupted',
+											target: 'finishing',
+											actions: assign({ checkpoint: ({ event }) => event.output })
+										},
+										{
+											target: 'observing',
+											actions: assign({ checkpoint: ({ event }) => event.output })
+										}
+									],
 									onError: 'finishing'
 								}
 							},
-							beforeObserve: gate('observing'),
 							observing: {
 								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
 								invoke: {
@@ -417,7 +419,7 @@ export function createTransactionSaveMachine(
 									{ guard: 'interrupted', target: 'finishing' },
 									{
 										guard: ({ context }) => required(context.values).paymentMethod !== 'check',
-										target: 'beforeReassess'
+										target: 'reobserving'
 									},
 									{
 										guard: ({ context }) => required(context.checkpoint).checkId === null,
@@ -434,7 +436,7 @@ export function createTransactionSaveMachine(
 												)
 											)
 										},
-										target: 'beforeCreateCheck'
+										target: 'creatingCheck'
 									},
 									{ target: 'readingCheck' }
 								]
@@ -498,12 +500,11 @@ export function createTransactionSaveMachine(
 											const desired = requestedCheck(context)
 											return desired !== undefined && !checkMatches(context, desired)
 										},
-										target: 'beforeUpdateCheck'
+										target: 'updatingCheck'
 									},
-									{ target: 'beforeReassess' }
+									{ target: 'reobserving' }
 								]
 							},
-							beforeCreateCheck: gate('creatingCheck'),
 							creatingCheck: {
 								entry: [
 									assign({
@@ -534,7 +535,6 @@ export function createTransactionSaveMachine(
 									onError: 'finishing'
 								}
 							},
-							beforeUpdateCheck: gate('updatingCheck'),
 							updatingCheck: {
 								entry: [
 									assign({
@@ -594,11 +594,10 @@ export function createTransactionSaveMachine(
 							checkingSavedCheck: {
 								always: [
 									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => checkMatches(context), target: 'beforeReassess' },
+									{ guard: ({ context }) => checkMatches(context), target: 'reobserving' },
 									{ target: 'finishing' }
 								]
 							},
-							beforeReassess: gate('reobserving'),
 							reobserving: {
 								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
 								invoke: {

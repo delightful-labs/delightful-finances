@@ -105,10 +105,6 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 				handle: undefined
 			})
 		})
-	const gate = (next: string) =>
-		model.createStateConfig({
-			always: [{ guard: 'interrupted', target: 'rollingBack' }, { target: next }]
-		})
 	return model.createMachine({
 		id: 'check-create-persistence',
 		initial: 'running',
@@ -151,9 +147,10 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 									src: 'validate',
 									input: ({ context }) => context.request,
 									onDone: [
+										{ guard: 'interrupted', target: 'finishing' },
 										{
 											guard: ({ event }) => event.output.success,
-											target: 'beforeOpen',
+											target: 'opening',
 											actions: assign({
 												request: ({ context, event }) =>
 													event.output.success ? event.output.data : context.request
@@ -164,32 +161,37 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 									onError: 'finishing'
 								}
 							},
-							beforeOpen: {
-								always: [{ guard: 'interrupted', target: 'finishing' }, { target: 'opening' }]
-							},
 							opening: {
 								invoke: {
 									src: 'open',
 									input: () => db,
-									onDone: {
-										target: 'beforeStage',
-										actions: assign({ tx: ({ event }) => event.output })
-									},
+									onDone: [
+										{
+											guard: 'interrupted',
+											target: 'rollingBack',
+											actions: assign({ tx: ({ event }) => event.output })
+										},
+										{
+											guard: ({ context }) => context.request.mode === 'edit',
+											target: 'updating',
+											actions: assign({ tx: ({ event }) => event.output })
+										},
+										{
+											target: 'staging',
+											actions: assign({ tx: ({ event }) => event.output })
+										}
+									],
 									onError: 'finishing'
 								}
-							},
-							beforeStage: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => context.request.mode === 'edit', target: 'updating' },
-									{ target: 'staging' }
-								]
 							},
 							staging: {
 								invoke: {
 									src: 'stage',
 									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-									onDone: 'beforeCommit',
+									onDone: [
+										{ guard: 'interrupted', target: 'rollingBack' },
+										{ target: 'committing' }
+									],
 									onError: 'rollingBack'
 								}
 							},
@@ -197,11 +199,13 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 								invoke: {
 									src: 'update',
 									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-									onDone: 'beforeCommit',
+									onDone: [
+										{ guard: 'interrupted', target: 'rollingBack' },
+										{ target: 'committing' }
+									],
 									onError: 'rollingBack'
 								}
 							},
-							beforeCommit: gate('committing'),
 							committing: {
 								entry: assign({ settlement: 'unknown' }),
 								invoke: {

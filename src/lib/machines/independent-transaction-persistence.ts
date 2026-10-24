@@ -60,6 +60,21 @@ function planTransaction(
 	retained: readonly Tag[] = []
 ): Plan {
 	const names = values.tags ?? []
+	const retainedNames = new Set(retained.map((tag) => normalizedName(tag.name)))
+	if (
+		names.some(
+			(name) =>
+				!retainedNames.has(normalizedName(name)) &&
+				tags.some(
+					(tag) =>
+						tag.organizationId === values.organizationId &&
+						tag.kind === values.kind &&
+						Boolean(tag.archivedAt) &&
+						normalizedName(tag.name) === normalizedName(name)
+				)
+		)
+	)
+		throw new Error('An archived transaction tag cannot be selected')
 	if (
 		names.some(
 			(name) =>
@@ -277,10 +292,6 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 				handle: undefined
 			})
 		})
-	const gate = (next: string) =>
-		model.createStateConfig({
-			always: [{ guard: 'interrupted', target: 'rollingBack' }, { target: next }]
-		})
 	return model.createMachine({
 		id: 'independent-transaction-persistence',
 		initial: 'running',
@@ -329,9 +340,10 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 									src: 'validate',
 									input: ({ context }) => required(context.input),
 									onDone: [
+										{ guard: 'interrupted', target: 'finishingFailure' },
 										{
 											guard: ({ event }) => event.output.success,
-											target: 'beforeOpen',
+											target: 'opening',
 											actions: assign({
 												values: ({ event }) =>
 													event.output.success ? event.output.data.values : undefined
@@ -342,36 +354,33 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 									onError: 'finishingFailure'
 								}
 							},
-							beforeOpen: {
-								always: [
-									{ guard: 'interrupted', target: 'finishingFailure' },
-									{ target: 'opening' }
-								]
-							},
 							opening: {
 								invoke: {
 									src: 'open',
 									input: () => db,
-									onDone: {
-										target: 'beforeRead',
-										actions: assign({ tx: ({ event }) => event.output })
-									},
+									onDone: [
+										{
+											guard: 'interrupted',
+											target: 'rollingBack',
+											actions: assign({ tx: ({ event }) => event.output })
+										},
+										{
+											guard: ({ context }) => context.input?.mode === 'edit',
+											target: 'readingEdit',
+											actions: assign({ tx: ({ event }) => event.output })
+										},
+										{
+											guard: ({ context }) => Boolean(context.values?.tags?.length),
+											target: 'reading',
+											actions: assign({ tx: ({ event }) => event.output })
+										},
+										{
+											target: 'planning',
+											actions: assign({ tx: ({ event }) => event.output })
+										}
+									],
 									onError: 'finishingFailure'
 								}
-							},
-							beforeRead: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{
-										guard: ({ context }) => context.input?.mode === 'edit',
-										target: 'readingEdit'
-									},
-									{
-										guard: ({ context }) => Boolean(context.values?.tags?.length),
-										target: 'reading'
-									},
-									{ target: 'planning' }
-								]
 							},
 							readingEdit: {
 								invoke: {
@@ -442,14 +451,16 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										tx: required(context.tx),
 										values: required(context.values)
 									}),
-									onDone: {
-										target: 'beforePlan',
-										actions: assign({ tags: ({ event }) => event.output })
-									},
+									onDone: [
+										{ guard: 'interrupted', target: 'rollingBack' },
+										{
+											target: 'planning',
+											actions: assign({ tags: ({ event }) => event.output })
+										}
+									],
 									onError: 'rollingBack'
 								}
 							},
-							beforePlan: gate('planning'),
 							planning: {
 								invoke: {
 									src: 'prepare',
@@ -459,19 +470,20 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										edit: context.edit,
 										moveCheck: context.moveCheck
 									}),
-									onDone: {
-										target: 'beforeStage',
-										actions: assign({ plan: ({ event }) => event.output })
-									},
+									onDone: [
+										{ guard: 'interrupted', target: 'rollingBack' },
+										{
+											guard: ({ context }) => context.input?.mode === 'edit',
+											target: 'updating',
+											actions: assign({ plan: ({ event }) => event.output })
+										},
+										{
+											target: 'staging',
+											actions: assign({ plan: ({ event }) => event.output })
+										}
+									],
 									onError: 'rollingBack'
 								}
-							},
-							beforeStage: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{ guard: ({ context }) => context.input?.mode === 'edit', target: 'updating' },
-									{ target: 'staging' }
-								]
 							},
 							updating: {
 								invoke: {
@@ -482,7 +494,10 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										transactionId: context.transactionId,
 										edit: context.edit
 									}),
-									onDone: 'beforeCommit',
+									onDone: [
+										{ guard: 'interrupted', target: 'rollingBack' },
+										{ target: 'committing' }
+									],
 									onError: 'rollingBack'
 								}
 							},
@@ -494,11 +509,13 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										plan: required(context.plan),
 										transactionId: context.transactionId
 									}),
-									onDone: 'beforeCommit',
+									onDone: [
+										{ guard: 'interrupted', target: 'rollingBack' },
+										{ target: 'committing' }
+									],
 									onError: 'rollingBack'
 								}
 							},
-							beforeCommit: gate('committing'),
 							committing: {
 								entry: assign({ settlement: 'unknown' }),
 								invoke: {

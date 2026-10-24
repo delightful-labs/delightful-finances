@@ -551,7 +551,7 @@ for (const scenario of scenarios) {
 	})
 }
 
-test('check detail references enforce initial integrity, edits, and single selection', async ({
+test('Check references enforce scope and permit reuse without an exclusivity rule', async ({
 	page
 }) => {
 	await start(page)
@@ -574,6 +574,22 @@ test('check detail references enforce initial integrity, edits, and single selec
 				currency: 'USD'
 			})
 			.wait({ tier: 'global' })
+		const otherAccount = await db
+			.insert(app.accounts, {
+				organizationId: organization.id,
+				name: 'Other Check account',
+				kind: 'cash',
+				currency: 'USD'
+			})
+			.wait({ tier: 'global' })
+		const check = await db
+			.insert(app.checks, {
+				organizationId: organization.id,
+				accountId: account.id,
+				checkNumber: '123',
+				checkDate: '2026-10-14'
+			})
+			.wait({ tier: 'global' })
 		const transactionValues = {
 			organizationId: organization.id,
 			accountId: account.id,
@@ -582,31 +598,12 @@ test('check detail references enforce initial integrity, edits, and single selec
 			amountMinor: 100,
 			currency: 'USD',
 			bookedOn: '2026-10-14',
+			source: 'manual',
 			paymentMethod: 'check',
-			source: 'manual'
+			checkId: check.id
 		} satisfies import('jazz-tools').schema.InsertOf<typeof app.transactions>
-		const insertCheck = async () => {
-			const id = crypto.randomUUID()
-			const write = await db.transaction((tx) => {
-				tx.insert(
-					app.checkDetails,
-					{
-						transactionId: id,
-						organizationId: organization.id,
-						accountId: account.id,
-						checkNumber: '123',
-						checkDate: '2026-10-14'
-					},
-					{ id }
-				)
-				tx.insert(app.transactions, { ...transactionValues, checkDetailsId: id }, { id })
-				return id
-			})
-			return write.wait({ tier: 'global' })
-		}
-		const first = await insertCheck()
-		const second = await insertCheck()
-		await db.one(app.checkDetails.where({ id: first }), { tier: 'remote' })
+		const first = await db.insert(app.transactions, transactionValues).wait({ tier: 'global' })
+		const second = await db.insert(app.transactions, transactionValues).wait({ tier: 'global' })
 		const attempt = async (write: () => Promise<unknown>) => {
 			try {
 				await write()
@@ -615,416 +612,39 @@ test('check detail references enforce initial integrity, edits, and single selec
 				return error instanceof Error ? error.message : 'rejected'
 			}
 		}
-		const missingReference = await attempt(() =>
-			db.insert(app.transactions, transactionValues).wait({ tier: 'global' })
-		)
-		const nonCheckReference = await attempt(() =>
+		const missingCheck = await attempt(() =>
 			db
-				.insert(app.transactions, {
-					...transactionValues,
-					paymentMethod: 'cash',
-					checkDetailsId: first
-				})
+				.insert(app.transactions, { ...transactionValues, checkId: crypto.randomUUID() })
 				.wait({ tier: 'global' })
 		)
-		const invalidDate = { checkDate: '2026-10-14' }
-		Reflect.set(invalidDate, 'checkDate', null)
-		const missingDate = await attempt(() =>
-			db.update(app.checkDetails, first, invalidDate).wait({ tier: 'global' })
+		const mismatchedMethod = await attempt(() =>
+			db
+				.insert(app.transactions, { ...transactionValues, paymentMethod: 'cash' })
+				.wait({ tier: 'global' })
+		)
+		const mismatchedAccount = await attempt(() =>
+			db
+				.insert(app.transactions, { ...transactionValues, accountId: otherAccount.id })
+				.wait({ tier: 'global' })
 		)
 		await db
-			.update(app.checkDetails, first, { checkNumber: '456', checkDate: '2026-10-15' })
+			.update(app.checks, check.id, { checkNumber: '456', checkDate: '2026-10-15' })
 			.wait({ tier: 'global' })
-		const reassignment = await attempt(() =>
-			db.update(app.checkDetails, first, { transactionId: second }).wait({ tier: 'global' })
-		)
-		await db.one(app.transactions.where({ id: first }), { tier: 'remote' })
-		const replacement = await attempt(() =>
-			db.update(app.transactions, first, { checkDetailsId: second }).wait({ tier: 'global' })
-		)
-		const deletion = await attempt(() =>
-			db.delete(app.checkDetails, first).wait({ tier: 'global' })
-		)
-		const duplicates = await Promise.all(
-			['A', 'B'].map((checkNumber) =>
-				attempt(() =>
-					db
-						.insert(app.checkDetails, {
-							transactionId: first,
-							organizationId: organization.id,
-							accountId: account.id,
-							checkNumber,
-							checkDate: '2026-10-14'
-						})
-						.wait({ tier: 'global' })
-				)
-			)
-		)
-		const initialFailures: string[] = []
-		initialFailures.push(
-			await attempt(() =>
-				db
-					.insert(app.transactions, { ...transactionValues, checkDetailsId: crypto.randomUUID() })
-					.wait({ tier: 'global' })
-			)
-		)
-		initialFailures.push(
-			await attempt(() =>
-				db
-					.insert(app.transactions, { ...transactionValues, checkDetailsId: first })
-					.wait({ tier: 'global' })
-			)
-		)
-		const otherAccount = await db
-			.insert(app.accounts, {
-				organizationId: organization.id,
-				name: 'Other ledger',
-				kind: 'cash',
-				currency: 'USD'
-			})
-			.wait({ tier: 'global' })
-		const wrongAccountId = crypto.randomUUID()
-		await db
-			.insert(
-				app.checkDetails,
-				{
-					transactionId: wrongAccountId,
-					organizationId: organization.id,
-					accountId: otherAccount.id,
-					checkNumber: 'other',
-					checkDate: '2026-10-15'
-				},
-				{ id: wrongAccountId }
-			)
-			.wait({ tier: 'global' })
-		initialFailures.push(
-			await attempt(() =>
-				db
-					.insert(
-						app.transactions,
-						{ ...transactionValues, checkDetailsId: wrongAccountId },
-						{ id: wrongAccountId }
-					)
-					.wait({ tier: 'global' })
-			)
-		)
-		await db
-			.update(app.accounts, otherAccount.id, { archivedAt: new Date() })
-			.wait({ tier: 'global' })
-		initialFailures.push(
-			await attempt(() =>
-				db
-					.insert(app.checkDetails, {
-						transactionId: crypto.randomUUID(),
-						organizationId: organization.id,
-						accountId: otherAccount.id,
-						checkNumber: 'archived account',
-						checkDate: '2026-10-15'
-					})
-					.wait({ tier: 'global' })
-			)
-		)
-
-		const otherOrg = await db
-			.insert(app.organizations, {
-				name: 'Other workspace',
-				kind: 'business',
-				ownerId: userId,
-				defaultCurrency: 'USD'
-			})
-			.wait({ tier: 'global' })
-		await db
-			.insert(app.organizationMembers, {
-				organizationId: otherOrg.id,
-				userId,
-				role: 'owner',
-				accountAccessMode: 'all'
-			})
-			.wait({ tier: 'global' })
-		const orgAccount = await db
-			.insert(app.accounts, {
-				organizationId: otherOrg.id,
-				name: 'Other workspace ledger',
-				kind: 'cash',
-				currency: 'USD'
-			})
-			.wait({ tier: 'global' })
-		initialFailures.push(
-			await attempt(() =>
-				db
-					.insert(app.checkDetails, {
-						transactionId: crypto.randomUUID(),
-						organizationId: otherOrg.id,
-						accountId: account.id,
-						checkNumber: 'wrong workspace',
-						checkDate: '2026-10-15'
-					})
-					.wait({ tier: 'global' })
-			)
-		)
-
-		const wrongOrgId = crypto.randomUUID()
-		await db
-			.insert(
-				app.checkDetails,
-				{
-					transactionId: wrongOrgId,
-					organizationId: otherOrg.id,
-					accountId: orgAccount.id,
-					checkNumber: 'other workspace',
-					checkDate: '2026-10-15'
-				},
-				{ id: wrongOrgId }
-			)
-			.wait({ tier: 'global' })
-		initialFailures.push(
-			await attempt(() =>
-				db
-					.insert(
-						app.transactions,
-						{ ...transactionValues, checkDetailsId: wrongOrgId },
-						{ id: wrongOrgId }
-					)
-					.wait({ tier: 'global' })
-			)
-		)
-		const rollbackId = crypto.randomUUID()
-		const rollback = await attempt(async () => {
-			const write = await db.transaction((tx) => {
-				tx.insert(
-					app.checkDetails,
-					{
-						transactionId: rollbackId,
-						organizationId: organization.id,
-						accountId: account.id,
-						checkNumber: 'rollback',
-						checkDate: '2026-10-15'
-					},
-					{ id: rollbackId }
-				)
-				tx.insert(
-					app.transactions,
-					{ ...transactionValues, checkDetailsId: rollbackId, currency: 'EUR' },
-					{ id: rollbackId }
-				)
-			})
-			await write.wait({ tier: 'global' })
-		})
-		const rolledBackDetail = await db.one(app.checkDetails.where({ id: rollbackId }), {
-			tier: 'remote'
-		})
-		const rolledBackTransaction = await db.one(app.transactions.where({ id: rollbackId }), {
-			tier: 'remote'
-		})
-
-		const candidates = await db.all(app.checkDetails.where({ transactionId: first }), {
-			tier: 'remote'
-		})
-		const competingSelections = await Promise.all(
-			candidates
-				.filter((detail) => detail.id !== first)
-				.map((detail) =>
-					attempt(() =>
-						db
-							.update(app.transactions, first, { checkDetailsId: detail.id })
-							.wait({ tier: 'global' })
-					)
-				)
-		)
-		const sharedReferenceRace = await Promise.all(
-			[1, 2].map(() =>
-				attempt(() =>
-					db
-						.insert(app.transactions, { ...transactionValues, checkDetailsId: first })
-						.wait({ tier: 'global' })
-				)
-			)
-		)
-
-		const retained = await db.one(
-			app.transactions.where({ id: first }).include({ checkDetails: true }),
-			{ tier: 'remote' }
-		)
-		const rows = await db.all(app.checkDetails.where({ transactionId: first }), { tier: 'remote' })
+		const retained = await db.one(app.checks.where({ id: check.id }), { tier: 'remote' })
 		return {
-			competingSelections,
-			sharedReferenceRace,
-			initialFailures,
-			rollback,
-			rollbackEmpty: !rolledBackDetail && !rolledBackTransaction,
-			missingReference,
-			nonCheckReference,
-			missingDate,
-			reassignment,
-			replacement,
-			deletion,
-			duplicates,
-			rowCount: rows.length,
-			selectedId: retained?.checkDetailsId,
-			first,
-			details: retained?.checkDetails
+			firstId: first.id,
+			secondId: second.id,
+			missingCheck,
+			mismatchedMethod,
+			mismatchedAccount,
+			retained
 		}
 	})
-	for (const outcome of [
-		...result.sharedReferenceRace,
-		...result.initialFailures,
-		result.rollback,
-		result.missingReference,
-		result.nonCheckReference,
-		result.reassignment,
-		result.replacement,
-		result.deletion
-	])
+	expect(result.firstId).not.toBe(result.secondId)
+	for (const outcome of [result.missingCheck, result.mismatchedMethod, result.mismatchedAccount])
 		expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
-	for (const outcome of result.competingSelections)
-		expect(outcome).toMatch(/AuthorizationDenied|permission_denied|cascade_rejected/)
-	expect(
-		result.competingSelections.some((outcome) =>
-			/AuthorizationDenied|permission_denied/.test(outcome)
-		)
-	).toBe(true)
-	expect(result.rollbackEmpty).toBe(true)
-	expect(result.missingDate).not.toBe('accepted')
-	expect(result.duplicates).toEqual(['accepted', 'accepted'])
-	expect(result.rowCount).toBe(3)
-	expect(result.selectedId).toBe(result.first)
-	expect(result.details).toMatchObject({
-		id: result.first,
-		transactionId: result.first,
-		checkNumber: '456',
-		checkDate: '2026-10-15'
-	})
+	expect(result.retained).toMatchObject({ checkNumber: '456', checkDate: '2026-10-15' })
 })
-
-for (const scenario of scenarios) {
-	test(`check detail access: ${scenario.name}`, async ({ page, browser }) => {
-		await start(page)
-		const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
-		const context = await browser.newContext({ baseURL: new URL(page.url()).origin })
-		try {
-			const subject = await context.newPage()
-			await start(subject)
-			const subjectId = await subject.evaluate(() => window.workspacePermissionTest.userId)
-			const fixture = await page.evaluate(
-				async ({ organizationId, subjectId, scenario }) => {
-					const { app, db } = window.workspacePermissionTest
-					const account = await db
-						.insert(app.accounts, {
-							organizationId,
-							name: 'Check grants',
-							kind: 'cash',
-							currency: 'USD'
-						})
-						.wait({ tier: 'global' })
-					const category = await db.one(
-						app.categories.where({ organizationId, kind: 'income', isSystem: true }),
-						{ tier: 'remote' }
-					)
-					if (!category) throw new Error('Missing income category')
-					const id = crypto.randomUUID()
-					const write = await db.transaction((tx) => {
-						tx.insert(
-							app.checkDetails,
-							{
-								organizationId,
-								accountId: account.id,
-								transactionId: id,
-								checkNumber: 'owner check',
-								checkDate: '2026-10-15'
-							},
-							{ id }
-						)
-						tx.insert(
-							app.transactions,
-							{
-								organizationId,
-								accountId: account.id,
-								categoryId: category.id,
-								kind: 'income',
-								amountMinor: 100,
-								currency: 'USD',
-								bookedOn: '2026-10-15',
-								paymentMethod: 'check',
-								source: 'manual',
-								checkDetailsId: id
-							},
-							{ id }
-						)
-					})
-					await write.wait({ tier: 'global' })
-					if (scenario.role)
-						await db
-							.insert(app.organizationMembers, {
-								organizationId,
-								userId: subjectId,
-								role: scenario.role,
-								accountAccessMode: scenario.mode
-							})
-							.wait({ tier: 'global' })
-					if (scenario.grant)
-						await db
-							.insert(app.accountMemberships, {
-								organizationId,
-								accountId: account.id,
-								userId: subjectId,
-								access: scenario.grant
-							})
-							.wait({ tier: 'global' })
-					return { id, accountId: account.id }
-				},
-				{ organizationId, subjectId, scenario }
-			)
-			const outcome = await subject.evaluate(
-				async ({ fixture, organizationId }) => {
-					const { app, db } = window.workspacePermissionTest
-					const row = await db.one(app.checkDetails.where({ id: fixture.id }), { tier: 'remote' })
-					let insert = 'accepted',
-						edit = 'accepted'
-					try {
-						await db
-							.insert(app.checkDetails, {
-								organizationId,
-								accountId: fixture.accountId,
-								transactionId: crypto.randomUUID(),
-								checkNumber: 'candidate',
-								checkDate: '2026-10-15'
-							})
-							.wait({ tier: 'global' })
-					} catch (error) {
-						insert = error instanceof Error ? error.message : 'rejected'
-					}
-					try {
-						await db
-							.upsert(app.checkDetails, fixture.id, {
-								organizationId,
-								accountId: fixture.accountId,
-								transactionId: fixture.id,
-								checkNumber: 'member edit',
-								checkDate: '2026-10-16'
-							})
-							.wait({ tier: 'global' })
-					} catch (error) {
-						edit = error instanceof Error ? error.message : 'rejected'
-					}
-					return { readable: Boolean(row), insert, edit }
-				},
-				{ fixture, organizationId }
-			)
-			expect(outcome.readable).toBe(scenario.read)
-			for (const result of [outcome.insert, outcome.edit]) {
-				if (scenario.write) expect(result).toBe('accepted')
-				else expect(result).toMatch(/AuthorizationDenied|permission_denied/)
-			}
-			const retained = await page.evaluate(async (id) => {
-				const { app, db } = window.workspacePermissionTest
-				return (await db.one(app.checkDetails.where({ id }), { tier: 'remote' }))?.checkNumber
-			}, fixture.id)
-			expect(retained).toBe(scenario.write ? 'member edit' : 'owner check')
-		} finally {
-			await context.close()
-		}
-	})
-}
 
 for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 	test(`permission integrity: ${kind} tag compatibility and income methods`, async ({ page }) => {
@@ -1128,19 +748,15 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 					)
 				)
 				let imported = null
+				let manualWithoutMethod = null
 				if (kind === 'income') {
-					denied.push(
-						await attempt(() =>
-							db
-								.insert(app.transactions, { ...values, paymentMethod: null })
-								.wait({ tier: 'global' })
-						)
-					)
-					denied.push(
-						await attempt(() =>
-							db.update(app.transactions, row.id, { paymentMethod: null }).wait({ tier: 'global' })
-						)
-					)
+					const manual = await db
+						.insert(app.transactions, { ...values, paymentMethod: null })
+						.wait({ tier: 'global' })
+					await db
+						.update(app.transactions, row.id, { paymentMethod: null })
+						.wait({ tier: 'global' })
+					manualWithoutMethod = manual.id
 					const saved = await db
 						.insert(app.transactions, {
 							...values,
@@ -1154,7 +770,13 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 				const retained = await db.one(app.transactionTags.where({ id: link.id }), {
 					tier: 'remote'
 				})
-				return { denied, invalidKinds, retained: retained?.tagId === tag.id, imported }
+				return {
+					denied,
+					invalidKinds,
+					retained: retained?.tagId === tag.id,
+					imported,
+					manualWithoutMethod
+				}
 			},
 			{ organizationId, kind }
 		)
@@ -1162,6 +784,9 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 			expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
 		for (const outcome of results.invalidKinds) expect(outcome).not.toBe('accepted')
 		expect(results.retained).toBe(true)
-		if (kind === 'income') expect(results.imported).toBeTruthy()
+		if (kind === 'income') {
+			expect(results.imported).toBeTruthy()
+			expect(results.manualWithoutMethod).toBeTruthy()
+		}
 	})
 }

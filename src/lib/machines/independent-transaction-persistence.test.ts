@@ -104,6 +104,18 @@ describe('independent transaction persistence', () => {
 		})
 	})
 
+	it('rejects a selected tag archived before transaction persistence', async () => {
+		const f = fixture()
+		f.all.mockResolvedValue([{ ...existingTag, archivedAt: new Date('2026-10-23') }])
+		await expect(toPromise(f.start())).resolves.toMatchObject({
+			outcome: 'failed',
+			settlement: 'rejected'
+		})
+		expect(f.insert).not.toHaveBeenCalled()
+		expect(f.commit).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledOnce()
+	})
+
 	it('does not query tags when no tags are selected', async () => {
 		const f = fixture()
 		await expect(

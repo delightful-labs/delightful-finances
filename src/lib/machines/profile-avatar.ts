@@ -120,10 +120,6 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 		observation: ({ context, event }) =>
 			event.type === 'OBSERVE' ? event.observation : context.observation
 	})
-	const gate = (next: string) =>
-		model.createStateConfig({
-			always: [{ guard: 'interrupted', target: 'cleanup' }, { target: next }]
-		})
 	const clear = model.assign({
 		request: undefined,
 		draft: undefined,
@@ -225,34 +221,45 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 										if (draft.action !== 'upload') throw new Error('Missing avatar upload')
 										return draft.file
 									},
-									onDone: {
-										target: 'beforeInitialize',
-										actions: assign({ bitmap: ({ event }) => event.output })
-									},
+									onDone: [
+										{
+											guard: 'interrupted',
+											target: 'cleanup',
+											actions: assign({ bitmap: ({ event }) => event.output })
+										},
+										{
+											target: 'initializing',
+											actions: assign({ bitmap: ({ event }) => event.output })
+										}
+									],
 									onError: { target: 'cleanup', actions: 'fail' }
 								}
 							},
-							beforeInitialize: gate('initializing'),
 							initializing: {
 								invoke: {
 									src: 'initialize',
-									onDone: 'beforeCanvas',
+									onDone: [
+										{ guard: 'interrupted', target: 'cleanup' },
+										{ target: 'creatingCanvas' }
+									],
 									onError: { target: 'cleanup', actions: 'fail' }
 								}
 							},
-							beforeCanvas: gate('creatingCanvas'),
 							creatingCanvas: {
 								invoke: {
 									src: 'canvas',
 									input: ({ context }) => required(context.bitmap),
-									onDone: {
-										target: 'beforeResize',
-										actions: assign({ canvas: ({ event }) => event.output })
-									},
+									onDone: [
+										{
+											guard: 'interrupted',
+											target: 'cleanup',
+											actions: assign({ canvas: ({ event }) => event.output })
+										},
+										{ target: 'resizing', actions: assign({ canvas: ({ event }) => event.output }) }
+									],
 									onError: { target: 'cleanup', actions: 'fail' }
 								}
 							},
-							beforeResize: gate('resizing'),
 							resizing: {
 								invoke: {
 									src: 'resize',
@@ -260,19 +267,19 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 										bitmap: required(context.bitmap),
 										canvas: required(context.canvas)
 									}),
-									onDone: 'beforeEncode',
+									onDone: [{ guard: 'interrupted', target: 'cleanup' }, { target: 'encoding' }],
 									onError: { target: 'cleanup', actions: 'fail' }
 								}
 							},
-							beforeEncode: gate('encoding'),
 							encoding: {
 								invoke: {
 									src: 'encode',
 									input: ({ context }) => required(context.canvas),
 									onDone: [
+										{ guard: 'interrupted', target: 'cleanup' },
 										{
 											guard: ({ event }) => event.output instanceof Blob,
-											target: 'beforeRead',
+											target: 'readingBytes',
 											actions: assign({ blob: ({ event }) => event.output ?? undefined })
 										},
 										{ target: 'cleanup', actions: 'fail' }
@@ -280,19 +287,24 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 									onError: { target: 'cleanup', actions: 'fail' }
 								}
 							},
-							beforeRead: gate('readingBytes'),
 							readingBytes: {
 								invoke: {
 									src: 'read',
 									input: ({ context }) => required(context.blob),
-									onDone: {
-										target: 'beforeValidate',
-										actions: assign({ bytes: ({ event }) => event.output })
-									},
+									onDone: [
+										{
+											guard: 'interrupted',
+											target: 'cleanup',
+											actions: assign({ bytes: ({ event }) => event.output })
+										},
+										{
+											target: 'validatingBytes',
+											actions: assign({ bytes: ({ event }) => event.output })
+										}
+									],
 									onError: { target: 'cleanup', actions: 'fail' }
 								}
 							},
-							beforeValidate: gate('validatingBytes'),
 							validatingBytes: {
 								invoke: {
 									src: 'validate',

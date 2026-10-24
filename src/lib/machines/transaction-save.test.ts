@@ -180,6 +180,35 @@ describe('staged transaction save', () => {
 })
 
 describe('staged Check recovery and interruptions', () => {
+	it('retains the allocated checkpoint when cancellation arrives during allocation', async () => {
+		const f = fixture()
+		const allocated =
+			Promise.withResolvers<import('#lib/transaction-save-contract.js').TransactionCheckpoint>()
+		const logic = f.machine.provide({
+			actors: { allocate: fromPromise(() => allocated.promise) }
+		})
+		const actor = f.actor(values, logic)
+		await vi.waitFor(() =>
+			expect(actor.getSnapshot().value).toMatchObject({ running: { flow: 'allocating' } })
+		)
+		actor.send({ type: 'CANCEL' })
+		allocated.resolve({
+			version: 1,
+			scope: { identityId: 'user', organizationId, binding, kind: 'expense' },
+			accountId,
+			transactionId,
+			checkId,
+			checkIntent: 'new',
+			checkSettlement: 'notStarted',
+			transactionSettlement: 'notStarted'
+		})
+		await expect(toPromise(actor)).resolves.toMatchObject({
+			outcome: 'cancelled',
+			settlement: 'notStarted',
+			checkpoint: { transactionId, checkId }
+		})
+	})
+
 	it('retains a saved Check after ledger rejection and retries with the same IDs', async () => {
 		const f = fixture()
 		let rejectLedger = true

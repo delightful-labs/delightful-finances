@@ -176,10 +176,10 @@ describe('Check creation interruptions', () => {
 		opened.resolve(f.tx)
 		await expect(toPromise(actor)).resolves.toMatchObject({
 			outcome: 'scopeChanged',
-			settlement: 'notStarted'
+			settlement: 'rejected'
 		})
 		expect(f.insert).not.toHaveBeenCalled()
-		expect(f.rollback).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledTimes(1)
 	})
 
 	it('rolls back after an issued stage settles instead of committing on cancellation', async () => {

@@ -144,6 +144,32 @@ time; leave unrelated audits as explicit unchecked tasks rather than expanding t
 
 ## Let states own behavior
 
+### Prefer guarded invoke completion over route-only states
+
+XState has `entry` and `exit` actions, not a separate `before` hook. Use an `always` transition when
+the state represents a meaningful assessment or decision. Avoid adding a transient `before...`
+state solely to check interruption and immediately route to the next invoked operation. Put those
+guards and routes in the preceding invoke's ordered `onDone` transition array instead. This keeps
+the completion boundary and its next decision together without adding a state that has no behavior
+of its own.
+
+Keep a separate state when it owns a real business decision, needs to be observed while work is
+pending, accepts its own events, or performs a distinct operation. Do not remove assessment states
+such as `assessingCheck` just because they use `always`; their guarded branches are the workflow's
+policy. Likewise, `entry` actions are synchronous and do not replace an invoked operation or its
+error path.
+
+Guards select a transition from the current context and event before that transition's actions run.
+If an `onDone` route depends on the invoked result, inspect `event.output` in the guard. If it depends
+on a value being assigned by the same transition, either derive the decision from `event.output` or
+keep a distinct decision state after the assignment; do not expect the guard to see the new context.
+
+When an invoke acquires a resource, every completion route must retain that resource in context
+before entering cleanup. If interruption arrived while acquisition was pending, route to rollback
+with the acquired handle assigned. After staging, check interruption in `onDone` and roll back
+instead of starting commit. This replaces a route-only gate without weakening cleanup or allowing a
+late result to start more work.
+
 Represent complete success, partial success, cancellation, and failures as actual states. Return typed
 terminal results so parents route outcomes without interpreting error-message strings. Classify an
 outcome once; persistence receives the chosen outcome rather than recalculating it from counters.
