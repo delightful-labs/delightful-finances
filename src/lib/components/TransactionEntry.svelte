@@ -140,6 +140,7 @@
 {:else if form.view.readiness.kind === 'ready'}
 	<TransactionForm
 		{kind}
+		paymentEntry={config.paymentEntry}
 		organizationId={filters.activeOrganizationId}
 		{accounts}
 		{defaultAccountId}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
 	import { withQueryParams } from '#lib/domain/query-params.js'
@@ -127,14 +128,7 @@
 		new Map((categories.current ?? []).map((row) => [row.id, row.name]))
 	)
 	const tagNamesByTransaction = $derived(
-		(links.current ?? []).reduce((result, link) => {
-			const name = (tags.current ?? []).find((tag) => tag.id === link.tagId)?.name
-			if (name) {
-				const names = result.get(link.transactionId) ?? []
-				result.set(link.transactionId, [...new Set([...names, name])])
-			}
-			return result
-		}, new Map<string, string[]>())
+		transactionTagNames(tags.current ?? [], links.current ?? [])
 	)
 	const groups = $derived(groupTransactionsByDate(visibleTransactions))
 </script>

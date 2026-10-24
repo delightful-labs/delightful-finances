@@ -1,3 +1,4 @@
+import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
@@ -32,7 +33,7 @@ type Plan = {
 		categoryId: string
 		amountMinor: number
 		currency: string
-		kind: 'income' | 'expense'
+		kind: TransactionKind
 		bookedOn: string
 		description: string | null
 		memo: string | null

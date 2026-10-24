@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import { getContext } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
@@ -40,18 +41,9 @@
 	const categoryNames = $derived(
 		new Map((categories.current ?? []).map((row) => [row.id, row.name]))
 	)
-	const tagNamesByTransaction = $derived.by(() => {
-		const names = new Map((tags.current ?? []).map((row) => [row.id, row.name]))
-		const result = new Map<string, string[]>()
-		for (const link of links.current ?? []) {
-			const name = names.get(link.tagId)
-			if (name)
-				result.set(link.transactionId, [
-					...new Set([...(result.get(link.transactionId) ?? []), name])
-				])
-		}
-		return result
-	})
+	const tagNamesByTransaction = $derived(
+		transactionTagNames(tags.current ?? [], links.current ?? [])
+	)
 </script>
 
 <svelte:head><title>{m['navigation.overview']()} · {m['app.name']()}</title></svelte:head>

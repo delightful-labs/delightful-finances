@@ -1,3 +1,4 @@
+import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
 import { createTransactionSaveMachine, type TransactionSaveDb } from './transaction-save.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
@@ -275,10 +276,7 @@ export function createTransactionEntryFormOptions(
 		? {
 				...options,
 				complete: (scope: TransactionEntryScope, signal: AbortSignal) =>
-					navigate(
-						workspaceHref(scope.organizationId, scope.kind === 'income' ? '/income' : '/expenses'),
-						signal
-					)
+					navigate(workspaceHref(scope.organizationId, transactionPages[scope.kind].path), signal)
 			}
 		: options
 }
@@ -323,7 +321,7 @@ export function createTransactionEditFormOptions(
 				(original.paymentMethod !== 'check' ||
 					(original.check.kind === 'existing' &&
 						draft.checkId === original.check.id &&
-						(original.kind === 'expense' ||
+						(original.kind === EXPENSE ||
 							((draft.checkNumber ?? '').trim() === original.check.values?.checkNumber &&
 								draft.checkDate === original.check.values?.checkDate))))
 			)

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { TransactionKind, TransactionPaymentEntry } from '#lib/domain/transaction-kind.js'
 	import {
 		Button,
 		InputText,
@@ -22,6 +23,7 @@
 
 	let {
 		kind,
+		paymentEntry,
 		mode = 'create',
 		initialTransaction,
 		organizationId,
@@ -36,7 +38,8 @@
 		oncancel,
 		oninput
 	}: {
-		kind: TransactionDetail['kind']
+		kind: TransactionKind
+		paymentEntry: TransactionPaymentEntry
 		mode?: 'create' | 'edit'
 		initialTransaction?: Pick<
 			TransactionDetail,
@@ -192,7 +195,7 @@
 					errorMessage={fieldInvalid(issues, 'bookedOn') ? m['transactions.date_invalid']() : ''}
 				/>
 
-				{#if kind === 'income'}
+				{#if paymentEntry === 'inline'}
 					<Select
 						label={m['labels.subject_method']({ subject: m['nouns.payment']({ count: 1 }) })}
 						id="transaction-payment-method"
@@ -227,7 +230,7 @@
 					{/key}
 				{/if}
 
-				{#if kind === 'expense' && initialTransaction?.paymentMethod}
+				{#if paymentEntry === 'preserve' && initialTransaction?.paymentMethod}
 					<input type="hidden" name="paymentMethod" value={initialTransaction.paymentMethod} />
 					{#if initialTransaction.checkId}<input
 							type="hidden"

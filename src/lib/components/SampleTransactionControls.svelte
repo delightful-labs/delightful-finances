@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { Button, Text } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 	let {
@@ -8,7 +9,7 @@
 		failed,
 		onadd
 	}: {
-		kind: 'income' | 'expense'
+		kind: TransactionKind
 		busy: boolean
 		saved: number
 		failed: boolean

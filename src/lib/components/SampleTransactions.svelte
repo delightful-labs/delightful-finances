@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscriptionOne, QuerySubscription } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
@@ -25,7 +26,7 @@
 		type DeveloperMenuContent
 	} from '#lib/developer-menu.js'
 
-	let { kind }: { kind: 'income' | 'expense' } = $props()
+	let { kind }: { kind: TransactionKind } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const developerMenu = getContext<DeveloperMenuContent>(developerMenuKey)
 	const accounts = new QuerySubscription(() =>

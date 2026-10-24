@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { app, transactionDetailQuery } from '#lib/schema.js'
@@ -95,7 +96,7 @@
 			organizationId,
 			binding: session.current.client?.db ?? null,
 			sessionReady: session.current.status === 'ready',
-			kind: current?.kind ?? 'expense',
+			kind: current?.kind ?? EXPENSE,
 			transactionId,
 			membership: observeRow(membershipQuery.current),
 			grants: observeRows(grantsQuery.current),
@@ -187,6 +188,7 @@
 					<TransactionForm
 						mode="edit"
 						kind={transaction.kind}
+						paymentEntry={transactionPages[transaction.kind].paymentEntry}
 						{initialTransaction}
 						oninput={entryController.input}
 						organizationId={filters.activeOrganizationId}

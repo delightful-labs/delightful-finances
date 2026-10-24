@@ -1,3 +1,4 @@
+import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
@@ -28,7 +29,7 @@ type Values = {
 	organizationId: string
 	accountId: string
 	categoryId: string
-	kind: 'income' | 'expense'
+	kind: TransactionKind
 	bookedOn: string
 	amountMinor: number
 	currency: string
@@ -59,7 +60,7 @@ type Context = Input & {
 	parsed: ReturnType<typeof providerTransactionSchema.safeParse>
 	transaction: Transaction | undefined
 	amount: ReturnType<typeof parseAmountMinor> | undefined
-	kind: 'income' | 'expense'
+	kind: TransactionKind
 	category: Category | undefined
 	date: Date | undefined
 	validated: ReturnType<typeof appTransactionSchema.safeParse> | undefined
