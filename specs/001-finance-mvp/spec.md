@@ -153,10 +153,28 @@ These requirements record approved compatibility decisions. Transfer creation, l
 5. A person lacking edit permission for either account cannot change the pairing. A person who can read only one account can still read its transaction without receiving hidden-counterpart details; delete permission is checked separately for each deleted entry.
 6. Moving money between two workspaces owned by the same person remains expense/income in the respective workspace totals. An external-account movement can be recorded with no counterpart in the app.
 
+### Approved multi-currency foundation (future functionality)
+
+These requirements record approved compatibility decisions. Non-USD account creation/entry and currency-aware entry changes remain deferred; current USD MVP behavior is not expanded by this specification update.
+
+- **FR-037 — Account currency**: Each financial account MUST have exactly one currency. Every transaction MUST use its account's currency and retain that currency on the transaction. Once an account has transactions, its currency MUST NOT be changed; users needing a different currency MUST create another account rather than reinterpret historical amounts.
+- **FR-038 — Separate totals**: Totals MUST remain separate by currency. For example, USD 500 and EUR 200 MUST NOT be added into a single monetary total. The approved internal-transfer reporting exclusions still apply within these currency-separated totals. Converted reporting is a separate future feature requiring explicit exchange-rate rules.
+- **FR-039 — Workspace default**: A workspace's default currency MUST prefill new financial accounts. Changing that default MUST NOT change existing account or transaction currencies, convert amounts, or reinterpret historical data.
+- **FR-040 — Currency precision**: Amount entry, validation, import, and display MUST respect the currency's minor-unit precision rather than assume two decimal places. For example, JPY uses zero decimal places, USD two, and KWD three. Entry MUST reject excess decimal places rather than silently round. Stored amounts MUST remain exact integer minor units within the supported safe-integer range. Introducing currency-aware behavior MUST preserve existing stored amounts and currencies without rescaling or reinterpreting them; incompatible legacy records require explicit review rather than silent correction.
+- **FR-041 — Cross-currency transfers**: Transfers between accounts with different currencies MUST retain each side's explicitly supplied amount and currency under FR-031. Neither a workspace default nor an online exchange rate MUST determine or replace either recorded amount.
+
+**Acceptance scenarios for the future implementation**:
+
+1. An account with transaction history cannot have its currency changed. Existing transactions retain their original account currency and amounts when multi-currency support is introduced.
+2. A workspace with USD 500 and EUR 200 reports those totals separately, with no implied conversion or combined monetary total.
+3. Changing a workspace default from USD to EUR prefills EUR for a new account while leaving existing USD accounts and transactions unchanged.
+4. JPY 100, USD 1.23, and KWD 1.234 correspond to integer minor-unit amounts of 100, 123, and 1234. Entries with excess decimal places are rejected without rounding; stored values survive display and editing without precision loss.
+5. A cross-currency transfer preserves both supplied amounts even when they differ from an online exchange-rate estimate. No conversion is performed automatically.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
-- Foreign exchange conversion or non-USD entry UI.
+- Foreign exchange conversion or non-USD entry UI. The approved multi-currency foundation above constrains future implementation and compatibility; it does not ship those features.
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
 - Linked-transfer implementation and migration. The approved transfer foundation above uses linked expense/income transactions rather than a third transaction kind.
 - Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
@@ -176,7 +194,7 @@ These requirements record approved compatibility decisions. Transfer creation, l
 - **Profile**: login-identity display profile with a display name and optional avatar, reused across workspaces. Profile avatar upload is included in MVP scope.
 - **Organization**: personal or business workspace with a default currency.
 - **Organization Member**: organization/user association with owner, admin, member, or viewer role.
-- **Account**: USD cash/bank/card ledger belonging to an organization; archivable.
+- **Account**: cash/bank/card ledger belonging to an organization; archivable. MVP entry is USD; future multi-currency accounts follow the fixed-currency rules above.
 - **Account Membership**: explicit read/write grant to an account for an org member in `selected` access mode.
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
 - **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
