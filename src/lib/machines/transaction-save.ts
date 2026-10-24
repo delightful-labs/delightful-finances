@@ -1,3 +1,5 @@
+import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
+import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 import { assign, enqueueActions, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
@@ -68,7 +70,8 @@ function matchingLedger(context: Context) {
 		row.categoryId === previous.categoryId &&
 		row.kind === previous.kind &&
 		row.source === previous.source.source &&
-		(previous.source.source !== 'simplefin' || row.externalId === previous.source.externalId) &&
+		(previous.source.source !== TRANSACTION_SOURCE.SIMPLEFIN ||
+			row.externalId === previous.source.externalId) &&
 		row.amountMinor === previous.money.amountMinor &&
 		row.currency === previous.money.currency &&
 		row.bookedOn === previous.bookedOn &&
@@ -182,12 +185,13 @@ export function createTransactionSaveMachine(
 					accountId: input.values.accountId,
 					transactionId: input.scope.transactionId ?? crypto.randomUUID(),
 					checkId:
-						input.values.paymentMethod === 'check'
+						input.values.paymentMethod === PAYMENT_METHOD.CHECK
 							? input.values.check.kind === 'existing'
 								? input.values.check.id
 								: crypto.randomUUID()
 							: null,
-					checkIntent: input.values.paymentMethod === 'check' ? input.values.check.kind : 'none',
+					checkIntent:
+						input.values.paymentMethod === PAYMENT_METHOD.CHECK ? input.values.check.kind : 'none',
 					checkSettlement: 'notStarted',
 					transactionSettlement: 'notStarted'
 				})
@@ -418,7 +422,8 @@ export function createTransactionSaveMachine(
 								always: [
 									{ guard: 'interrupted', target: 'finishing' },
 									{
-										guard: ({ context }) => required(context.values).paymentMethod !== 'check',
+										guard: ({ context }) =>
+											required(context.values).paymentMethod !== PAYMENT_METHOD.CHECK,
 										target: 'reobserving'
 									},
 									{
@@ -429,7 +434,7 @@ export function createTransactionSaveMachine(
 										guard: ({ context }) => {
 											const v = required(context.values)
 											return (
-												v.paymentMethod === 'check' &&
+												v.paymentMethod === PAYMENT_METHOD.CHECK &&
 												v.check.kind === 'new' &&
 												['notStarted', 'rejected'].includes(
 													required(context.checkpoint).checkSettlement
@@ -636,7 +641,7 @@ export function createTransactionSaveMachine(
 										transactionId: required(context.checkpoint).transactionId,
 										values: required(required(context.checkpoint).submitted),
 										mode: context.input?.request.scope.transactionId ? 'edit' : 'create',
-										...(context.values?.paymentMethod === 'check' &&
+										...(context.values?.paymentMethod === PAYMENT_METHOD.CHECK &&
 										context.check &&
 										context.check.accountId !== context.values.accountId
 											? { moveCheckFromAccountId: context.check.accountId }

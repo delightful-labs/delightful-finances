@@ -1,3 +1,4 @@
+import { PAYMENT_METHOD, type PaymentMethod } from '#lib/domain/payment-method.js'
 import {
 	allOf,
 	anyOf,
@@ -13,7 +14,7 @@ type TransactionReference = {
 	organizationId: string
 	accountId: string
 	checkId: string | null
-	paymentMethod: 'cash' | 'check' | 'transfer' | 'electronic' | null
+	paymentMethod: PaymentMethod | null
 }
 
 /**
@@ -33,13 +34,13 @@ export function checkReferenceCondition({
 			{ checkId: { isNull: true } },
 			anyOf([
 				{ paymentMethod: { isNull: true } },
-				{ paymentMethod: 'cash' },
-				{ paymentMethod: 'transfer' },
-				{ paymentMethod: 'electronic' }
+				{ paymentMethod: PAYMENT_METHOD.CASH },
+				{ paymentMethod: PAYMENT_METHOD.TRANSFER },
+				{ paymentMethod: PAYMENT_METHOD.ELECTRONIC }
 			])
 		]),
 		allOf([
-			{ paymentMethod: 'check', checkId: { isNull: false } },
+			{ paymentMethod: PAYMENT_METHOD.CHECK, checkId: { isNull: false } },
 			checkExists({
 				id: transaction.checkId,
 				organizationId: transaction.organizationId,

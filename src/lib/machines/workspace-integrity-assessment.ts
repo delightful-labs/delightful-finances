@@ -1,3 +1,4 @@
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { assign, setup } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app, type Organization, type OrganizationMember } from '../schema.js'
@@ -109,7 +110,9 @@ export const workspaceIntegrityAssessment = setup<
 				},
 				{
 					guard: ({ context }) =>
-						['owner', 'admin'].includes(context.records.memberships[0]?.role ?? ''),
+						[ORGANIZATION_ROLE.OWNER, ORGANIZATION_ROLE.ADMIN].some(
+							(role) => role === context.records.memberships[0]?.role
+						),
 					target: 'classifying',
 					actions: assign({
 						plan: ({ context }) => {

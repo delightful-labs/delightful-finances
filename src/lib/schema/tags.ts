@@ -1,3 +1,4 @@
+import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { schema as s } from 'jazz-tools'
 
 export const tagsSchema = {
@@ -5,7 +6,7 @@ export const tagsSchema = {
 		{
 			organizationId: s.uuid(),
 			name: s.string(),
-			kind: s.enum('expense', 'income'),
+			kind: s.enum(EXPENSE, INCOME),
 			categoryId: s.uuid().optional(),
 			archivedAt: s.timestamp().optional()
 		},

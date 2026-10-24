@@ -1,3 +1,6 @@
+import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
+import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
+import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { schema as s } from 'jazz-tools'
 import {
 	amountMinorValue,
@@ -22,7 +25,7 @@ export const transactionsSchema = {
 				from: (value) => amountMinorValue.parse(Number(value)),
 				to: (value) => BigInt(amountMinorValue.parse(value))
 			}),
-			kind: s.enum('expense', 'income'),
+			kind: s.enum(EXPENSE, INCOME),
 			currency: currencyColumn.column,
 			categoryId: s.uuid(),
 			accountId: s.uuid(),
@@ -31,10 +34,17 @@ export const transactionsSchema = {
 			bookedOn: bookedOnColumn.column,
 			description: s.string().optional(),
 			memo: s.string().optional(),
-			paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
+			paymentMethod: s
+				.enum(
+					PAYMENT_METHOD.CASH,
+					PAYMENT_METHOD.CHECK,
+					PAYMENT_METHOD.TRANSFER,
+					PAYMENT_METHOD.ELECTRONIC
+				)
+				.optional(),
 			checkDetailsId: s.uuid().optional(),
 			...transactionCheckColumns,
-			source: s.enum('manual', 'simplefin'),
+			source: s.enum(TRANSACTION_SOURCE.MANUAL, TRANSACTION_SOURCE.SIMPLEFIN),
 			externalId: externalIdColumn.column.optional(),
 			batchId: s.uuid().optional()
 		},

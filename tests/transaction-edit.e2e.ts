@@ -2,7 +2,14 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function seedTransaction(
 	page: Page,
-	scenario: 'manual' | 'imported' | 'imported-income' | 'archived' | 'viewer' | 'check' = 'manual'
+	scenario:
+		| 'manual'
+		| 'imported'
+		| 'imported-income'
+		| 'archived'
+		| 'viewer'
+		| 'check'
+		| 'expense-check' = 'manual'
 ) {
 	await page.goto('/accounts')
 	await expect(
@@ -58,7 +65,7 @@ async function seedTransaction(
 		}
 		const isIncome = scenario === 'check' || scenario === 'imported-income'
 		const check =
-			scenario === 'check'
+			scenario === 'check' || scenario === 'expense-check'
 				? await db
 						.insert(app.checks, {
 							organizationId: organization.id,
@@ -144,6 +151,7 @@ async function persisted(page: Page, id: string) {
 			source: row?.source,
 			externalId: row?.externalId,
 			paymentMethod: row?.paymentMethod,
+			checkId: row?.checkId,
 			links: links.map(({ id, tagId }) => ({ id, tagId })),
 			checkNumber: check?.checkNumber,
 			checkAccountId: check?.accountId
@@ -385,3 +393,71 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 		await expect(save).toBeDisabled()
 	})
 }
+
+test('expense edits preserve an existing check without exposing inline payment controls', async ({
+	page
+}) => {
+	const seed = await seedTransaction(page, 'expense-check')
+	const original = await persisted(page, seed.id)
+	expect(original.checkId).toBeTruthy()
+	await page.goto(`/expenses/${seed.id}`)
+	await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
+	await expect(page.getByLabel('Payment method', { exact: true })).toHaveCount(0)
+	await expect(page.locator('[name="checkNumber"]')).toHaveCount(0)
+	await expect(page.locator('input[name="paymentMethod"]')).toHaveValue('check')
+	await expect(page.locator('input[name="checkId"]')).toHaveValue(original.checkId ?? '')
+	await page.getByLabel('Memo (additional notes)', { exact: true }).fill('Expense check retained')
+	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await expect
+		.poll(() => persisted(page, seed.id))
+		.toMatchObject({
+			memo: 'Expense check retained',
+			paymentMethod: 'check',
+			checkId: original.checkId,
+			checkNumber: '100',
+			checkAccountId: seed.accountId
+		})
+})
+
+test('list and overview show archived tag names and react to renaming', async ({ page }) => {
+	const seed = await seedTransaction(page)
+	await page.evaluate(async (id) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const date = new Date()
+		const bookedOn = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+		await db
+			.update(app.transactions, id, { bookedOn, description: 'Tagged cleanup row' })
+			.wait({ tier: 'local' })
+	}, seed.id)
+	for (const path of ['/expenses', '/']) {
+		await page.goto(path)
+		const row = page
+			.locator('li')
+			.filter({ has: page.getByText('Tagged cleanup row', { exact: true }) })
+		await expect(row.locator('.classification')).toContainText('Historical')
+	}
+	await page.evaluate(async (id) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		await db.update(app.tags, id, { name: 'Renamed historical' }).wait({ tier: 'local' })
+	}, seed.tagId)
+	const row = page
+		.locator('li')
+		.filter({ has: page.getByText('Tagged cleanup row', { exact: true }) })
+	await expect(row.locator('.classification')).toContainText('Renamed historical')
+	await page.goto('/expenses')
+	await expect(row.locator('.classification')).toContainText('Renamed historical')
+})

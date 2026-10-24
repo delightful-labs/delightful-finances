@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
 	import Icon from './AppIcon.svelte'
 	import { Button, Table, StatusMessage } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
@@ -66,9 +67,9 @@
 					<tr>
 						<td>{account.name}</td>
 						<td>
-							{account.kind === 'cash'
+							{account.kind === ACCOUNT_KIND.CASH
 								? m['labels.cash']()
-								: account.kind === 'bank'
+								: account.kind === ACCOUNT_KIND.BANK
 									? m['accounts.type.bank']()
 									: m['accounts.type.card']()}
 						</td>

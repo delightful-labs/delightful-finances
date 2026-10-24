@@ -1,9 +1,10 @@
+import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { z } from 'zod'
 
 export const appTagSchema = z.strictObject({
 	organizationId: z.uuid(),
 	name: z.string().trim().min(1),
-	kind: z.enum(['expense', 'income']),
+	kind: z.enum([EXPENSE, INCOME]),
 	categoryId: z.uuid().nullable().default(null),
 	archivedAt: z.date().nullable().default(null)
 })

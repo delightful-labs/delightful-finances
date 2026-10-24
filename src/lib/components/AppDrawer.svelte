@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { INCOME_PATH, EXPENSES_PATH } from '#lib/domain/transaction-kind.js'
 	import Icon from './AppIcon.svelte'
 	import AppNavigationLink from './AppNavigationLink.svelte'
 	import { Button, Drawer, Details, Navigation, Checkbox, StatusMessage } from 'delightful-ui'
@@ -100,7 +101,7 @@
 			</li>
 			<li>
 				<AppNavigationLink
-					href="/expenses"
+					href={EXPENSES_PATH}
 					{pathname}
 					icon={ExpensesIcon}
 					label={m['nouns.expense']({ count: 2 })}
@@ -109,7 +110,7 @@
 			</li>
 			<li>
 				<AppNavigationLink
-					href="/income"
+					href={INCOME_PATH}
 					{pathname}
 					icon={IncomeIcon}
 					label={m['nouns.income']({ count: 1 })}

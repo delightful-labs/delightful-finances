@@ -1,3 +1,6 @@
+import type { PaymentMethod } from '#lib/domain/payment-method.js'
+import { TRANSACTION_SOURCE, type TransactionSource } from '#lib/domain/transaction-source.js'
+import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
@@ -32,13 +35,13 @@ type Plan = {
 		categoryId: string
 		amountMinor: number
 		currency: string
-		kind: 'income' | 'expense'
+		kind: TransactionKind
 		bookedOn: string
 		description: string | null
 		memo: string | null
-		source: 'manual' | 'simplefin'
+		source: TransactionSource
 		externalId?: string
-		paymentMethod: 'cash' | 'check' | 'transfer' | 'electronic' | null
+		paymentMethod: PaymentMethod | null
 		checkId: string | null
 	}
 	remove: string[]
@@ -123,7 +126,9 @@ function planTransaction(
 		description: values.description ?? null,
 		memo: values.memo ?? null,
 		source: values.source.source,
-		...(values.source.source === 'simplefin' ? { externalId: values.source.externalId } : {}),
+		...(values.source.source === TRANSACTION_SOURCE.SIMPLEFIN
+			? { externalId: values.source.externalId }
+			: {}),
 		paymentMethod: values.paymentMethod,
 		checkId: values.checkId
 	}
@@ -154,7 +159,8 @@ function editable(existing: TransactionRow | undefined, values: IndependentTrans
 		existing.organizationId === values.organizationId &&
 		existing.kind === values.kind &&
 		existing.source === values.source.source &&
-		(values.source.source !== 'simplefin' || existing.externalId === values.source.externalId)
+		(values.source.source !== TRANSACTION_SOURCE.SIMPLEFIN ||
+			existing.externalId === values.source.externalId)
 	)
 }
 const readMoveCheck = fromPromise(({ input }: { input: { tx: Transaction; id: string } }) =>

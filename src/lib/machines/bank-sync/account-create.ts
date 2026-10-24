@@ -1,3 +1,4 @@
+import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
 import { assign, fromPromise, enqueueActions, setup } from 'xstate'
 import { stableUuid } from '#lib/data.js'
 import { appAccountSchema } from '#lib/validation/accounts.js'
@@ -20,7 +21,7 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 				appAccountSchema.parse({
 					organizationId: input.work.scope.organizationId,
 					name: input.provider.name,
-					kind: 'bank',
+					kind: ACCOUNT_KIND.BANK,
 					currency: input.provider.currency
 				})
 			)

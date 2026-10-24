@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { EXPENSE } from '#lib/domain/transaction-kind.js'
 	import Icon from './AppIcon.svelte'
 	import { Button, Table } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
@@ -69,7 +70,7 @@
 				<tr>
 					<th scope="row">{category.name}</th>
 					<td
-						>{category.kind === 'expense'
+						>{category.kind === EXPENSE
 							? m['nouns.expense']({ count: 2 })
 							: m['nouns.income']({ count: 1 })}</td
 					>

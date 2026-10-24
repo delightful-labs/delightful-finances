@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { InputText, Select } from 'delightful-ui'
 	import type { Tag, Category } from '#lib/schema.js'
 	import type { ManagementView, ManagementScope } from '#lib/management-contract.js'
@@ -23,13 +24,13 @@
 		onRetryReadiness: () => void
 		categories: readonly Category[]
 	} = $props()
-	let kind = $state('expense')
+	let kind = $state<string>(EXPENSE)
 	let categoryId = $state('')
 	const draftRevision = $derived(view.draftRevision)
 	$effect(() => {
 		void scope
 		void draftRevision
-		kind = 'expense'
+		kind = EXPENSE
 		categoryId = ''
 	})
 </script>
@@ -63,15 +64,15 @@
 			id="tag-kind"
 			name="kind"
 			required
-			defaultValue="expense"
+			defaultValue={EXPENSE}
 			bind:value={kind}
 			disabled={!form.fieldsEditable}
 			onchange={() => {
 				categoryId = ''
 			}}
 		>
-			<option value="expense">{m['nouns.expense']({ count: 2 })}</option>
-			<option value="income">{m['nouns.income']({ count: 1 })}</option>
+			<option value={EXPENSE}>{m['nouns.expense']({ count: 2 })}</option>
+			<option value={INCOME}>{m['nouns.income']({ count: 1 })}</option>
 		</Select>
 		<Select
 			label={m['nouns.category']({ count: 1 })}
@@ -86,7 +87,7 @@
 			>
 			{#each categories.filter((category) => category.kind === kind) as category (category.id)}
 				<option value={category.id}
-					>{category.name} ({category.kind === 'expense'
+					>{category.name} ({category.kind === EXPENSE
 						? m['nouns.expense']({ count: 2 })
 						: m['nouns.income']({ count: 1 })})</option
 				>

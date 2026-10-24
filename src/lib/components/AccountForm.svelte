@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
 	import type { Snippet } from 'svelte'
 	import { InputText, Select } from 'delightful-ui'
 	import type {
@@ -76,9 +77,9 @@
 					subject: m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })
 				})}</option
 			>
-			<option value="cash">{m['labels.cash']()}</option>
-			<option value="bank">{m['accounts.type.bank']()}</option>
-			<option value="card">{m['accounts.type.card']()}</option>
+			<option value={ACCOUNT_KIND.CASH}>{m['labels.cash']()}</option>
+			<option value={ACCOUNT_KIND.BANK}>{m['accounts.type.bank']()}</option>
+			<option value={ACCOUNT_KIND.CARD}>{m['accounts.type.card']()}</option>
 		</Select>
 		<p>{m['labels.currency_code']({ code: 'USD' })}</p>
 	{/snippet}

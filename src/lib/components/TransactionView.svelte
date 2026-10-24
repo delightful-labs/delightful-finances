@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
+	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
 	import { withQueryParams } from '#lib/domain/query-params.js'
 	import { app } from '#lib/schema.js'
@@ -16,7 +18,17 @@
 	import PageContent from './PageContent.svelte'
 	import FloatingActionLink from './FloatingActionLink.svelte'
 
-	let { kind, showHeading = true }: { kind: 'income' | 'expense'; showHeading?: boolean } = $props()
+	let {
+		kind,
+		heading,
+		listPath,
+		showHeading = true
+	}: {
+		kind: TransactionKind
+		heading: string
+		listPath: string
+		showHeading?: boolean
+	} = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 
 	const requestedPage = $derived.by(() => {
@@ -30,15 +42,12 @@
 		})
 	}
 	function transactionHref(id: string) {
-		return withQueryParams(
-			`${kind === 'income' ? '/income' : '/expenses'}/${encodeURIComponent(id)}`,
-			{
-				page: requestedPage > 1 ? requestedPage : null
-			}
-		)
+		return withQueryParams(`${listPath}/${encodeURIComponent(id)}`, {
+			page: requestedPage > 1 ? requestedPage : null
+		})
 	}
 	const newHref = $derived(
-		withQueryParams(kind === 'income' ? '/income/new' : '/expenses/new', {
+		withQueryParams(`${listPath}/new`, {
 			page: requestedPage > 1 ? requestedPage : null
 		})
 	)
@@ -119,22 +128,13 @@
 		new Map((categories.current ?? []).map((row) => [row.id, row.name]))
 	)
 	const tagNamesByTransaction = $derived(
-		(links.current ?? []).reduce((result, link) => {
-			const name = (tags.current ?? []).find((tag) => tag.id === link.tagId)?.name
-			if (name) {
-				const names = result.get(link.transactionId) ?? []
-				result.set(link.transactionId, [...new Set([...names, name])])
-			}
-			return result
-		}, new Map<string, string[]>())
+		transactionTagNames(tags.current ?? [], links.current ?? [])
 	)
 	const groups = $derived(groupTransactionsByDate(visibleTransactions))
 </script>
 
 <PageContent>
-	{#if showHeading}<PageHeader
-			title={kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })}
-		/>{/if}
+	{#if showHeading}<PageHeader title={heading} />{/if}
 
 	<QueryContent
 		queries={[transactions, accounts, categories, tags, links]}
@@ -163,6 +163,6 @@
 <FloatingActionLink
 	href={newHref}
 	label={m['actions.add_subject']({
-		subject: kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })
+		subject: heading
 	})}
 />

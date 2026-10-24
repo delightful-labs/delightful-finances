@@ -1,3 +1,6 @@
+import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
+import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { schema as s } from 'jazz-tools'
 import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
 import { app, type OrganizationMember, type Tag, type TransactionRow } from './schema.js'
@@ -26,33 +29,36 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		policy.organizationMembers.exists.where({ organizationId, userId: session.user.account, role })
 
 	const isAdmin = (organizationId: IdExpression) =>
-		anyOf([hasRole(organizationId, 'owner'), hasRole(organizationId, 'admin')])
+		anyOf([
+			hasRole(organizationId, ORGANIZATION_ROLE.OWNER),
+			hasRole(organizationId, ORGANIZATION_ROLE.ADMIN)
+		])
 
 	const canReadAllAccounts = (organizationId: IdExpression) =>
 		anyOf([
 			policy.organizationMembers.exists.where({
 				organizationId,
 				userId: session.user.account,
-				role: 'member',
-				accountAccessMode: 'all'
+				role: ORGANIZATION_ROLE.MEMBER,
+				accountAccessMode: ACCOUNT_ACCESS.ALL
 			}),
 			policy.organizationMembers.exists.where({
 				organizationId,
 				userId: session.user.account,
-				role: 'viewer',
-				accountAccessMode: 'all'
+				role: ORGANIZATION_ROLE.VIEWER,
+				accountAccessMode: ACCOUNT_ACCESS.ALL
 			})
 		])
 
 	const canWriteAllAccounts = (organizationId: IdExpression) =>
 		anyOf([
-			hasRole(organizationId, 'owner'),
-			hasRole(organizationId, 'admin'),
+			hasRole(organizationId, ORGANIZATION_ROLE.OWNER),
+			hasRole(organizationId, ORGANIZATION_ROLE.ADMIN),
 			policy.organizationMembers.exists.where({
 				organizationId,
 				userId: session.user.account,
-				role: 'member',
-				accountAccessMode: 'all'
+				role: ORGANIZATION_ROLE.MEMBER,
+				accountAccessMode: ACCOUNT_ACCESS.ALL
 			})
 		])
 
@@ -74,11 +80,11 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		anyOf([
 			canWriteAllAccounts(organizationId),
 			allOf([
-				hasRole(organizationId, 'member'),
+				hasRole(organizationId, ORGANIZATION_ROLE.MEMBER),
 				policy.organizationMembers.exists.where({
 					organizationId,
 					userId: session.user.account,
-					accountAccessMode: 'selected'
+					accountAccessMode: ACCOUNT_ACCESS.SELECTED
 				}),
 				policy.accountMemberships.exists.where({
 					organizationId,
@@ -130,7 +136,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		anyOf([
 			isAdmin(member.organizationId),
 			allOf([
-				{ userId: session.user.account, role: 'owner' },
+				{ userId: session.user.account, role: ORGANIZATION_ROLE.OWNER },
 				policy.organizations.exists.where({
 					id: member.organizationId,
 					ownerId: session.user.account
@@ -185,18 +191,27 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 
 	policy.categories.allowRead.where((category) => isMember(category.organizationId))
 	policy.categories.allowInsert.where((category) =>
-		anyOf([isAdmin(category.organizationId), hasRole(category.organizationId, 'member')])
+		anyOf([
+			isAdmin(category.organizationId),
+			hasRole(category.organizationId, ORGANIZATION_ROLE.MEMBER)
+		])
 	)
 	policy.categories.allowUpdate
 		.whereOld((category) =>
 			allOf([
-				anyOf([isAdmin(category.organizationId), hasRole(category.organizationId, 'member')]),
+				anyOf([
+					isAdmin(category.organizationId),
+					hasRole(category.organizationId, ORGANIZATION_ROLE.MEMBER)
+				]),
 				{ isSystem: false }
 			])
 		)
 		.whereNew((category) =>
 			allOf([
-				anyOf([isAdmin(category.organizationId), hasRole(category.organizationId, 'member')]),
+				anyOf([
+					isAdmin(category.organizationId),
+					hasRole(category.organizationId, ORGANIZATION_ROLE.MEMBER)
+				]),
 				{ isSystem: false }
 			])
 		)
@@ -206,7 +221,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 
 	const tagReferencesAreValid = (tag: RowContext<Tag>) =>
 		allOf([
-			anyOf([{ kind: 'expense' }, { kind: 'income' }]),
+			anyOf([{ kind: EXPENSE }, { kind: INCOME }]),
 			anyOf([
 				{ categoryId: { isNull: true } },
 				policy.categories.exists.where({
@@ -220,15 +235,17 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	policy.tags.allowRead.where((tag) => isMember(tag.organizationId))
 	policy.tags.allowInsert.where((tag) =>
 		allOf([
-			anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]),
+			anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, ORGANIZATION_ROLE.MEMBER)]),
 			tagReferencesAreValid(tag)
 		])
 	)
 	policy.tags.allowUpdate
-		.whereOld((tag) => anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]))
+		.whereOld((tag) =>
+			anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, ORGANIZATION_ROLE.MEMBER)])
+		)
 		.whereNew((tag) =>
 			allOf([
-				anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, 'member')]),
+				anyOf([isAdmin(tag.organizationId), hasRole(tag.organizationId, ORGANIZATION_ROLE.MEMBER)]),
 				tagReferencesAreValid(tag),
 				// Kind and workspace are immutable so existing assignments stay compatible.
 				policy.tags.exists.where({
@@ -286,7 +303,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		allOf([
 			allowedTo.update('transaction'),
 			anyOf(
-				(['expense', 'income'] satisfies readonly TransactionRow['kind'][]).map((kind) =>
+				([EXPENSE, INCOME] satisfies readonly TransactionRow['kind'][]).map((kind) =>
 					allOf([
 						policy.transactions.exists.where({
 							id: link.transactionId,

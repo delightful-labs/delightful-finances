@@ -1,3 +1,7 @@
+import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
+import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
+import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
+import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
 import { createTransactionSaveMachine, type TransactionSaveDb } from './transaction-save.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
@@ -125,7 +129,7 @@ export function createTransactionEntryAvailability(binding: object) {
 						}) =>
 							f.membership?.userId !== f.identityId ||
 							f.membership?.organizationId !== f.organizationId ||
-							f.membership?.role === 'viewer',
+							f.membership?.role === ORGANIZATION_ROLE.VIEWER,
 						target: 'readOnly'
 					},
 					{
@@ -166,10 +170,11 @@ export function createTransactionEntryAvailability(binding: object) {
 							(f.transaction !== undefined &&
 								f.transaction !== null &&
 								(!validTransactionReferences(f, transactionAsInput(f.transaction)) ||
-									(f.transaction.source === 'simplefin' && !f.transaction.externalId?.trim()) ||
+									(f.transaction.source === TRANSACTION_SOURCE.SIMPLEFIN &&
+										!f.transaction.externalId?.trim()) ||
 									f.transaction.organizationId !== f.organizationId ||
 									f.transaction.id !== f.transactionId ||
-									(f.transaction.paymentMethod === 'check' && !f.transaction.check))),
+									(f.transaction.paymentMethod === PAYMENT_METHOD.CHECK && !f.transaction.check))),
 						target: 'unavailableReference'
 					},
 					{ target: 'checkingTags' }
@@ -275,10 +280,7 @@ export function createTransactionEntryFormOptions(
 		? {
 				...options,
 				complete: (scope: TransactionEntryScope, signal: AbortSignal) =>
-					navigate(
-						workspaceHref(scope.organizationId, scope.kind === 'income' ? '/income' : '/expenses'),
-						signal
-					)
+					navigate(workspaceHref(scope.organizationId, transactionPages[scope.kind].path), signal)
 			}
 		: options
 }
@@ -320,10 +322,10 @@ export function createTransactionEditFormOptions(
 				(draft.memo ?? '').trim() === (original.memo ?? '') &&
 				JSON.stringify(names(draft.tags ?? [])) === JSON.stringify(names(original.tags ?? [])) &&
 				(draft.paymentMethod || null) === original.paymentMethod &&
-				(original.paymentMethod !== 'check' ||
+				(original.paymentMethod !== PAYMENT_METHOD.CHECK ||
 					(original.check.kind === 'existing' &&
 						draft.checkId === original.check.id &&
-						(original.kind === 'expense' ||
+						(original.kind === EXPENSE ||
 							((draft.checkNumber ?? '').trim() === original.check.values?.checkNumber &&
 								draft.checkDate === original.check.values?.checkDate))))
 			)
@@ -350,18 +352,18 @@ function transactionAsInput(
 		description: transaction.description ?? undefined,
 		memo: transaction.memo ?? undefined,
 		source:
-			transaction.source === 'simplefin'
+			transaction.source === TRANSACTION_SOURCE.SIMPLEFIN
 				? ({
-						source: 'simplefin',
+						source: TRANSACTION_SOURCE.SIMPLEFIN,
 						externalId: transaction.externalId ?? ''
 					} satisfies TransactionSaveValues['source'])
-				: ({ source: 'manual' } satisfies TransactionSaveValues['source']),
+				: ({ source: TRANSACTION_SOURCE.MANUAL } satisfies TransactionSaveValues['source']),
 		tags: transaction.tags?.flatMap((link) => (link.tag ? [link.tag.name] : [])) ?? []
 	}
-	if (transaction.paymentMethod === 'check' && transaction.checkId)
+	if (transaction.paymentMethod === PAYMENT_METHOD.CHECK && transaction.checkId)
 		return {
 			...base,
-			paymentMethod: 'check',
+			paymentMethod: PAYMENT_METHOD.CHECK,
 			check: {
 				kind: 'existing',
 				id: transaction.checkId,
@@ -377,7 +379,8 @@ function transactionAsInput(
 		}
 	return {
 		...base,
-		paymentMethod: transaction.paymentMethod === 'check' ? null : transaction.paymentMethod,
+		paymentMethod:
+			transaction.paymentMethod === PAYMENT_METHOD.CHECK ? null : transaction.paymentMethod,
 		checkId: null
 	}
 }
@@ -409,10 +412,10 @@ function isTransactionFormDraft(value: unknown): value is Record<string, unknown
 		(!('checkDate' in value) || typeof value.checkDate === 'string') &&
 		(!('paymentMethod' in value) ||
 			value.paymentMethod === '' ||
-			value.paymentMethod === 'cash' ||
-			value.paymentMethod === 'check' ||
-			value.paymentMethod === 'transfer' ||
-			value.paymentMethod === 'electronic') &&
+			value.paymentMethod === PAYMENT_METHOD.CASH ||
+			value.paymentMethod === PAYMENT_METHOD.CHECK ||
+			value.paymentMethod === PAYMENT_METHOD.TRANSFER ||
+			value.paymentMethod === PAYMENT_METHOD.ELECTRONIC) &&
 		(!('tags' in value) ||
 			(Array.isArray(value.tags) && value.tags.every((tag: unknown) => typeof tag === 'string')))
 	)

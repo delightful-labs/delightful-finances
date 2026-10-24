@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { Button, Table } from 'delightful-ui'
 	import type { Tag } from '#lib/schema.js'
 	import type { ManagementView } from '#lib/management-contract.js'
@@ -62,9 +63,9 @@
 				<tr>
 					<th scope="row">{tag.name}</th>
 					<td
-						>{tag.kind === 'expense'
+						>{tag.kind === EXPENSE
 							? m['nouns.expense']({ count: 2 })
-							: tag.kind === 'income'
+							: tag.kind === INCOME
 								? m['nouns.income']({ count: 1 })
 								: m['tags.kind_unassigned']()}</td
 					>

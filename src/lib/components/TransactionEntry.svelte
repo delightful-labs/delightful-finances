@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { transactionPages, type TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { workspaceHref } from '#lib/domain/workspace-routes.js'
 	import { goto } from '$app/navigation'
 	import { observeRow, observeRows } from '#lib/observations.js'
@@ -29,7 +30,10 @@
 	import AccountCreation from '#lib/components/AccountCreation.svelte'
 	import TransactionForm from '#lib/components/TransactionForm.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
-	let { kind }: { kind: 'income' | 'expense' } = $props()
+	let { kind }: { kind: TransactionKind } = $props()
+	const config = $derived(transactionPages[kind])
+	const subject = $derived(m[config.noun]({ count: config.count }))
+	const title = $derived(m['actions.add_subject']({ subject }))
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accountOrder = getContext<AccountOrder>(accountOrderKey)
 
@@ -120,19 +124,8 @@
 	const form = createScopedFormController({ ...options, arrayFields: () => ['tags'] })
 </script>
 
-<svelte:head
-	><title
-		>{m['actions.add_subject']({
-			subject:
-				kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })
-		})} · {m['app.name']()}</title
-	></svelte:head
->
-<PageHeader
-	title={m['actions.add_subject']({
-		subject: kind === 'income' ? m['nouns.income']({ count: 1 }) : m['nouns.expense']({ count: 2 })
-	})}
-/>
+<svelte:head><title>{title} · {m['app.name']()}</title></svelte:head>
+<PageHeader {title} />
 
 <FormFeedback
 	view={form.view}
@@ -147,6 +140,7 @@
 {:else if form.view.readiness.kind === 'ready'}
 	<TransactionForm
 		{kind}
+		paymentEntry={config.paymentEntry}
 		organizationId={filters.activeOrganizationId}
 		{accounts}
 		{defaultAccountId}
@@ -156,9 +150,6 @@
 		view={form.view}
 		onsubmit={form.submit}
 		onreset={form.reset}
-		oncancel={() =>
-			goto(
-				workspaceHref(filters.activeOrganizationId, kind === 'income' ? '/income' : '/expenses')
-			)}
+		oncancel={() => goto(workspaceHref(filters.activeOrganizationId, config.path))}
 	/>
 {/if}
