@@ -209,4 +209,55 @@ success; the coordinator owns those decisions. Direct use with optional-method
 income still needs root policy alignment, because current root policy preserves a
 temporary manual-income method requirement from the old form contract. Do not wire
 this path until that permission rule and the existing income UI contract are aligned.
-No runtime tests are included before review.
+Runtime verification for the adoption batch is pending review.
+
+## Complete staged-save adoption batch
+
+User authorized one implementation batch followed by review before new tests.
+Ownership remains page -> scoped form -> submission/write -> staged save -> Check
+resource owner then atomic transaction/tag resource owner. Check writes now support
+explicit create/update intent; metadata update is independently settled before the
+ledger write. The ledger child supports create/edit; edit reads the ledger and its
+assignments inside the same SDK transaction, validates immutable scope/provenance,
+plans assignment additions/removals, stages and locally settles all ledger/tag writes.
+
+Coordinator states: validate request/checkpoint -> allocate stable IDs -> assess
+fresh scope -> reconcile uncertain ledger -> assess Check -> read Check -> check
+compatibility -> create/update Check -> record settlement -> reassess fresh scope
+-> save ledger -> record settlement -> classify success/partial/unresolved/failure.
+Interruption is a parallel priority region; in-flight resource children receive the
+interruption and drain before the coordinator publishes its checkpoint. Read-only
+queries may finish but cannot trigger further effects after interruption. Every
+child error marks an issued mutation unknown before returning recovery information.
+Unknown writes may be confirmed by matching remote rows and exact tag assignments;
+absence or incompatible rows are unresolved, never permission to repeat a mutation.
+Checkpoint scope includes binding, identity, organization, account, direction and
+edited ledger ID. Retry with corrected values retains IDs after confirmed rejection;
+unknown writes reconcile the previous submitted values first. Recovery is in memory.
+
+No schema/data flush is performed. Retired detail columns/tables remain dormant for
+schema compatibility; root policy rejects their writes and
+references, and production forms no longer subscribe to or mutate them. Removing
+physical columns is a separate schema transition. Written-check creation controls,
+exclusive assignment and reload recovery remain deferred. The initial fixed-scope rule is superseded by the automatic movement decision below.
+
+Production adoption removes the old transaction-create/edit persistence actors and
+embedded-value validation branches. Their existing tests/fixtures still target the
+retired contracts; migration/removal of those tests intentionally waits for this
+batch's implementation review. Static production checking excludes test files and
+test fixtures for this review only; the repository-wide check is not claimed clean.
+The initially added selector and its subscriptions have been removed at the user's direction. Inline Check fields preserve their draft through payment-method changes.
+
+## Inline-only entry and automatic account movement
+
+User confirmed inline Check entry only; remove the unreviewed selector and its
+subscriptions. Moving a transaction moves its Check, retaining identity. Do not
+move other transactions or add exclusive-assignment behavior. Existing Check
+metadata edits remain independently settled in its source account. Account movement
+belongs to the ledger resource owner: open -> read ledger/assignments -> validate
+provenance -> assess movement -> read Check -> validate source identity/scope -> read
+tags -> plan -> stage Check account update and ledger/tag writes -> commit -> settle.
+Both account authorities are enforced by SDK old/new policies. Movement and ledger
+changes roll back or settle together. No standalone pre-ledger Check scope move.
+Check organization remains immutable. Retry reconciles the prior ledger and Check
+account together; a missing/unknown result never permits another mutation.

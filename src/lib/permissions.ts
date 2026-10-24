@@ -109,27 +109,11 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		allOf([
 			canWriteAccount(transaction.accountId, transaction.organizationId),
 			transactionReferencesAreValid(transaction),
-			// Manual income still requires a chosen payment method.
-			anyOf([{ kind: 'expense' }, { source: 'simplefin' }, { paymentMethod: { isNull: false } }]),
-			anyOf([
-				allOf([
-					{ checkDetailsId: { isNull: true } },
-					checkReferenceCondition({
-						transaction,
-						checkExists: (where) => policy.checks.exists.where(where)
-					})
-				]),
-				allOf([
-					// Retain the existing detail workflow until form/persistence adoption.
-					{ kind: 'income', paymentMethod: 'check', checkId: { isNull: true } },
-					policy.checkDetails.exists.where({
-						id: transaction.checkDetailsId,
-						transactionId: transaction.id,
-						organizationId: transaction.organizationId,
-						accountId: transaction.accountId
-					})
-				])
-			])
+			{ checkDetailsId: { isNull: true } },
+			checkReferenceCondition({
+				transaction,
+				checkExists: (where) => policy.checks.exists.where(where)
+			})
 		])
 
 	policy.organizations.allowRead.where((organization) => isMember(organization.id))
@@ -281,20 +265,6 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 						id: transaction.id,
 						externalId: transaction.externalId
 					})
-				]),
-				// Existing detail references retain their constraints during staged adoption.
-				anyOf([
-					allOf([
-						{ checkDetailsId: { isNull: true } },
-						policy.transactions.exists.where({
-							id: transaction.id,
-							checkDetailsId: { isNull: true }
-						})
-					]),
-					policy.transactions.exists.where({
-						id: transaction.id,
-						checkDetailsId: transaction.checkDetailsId
-					})
 				])
 			])
 		)
@@ -363,51 +333,24 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((check) =>
 			allOf([
 				canWriteAccount(check.accountId, check.organizationId),
-				// Shared-reference account movement needs a separate reviewed rule.
+				policy.accounts.exists.where({
+					id: check.accountId,
+					organizationId: check.organizationId,
+					archivedAt: { isNull: true }
+				}),
+				// Moving a Check requires write access to both accounts and preserves its organization.
 				policy.checks.exists.where({
 					id: check.id,
-					organizationId: check.organizationId,
-					accountId: check.accountId
+					organizationId: check.organizationId
 				})
 			])
 		)
 	policy.checks.allowDelete.never()
 
-	policy.checkDetails.allowRead.where((details) =>
-		canReadAccount(details.accountId, details.organizationId)
-	)
-	policy.checkDetails.allowInsert.where((details) =>
-		allOf([
-			// The detail is written before its transaction, using the ledger's authority.
-			canWriteAccount(details.accountId, details.organizationId),
-			policy.accounts.exists.where({
-				id: details.accountId,
-				organizationId: details.organizationId,
-				archivedAt: { isNull: true }
-			})
-		])
-	)
-	policy.checkDetails.allowUpdate.whereOld(allowedTo.update('transaction')).whereNew((details) =>
-		allOf([
-			allowedTo.update('transaction'),
-			// The existing row must already belong to this transaction.
-			policy.checkDetails.exists.where({
-				id: details.id,
-				transactionId: details.transactionId,
-				organizationId: details.organizationId,
-				accountId: details.accountId
-			}),
-			policy.transactions.exists.where({
-				id: details.transactionId,
-				checkDetailsId: details.id,
-				organizationId: details.organizationId,
-				accountId: details.accountId,
-				kind: 'income',
-				paymentMethod: 'check'
-			})
-		])
-	)
-	// Removing a referenced detail would leave a check transaction incomplete.
+	// Retired embedded details cannot be read or mutated by production clients.
+	policy.checkDetails.allowRead.never()
+	policy.checkDetails.allowInsert.never()
+	policy.checkDetails.allowUpdate.never()
 	policy.checkDetails.allowDelete.never()
 
 	const ownsConnection = (connection: { organizationId: IdExpression; ownerId: IdExpression }) =>

@@ -317,7 +317,8 @@
 		"last_count_subjects": "Last {count} {subjects}",
 		"total_subject_amount": "Total {subject}: {amount}",
 		"subjects_in_period": "{subjects} in this period",
-		"no_subjects_in_period": "No {subjects} in this time period."
+		"no_subjects_in_period": "No {subjects} in this time period.",
+		"unspecified": "Unspecified"
 	},
 	"actions": {
 		"save_subject": "Save {subject}",
@@ -403,7 +404,9 @@
 		"payment_invalid": "Select a payment method.",
 		"check_number_invalid": "Enter the check number.",
 		"check_date_invalid": "Enter a valid check date.",
-		"daily_total_amount": "Daily total: {amount}"
+		"daily_total_amount": "Daily total: {amount}",
+		"check_retained": "The Check was saved, but the transaction was not. Save again to reuse the same Check.",
+		"save_unresolved": "The save result is uncertain. Save again to verify the same records when connected before issuing another write. Keep this form open until the result is resolved."
 	},
 	"login": {
 		"description": "Enter the recovery phrase for an existing local-first account.",

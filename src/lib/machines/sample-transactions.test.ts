@@ -100,7 +100,8 @@ describe('sample transaction batches', () => {
 		actor.send({ type: 'ADD' })
 		await waitFor(actor, (s) => s.matches('failure'))
 		expect(actor.getSnapshot().context.lastResult).toMatchObject({
-			outcome: 'failed',
+			outcome: 'partial',
+			reason: 'saveUnresolved',
 			settlement: 'unknown'
 		})
 		actor.stop()

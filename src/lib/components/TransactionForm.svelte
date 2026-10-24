@@ -6,9 +6,9 @@
 		Select,
 		Textarea,
 		InputCurrency,
-		FieldFeedback,
-		StatusMessage
+		FieldFeedback
 	} from 'delightful-ui'
+	import { untrack, tick } from 'svelte'
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
@@ -17,6 +17,7 @@
 	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
+	import TransactionCheckFields from './TransactionCheckFields.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'
 
 	let {
@@ -41,13 +42,10 @@
 			TransactionDetail,
 			'accountId' | 'categoryId' | 'amountMinor' | 'currency' | 'bookedOn'
 		> &
-			Partial<Pick<TransactionDetail, 'description' | 'memo' | 'paymentMethod'>> & {
+			Partial<Pick<TransactionDetail, 'description' | 'memo' | 'paymentMethod' | 'checkId'>> & {
 				accountName?: Account['name'] | undefined
 				categoryName?: Category['name'] | undefined
-				checkDetails?: Pick<
-					NonNullable<TransactionDetail['checkDetails']>,
-					'checkNumber' | 'checkDate'
-				>
+				check?: Pick<NonNullable<TransactionDetail['check']>, 'checkNumber' | 'checkDate'>
 				tags: readonly Tag['name'][]
 			}
 		organizationId: TransactionDetail['organizationId'] | null
@@ -65,12 +63,17 @@
 
 	const resetRevision = $derived(view.draftRevision)
 	let activeCheckFieldsKey = $state('')
+	let selectedAccountId = $state('')
 	$effect(() => {
 		void resetRevision
-		activeCheckFieldsKey = initialTransaction?.paymentMethod === 'check' ? 'check' : ''
+		untrack(() => {
+			activeCheckFieldsKey = initialTransaction?.paymentMethod === 'check' ? 'check' : ''
+			selectedAccountId = initialTransaction?.accountId ?? defaultAccountId ?? ''
+		})
 	})
 	function syncPaymentMethod(element: HTMLSelectElement) {
 		activeCheckFieldsKey = element.value === 'check' ? 'check' : ''
+		void tick().then(() => element.dispatchEvent(new Event('input', { bubbles: true })))
 	}
 	const issues = $derived(
 		view.feedback.kind === 'result' && view.feedback.result.outcome === 'invalid'
@@ -83,7 +86,7 @@
 			({ path }) =>
 				path[0] === field ||
 				(field === 'amount' && path[0] === 'money') ||
-				(path[0] === 'checkDetails' && path[1] === field)
+				(path[0] === 'check' && path[path.length - 1] === field)
 		)
 	}
 </script>
@@ -100,6 +103,7 @@
 					name="accountId"
 					required
 					defaultValue={initialTransaction?.accountId ?? defaultAccountId ?? ''}
+					bind:value={selectedAccountId}
 				>
 					<option value="" disabled
 						>{m['actions.select_subject']({ subject: m['nouns.account']({ count: 1 }) })}</option
@@ -113,12 +117,7 @@
 						>
 					{/if}
 					{#each accounts as account (account.id)}
-						<option
-							value={account.id}
-							disabled={mode === 'edit' &&
-								initialTransaction?.paymentMethod === 'check' &&
-								account.id !== initialTransaction.accountId}>{account.name}</option
-						>
+						<option value={account.id}>{account.name}</option>
 					{/each}
 				</Select>
 				<FieldFeedback
@@ -193,38 +192,22 @@
 					errorMessage={fieldInvalid(issues, 'bookedOn') ? m['transactions.date_invalid']() : ''}
 				/>
 
-				{#if kind === 'income' && (mode === 'create' || initialTransaction?.paymentMethod)}
+				{#if kind === 'income'}
 					<Select
 						label={m['labels.subject_method']({ subject: m['nouns.payment']({ count: 1 }) })}
 						id="transaction-payment-method"
 						aria-describedby="transaction-payment-method-feedback"
 						aria-invalid={fieldInvalid(issues, 'paymentMethod') || undefined}
 						name="paymentMethod"
-						required
-						defaultValue={initialTransaction?.paymentMethod ?? 'cash'}
+						defaultValue={initialTransaction?.paymentMethod ?? ''}
 						{@attach syncPaymentMethod}
 						onchange={(event) => syncPaymentMethod(event.currentTarget)}
 					>
-						<option
-							value="cash"
-							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
-							>{m['labels.cash']()}</option
-						>
-						<option
-							value="check"
-							disabled={mode === 'edit' && initialTransaction?.paymentMethod !== 'check'}
-							>{m['transactions.payment.check']()}</option
-						>
-						<option
-							value="transfer"
-							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
-							>{m['transactions.payment.transfer']()}</option
-						>
-						<option
-							value="electronic"
-							disabled={mode === 'edit' && initialTransaction?.paymentMethod === 'check'}
-							>{m['transactions.payment.electronic']()}</option
-						>
+						<option value="">{m['labels.unspecified']()}</option>
+						<option value="cash">{m['labels.cash']()}</option>
+						<option value="check">{m['transactions.payment.check']()}</option>
+						<option value="transfer">{m['transactions.payment.transfer']()}</option>
+						<option value="electronic">{m['transactions.payment.electronic']()}</option>
 					</Select>
 					<FieldFeedback
 						id="transaction-payment-method-feedback"
@@ -233,41 +216,25 @@
 							: ''}
 					/>
 
-					{#if activeCheckFieldsKey === 'check'}
-						<InputText
-							label={m['labels.subject_number']({ subject: m['nouns.check']({ count: 1 }) })}
-							id="check-number"
-							aria-describedby="check-number-feedback"
-							aria-invalid={fieldInvalid(issues, 'checkNumber') || undefined}
-							name="checkNumber"
-							defaultValue={initialTransaction?.checkDetails?.checkNumber ?? ''}
-							required
+					{#key resetRevision}
+						<TransactionCheckFields
+							active={activeCheckFieldsKey === 'check'}
+							{issues}
+							initialCheck={initialTransaction?.checkId && initialTransaction.check
+								? { id: initialTransaction.checkId, ...initialTransaction.check }
+								: undefined}
 						/>
-						<FieldFeedback
-							id="check-number-feedback"
-							errorMessage={fieldInvalid(issues, 'checkNumber')
-								? m['transactions.check_number_invalid']()
-								: ''}
-						/>
-
-						<InputDate
-							label={m['labels.subject_date']({ subject: m['nouns.check']({ count: 1 }) })}
-							id="check-date"
-							aria-describedby="check-date-feedback"
-							aria-invalid={fieldInvalid(issues, 'checkDate') || undefined}
-							name="checkDate"
-							defaultValue={initialTransaction?.checkDetails?.checkDate ?? todayDateOnly()}
-							required
-						/>
-						<FieldFeedback
-							id="check-date-feedback"
-							errorMessage={fieldInvalid(issues, 'checkDate')
-								? m['transactions.check_date_invalid']()
-								: ''}
-						/>
-					{/if}
+					{/key}
 				{/if}
 
+				{#if kind === 'expense' && initialTransaction?.paymentMethod}
+					<input type="hidden" name="paymentMethod" value={initialTransaction.paymentMethod} />
+					{#if initialTransaction.checkId}<input
+							type="hidden"
+							name="checkId"
+							value={initialTransaction.checkId}
+						/>{/if}
+				{/if}
 				{#if organizationId}
 					<TransactionTagInput
 						{organizationId}

@@ -1,4 +1,5 @@
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
+import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
 import { app } from '#lib/schema.js'
@@ -6,7 +7,11 @@ import { appCheckSchema } from '#lib/validation/checks.js'
 import type { FormInterruption, FormSettlement } from '#lib/form-contract.js'
 
 export type CheckCreationDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
-const requestSchema = z.strictObject({ id: z.uuid(), values: appCheckSchema })
+const requestSchema = z.strictObject({
+	id: z.uuid(),
+	values: appCheckSchema,
+	mode: z.enum(['create', 'edit']).optional()
+})
 export type CheckCreationInput = z.infer<typeof requestSchema>
 export type CheckCreationEvent = { type: 'CANCEL' | 'INVALIDATE' | 'SHUTDOWN' }
 export type CheckCreationResult = {
@@ -40,6 +45,17 @@ const stage = fromPromise(
 		return Promise.resolve()
 	}
 )
+const update = fromPromise(
+	({ input }: { input: { tx: Transaction; request: CheckCreationInput } }) => {
+		input.tx.update(app.checks, input.request.id, {
+			...input.request.values,
+			payerName: input.request.values.payerName ?? null,
+			bankName: input.request.values.bankName ?? null,
+			memoOnCheck: input.request.values.memoOnCheck ?? null
+		})
+		return Promise.resolve()
+	}
+)
 const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
 const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
 	input.wait({ tier: 'local' })
@@ -55,7 +71,7 @@ type Context = {
 
 /** One attempt with a caller-owned stable ID; the staged save owner reconciles unknown results. */
 export function createCheckCreationMachine(db: CheckCreationDb) {
-	const actors = { validate, open, stage, commit, settle, rollback }
+	const actors = { validate, open, stage, update, commit, settle, rollback }
 	const model = setup<
 		Context,
 		CheckCreationEvent,
@@ -163,11 +179,23 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 								}
 							},
 							beforeStage: {
-								always: [{ guard: 'interrupted', target: 'finishing' }, { target: 'staging' }]
+								always: [
+									{ guard: 'interrupted', target: 'finishing' },
+									{ guard: ({ context }) => context.request.mode === 'edit', target: 'updating' },
+									{ target: 'staging' }
+								]
 							},
 							staging: {
 								invoke: {
 									src: 'stage',
+									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
+									onDone: 'beforeCommit',
+									onError: 'rollingBack'
+								}
+							},
+							updating: {
+								invoke: {
+									src: 'update',
 									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
 									onDone: 'beforeCommit',
 									onError: 'rollingBack'
@@ -183,7 +211,14 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 										target: 'settling',
 										actions: assign({ handle: ({ event }) => event.output })
 									},
-									onError: 'rollingBack'
+									onError: [
+										{
+											guard: ({ event }) => event.error instanceof PersistedWriteRejectedError,
+											target: 'rollingBack',
+											actions: assign({ settlement: 'rejected' })
+										},
+										{ target: 'rollingBack' }
+									]
 								}
 							},
 							settling: {
@@ -194,7 +229,14 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 										target: 'finishing',
 										actions: assign({ settlement: 'locallyPersisted' })
 									},
-									onError: 'rollingBack'
+									onError: [
+										{
+											guard: ({ event }) => event.error instanceof PersistedWriteRejectedError,
+											target: 'rollingBack',
+											actions: assign({ settlement: 'rejected' })
+										},
+										{ target: 'rollingBack' }
+									]
 								}
 							},
 							rollingBack: {
@@ -205,14 +247,21 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 										target: 'finishing',
 										actions: assign({
 											settlement: ({ context, event }) =>
-												event.output && context.settlement === 'notStarted'
+												context.settlement === 'rejected' ||
+												(event.output && context.settlement === 'notStarted')
 													? 'rejected'
 													: context.settlement === 'notStarted'
 														? 'unknown'
 														: context.settlement
 										})
 									},
-									onError: { target: 'finishing', actions: assign({ settlement: 'unknown' }) }
+									onError: {
+										target: 'finishing',
+										actions: assign({
+											settlement: ({ context }) =>
+												context.settlement === 'rejected' ? 'rejected' : 'unknown'
+										})
+									}
 								}
 							},
 							finishing: {

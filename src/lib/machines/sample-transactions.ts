@@ -15,24 +15,31 @@ import type {
 	TransactionEntryScope
 } from '#lib/transaction-entry-contract.js'
 
-type CreationInput = FormOperationInput<
-	AppTransaction,
+type CreationInput<Values = AppTransaction> = FormOperationInput<
+	Values,
 	TransactionEntryScope,
 	TransactionEntryObservation
 >
 type Result = FormOperationResult<void, TransactionEntryReason>
 type Event = FormChildEvent<TransactionEntryObservation> | { type: 'ADD' }
-type Context = { saved: number; request: CreationInput | undefined; lastResult: Result | undefined }
 
 /** Batch iteration owns the current creation child until its transaction has settled. */
-export function createSampleTransactionsMachine<PersistenceSnapshot extends Snapshot<Result>>(
+export function createSampleTransactionsMachine<
+	Values,
+	PersistenceSnapshot extends Snapshot<Result>
+>(
 	operation: ActorLogic<
 		PersistenceSnapshot,
 		FormChildEvent<TransactionEntryObservation>,
-		CreationInput
+		CreationInput<Values>
 	>,
-	prepare: (index: number) => CreationInput
+	prepare: (index: number) => CreationInput<Values>
 ) {
+	type Context = {
+		saved: number
+		request: CreationInput<Values> | undefined
+		lastResult: Result | undefined
+	}
 	const actors = {
 		prepare: fromPromise(({ input }: { input: number }) => Promise.resolve(prepare(input))),
 		write: operation

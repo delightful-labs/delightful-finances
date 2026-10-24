@@ -1,0 +1,89 @@
+import { z } from 'zod'
+import { appCheckSchema } from './validation/checks.js'
+import {
+	independentTransactionSchema,
+	transactionSaveSchema,
+	type TransactionSaveValues
+} from './validation/transactions.js'
+import type { IndependentTransaction } from './domain/transaction.js'
+import type { TransactionEntryScope } from './transaction-entry-contract.js'
+
+const settlementSchema = z.enum([
+	'notStarted',
+	'locallyPersisted',
+	'confirmed',
+	'rejected',
+	'unknown'
+])
+export const transactionCheckpointSchema = z.strictObject({
+	version: z.literal(1),
+	scope: z.strictObject({
+		identityId: z.string().nullable(),
+		organizationId: z.string().nullable(),
+		binding: z.custom<object>((value) => typeof value === 'object' && value !== null),
+		kind: z.enum(['income', 'expense']),
+		transactionId: z.string().nullable().optional()
+	}),
+	accountId: z.uuid(),
+	transactionId: z.uuid(),
+	checkId: z.uuid().nullable(),
+	checkIntent: z.enum(['none', 'new', 'existing']),
+	checkSettlement: settlementSchema,
+	transactionSettlement: settlementSchema,
+	checkValues: appCheckSchema.optional(),
+	submitted: independentTransactionSchema.optional()
+})
+export type TransactionCheckpoint = z.output<typeof transactionCheckpointSchema>
+export function sameSaveScope(
+	a: Omit<TransactionEntryScope, 'transactionId'> & { transactionId?: string | null | undefined },
+	b: TransactionEntryScope
+) {
+	return (
+		a.binding === b.binding &&
+		a.identityId === b.identityId &&
+		a.organizationId === b.organizationId &&
+		a.kind === b.kind &&
+		a.transactionId === b.transactionId
+	)
+}
+export function parseSaveRequest(
+	values: unknown,
+	checkpoint: unknown,
+	scope: TransactionEntryScope
+) {
+	const parsed = transactionSaveSchema.parse(values)
+	const recovery =
+		checkpoint === undefined ? undefined : transactionCheckpointSchema.parse(checkpoint)
+	if (
+		recovery &&
+		(!sameSaveScope(recovery.scope, scope) ||
+			recovery.accountId !== parsed.accountId ||
+			(recovery.checkIntent === 'existing' &&
+				parsed.paymentMethod === 'check' &&
+				parsed.check.kind === 'new') ||
+			(parsed.paymentMethod === 'check' &&
+				parsed.check.kind === 'existing' &&
+				recovery.checkId !== null &&
+				parsed.check.id !== recovery.checkId))
+	) {
+		throw new Error('Incompatible transaction recovery scope')
+	}
+	return { values: parsed, checkpoint: recovery }
+}
+export function ledgerValues(
+	values: TransactionSaveValues,
+	checkId: string | null
+): IndependentTransaction {
+	if (values.paymentMethod !== 'check') return values
+	const { check, ...base } = values
+	void check
+	return independentTransactionSchema.parse({ ...base, checkId })
+}
+export function desiredCheck(values: TransactionSaveValues) {
+	if (values.paymentMethod !== 'check' || !values.check.values) return undefined
+	return appCheckSchema.parse({
+		...values.check.values,
+		organizationId: values.organizationId,
+		accountId: values.accountId
+	})
+}

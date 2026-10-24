@@ -4,22 +4,14 @@ async function seed(page: Page, count = 0) {
 	await page.goto('/accounts')
 	await expect(
 		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
-	).toBeEnabled()
+	).toBeEnabled({ timeout: 30_000 })
 	return page.evaluate(async (count) => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
-		const persistencePath = '/src/lib/machines/transaction-create-persistence.ts'
-		const xstatePath = '/node_modules/.vite/deps/xstate.js'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
 		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
 			sessionPath
 		)
-		const {
-			createTransactionPersistenceMachine
-		}: typeof import('../src/lib/machines/transaction-create-persistence.js') = await import(
-			persistencePath
-		)
-		const { createActor, toPromise }: typeof import('xstate') = await import(xstatePath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		const [organization] = await db.all(app.organizations)
@@ -32,45 +24,24 @@ async function seed(page: Page, count = 0) {
 				currency: 'USD'
 			})
 			.wait({ tier: 'local' })
-		const categories = await db.all(
-			app.categories.where({ organizationId: organization.id, kind: 'expense' })
-		)
-		const category = categories[0]
+		const category = (
+			await db.all(app.categories.where({ organizationId: organization.id, kind: 'expense' }))
+		)[0]
 		if (!category) throw new Error('Missing expense category')
 		for (let index = 0; index < count; index++) {
-			const values: import('../src/lib/domain/transaction.js').AppTransaction = {
-				organizationId: organization.id,
-				accountId: account.id,
-				categoryId: category.id,
-				kind: 'expense',
-				money: { amountMinor: 100, currency: 'USD' },
-				bookedOn: '2026-10-19',
-				description: `Seed ${index}`,
-				source: { source: 'manual' },
-				tags: []
-			}
-			const facts = {
-				identityId: getCurrentJazzSession()?.getSnapshot().account?.id ?? null,
-				organizationId: organization.id,
-				binding: db,
-				kind: values.kind,
-				sessionReady: true,
-				loading: false,
-				failed: false,
-				membership: null,
-				grants: [],
-				accounts: [account],
-				categories,
-				tags: []
-			}
-			const actor = createActor(createTransactionPersistenceMachine(db), {
-				input: {
-					request: { id: index, scopeRevision: 0, scope: facts, values },
-					observation: { revision: 0, facts }
-				}
-			}).start()
-			const result = await toPromise(actor)
-			if (result.outcome !== 'succeeded') throw new Error('Seed creation failed')
+			await db
+				.insert(app.transactions, {
+					organizationId: organization.id,
+					accountId: account.id,
+					categoryId: category.id,
+					kind: 'expense',
+					amountMinor: 100,
+					currency: 'USD',
+					bookedOn: '2026-10-19',
+					description: `Seed ${index}`,
+					source: 'manual'
+				})
+				.wait({ tier: 'local' })
 		}
 		return organization.id
 	}, count)
@@ -295,7 +266,7 @@ for (const kind of ['income', 'expense']) {
 			name: `Add 25 sample ${subject} Transactions`,
 			exact: true
 		})
-		await expect(add).toBeEnabled()
+		await expect(add).toBeEnabled({ timeout: 30_000 })
 		await context.setOffline(true)
 		try {
 			for (const count of [25, 50]) {

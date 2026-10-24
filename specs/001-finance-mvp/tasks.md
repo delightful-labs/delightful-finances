@@ -432,8 +432,8 @@ Cancel/primary Save verification: all 12 focused Playwright scenarios pass (eigh
 
 ## Permission integrity follow-up
 
-- [x] Tighten Jazz tag insert/update and transaction-tag assignment rules; preserve legacy historical access and prohibit kind changes that invalidate assignments.
-- [x] Require a payment method for manual income at the Jazz permission boundary while allowing SimpleFIN income to omit it.
+- [x] Tighten Jazz tag insert/update and transaction-tag assignment rules. The later required-kind alpha policy removes untyped legacy compatibility; kinds/workspaces remain immutable and assignments must be compatible.
+- [x] Historical implementation: require a payment method for manual income. Superseded by the approved independent-Check contract: both income and expense may omit payment method, with Check/reference pairing enforced at the Jazz boundary.
 - [x] Review the permission implementation (approved by the user’s “continue”).
 - [x] After approval, add/run focused permission coverage for valid and mismatched tag/category organizations and kinds, missing kinds, legacy archive/removal, kind-change bypasses, manual missing-method rejection, imported missing-method acceptance and check-details enforcement.
 
@@ -448,7 +448,7 @@ changes were needed during verification; nothing was deployed or committed.
 ## SimpleFIN documentation reconciliation
 
 - [x] Align MVP SimpleFIN requirements, architecture, credential-access assumptions and obsolete backlog entries with constitution VI and spec 002.
-- [ ] Review this documentation-only reconciliation; unfinished sync-indicator, merge and sharing features remain outside this cycle.
+- [x] Review this documentation reconciliation through the subsequent implementation/test cycle; sync-indicator, merge and sharing features remain outside the approved repair scope.
 
 ## Required tag kind in alpha storage
 
@@ -498,3 +498,28 @@ provider rows. All browser work used disposable in-memory Jazz on port 5180.
 Application/service-worker and browser-test type checks, focused formatting and
 whitespace checks pass. No production fixes were needed during verification.
 No commits, existing-data resets or schema deployments performed.
+
+## Spec/code reconciliation status (2026-10-24)
+
+- [x] Complete the two permission fixes, require tag kind without untyped legacy exceptions, remove the unrequested amount ceiling, and support imported transaction editing.
+- [x] Complete the approved independent-Check implementation and the recorded unit/browser verification; see [009-independent-checks/tasks.md](../009-independent-checks/tasks.md) for exact coverage and remaining verification.
+- [x] Reconcile SimpleFIN documentation with constitution VI and spec 002. This documentation task does not implement the separately deferred features.
+- [x] Close the composed coordinator and account-move authorization verification gaps in feature 009. The follow-up adds 49 cases and passes all 84 focused coordinator/resource/SDK authority tests; no production changes were needed. This is additional focused verification, not a new full-suite/browser run.
+- [ ] Apply the required-kind/Check schema changes to an existing environment only after separate authorization. Legacy tag migration is superseded by the alpha-data policy; no reset has been performed.
+
+Latest verification for this implementation: all 1,023 unit tests pass across 74
+files. All 25 transaction edit/workspace browser cases have passing results across
+focused runs, including corrected stale expectations and a readiness retry.
+Application/service-worker checks, browser-test TypeScript, changed-test formatting,
+and whitespace checks pass. This does not supersede unrelated historical browser
+suite failures or establish CI readiness.
+
+The user explicitly excluded partial/unimplemented features from this repair cycle.
+The remaining feature backlog includes whole-device Jazz sync observability,
+account merging (feature 002), business/invite/grant-management UI, transaction
+attachments and batches/templates, broader responsive/accessibility and PWA/access
+review, CI, physical-device passkey/replication validation, multi-currency/FX, and
+native wrappers. Feature 009 separately defers written-check controls and exclusive
+assignment/shared-reference handling. Earlier review checkboxes in this chronological
+file are historical; completed later verification supersedes their corresponding
+review/test gates, not these outstanding feature or verification items.

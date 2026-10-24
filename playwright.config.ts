@@ -17,6 +17,7 @@ export default defineConfig({
 	},
 	testMatch: '**/*.e2e.{ts,js}',
 	testIgnore: [
+		'**/.delta/**',
 		'**/tests/pwa.e2e.ts',
 		'**/tests/authentication.e2e.ts',
 		'**/tests/permissions.e2e.ts',

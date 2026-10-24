@@ -24,8 +24,8 @@ const validationErrorByPath: Readonly<Record<string, TransactionValidationError>
 	'money.amountMinor': 'amount',
 	'money.currency': 'currency',
 	bookedOn: 'booked-on',
-	'checkDetails.checkNumber': 'check-number',
-	'checkDetails.checkDate': 'check-date',
+	'check.values.checkNumber': 'check-number',
+	'check.values.checkDate': 'check-date',
 	'source.externalId': 'source-id'
 }
 

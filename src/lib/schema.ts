@@ -35,5 +35,5 @@ export type Check = s.RowOf<typeof app.checks>
 
 export const transactionDetailQuery = app.transactions
 	.select('*', '$createdBy', '$createdAt', '$updatedBy', '$updatedAt')
-	.include({ account: true, category: true, tags: { tag: true }, checkDetails: true })
+	.include({ account: true, category: true, tags: { tag: true }, check: true })
 export type TransactionDetail = s.RowOf<typeof transactionDetailQuery>

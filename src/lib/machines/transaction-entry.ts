@@ -1,11 +1,4 @@
-import {
-	createTransactionEditPersistenceMachine,
-	type TransactionEditDb
-} from './transaction-edit-persistence.js'
-import {
-	createTransactionPersistenceMachine,
-	type CreationDb
-} from './transaction-create-persistence.js'
+import { createTransactionSaveMachine, type TransactionSaveDb } from './transaction-save.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
@@ -18,8 +11,10 @@ import type {
 } from '#lib/transaction-entry-contract.js'
 import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
-import { transactionFormSchema } from '#lib/validation/transactions.js'
-import type { TransactionDetail } from '#lib/schema.js'
+import {
+	independentTransactionFormSchema,
+	type TransactionSaveValues
+} from '#lib/validation/transactions.js'
 import type { AppTransaction, IncomePaymentMethod } from '#lib/domain/transaction.js'
 
 export function transactionEntryScope(f: TransactionEntryObservation): TransactionEntryScope {
@@ -167,19 +162,14 @@ export function createTransactionEntryAvailability(binding: object) {
 							}
 						}) =>
 							(f.transactionId !== undefined && !f.transaction) ||
-							(f.intent !== undefined &&
-								(!validTransactionReferences(f, f.intent) ||
-									(f.transaction != null &&
-										((f.transaction.paymentMethod === 'check') !== inputHasCheckDetails(f.intent) ||
-											(f.transaction.paymentMethod === 'check' &&
-												f.intent.accountId !== f.transaction.accountId))))) ||
+							(f.intent !== undefined && !validTransactionReferences(f, f.intent)) ||
 							(f.transaction !== undefined &&
 								f.transaction !== null &&
 								(!validTransactionReferences(f, transactionAsInput(f.transaction)) ||
 									(f.transaction.source === 'simplefin' && !f.transaction.externalId?.trim()) ||
 									f.transaction.organizationId !== f.organizationId ||
 									f.transaction.id !== f.transactionId ||
-									(f.transaction.paymentMethod === 'check' && !f.transaction.checkDetails))),
+									(f.transaction.paymentMethod === 'check' && !f.transaction.check))),
 						target: 'unavailableReference'
 					},
 					{ target: 'checkingTags' }
@@ -248,21 +238,21 @@ function transactionFormPolicy(deps: TransactionFormPolicyDependencies) {
 		classifyBlocked: (reason: TransactionEntryReason): 'denied' | 'unavailable' =>
 			reason === 'readOnly' ? 'denied' : 'unavailable'
 	}
-	const schema = transactionFormSchema(() => deps.observe())
+	const schema = independentTransactionFormSchema(() => deps.observe())
 	return { common, schema }
 }
 
 export function createTransactionEntryFormOptions(
 	deps: TransactionFormPolicyDependencies & {
-		db: CreationDb
+		db: TransactionSaveDb
 		navigate?: (destination: string, signal: AbortSignal) => Promise<void>
 	}
 ) {
 	const { common, schema } = transactionFormPolicy(deps)
 	const availability = common.availability
-	const persistence = createTransactionPersistenceMachine(deps.db)
+	const persistence = createTransactionSaveMachine(deps.db, deps.observe)
 	const options = createSingleWriteFormOptions<
-		AppTransaction,
+		TransactionSaveValues,
 		void,
 		TransactionEntryReason,
 		TransactionEntryScope,
@@ -294,13 +284,13 @@ export function createTransactionEntryFormOptions(
 }
 
 export function createTransactionEditFormOptions(
-	deps: TransactionFormPolicyDependencies & { db: TransactionEditDb }
+	deps: TransactionFormPolicyDependencies & { db: TransactionSaveDb }
 ) {
 	const { common, schema } = transactionFormPolicy(deps)
 	const availability = common.availability
-	const persistence = createTransactionEditPersistenceMachine(deps.db)
+	const persistence = createTransactionSaveMachine(deps.db, deps.observe)
 	return createSingleWriteFormOptions<
-		AppTransaction,
+		TransactionSaveValues,
 		void,
 		TransactionEntryReason,
 		TransactionEntryScope,
@@ -329,13 +319,13 @@ export function createTransactionEditFormOptions(
 				(draft.description ?? '').trim() === (original.description ?? '') &&
 				(draft.memo ?? '').trim() === (original.memo ?? '') &&
 				JSON.stringify(names(draft.tags ?? [])) === JSON.stringify(names(original.tags ?? [])) &&
-				(original.kind === 'expense' ||
-					original.source.source === 'simplefin' ||
-					('paymentMethod' in original &&
-						draft.paymentMethod === original.paymentMethod &&
-						(original.paymentMethod !== 'check' ||
-							((draft.checkNumber ?? '').trim() === original.checkDetails.checkNumber &&
-								draft.checkDate === original.checkDetails.checkDate))))
+				(draft.paymentMethod || null) === original.paymentMethod &&
+				(original.paymentMethod !== 'check' ||
+					(original.check.kind === 'existing' &&
+						draft.checkId === original.check.id &&
+						(original.kind === 'expense' ||
+							((draft.checkNumber ?? '').trim() === original.check.values?.checkNumber &&
+								draft.checkDate === original.check.values?.checkDate))))
 			)
 		},
 		successContent: 'retain',
@@ -349,49 +339,57 @@ export function createTransactionEditFormOptions(
 
 function transactionAsInput(
 	transaction: NonNullable<TransactionEntryObservation['transaction']>
-): AppTransaction {
-	const tags = transaction.tags?.flatMap((link) => (link.tag?.name ? [link.tag.name] : [])) ?? []
+): TransactionSaveValues {
 	const base = {
 		accountId: transaction.accountId,
 		organizationId: transaction.organizationId,
 		categoryId: transaction.categoryId,
+		kind: transaction.kind,
 		bookedOn: transaction.bookedOn,
 		money: { amountMinor: transaction.amountMinor, currency: transaction.currency },
-		...(transaction.description ? { description: transaction.description } : {}),
-		...(transaction.memo ? { memo: transaction.memo } : {}),
-		source: { source: 'manual' } satisfies AppTransaction['source'],
-		...(tags.length ? { tags } : {})
+		description: transaction.description ?? undefined,
+		memo: transaction.memo ?? undefined,
+		source:
+			transaction.source === 'simplefin'
+				? ({
+						source: 'simplefin',
+						externalId: transaction.externalId ?? ''
+					} satisfies TransactionSaveValues['source'])
+				: ({ source: 'manual' } satisfies TransactionSaveValues['source']),
+		tags: transaction.tags?.flatMap((link) => (link.tag ? [link.tag.name] : [])) ?? []
 	}
-	if (transaction.source === 'simplefin') {
-		const source = {
-			source: 'simplefin',
-			externalId: transaction.externalId ?? ''
-		} satisfies AppTransaction['source']
-		return transaction.kind === 'expense'
-			? { ...base, kind: 'expense', source }
-			: { ...base, kind: 'income', source }
-	}
-	if (transaction.kind === 'expense') return { ...base, kind: 'expense' }
-	if (transaction.paymentMethod === 'check') {
+	if (transaction.paymentMethod === 'check' && transaction.checkId)
 		return {
 			...base,
-			kind: 'income',
 			paymentMethod: 'check',
-			checkDetails: {
-				checkNumber: transaction.checkDetails?.checkNumber ?? '',
-				checkDate: transaction.checkDetails?.checkDate ?? ''
+			check: {
+				kind: 'existing',
+				id: transaction.checkId,
+				...(transaction.check
+					? {
+							values: {
+								checkNumber: transaction.check.checkNumber,
+								checkDate: transaction.check.checkDate
+							}
+						}
+					: {})
 			}
 		}
+	return {
+		...base,
+		paymentMethod: transaction.paymentMethod === 'check' ? null : transaction.paymentMethod,
+		checkId: null
 	}
-	return { ...base, kind: 'income', paymentMethod: transaction.paymentMethod ?? 'cash' }
 }
 
 function isTransactionFormDraft(value: unknown): value is Record<string, unknown> &
 	Pick<AppTransaction, 'accountId' | 'categoryId' | 'bookedOn'> &
-	Partial<Pick<AppTransaction, 'description' | 'memo' | 'tags'>> &
-	Partial<Pick<NonNullable<TransactionDetail['checkDetails']>, 'checkNumber' | 'checkDate'>> & {
+	Partial<Pick<AppTransaction, 'description' | 'memo' | 'tags'>> & {
+		checkNumber?: string
+		checkDate?: string
+	} & {
 		amount: string
-		paymentMethod?: IncomePaymentMethod
+		paymentMethod?: IncomePaymentMethod | ''
 	} {
 	return (
 		typeof value === 'object' &&
@@ -406,9 +404,11 @@ function isTransactionFormDraft(value: unknown): value is Record<string, unknown
 		typeof value.bookedOn === 'string' &&
 		(!('description' in value) || typeof value.description === 'string') &&
 		(!('memo' in value) || typeof value.memo === 'string') &&
+		(!('checkId' in value) || typeof value.checkId === 'string') &&
 		(!('checkNumber' in value) || typeof value.checkNumber === 'string') &&
 		(!('checkDate' in value) || typeof value.checkDate === 'string') &&
 		(!('paymentMethod' in value) ||
+			value.paymentMethod === '' ||
 			value.paymentMethod === 'cash' ||
 			value.paymentMethod === 'check' ||
 			value.paymentMethod === 'transfer' ||
@@ -418,13 +418,9 @@ function isTransactionFormDraft(value: unknown): value is Record<string, unknown
 	)
 }
 
-function inputHasCheckDetails(transaction: AppTransaction) {
-	return 'paymentMethod' in transaction && transaction.paymentMethod === 'check'
-}
-
 function validTransactionReferences(
 	facts: TransactionEntryObservation,
-	transaction: AppTransaction
+	transaction: TransactionSaveValues
 ) {
 	return (
 		transaction.organizationId === facts.organizationId &&

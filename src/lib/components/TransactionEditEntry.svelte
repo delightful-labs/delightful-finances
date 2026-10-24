@@ -132,12 +132,13 @@
 			bookedOn: row.bookedOn,
 			...(row.description ? { description: row.description } : {}),
 			...(row.memo ? { memo: row.memo } : {}),
+			...(row.checkId ? { checkId: row.checkId } : {}),
 			...(row.paymentMethod ? { paymentMethod: row.paymentMethod } : {}),
-			...(row.checkDetails
+			...(row.check
 				? {
-						checkDetails: {
-							checkNumber: row.checkDetails.checkNumber,
-							checkDate: row.checkDetails.checkDate ?? ''
+						check: {
+							checkNumber: row.check.checkNumber,
+							checkDate: row.check.checkDate ?? ''
 						}
 					}
 				: {}),

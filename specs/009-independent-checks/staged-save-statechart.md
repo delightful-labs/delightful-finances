@@ -1,11 +1,10 @@
 # Staged transaction save: ownership and retry contract
 
-Status: proposed implementation design for review. The Check creation child is
-implemented and has 18 passing unit tests. This coordinator is not implemented.
+Status: coordinator and create/edit adoption implemented for batch review. New tests and test migration await user review. Previous focused child tests do not verify this new batch.
 
 ## Why the current save adapter is insufficient
 
-The existing scoped form creates a finite submission actor per Save. That actor
+The original scoped form created a finite submission actor per Save. That actor
 creates a finite operation and persistence actor. `scoped-form-write.ts` and
 `scoped-form-submission.ts` reduce interrupted results to outcome and settlement,
 and `scoped-form.ts` clears the prior result when the next submission begins.
@@ -151,3 +150,29 @@ requires dedicated SDK coverage before claiming offline correctness.
    interruptions, authority changes and late child results.
 5. Wire the create/edit integrations and existing income controls, then add browser
    and offline synchronization coverage after review.
+
+## Implemented recovery boundary
+
+SDK local-first reads include pending writes, so a matching local row is not used
+to prove an unknown write settled. Unknown Check/ledger reconciliation uses
+`ReadTier.Remote` and exact prior-value comparison (including ledger tag assignments).
+Absence remains unresolved. Read-only reconciliation may be cancelled without
+domain cleanup; resource child invocations must drain. Known local success needs no
+remote query, and ordinary saves remain local-first. Explicit
+`PersistedWriteRejectedError` results retain confirmed rejection through rollback;
+other failures after commit issuance remain uncertain. No retry is automatic.
+The Check child now has explicit creation/update staging states. The ledger child
+reads editable provenance and tag links within its SDK transaction before planning
+updates/removals/additions; all ledger/tag mutations share one commit.
+
+## Approved movement simplification
+
+There is no existing-Check selector. Inline creation and edits to the currently
+attached Check are the UI paths. Existing Check metadata edits settle in its source
+account; an account change is staged with the ledger/tag writes in the ledger child.
+That child reads and checks the Check source account and existing ledger reference
+before staging both updates atomically. The coordinator accepts the source-scoped
+Check only for the edited transaction's current reference. It passes the observed
+source account into the ledger child for a transaction-time recheck. Unknown ledger
+reconciliation also verifies that the referenced Check reached the target account.
+SDK old/new account permissions and immutable organization remain mandatory.

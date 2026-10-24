@@ -224,3 +224,84 @@ describe('independent transaction interruptions', () => {
 		expect(f.rollback).toHaveBeenCalledTimes(1)
 	})
 })
+
+describe('atomic Check account move resource ownership', () => {
+	it.each(['success', 'stage-failure', 'settlement-unknown'])(
+		'stages both updates in one transaction and classifies %s',
+		async (scenario) => {
+			const f = fixture()
+			const targetAccountId = '88888888-8888-4888-8888-888888888888'
+			const checkId = '55555555-5555-4555-8555-555555555555'
+			const update = vi.spyOn(f.tx, 'update').mockImplementation(() => {})
+			f.all
+				.mockResolvedValueOnce([
+					{
+						id: transactionId,
+						organizationId,
+						accountId,
+						categoryId,
+						kind: 'expense',
+						source: 'manual',
+						externalId: null,
+						amountMinor: 1234,
+						currency: 'USD',
+						bookedOn: input.values.bookedOn,
+						description: null,
+						memo: null,
+						paymentMethod: 'check',
+						checkId,
+						checkDetailsId: null,
+						batchId: null
+					}
+				])
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([
+					{
+						id: checkId,
+						organizationId,
+						accountId,
+						checkNumber: '101',
+						checkDate: input.values.bookedOn,
+						payerName: null,
+						bankName: null,
+						memoOnCheck: null
+					}
+				])
+				.mockResolvedValueOnce([])
+			if (scenario === 'stage-failure')
+				update.mockImplementationOnce(() => {
+					throw new Error('Cannot stage Check move')
+				})
+			if (scenario === 'settlement-unknown')
+				f.wait.mockRejectedValue(new Error('Durability unknown'))
+			const result = await toPromise(
+				f.start({
+					...input,
+					mode: 'edit',
+					moveCheckFromAccountId: accountId,
+					values: { ...input.values, accountId: targetAccountId, tags: [] }
+				})
+			)
+			expect(f.beginTransaction).toHaveBeenCalledOnce()
+			expect(update).toHaveBeenCalledWith(app.checks, checkId, { accountId: targetAccountId })
+			if (scenario === 'stage-failure') {
+				expect(result).toMatchObject({ outcome: 'failed', settlement: 'rejected' })
+				expect(f.commit).not.toHaveBeenCalled()
+				expect(f.rollback).toHaveBeenCalledOnce()
+			} else {
+				expect(update).toHaveBeenCalledWith(
+					app.transactions,
+					transactionId,
+					expect.objectContaining({ accountId: targetAccountId, checkId })
+				)
+				expect(f.commit).toHaveBeenCalledOnce()
+				expect(result).toMatchObject(
+					scenario === 'success'
+						? { outcome: 'succeeded', settlement: 'locallyPersisted' }
+						: { outcome: 'failed', settlement: 'unknown' }
+				)
+				if (scenario === 'settlement-unknown') expect(f.rollback).toHaveBeenCalledOnce()
+			}
+		}
+	)
+})

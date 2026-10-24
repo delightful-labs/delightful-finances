@@ -71,58 +71,13 @@ export const independentTransactionSchema = z.union([
 	otherPayment.extend(independentTransactionShape)
 ])
 
-const checkDetails = z.strictObject({
+const checkValues = z.strictObject({
 	checkNumber: checkNumberText,
 	checkDate: dateOnlyText,
 	payerName: z.string().optional(),
 	bankName: z.string().optional(),
 	memoOnCheck: z.string().optional()
 })
-
-const expenseTransaction = z.strictObject({
-	...transactionBaseShape,
-	kind: z.literal('expense'),
-	source: transactionSourceSchema
-})
-
-const manualIncomeTransaction = z.strictObject({
-	...transactionBaseShape,
-	kind: z.literal('income'),
-	source: z.strictObject({ source: z.literal('manual') }),
-	paymentMethod: z.enum(['cash', 'transfer', 'electronic']).default('cash')
-})
-
-const checkIncomeTransaction = z.strictObject({
-	...transactionBaseShape,
-	kind: z.literal('income'),
-	source: z.strictObject({ source: z.literal('manual') }),
-	paymentMethod: z.literal('check'),
-	checkDetails
-})
-
-const importedIncomeTransaction = z.strictObject({
-	...transactionBaseShape,
-	kind: z.literal('income'),
-	source: z.strictObject({ source: z.literal('simplefin'), externalId: externalIdText })
-})
-
-export const appTransactionSchema = z.union([
-	expenseTransaction,
-	manualIncomeTransaction,
-	checkIncomeTransaction,
-	importedIncomeTransaction
-])
-
-export function transactionSchemaFor(transaction: z.input<typeof appTransactionSchema>) {
-	if (transaction.kind === 'expense') return expenseTransaction
-	if (transaction.kind === 'income' && transaction.source.source === 'simplefin') {
-		return importedIncomeTransaction
-	}
-	if ('paymentMethod' in transaction && transaction.paymentMethod === 'check') {
-		return checkIncomeTransaction
-	}
-	return manualIncomeTransaction
-}
 
 type TransactionFormOptions = {
 	organizationId: string | null
@@ -144,7 +99,6 @@ export function defaultTransactionCategory(
 	)
 }
 
-const [expense, manualIncome, checkIncome] = appTransactionSchema.options
 const amountText = z
 	.string()
 	.transform((value, context) => {
@@ -153,25 +107,54 @@ const amountText = z
 		context.addIssue({ code: 'custom', message: 'Enter a valid amount.' })
 		return z.NEVER
 	})
-	.pipe(expense.shape.money.shape.amountMinor)
-const paymentMethod = z.union([manualIncome.shape.paymentMethod, checkIncome.shape.paymentMethod])
+	.pipe(amountMinorValue)
 
-export function transactionFormSchema(getOptions: () => TransactionFormOptions) {
-	const categoryId = z.preprocess(
-		(value) => (value === '' ? undefined : value),
-		expense.shape.categoryId.default(() => defaultTransactionCategory(getOptions())?.id ?? '')
-	)
-	const fields = expense
-		.pick({ accountId: true, categoryId: true, bookedOn: true, description: true, memo: true })
-		.extend({ categoryId, amount: amountText, paymentMethod, tags: expense.shape.tags })
-		// Preserve raw check fields until the canonical check-income branch validates them.
-		.loose()
+/** Form intent: a Check can be created inline or selected explicitly by identity. */
+export const transactionSaveSchema = z.union([
+	z.strictObject({
+		...independentTransactionShape,
+		paymentMethod: z.literal('check'),
+		check: z.discriminatedUnion('kind', [
+			z.strictObject({ kind: z.literal('new'), values: checkValues }),
+			z.strictObject({
+				kind: z.literal('existing'),
+				id: z.uuid(),
+				// Omission preserves Check metadata; supplied values are an explicit metadata edit.
+				values: checkValues.optional()
+			})
+		])
+	}),
+	otherPayment.extend(independentTransactionShape)
+])
+export type TransactionSaveValues = z.output<typeof transactionSaveSchema>
 
+export function independentTransactionFormSchema(
+	getOptions: () => TransactionFormOptions & {
+		transaction?:
+			| (Pick<TransactionRow, 'source' | 'externalId'> & Partial<Pick<TransactionRow, 'checkId'>>)
+			| null
+	}
+) {
+	const fields = z.object({
+		accountId: z.string(),
+		categoryId: z.string().optional().default(''),
+		bookedOn: dateOnlyText,
+		amount: amountText,
+		description: transactionBaseShape.description,
+		memo: transactionBaseShape.memo,
+		tags: tagNames,
+		paymentMethod: z.enum(['', 'cash', 'check', 'transfer', 'electronic']).optional().default(''),
+		checkId: z.string().optional(),
+		checkNumber: z.string().optional(),
+		checkDate: z.string().optional()
+	})
 	return fields
 		.transform<unknown>((fields, context) => {
 			const options = getOptions()
 			const account = options.accounts.find((row) => row.id === fields.accountId)
-			const category = options.categories.find((row) => row.id === fields.categoryId)
+			const category = options.categories.find(
+				(row) => row.id === (fields.categoryId || defaultTransactionCategory(options)?.id)
+			)
 			if (
 				!account ||
 				!category ||
@@ -185,32 +168,44 @@ export function transactionFormSchema(getOptions: () => TransactionFormOptions) 
 				return z.NEVER
 			}
 			const base = {
-				accountId: account.id,
 				organizationId: account.organizationId,
+				accountId: account.id,
 				categoryId: category.id,
+				kind: options.kind,
 				bookedOn: fields.bookedOn,
 				money: { amountMinor: fields.amount, currency: account.currency },
-				...(fields.description === undefined ? {} : { description: fields.description }),
-				...(fields.memo === undefined ? {} : { memo: fields.memo }),
+				description: fields.description,
+				memo: fields.memo,
+				tags: fields.tags,
 				source:
 					options.transaction?.source === 'simplefin'
 						? { source: 'simplefin', externalId: options.transaction.externalId }
-						: { source: 'manual' },
-				...(fields.tags === undefined ? {} : { tags: fields.tags })
+						: { source: 'manual' }
 			}
-			if (options.kind === 'expense' || options.transaction?.source === 'simplefin')
-				return { ...base, kind: options.kind }
-			return fields.paymentMethod === 'check'
-				? {
-						...base,
-						kind: options.kind,
-						paymentMethod: fields.paymentMethod,
-						checkDetails: {
-							checkNumber: fields.checkNumber,
-							checkDate: fields.checkDate
-						}
-					}
-				: { ...base, kind: options.kind, paymentMethod: fields.paymentMethod }
+			if (fields.paymentMethod !== 'check')
+				return { ...base, paymentMethod: fields.paymentMethod || null, checkId: null }
+			const id =
+				fields.checkId === undefined ? options.transaction?.checkId : fields.checkId || null
+			const values =
+				fields.checkNumber !== undefined || fields.checkDate !== undefined
+					? { checkNumber: fields.checkNumber, checkDate: fields.checkDate }
+					: undefined
+			return {
+				...base,
+				paymentMethod: 'check',
+				check: id
+					? { kind: 'existing', id, ...(values ? { values } : {}) }
+					: { kind: 'new', values }
+			}
 		})
-		.pipe(appTransactionSchema)
+		.pipe(transactionSaveSchema)
+}
+
+// Shared public form contract; both directions and provider sources use the same schema.
+export const appTransactionSchema = transactionSaveSchema
+export const transactionFormSchema = independentTransactionFormSchema
+export function transactionSchemaFor(_transaction: z.input<typeof transactionSaveSchema>) {
+	return _transaction.paymentMethod === 'check'
+		? transactionSaveSchema.options[0]
+		: transactionSaveSchema.options[1]
 }
