@@ -56,3 +56,10 @@ Form checkpoint plumbing: 43 focused tests pass across scoped form ownership,
 submission and write handling. Coverage includes partial-result retention and retry
 forwarding, interrupted-write propagation, reset/scope clearing, and rejection of a
 late checkpoint after a scope change. Prettier and static checks pass.
+
+Shared independent transaction schema and stable creation identity: 97 focused tests
+pass across validation and transaction creation. Coverage includes both kinds with
+and without Check references, invalid pairings, caller-supplied ID reuse for linked
+writes, invalid ID rejection before opening the SDK transaction, and allocation
+failure. The existing form path still uses its prior transaction contract; the staged
+coordinator has not adopted this schema yet.

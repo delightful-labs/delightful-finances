@@ -76,11 +76,12 @@ export function creationFixture() {
 	const beginTransaction = vi.fn(() => transaction)
 	const db = { beginTransaction }
 	const machine = createTransactionPersistenceMachine(db)
-	function input(values = creationValues): InputFrom<typeof machine> {
+	function input(values = creationValues, creationId?: string): InputFrom<typeof machine> {
 		const facts = creationFacts(db)
 		return {
 			request: { id: 1, scopeRevision: 0, scope: transactionEntryScope(facts), values },
-			observation: { revision: 0, facts }
+			observation: { revision: 0, facts },
+			...(creationId === undefined ? {} : { creationId })
 		}
 	}
 	function start(values = creationValues, logic = machine) {

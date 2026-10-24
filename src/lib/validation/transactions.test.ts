@@ -3,6 +3,7 @@ import type { Account, Category } from '../schema.js'
 import {
 	appTransactionSchema,
 	defaultTransactionCategory,
+	independentTransactionSchema,
 	transactionFormSchema
 } from './transactions.js'
 
@@ -118,6 +119,44 @@ describe('canonical transaction normalization', () => {
 				source: { source: 'simplefin', externalId: ' external ' }
 			})
 		).not.toHaveProperty('paymentMethod')
+	})
+})
+
+describe('independent transaction payment references', () => {
+	const values = {
+		organizationId: '22222222-2222-4222-8222-222222222222',
+		accountId: '33333333-3333-4333-8333-333333333333',
+		categoryId: '44444444-4444-4444-8444-444444444444',
+		bookedOn: '2026-10-13',
+		money: { amountMinor: 100, currency: 'USD' },
+		source: { source: 'manual' }
+	}
+	it.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
+		'allows an optional payment method or a compatible Check for %s',
+		(kind) => {
+			expect(independentTransactionSchema.parse({ ...values, kind })).toMatchObject({
+				kind,
+				paymentMethod: null,
+				checkId: null
+			})
+			expect(
+				independentTransactionSchema.parse({
+					...values,
+					kind,
+					paymentMethod: 'check',
+					checkId: '55555555-5555-4555-8555-555555555555'
+				})
+			).toMatchObject({ kind, paymentMethod: 'check' })
+		}
+	)
+	it.each([
+		{ paymentMethod: 'check' },
+		{ paymentMethod: 'cash', checkId: '55555555-5555-4555-8555-555555555555' },
+		{ paymentMethod: 'check', checkId: 'invalid' }
+	])('rejects an invalid reference pairing: %j', (payment) => {
+		expect(
+			independentTransactionSchema.safeParse({ ...values, kind: 'expense', ...payment }).success
+		).toBe(false)
 	})
 })
 

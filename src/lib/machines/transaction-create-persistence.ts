@@ -1,5 +1,6 @@
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
+import { z } from 'zod'
 import { app, type Tag } from '#lib/schema.js'
 import { normalizedName } from '#lib/domain/names.js'
 import { appTransactionSchema } from '#lib/validation/transactions.js'
@@ -18,7 +19,14 @@ import type {
 } from '#lib/transaction-entry-contract.js'
 
 export type CreationDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
-type Input = FormOperationInput<AppTransaction, TransactionEntryScope, TransactionEntryObservation>
+type Input = FormOperationInput<
+	AppTransaction,
+	TransactionEntryScope,
+	TransactionEntryObservation
+> & {
+	/** Supplied by the staged save owner; an uncertain attempt must be reconciled before reuse. */
+	creationId?: string
+}
 type Result = FormOperationResult<void, TransactionEntryReason>
 type Transaction = ReturnType<CreationDb['beginTransaction']>
 function required<T>(value: T | undefined): T {
@@ -27,7 +35,12 @@ function required<T>(value: T | undefined): T {
 }
 
 // Pure preparation: choose all row values and IDs before staging any writes.
-function planCreation(transaction: AppTransaction, existing: readonly Tag[]) {
+
+function planCreation(
+	transaction: AppTransaction,
+	existing: readonly Tag[],
+	transactionId: string
+) {
 	const archivedSelection = (transaction.tags ?? []).some((name) =>
 		existing.some(
 			(tag) =>
@@ -50,7 +63,6 @@ function planCreation(transaction: AppTransaction, existing: readonly Tag[]) {
 			).length > 1
 	)
 	if (ambiguous) return { kind: 'ambiguous' } satisfies { kind: 'ambiguous' }
-	const transactionId = crypto.randomUUID()
 	const check =
 		'paymentMethod' in transaction && transaction.paymentMethod === 'check'
 			? {
@@ -127,8 +139,10 @@ const read = fromPromise(({ input }: { input: { tx: Transaction; values: AppTran
 		app.tags.where({ organizationId: input.values.organizationId, kind: input.values.kind })
 	)
 )
-const plan = fromPromise(({ input }: { input: { values: AppTransaction; tags: readonly Tag[] } }) =>
-	Promise.resolve(planCreation(input.values, input.tags))
+const allocateId = fromPromise(() => Promise.resolve(crypto.randomUUID()))
+const plan = fromPromise(
+	({ input }: { input: { values: AppTransaction; tags: readonly Tag[]; transactionId: string } }) =>
+		Promise.resolve(planCreation(input.values, input.tags, input.transactionId))
 )
 const stage = fromPromise(async ({ input }: { input: { tx: Transaction; plan: Plan } }) => {
 	const { tx, plan } = input
@@ -149,6 +163,7 @@ const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
 )
 const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
 type Context = {
+	creationId: string | undefined
 	input: Input | undefined
 	values: AppTransaction | undefined
 	tx: Transaction | undefined
@@ -158,7 +173,7 @@ type Context = {
 	settlement: FormSettlement
 	result: Result | undefined
 }
-const actors = { validate, open, read, plan, stage, commit, settle, rollback }
+const actors = { validate, allocateId, open, read, plan, stage, commit, settle, rollback }
 
 /** Owns one atomic creation transaction through rollback or actual commit settlement. */
 export function createTransactionPersistenceMachine(db: CreationDb) {
@@ -196,6 +211,7 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 		initial: 'running',
 		context: ({ input }) => ({
 			input,
+			creationId: input.creationId,
 			values: undefined,
 			tx: undefined,
 			tags: [],
@@ -256,11 +272,35 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 									onDone: [
 										{
 											guard: ({ event }) => event.output.success,
-											target: 'beforeOpen',
+											target: 'checkingIdentity',
 											actions: assign({ values: ({ event }) => event.output.data })
 										},
 										{ target: '#creation-failure' }
 									],
+									onError: '#creation-failure'
+								}
+							},
+							checkingIdentity: {
+								always: [
+									{ guard: 'interrupted', target: '#creation-failure' },
+									{
+										guard: ({ context }) => context.creationId === undefined,
+										target: 'allocatingIdentity'
+									},
+									{
+										guard: ({ context }) => z.uuid().safeParse(context.creationId).success,
+										target: 'beforeOpen'
+									},
+									{ target: '#creation-failure' }
+								]
+							},
+							allocatingIdentity: {
+								invoke: {
+									src: 'allocateId',
+									onDone: {
+										target: 'beforeOpen',
+										actions: assign({ creationId: ({ event }) => event.output })
+									},
 									onError: '#creation-failure'
 								}
 							},
@@ -311,7 +351,8 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 									src: 'plan',
 									input: ({ context }) => ({
 										values: required(context.values),
-										tags: context.tags
+										tags: context.tags,
+										transactionId: required(context.creationId)
 									}),
 									onDone: [
 										{
@@ -401,6 +442,7 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 						settlement: 'locallyPersisted'
 					}),
 					input: undefined,
+					creationId: undefined,
 					tx: undefined,
 					values: undefined,
 					tags: [],
@@ -417,6 +459,7 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 						settlement: context.settlement
 					}),
 					input: undefined,
+					creationId: undefined,
 					tx: undefined,
 					values: undefined,
 					tags: [],
@@ -432,6 +475,7 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 						settlement: context.settlement
 					}),
 					input: undefined,
+					creationId: undefined,
 					tx: undefined,
 					values: undefined,
 					tags: [],
@@ -447,6 +491,7 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 						settlement: context.settlement
 					}),
 					input: undefined,
+					creationId: undefined,
 					tx: undefined,
 					values: undefined,
 					tags: [],
@@ -459,6 +504,7 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 				entry: assign({
 					result: ({ context }): Result => ({ outcome: 'closed', settlement: context.settlement }),
 					input: undefined,
+					creationId: undefined,
 					tx: undefined,
 					values: undefined,
 					tags: [],

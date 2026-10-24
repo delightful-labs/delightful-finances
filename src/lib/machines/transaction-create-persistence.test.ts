@@ -8,11 +8,15 @@ function setup() {
 	vi.spyOn(crypto, 'randomUUID').mockReturnValue(organizationId)
 	return creationFixture()
 }
-async function createTransaction(db: ReturnType<typeof setup>['db'], values: AppTransaction) {
+async function createTransaction(
+	db: ReturnType<typeof setup>['db'],
+	values: AppTransaction,
+	creationId?: string
+) {
 	const f = creationFixture()
 	const actor = createActor(
 		f.machine.provide({ actors: { open: fromPromise(async () => db.beginTransaction()) } }),
-		{ input: f.input(values) }
+		{ input: f.input(values, creationId) }
 	).start()
 	return toPromise(actor)
 }
@@ -73,6 +77,32 @@ describe('createTransaction normalization', () => {
 			settlement: 'notStarted'
 		})
 		expect(db.beginTransaction).not.toHaveBeenCalled()
+	})
+	it('uses a caller-owned transaction ID for every linked write', async () => {
+		const f = setup()
+		const stableId = '55555555-5555-4555-8555-555555555555'
+		await createTransaction(f.db, input, stableId)
+		expect(f.insert).toHaveBeenCalledWith(app.transactions, expect.anything(), { id: stableId })
+		expect(f.insert).toHaveBeenCalledWith(app.checkDetails, expect.anything(), { id: stableId })
+	})
+	it('rejects a malformed caller ID before opening a write', async () => {
+		const f = setup()
+		await expect(createTransaction(f.db, input, 'invalid')).resolves.toMatchObject({
+			outcome: 'failed',
+			settlement: 'notStarted'
+		})
+		expect(f.db.beginTransaction).not.toHaveBeenCalled()
+	})
+	it('reports ID allocation errors before opening a write', async () => {
+		const f = setup()
+		vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
+			throw new Error('unavailable')
+		})
+		await expect(createTransaction(f.db, creationValues)).resolves.toMatchObject({
+			outcome: 'failed',
+			settlement: 'notStarted'
+		})
+		expect(f.db.beginTransaction).not.toHaveBeenCalled()
 	})
 })
 

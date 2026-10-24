@@ -1,0 +1,226 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Transaction } from 'jazz-tools'
+import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
+import { app } from '#lib/schema.js'
+import type { Tag } from '#lib/schema.js'
+import {
+	createIndependentTransactionPersistenceMachine,
+	type IndependentTransactionInput
+} from './independent-transaction-persistence.js'
+
+const transactionId = '11111111-1111-4111-8111-111111111111'
+const organizationId = '22222222-2222-4222-8222-222222222222'
+const accountId = '33333333-3333-4333-8333-333333333333'
+const categoryId = '44444444-4444-4444-8444-444444444444'
+const input: IndependentTransactionInput = {
+	transactionId,
+	values: {
+		organizationId,
+		accountId,
+		categoryId,
+		kind: 'expense',
+		bookedOn: '2026-10-23',
+		money: { amountMinor: 1234, currency: 'USD' },
+		source: { source: 'manual' },
+		paymentMethod: 'check',
+		checkId: '55555555-5555-4555-8555-555555555555',
+		tags: [' Garden ']
+	}
+}
+const cleanups: (() => void)[] = []
+afterEach(() => {
+	for (const cleanup of cleanups.splice(0)) cleanup()
+	vi.restoreAllMocks()
+})
+function fixture() {
+	const tx = new Transaction('mergeable', () => {
+		throw new Error('Unit fixture must not open a runtime')
+	})
+	const insert = vi.spyOn(tx, 'insert').mockImplementation(vi.fn())
+	const all = vi.spyOn(tx, 'all').mockResolvedValue([])
+	const rollback = vi.spyOn(tx, 'rollback').mockResolvedValue(true)
+	const wait = vi.fn(async (_options: { tier: 'local' }) => {})
+	const commit = vi.spyOn(tx, 'commit').mockImplementation(vi.fn().mockReturnValue({ wait }))
+	const beginTransaction = vi.fn(() => tx)
+	const machine = createIndependentTransactionPersistenceMachine({ beginTransaction })
+	function start(values = input, logic = machine) {
+		const actor = createActor(logic, { input: values })
+		cleanups.push(() => actor.stop())
+		return actor.start()
+	}
+	return { tx, insert, all, rollback, wait, commit, beginTransaction, machine, start }
+}
+
+const existingTag: Tag = {
+	id: '66666666-6666-4666-8666-666666666666',
+	organizationId,
+	kind: 'expense',
+	name: 'Garden',
+	categoryId: '77777777-7777-4777-8777-777777777777',
+	archivedAt: null
+}
+
+describe('independent transaction persistence', () => {
+	it('atomically writes a transaction with a Check reference and creates and assigns a typed tag', async () => {
+		const f = fixture()
+		const result = await toPromise(f.start())
+		expect(result).toEqual({ outcome: 'succeeded', transactionId, settlement: 'locallyPersisted' })
+		expect(f.beginTransaction).toHaveBeenCalledTimes(1)
+		expect(f.insert).toHaveBeenCalledWith(
+			app.transactions,
+			expect.objectContaining({
+				organizationId,
+				accountId,
+				categoryId,
+				kind: 'expense',
+				amountMinor: 1234,
+				paymentMethod: 'check',
+				checkId: input.values.checkId
+			}),
+			{ id: transactionId }
+		)
+		expect(f.insert).toHaveBeenCalledWith(
+			app.tags,
+			{ organizationId, kind: 'expense', name: 'Garden', categoryId, archivedAt: null },
+			expect.objectContaining({ id: expect.any(String) })
+		)
+		expect(f.insert).toHaveBeenCalledWith(
+			app.transactionTags,
+			expect.objectContaining({ organizationId, transactionId })
+		)
+		expect(f.wait).toHaveBeenCalledWith({ tier: 'local' })
+		expect(f.rollback).not.toHaveBeenCalled()
+	})
+
+	it('reuses a matching active tag without changing its category', async () => {
+		const f = fixture()
+		f.all.mockResolvedValue([existingTag])
+		await expect(toPromise(f.start())).resolves.toMatchObject({ outcome: 'succeeded' })
+		expect(f.insert.mock.calls.filter(([table]) => table === app.tags)).toHaveLength(0)
+		expect(f.insert).toHaveBeenCalledWith(app.transactionTags, {
+			organizationId,
+			transactionId,
+			tagId: existingTag.id
+		})
+	})
+
+	it('does not query tags when no tags are selected', async () => {
+		const f = fixture()
+		await expect(
+			toPromise(f.start({ ...input, values: { ...input.values, tags: [] } }))
+		).resolves.toMatchObject({ outcome: 'succeeded' })
+		expect(f.all).not.toHaveBeenCalled()
+		expect(f.insert).toHaveBeenCalledTimes(1)
+	})
+
+	it('rejects malformed data before opening a transaction', async () => {
+		const f = fixture()
+		await expect(toPromise(f.start({ ...input, transactionId: 'invalid' }))).resolves.toMatchObject(
+			{ outcome: 'failed', settlement: 'notStarted' }
+		)
+		expect(f.beginTransaction).not.toHaveBeenCalled()
+	})
+
+	it('handles transaction acquisition failure without attempting rollback', async () => {
+		const f = fixture()
+		f.beginTransaction.mockImplementation(() => {
+			throw new Error('open failed')
+		})
+		await expect(toPromise(f.start())).resolves.toEqual({
+			outcome: 'failed',
+			transactionId,
+			settlement: 'notStarted'
+		})
+		expect(f.rollback).not.toHaveBeenCalled()
+	})
+
+	it('rolls back ambiguous tags without staging writes', async () => {
+		const f = fixture()
+		f.all.mockResolvedValue([
+			existingTag,
+			{ ...existingTag, id: '88888888-8888-4888-8888-888888888888', name: ' garden ' }
+		])
+		await expect(toPromise(f.start())).resolves.toMatchObject({
+			outcome: 'failed',
+			settlement: 'rejected'
+		})
+		expect(f.insert).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledTimes(1)
+	})
+
+	it('rolls back a staging failure and reports confirmed rejection', async () => {
+		const f = fixture()
+		f.insert.mockImplementation(() => {
+			throw new Error('stage failed')
+		})
+		await expect(toPromise(f.start())).resolves.toEqual({
+			outcome: 'failed',
+			transactionId,
+			settlement: 'rejected'
+		})
+		expect(f.commit).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledTimes(1)
+	})
+
+	it('preserves an unknown outcome when commit fails', async () => {
+		const f = fixture()
+		f.commit.mockImplementation(() => {
+			throw new Error('commit failed')
+		})
+		await expect(toPromise(f.start())).resolves.toMatchObject({
+			outcome: 'failed',
+			settlement: 'unknown'
+		})
+		expect(f.rollback).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe('independent transaction interruptions', () => {
+	it('cancels before persistence without opening a transaction', async () => {
+		const f = fixture()
+		const actor = f.start()
+		actor.send({ type: 'CANCEL' })
+		await expect(toPromise(actor)).resolves.toEqual({
+			outcome: 'cancelled',
+			transactionId,
+			settlement: 'notStarted'
+		})
+		expect(f.beginTransaction).not.toHaveBeenCalled()
+	})
+
+	it('drains transaction acquisition after invalidation without staging writes', async () => {
+		const f = fixture()
+		const opened = Promise.withResolvers<typeof f.tx>()
+		const actor = f.start(
+			input,
+			f.machine.provide({ actors: { open: fromPromise(() => opened.promise) } })
+		)
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { flow: 'opening' } }))
+		actor.send({ type: 'INVALIDATE' })
+		opened.resolve(f.tx)
+		await expect(toPromise(actor)).resolves.toMatchObject({
+			outcome: 'scopeChanged',
+			settlement: 'rejected'
+		})
+		expect(f.insert).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledTimes(1)
+	})
+
+	it('rolls back staged writes when cancelled before commit', async () => {
+		const f = fixture()
+		const staged = Promise.withResolvers<void>()
+		const actor = f.start(
+			input,
+			f.machine.provide({ actors: { stage: fromPromise(() => staged.promise) } })
+		)
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { flow: 'staging' } }))
+		actor.send({ type: 'CANCEL' })
+		staged.resolve()
+		await expect(toPromise(actor)).resolves.toMatchObject({
+			outcome: 'cancelled',
+			settlement: 'rejected'
+		})
+		expect(f.commit).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledTimes(1)
+	})
+})

@@ -1,8 +1,14 @@
 import type { z } from 'zod'
 import type { TransactionRow } from '../schema.js'
-import { appTransactionSchema, transactionSchemaFor } from '../validation/transactions.js'
+import {
+	appTransactionSchema,
+	independentTransactionSchema,
+	transactionSchemaFor
+} from '../validation/transactions.js'
 
 export type IncomePaymentMethod = NonNullable<TransactionRow['paymentMethod']>
+
+export type IndependentTransaction = z.output<typeof independentTransactionSchema>
 
 export type AppTransaction = z.output<typeof appTransactionSchema>
 export type TransactionValidationError =

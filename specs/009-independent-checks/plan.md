@@ -166,3 +166,47 @@ An unexpected actor crash cannot publish newly allocated recovery data through a
 terminal result. The future coordinator must expose stable IDs before issuing
 writes or classify such a crash as unresolved without automatically repeating it;
 this foundation alone does not provide crash-safe retries.
+
+## Shared values and stable creation IDs for review
+
+The additive `independentTransactionSchema` derives common money/date/tag/source
+validation and the verified payment/reference pairing for both transaction kinds.
+It requires UUID organization/account/category references, permits an absent method,
+and carries only Check ID rather than embedded metadata. The existing form schema
+remains in service until the coordinator and form adapters adopt the new contract.
+The temporary manual-income method rule in root permissions must be removed during
+that adoption to match the approved optional-method requirement.
+
+The existing creation resource child now accepts an optional caller-owned
+`creationId`. After validation its statechart checks that identity or allocates one
+for the current form path, before opening a write transaction. Planning receives
+the retained identity rather than generating it after reads. Its state sequence is
+validate -> check/allocate identity -> open -> read tags -> plan -> stage -> commit
+-> settle, with existing interruption and rollback ownership. ID allocation is a
+single leaf actor with an explicit failure transition. No retry or reconciliation
+is hidden in the planner; callers must reconcile an uncertain prior attempt before
+reusing the ID. The coordinator will supply and retain that identity.
+
+Three implementation files; no UI change, new tests, coordinator or independent
+reference write path is included in this slice. Review before testing the new
+schema branches, stable identity propagation, invalid IDs and allocation failures.
+
+## Independent transaction resource owner for review
+
+`independent-transaction-persistence.ts` is the sibling leaf resource owner for the
+coordinator. Its request contains canonical values and the stable caller-owned
+transaction ID. It validates, opens one Jazz transaction, reads eligible tags only
+when tags were requested, prepares the row and deterministic tag assignments,
+stages the transaction plus all tag writes atomically, commits and waits for local
+settlement. It owns rollback on precommit failure and waits for an issued operation
+before reporting interruption. Tag ambiguity fails before staging. Effects contain
+one read, one planning transform, an unconditional set of staged writes, one commit,
+one settlement wait or rollback; decisions remain explicit states/guards.
+
+The request can reference an existing Check ID under root SDK policies. This child
+does not create or move Checks, retry uncertain IDs, or classify cross-write partial
+success; the coordinator owns those decisions. Direct use with optional-method
+income still needs root policy alignment, because current root policy preserves a
+temporary manual-income method requirement from the old form contract. Do not wire
+this path until that permission rule and the existing income UI contract are aligned.
+No runtime tests are included before review.

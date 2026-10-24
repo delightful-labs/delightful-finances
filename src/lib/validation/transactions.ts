@@ -51,6 +51,26 @@ const transactionBaseShape = {
 		.optional()
 }
 
+const transactionSourceSchema = z.discriminatedUnion('source', [
+	z.strictObject({ source: z.literal('manual') }),
+	z.strictObject({ source: z.literal('simplefin'), externalId: externalIdText })
+])
+
+/** Canonical values for the staged save path; direction and source share payment rules. */
+const independentTransactionShape = {
+	...transactionBaseShape,
+	organizationId: z.uuid(),
+	accountId: z.uuid(),
+	categoryId: z.uuid(),
+	kind: z.enum(['income', 'expense']),
+	source: transactionSourceSchema
+}
+const [checkPayment, otherPayment] = transactionPaymentSchema.options
+export const independentTransactionSchema = z.union([
+	checkPayment.extend(independentTransactionShape),
+	otherPayment.extend(independentTransactionShape)
+])
+
 const checkDetails = z.strictObject({
 	checkNumber: checkNumberText,
 	checkDate: dateOnlyText,
@@ -62,10 +82,7 @@ const checkDetails = z.strictObject({
 const expenseTransaction = z.strictObject({
 	...transactionBaseShape,
 	kind: z.literal('expense'),
-	source: z.discriminatedUnion('source', [
-		z.strictObject({ source: z.literal('manual') }),
-		z.strictObject({ source: z.literal('simplefin'), externalId: externalIdText })
-	])
+	source: transactionSourceSchema
 })
 
 const manualIncomeTransaction = z.strictObject({
