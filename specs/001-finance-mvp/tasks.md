@@ -120,9 +120,9 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 - [ ] T039 Revisit responsive layout, keyboard/focus behavior, and interaction states after the planned post-MVP design and layout revision. Existing shell behavior has focused responsive/keyboard coverage; perform the broader review against the revised design rather than polishing the current layout prematurely.
 - [ ] Revisit Jazz pending/sync-completion observability and the app-shell status indicator when the SDK exposes a supported whole-device signal. The current shell reports only local mode, browser offline state, or sync configuration; do not claim a completed sync. See the deferred sync-status observability investigation in plan.md.
-- [ ] Add GitHub Actions CI for application checks, unit tests, and Playwright suites. `.github/workflows/ci.yml` now defines type/unit/build checks, four isolated browser jobs (application, authentication, permissions, workspace), and a production-preview PWA job. Each browser job uses a disposable in-memory Jazz server and one worker; PWA deploys the schema to its own in-memory Jazz service before building and testing. Local checks pass for application/service-worker types, browser-test types, Prettier, 1,045 unit tests, 16 authentication tests, 30 permissions tests, production build, and all 10 PWA tests. The application suite's first 60 tests and malformed/duplicate-workspace cases passed; its remaining UI/workflow group also passed all 11 tests. The workspace run completed its first 36 tests before interruption; all 14 remaining tests now pass individually, with at most three fix attempts per test. Corrections cover stale routes, accessible link names, account filters, editable detail fields, and workspace form closure. A tag-input initialization fix preserves late-arriving linked tags until the user edits the selection; focused tag selection/reset and offline-persistence regression scenarios pass. All 31 transaction-create persistence unit tests pass. No complete workspace rerun was performed. GitHub authentication was verified outside the sandbox; GitHub-hosted verification is pending the feature PR run. Keep this task open until all browser suites pass and GitHub Actions reports a successful run.
-- [ ] T043 Implement server-side SimpleFIN claim and scheduled/on-demand import worker with idempotent external IDs; include unit and Playwright coverage.
-- [ ] T044 Build SimpleFIN account linking and transaction import UI; include unit and Playwright coverage.
+- [ ] Add GitHub Actions CI for application checks, unit tests, and Playwright suites. `.github/workflows/ci.yml` defines type/unit/build checks, four isolated browser jobs (application, authentication, permissions, workspace), and a production-preview PWA job. GitHub-hosted verification remains pending this merged branch's CI run. Keep this task open until all browser suites pass and GitHub Actions reports a successful run.
+- T043 **Superseded** by constitution VI and [002-manual-bank-sync](../002-manual-bank-sync/spec.md): the original server-side claim/import-worker task is retired. Explicit client-initiated setup, passkey-protected credentials and manual imports are tracked under feature 002; scheduled/automatic imports are outside the approved design.
+- T044 **Superseded tracking**: account linking and explicit manual import requirements, implementation and verification are tracked in [002-manual-bank-sync](../002-manual-bank-sync/spec.md) and its [tasks](../002-manual-bank-sync/tasks.md), rather than as an independent deferred MVP task. This reference does not declare every feature-002 requirement complete.
 - [ ] T045 Implement transaction image upload and attachment UI using Jazz blob APIs; include unit and Playwright coverage.
 - [ ] T046 Implement transaction batch/template flows; include unit and Playwright coverage.
 - [ ] T047 Add business-org creation, invite UX, and fine-grained account grant management; include unit and Playwright coverage.
@@ -323,7 +323,7 @@ Runtime logs include XState assign warnings and a SvelteKit replaceState depreca
 - [x] Share pure name normalization between category and account guards.
 - [x] Observe active organization accounts and assess duplicate names after authorization before creation (implementation approved; focused checks passed).
 - [x] Review category/account implementation, then add and run focused unit and Playwright coverage.
-- [ ] Review an existing-tag migration policy preserving unlinked and mixed-kind history.
+- **Superseded**: existing-tag migration policy preserving unlinked and mixed-kind history; the user selected required-kind alpha storage instead.
 - [x] Add required kind for new tags, matching-kind categories, settings duplicate guards and legacy unassigned feedback (implementation approved; focused checks passed).
 - [x] Update transaction tag selection, inline creation and ambiguity guards to match transaction kind (implementation approved; focused checks passed).
 - [x] Review tag implementation, then add and run relevant unit and Playwright coverage.
@@ -429,3 +429,72 @@ Cancel/primary Save verification: all 12 focused Playwright scenarios pass (eigh
 - [x] Add a localized mobile Back to list link on income and expense detail pages, preserving URL pagination; awaiting implementation review.
 - [ ] After implementation approval, add/run focused coverage for mobile detail back links, matching section and pagination, and absence on desktop and creation pages.
 - [x] Verify desktop/mobile disclosure defaults, pointer/keyboard toggling, visible editable form and retained drafts, timestamps, and closed-on-reload behavior. All eight transaction-edit Playwright scenarios pass, including six existing edit regressions; browser-test TypeScript, focused formatting and whitespace checks pass.
+
+## Permission integrity follow-up
+
+- [x] Tighten Jazz tag insert/update and transaction-tag assignment rules; preserve legacy historical access and prohibit kind changes that invalidate assignments.
+- [x] Require a payment method for manual income at the Jazz permission boundary while allowing SimpleFIN income to omit it.
+- [x] Review the permission implementation (approved by the user’s “continue”).
+- [x] After approval, add/run focused permission coverage for valid and mismatched tag/category organizations and kinds, missing kinds, legacy archive/removal, kind-change bypasses, manual missing-method rejection, imported missing-method acceptance and check-details enforcement.
+
+Verification: `pnpm test:unit --run src/lib/permissions.test.ts` passes all 11
+permission tests against the SDK’s temporary local authority, including seeded
+legacy history. `pnpm test:permissions` passes all 32 browser scenarios (30 existing
+and two new income/expense integrity cases) against disposable in-memory Jazz on
+port 5180. Existing tag fixtures now specify their required kind. `pnpm check`,
+`pnpm check:tests`, focused Prettier and `git diff --check` pass. No production
+changes were needed during verification; nothing was deployed or committed.
+
+## SimpleFIN documentation reconciliation
+
+- [x] Align MVP SimpleFIN requirements, architecture, credential-access assumptions and obsolete backlog entries with constitution VI and spec 002.
+- [ ] Review this documentation-only reconciliation; unfinished sync-indicator, merge and sharing features remain outside this cycle.
+
+## Required tag kind in alpha storage
+
+- [x] Require tag kind in storage and remove the untyped-tag permission exception.
+- [x] Replace the legacy migration proposal with the user-approved required-kind alpha policy in the design and plan.
+- [x] Review this schema/permission implementation (user approved with “continue”).
+- [x] After approval, update fixtures and verify direct SDK inserts/updates and assignments for expense/income, missing/null kinds, optional/mismatched/foreign categories, immutable kinds/workspaces, archived typed history, and cross-workspace assignment rejection.
+- [ ] Handle an existing environment’s schema/data transition separately before deployment; no reset is performed here.
+
+Verification: 177 focused tests and four focused browser scenarios pass; the
+12 SDK authority tests also pass separately. Application/service-worker and
+browser-test type checks pass. See [tag-kinds.md](tag-kinds.md#required-kind-verification)
+for scope, fixture updates, and limits. No data reset or deployment performed.
+
+## Remove the unrequested amount ceiling
+
+- [x] Remove the signed-32-bit amount ceiling and parse decimal digits exactly before safe Number conversion; align the money requirement and plan.
+- [x] Identify the actual signed-32-bit SDK storage restriction through direct-write tests and change transaction amount storage to bigint with a validated Number adapter.
+- [x] Review the original parser implementation (user approved implementation/verification).
+- [x] Review the additional bigint storage change discovered necessary during SDK verification (user approved with “continue”).
+- [x] Replace obsolete ceiling expectations and verify above-old-limit entry, exact safe-integer boundaries, no rounded acceptance, and direct SDK persistence above the old limit.
+
+Verification after bigint storage approval: all 94 focused tests pass across
+money parsing/formatting, transaction validation and the real SDK permission
+authority. Both 2,147,483,648 and Number.MAX_SAFE_INTEGER minor units persist
+without truncation and read back through a remote-confirmed SDK query. The
+focused Playwright amount-entry scenario passes on disposable in-memory Jazz at
+port 5180: save/reload above the old limit, exact maximum cents, and rejection
+one cent beyond the safe-integer boundary without changing the saved amount.
+Application/service-worker and browser-test type checks, focused formatting and
+whitespace checks pass. No schema deployment, reset or commit performed.
+
+## Imported transaction editing
+
+- [x] Record imported editing requirements and the existing-machine ownership/guard model.
+- [x] Implement observed provenance in validation, imported readiness/persistence support and immutable provenance at the Jazz boundary.
+- [x] Review the implementation before tests (user approved with “do tests”).
+- [x] After approval, verify imported expense/income edits, categories/tags/notes and other editable fields, absent payment-method retention, provenance spoof/change rejection, pristine/reverted drafts, repeat-import preservation and existing manual/check/offline/access behavior.
+
+Imported editing verification: all 178 focused unit/SDK tests pass across form
+validation, edit readiness, edit persistence, permissions and provider import
+decisions. The eight existing transaction-edit browser cases passed in the initial
+run; both new imported income/expense cases passed in a focused rerun after test
+locator corrections. The updated bank connection/manual-sync scenario also passes
+and confirms repeat sync retains user description/memo/amount and exactly two
+provider rows. All browser work used disposable in-memory Jazz on port 5180.
+Application/service-worker and browser-test type checks, focused formatting and
+whitespace checks pass. No production fixes were needed during verification.
+No commits, existing-data resets or schema deployments performed.

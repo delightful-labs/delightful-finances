@@ -17,9 +17,9 @@ const externalIdColumn = validatedTextColumn(externalIdText)
 export const transactionsSchema = {
 	transactions: s.table(
 		{
-			amountMinor: s.int().transform<number>({
-				from: (value) => value,
-				to: (value) => amountMinorValue.parse(value)
+			amountMinor: s.bigint().transform<number>({
+				from: (value) => amountMinorValue.parse(Number(value)),
+				to: (value) => BigInt(amountMinorValue.parse(value))
 			}),
 			kind: s.enum('expense', 'income'),
 			currency: currencyColumn.column,

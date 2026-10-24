@@ -347,7 +347,7 @@ test('transaction tags enforce workspace consistency, active assignment, immutab
 			})
 			.wait({ tier: 'global' })
 		const tag = await db
-			.insert(app.tags, { organizationId, name: 'Active permission tag' })
+			.insert(app.tags, { organizationId, name: 'Active permission tag', kind: 'expense' })
 			.wait({ tier: 'global' })
 		const other = await db
 			.insert(app.organizations, {
@@ -366,7 +366,7 @@ test('transaction tags enforce workspace consistency, active assignment, immutab
 			})
 			.wait({ tier: 'global' })
 		const foreignTag = await db
-			.insert(app.tags, { organizationId: other.id, name: 'Foreign tag' })
+			.insert(app.tags, { organizationId: other.id, name: 'Foreign tag', kind: 'expense' })
 			.wait({ tier: 'global' })
 		// The transaction and assignment must be accepted together, in either write order.
 		const tx = await db.transaction((tx) => {
@@ -485,7 +485,7 @@ for (const scenario of scenarios) {
 						})
 						.wait({ tier: 'global' })
 					const tag = await db
-						.insert(app.tags, { organizationId, name: 'Tag shared assignment' })
+						.insert(app.tags, { organizationId, name: 'Tag shared assignment', kind: 'expense' })
 						.wait({ tier: 'global' })
 					const link = await db
 						.insert(app.transactionTags, {
@@ -1023,5 +1023,145 @@ for (const scenario of scenarios) {
 		} finally {
 			await context.close()
 		}
+	})
+}
+
+for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
+	test(`permission integrity: ${kind} tag compatibility and income methods`, async ({ page }) => {
+		await start(page)
+		const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+		const results = await page.evaluate(
+			async ({ organizationId, kind }) => {
+				const { app, db } = window.workspacePermissionTest
+				const categories = await db.all(app.categories.where({ organizationId, isSystem: true }), {
+					tier: 'remote'
+				})
+				const category = categories.find((row) => row.kind === kind)
+				const opposite = categories.find((row) => row.kind !== kind)
+				if (!category || !opposite) throw new Error('Missing categories')
+				const account = await db
+					.insert(app.accounts, {
+						organizationId,
+						name: 'Integrity',
+						kind: 'cash',
+						currency: 'USD'
+					})
+					.wait({ tier: 'global' })
+				const attempt = async (write: () => Promise<unknown>) => {
+					try {
+						await write()
+						return 'accepted'
+					} catch (error) {
+						return error instanceof Error ? error.message : 'unknown-error'
+					}
+				}
+				const denied = []
+				const invalidKinds = []
+				for (const invalidKind of [undefined, null]) {
+					const invalid = { organizationId, name: 'Invalid kind', kind }
+					if (invalidKind === undefined) Reflect.deleteProperty(invalid, 'kind')
+					else Reflect.set(invalid, 'kind', invalidKind)
+					invalidKinds.push(
+						await attempt(() => db.insert(app.tags, invalid).wait({ tier: 'global' }))
+					)
+				}
+				denied.push(
+					await attempt(() =>
+						db
+							.insert(app.tags, {
+								organizationId,
+								name: 'Wrong category',
+								kind,
+								categoryId: opposite.id
+							})
+							.wait({ tier: 'global' })
+					)
+				)
+				const tag = await db
+					.insert(app.tags, { organizationId, name: 'Matching', kind, categoryId: category.id })
+					.wait({ tier: 'global' })
+				const wrongTag = await db
+					.insert(app.tags, { organizationId, name: 'Other kind', kind: opposite.kind })
+					.wait({ tier: 'global' })
+				const values = {
+					organizationId,
+					accountId: account.id,
+					categoryId: category.id,
+					kind,
+					amountMinor: 100,
+					currency: 'USD',
+					bookedOn: '2026-10-23',
+					source: 'manual',
+					...(kind === 'income' ? { paymentMethod: 'cash' } : {})
+				} satisfies import('jazz-tools').schema.InsertOf<typeof app.transactions>
+				const row = await db.insert(app.transactions, values).wait({ tier: 'global' })
+				const link = await db
+					.insert(app.transactionTags, { organizationId, transactionId: row.id, tagId: tag.id })
+					.wait({ tier: 'global' })
+				denied.push(
+					await attempt(() =>
+						db
+							.insert(app.transactionTags, {
+								organizationId,
+								transactionId: row.id,
+								tagId: wrongTag.id
+							})
+							.wait({ tier: 'global' })
+					)
+				)
+				denied.push(
+					await attempt(() =>
+						db
+							.update(app.tags, tag.id, { kind: opposite.kind, categoryId: null })
+							.wait({ tier: 'global' })
+					)
+				)
+				denied.push(
+					await attempt(() =>
+						db
+							.update(app.transactions, row.id, {
+								kind: opposite.kind,
+								categoryId: opposite.id,
+								paymentMethod: 'cash'
+							})
+							.wait({ tier: 'global' })
+					)
+				)
+				let imported = null
+				if (kind === 'income') {
+					denied.push(
+						await attempt(() =>
+							db
+								.insert(app.transactions, { ...values, paymentMethod: null })
+								.wait({ tier: 'global' })
+						)
+					)
+					denied.push(
+						await attempt(() =>
+							db.update(app.transactions, row.id, { paymentMethod: null }).wait({ tier: 'global' })
+						)
+					)
+					const saved = await db
+						.insert(app.transactions, {
+							...values,
+							source: 'simplefin',
+							externalId: 'permission-import',
+							paymentMethod: null
+						})
+						.wait({ tier: 'global' })
+					imported = saved.id
+				}
+				const retained = await db.one(app.transactionTags.where({ id: link.id }), {
+					tier: 'remote'
+				})
+				return { denied, invalidKinds, retained: retained?.tagId === tag.id, imported }
+			},
+			{ organizationId, kind }
+		)
+		for (const outcome of results.denied)
+			expect(outcome).toMatch(/AuthorizationDenied|permission_denied/)
+		for (const outcome of results.invalidKinds) expect(outcome).not.toBe('accepted')
+		expect(results.retained).toBe(true)
+		if (kind === 'income') expect(results.imported).toBeTruthy()
 	})
 }

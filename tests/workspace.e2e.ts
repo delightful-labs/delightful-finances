@@ -1330,17 +1330,25 @@ test('category page counts connections, archives offline, protects system catego
 			})
 			.wait({ tier: 'global' })
 		await db
-			.insert(app.tags, { organizationId, name: 'Active connected tag', categoryId: category.id })
+			.insert(app.tags, {
+				organizationId,
+				name: 'Active connected tag',
+				kind: category.kind,
+				categoryId: category.id
+			})
 			.wait({ tier: 'global' })
 		await db
 			.insert(app.tags, {
 				organizationId,
 				name: 'Archived connected tag',
+				kind: category.kind,
 				categoryId: category.id,
 				archivedAt: new Date()
 			})
 			.wait({ tier: 'global' })
-		await db.insert(app.tags, { organizationId, name: 'Unconnected tag' }).wait({ tier: 'global' })
+		await db
+			.insert(app.tags, { organizationId, name: 'Unconnected tag', kind: 'expense' })
+			.wait({ tier: 'global' })
 		const system = await db.one(
 			app.categories.where({ organizationId, isSystem: true, kind: 'expense' })
 		)
@@ -1713,7 +1721,12 @@ test('tag page switches workspace drafts and archives offline without removing c
 			})
 			.wait({ tier: 'global' })
 		const tag = await db
-			.insert(app.tags, { organizationId, name: 'Archive tag', categoryId: category.id })
+			.insert(app.tags, {
+				organizationId,
+				name: 'Archive tag',
+				kind: category.kind,
+				categoryId: category.id
+			})
 			.wait({ tier: 'global' })
 		const org = await db
 			.insert(app.organizations, {
@@ -1819,7 +1832,8 @@ for (const role of ['admin', 'member', 'viewer']) {
 						await db
 							.insert(app.tags, {
 								organizationId,
-								name: 'Permission tag'
+								name: 'Permission tag',
+								kind: 'expense'
 							})
 							.wait({ tier: 'global' })
 					).id
@@ -1854,7 +1868,8 @@ for (const role of ['admin', 'member', 'viewer']) {
 							await db
 								.insert(app.tags, {
 									organizationId,
-									name: 'Forbidden tag'
+									name: 'Forbidden tag',
+									kind: 'expense'
 								})
 								.wait({ tier: 'global' })
 							results.push('accepted')
@@ -2276,7 +2291,12 @@ test('transaction list groups days, separates currency totals, and displays arch
 			})
 			.wait({ tier: 'global' })
 		const tag = await db
-			.insert(app.tags, { organizationId, name: 'Historical tag', categoryId: category.id })
+			.insert(app.tags, {
+				organizationId,
+				name: 'Historical tag',
+				kind: category.kind,
+				categoryId: category.id
+			})
 			.wait({ tier: 'global' })
 		const first = await db
 			.insert(app.transactions, {
@@ -2385,7 +2405,7 @@ test('transaction list groups days, separates currency totals, and displays arch
 	await expect(
 		main.getByRole('region', { name: 'Tue, March 10, 2026', exact: true }).getByRole('listitem')
 	).toHaveCount(3)
-	await expect(main.getByText('Renamed historical tag', { exact: true })).toBeVisible()
+	await expect(first.getByText('Renamed historical tag', { exact: true })).toBeVisible()
 })
 
 for (const kind of ['expense', 'income']) {
@@ -2420,7 +2440,12 @@ for (const kind of ['expense', 'income']) {
 					})
 					.wait({ tier: 'global' })
 				const tag = await db
-					.insert(app.tags, { organizationId, name: 'Detail tag', categoryId: category.id })
+					.insert(app.tags, {
+						organizationId,
+						name: 'Detail tag',
+						kind: category.kind,
+						categoryId: category.id
+					})
 					.wait({ tier: 'global' })
 				const id = crypto.randomUUID()
 				const write = await db.transaction((tx) => {

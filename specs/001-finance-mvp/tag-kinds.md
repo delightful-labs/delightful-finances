@@ -1,6 +1,6 @@
 # Tag kinds and duplicate-name implementation design
 
-Status: compatibility policy and implementation approved; focused automated verification passed.
+Status: required storage kind and removal of legacy permission compatibility reviewed and verified. Previous compatibility verification is historical.
 
 ## Behavior
 
@@ -15,24 +15,27 @@ expense tags in the list. Changing kind filters category choices and clears a
 selected category that no longer matches. The machine independently rejects an
 incompatible submitted category.
 
-## Accepted compatibility policy
+## Required-kind alpha policy
 
-Use an additive optional storage column so existing tags remain readable. Require
-a kind in canonical validation for every new tag; do not default old tags to
-expense. Preserve existing transaction-tag links and historical display. Tags
-without a kind remain visible in settings with localized feedback that their kind
-is unassigned, and are excluded from new transaction selection. A later reviewed
-migration assigns or splits them. This is a transitional storage representation,
-not permission to create new untyped tags.
+The user approved requiring `kind` in the storage schema and removing untyped-tag
+compatibility. Every stored tag must have an explicit expense/income kind, with
+no default. New tags and assignments must enforce same-workspace and matching-kind
+references at the Jazz permission boundary, including direct SDK writes.
 
-Do not automatically infer kinds from partial transaction history: account-scoped
-read permissions can hide relevant usage. A linked category alone also does not
-prove that all past assignments match that category's kind.
+The earlier nullable-column compatibility policy and proposed legacy assignment/
+splitting migration are superseded. Alpha data is disposable; preserving or
+inferring old untyped tags is not part of this design. Changing the source schema
+does not reset an existing database. No data reset, remote deployment, or rewrite
+of migration history is performed in this focused implementation.
 
-Migration alternatives to review separately include assigning a single supported
-kind where complete history agrees, splitting mixed-kind tags while preserving
-links, and explicitly assigning unlinked/unused tags. Name collisions and retries
-need explicit policy before a migration writes data.
+Before applying the stricter schema to an existing environment, its schema/data
+transition must be handled explicitly. The old additive migration and snapshots
+remain historical artifacts, not the required-kind definition for a fresh store.
+
+Tag updates retain role authorization, same-workspace/category-kind checks, and
+immutable workspace/kind. There is no null-kind update exception. Archived typed
+tags and their historical assignments remain readable/removable under existing
+permissions; new assignments require an active typed tag of the transaction kind.
 
 ## Ownership and state model
 
@@ -51,8 +54,7 @@ Transaction integration observes current active tags for its organization and
 kind. The transaction machine checks account/category authorization first, then
 assesses each submitted normalized tag name. Exactly one matching active tag is
 reused; no matching active tag means inline creation; multiple matching active
-tags produce an explicit ambiguous-name outcome. Other-kind and untyped tags are
-not candidates. Archived names may be reused by a new active tag. Reusing a tag
+tags produce an explicit ambiguous-name outcome. Other-kind tags are not candidates. Archived names may be reused by a new active tag. Reusing a tag
 does not change its category.
 
 The database transaction retains a narrow compare/write check against current
@@ -82,11 +84,13 @@ case/whitespace, archived names, mismatched categories, and stale observations.
 Transaction coverage must exercise single-tag reuse, inline creation, ambiguous
 names, archived-name reuse, and kind/category persistence. Browser coverage must
 exercise both income and expense settings and transaction entry, retained form
-values after duplicate feedback, and historical display of untyped tags. Update
-existing fixtures to provide kinds without claiming old expectations still cover
-the new behavior. Do not add or run tests before implementation review.
+values after duplicate feedback, and retained history for archived typed tags. Direct SDK coverage must reject
+missing/null kinds, mismatched category kinds/workspaces, mismatched assignment
+kinds/workspaces, and changes to immutable kinds/workspaces. Accept valid expense
+and income tags with optional matching categories. Update existing fixtures to
+provide required kinds and replace the historical untyped-tag tests. Do not add or run tests before implementation review.
 
-## Implementation review notes
+## Historical compatibility implementation review notes
 
 Settings guard duplicate active names and mismatched category kinds. Transaction
 entry has an explicit `checkingTags` state and `ambiguousTagName` outcome; a single
@@ -101,5 +105,26 @@ were updated, including archived-name reuse. All 136 focused unit tests and all
 three isolated browser scenarios pass, along with application/service-worker and
 browser-test type checks and focused formatting/whitespace checks. Browser
 verification required fixture/locator corrections and no production changes.
-See tasks.md for coverage and limits. Existing-tag reassignment/splitting and
-remote schema deployment remain deferred.
+See tasks.md for historical coverage and limits. Existing-tag reassignment/splitting
+is superseded by the required-kind alpha policy above. Remote schema deployment
+is not part of this implementation.
+
+## Required-kind verification
+
+After user approval, 177 focused tests pass across SDK permissions, canonical tag
+validation, management, transaction readiness and create/edit persistence. The
+12 direct permission tests also pass in isolation against the SDK test authority.
+Missing/null storage kinds reject SDK inserts and null-kind updates; valid typed
+tags remain accepted. Category kind/workspace mismatches, tag workspace/kind
+changes, and cross-kind/workspace assignments reject. Archived typed tags retain
+historical links and permit removal while rejecting new assignments.
+
+Three focused permission browser scenarios pass on disposable in-memory Jazz at
+port 5180, and the updated typed-tag selection/inline-creation/archived-history UI
+scenario passes on disposable port 5184. The UI fixture now uses archived expense
+history and current income routes and post-save navigation assertions. Older
+workspace-test tag fixtures now specify their category kind (or explicit expense
+kind when uncategorized); browser-test type checking covers those fixture changes,
+but the full workspace browser suite was not rerun. Application/service-worker
+and browser-test type checks, focused formatting and whitespace checks pass.
+No existing data was flushed, no schema was deployed, and no commit was made.

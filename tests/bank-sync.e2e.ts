@@ -155,8 +155,57 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 		.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
 	await sync.click()
 	await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
+	const edited = await page.evaluate(async () => {
+		const schemaPath = '/src/lib/schema.ts',
+			sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const rows = await db.all(app.transactions.where({ source: 'simplefin' }))
+		const row = rows.find((value) => value.kind === 'expense')
+		if (!row) throw new Error('Missing imported expense')
+		await db
+			.update(app.transactions, row.id, {
+				description: 'User description',
+				memo: 'User notes',
+				amountMinor: 5678
+			})
+			.wait({ tier: 'global' })
+		return { id: row.id, externalId: row.externalId }
+	})
+
 	await sync.click()
 	await expect(page.getByText(/Imported: 0; already present: 2; omitted: 2/)).toBeVisible()
+	const afterRepeat = await page.evaluate(async (id) => {
+		const schemaPath = '/src/lib/schema.ts',
+			sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const rows = await db.all(app.transactions.where({ source: 'simplefin' }), { tier: 'remote' })
+		const row = rows.find((value) => value.id === id)
+		return {
+			count: rows.length,
+			description: row?.description,
+			memo: row?.memo,
+			amountMinor: row?.amountMinor,
+			externalId: row?.externalId
+		}
+	}, edited.id)
+	expect(afterRepeat).toEqual({
+		count: 2,
+		description: 'User description',
+		memo: 'User notes',
+		amountMinor: 5678,
+		externalId: edited.externalId
+	})
+
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	await page.reload()
 	await expect(discover).toBeEnabled()

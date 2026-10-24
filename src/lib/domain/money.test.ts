@@ -6,17 +6,27 @@ describe('parseAmountMinor', () => {
 		['0', 0],
 		['12', 1200],
 		['12.3', 1230],
-		['12.34', 1234]
+		['12.34', 1234],
+		['21474836.48', 2_147_483_648],
+		['90071992547409.90', 9_007_199_254_740_990],
+		['90071992547409.91', Number.MAX_SAFE_INTEGER]
 	])('parses %s to integer minor units', (input, expected) => {
 		expect(parseAmountMinor(input)).toEqual({ kind: 'valid', amountMinor: expected })
 	})
 
-	it.each(['', '-1', '1.234', '01.00', '1e2', '21474836.48'])(
-		'rejects invalid amount %s',
-		(input) => {
-			expect(parseAmountMinor(input).kind).toBe('invalid')
-		}
-	)
+	it.each([
+		'',
+		'-1',
+		'1.234',
+		'01.00',
+		'1e2',
+		'90071992547409.92',
+		'90071992547409.93',
+		'90071992547410',
+		'999999999999999999999999999999999999.99'
+	])('rejects invalid amount %s', (input) => {
+		expect(parseAmountMinor(input).kind).toBe('invalid')
+	})
 })
 
 describe('formatMoney', () => {

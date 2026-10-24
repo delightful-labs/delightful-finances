@@ -5,6 +5,8 @@
 **Status**: Draft
 **Input**: Migrate the finance tracking app plan into an implementable MVP specification.
 
+**Current SimpleFIN authority**: The constitution and [002-manual-bank-sync](../002-manual-bank-sync/spec.md) supersede the original server-worker proposal. Setup, discovery, and synchronization are explicit client-initiated operations with passkey-protected credentials.
+
 ## Summary
 
 Delightful Finance is a local-first personal finance tracker. A signed-in user can keep a personal organization, manage cash/bank/card accounts, record income and expenses, and organize transactions with categories and tags. The data model and permissions must support future business organizations, account-scoped sharing, SimpleFIN imports, attachments, and batch entry without requiring a tenancy redesign.
@@ -78,7 +80,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 3. **Given** a member/viewer in `selected` account access mode with no account grants, **When** they access the org, **Then** they have no account access.
 4. **Given** a member/viewer in `selected` account access mode with account grants, **When** they access the org, **Then** they can access only granted accounts and related data; members may write only grants with write access, and viewers remain read-only.
 5. **Given** a SimpleFIN connection, **When** an owner/admin reads connection settings, **Then** they can read its status; members/viewers cannot read its Access URL.
-6. **Given** a setup token is submitted, **When** a future server-side worker claims it, **Then** the setup token is not persisted and the resulting credential is protected as an Access URL.
+6. **Given** an authorized connection owner submits a setup token, **When** their device verifies passkey encryption/unlock compatibility and claims it, **Then** the token remains transient and the resulting Access URL is encrypted before persistence or replication. A stateless CORS relay may handle the request when required without retaining credentials. Setup MUST NOT fetch transactions; transaction fetching requires an explicit Sync now action and fresh passkey user verification.
 
 ## Product Requirements
 
@@ -106,7 +108,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 - **FR-014**: The schema MUST include profiles, organizations, organizationMembers, accounts, categories, tags, transactions, transactionTags, checkDetails, and accountMemberships.
 - **FR-015**: Authorization MUST implement the organization roles and explicit `accountAccessMode` rules in the constitution, including inherited access to associated transaction/tag data. Account grants MUST NOT grant access without active organization membership; viewer access MUST remain read-only.
-- **FR-016**: The schema MUST include SimpleFIN connection/account-link records, transaction source and optional externalId, and organization-scoped admin-only credential access.
+- **FR-016**: The schema MUST include SimpleFIN connection/account-link records, transaction source and optional externalId, and organization-scoped owner/admin access to connection status and encrypted credential metadata. Usable credential access MUST additionally require the connecting user’s identity and passkey; administrative membership alone MUST NOT grant decryption access.
 - **FR-017**: The schema MUST reserve attachment and batch records/relationships for later use; full attachment/batch UI is out of scope.
 - **FR-018**: Jazz audit fields MUST be used rather than adding redundant createdOn/updatedOn columns. `bookedOn` is the user-assigned business date stored as a date-only string, separate from timestamps.
 - **FR-019**: Every application feature and production code path MUST include appropriate automated unit tests and Playwright end-to-end tests. Tests MUST be added or updated with the feature implementation.
@@ -115,7 +117,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 ### Out of scope for MVP
 
-- SimpleFIN periodic import/sync worker, account linking, and transaction import UI. A minimal connection setup stub may be implemented if feasible, but connection claiming is server-side only.
+- Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
 - Foreign exchange conversion or non-USD entry UI.
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
 - Transfers as a transaction kind; the model may add a third kind or linked pair later.
@@ -147,8 +149,8 @@ As the product evolves, organizations can support multiple roles, selective acco
 ## Non-Functional Requirements
 
 - **NFR-001**: Read/write flows for already available data MUST not require connectivity.
-- **NFR-002**: Unauthorized organization/account data and SimpleFIN secrets MUST be unavailable through Jazz permissions.
-- **NFR-003**: Money handling MUST avoid floating-point arithmetic and preserve the stored currency code.
+- **NFR-002**: Jazz permissions MUST prevent unauthorized organization/account access. SimpleFIN credentials MUST be persisted only as passkey-protected ciphertext bound to the connecting user, organization, and connection; Jazz membership or admin status alone MUST NOT provide a usable credential.
+- **NFR-003**: Money handling MUST preserve exact integer minor units and the stored currency code. Manual amount entry MUST NOT impose a signed-32-bit or other product-specific ceiling. Parse decimal entry exactly before converting to the current JavaScript number representation; reject values beyond its safe-integer range rather than rounding or losing cents.
 - **NFR-004**: Main flows MUST work on mobile-size screens and with keyboard/screen-reader accessible controls.
 - **NFR-005**: Native SvelteKit service-worker caching MUST cover public page shells and build assets and coexist with Jazz's persistence and synchronization. Jazz data/auth/sync requests MUST NOT be added to the service-worker runtime cache.
 - **NFR-006**: The automated test suite MUST include unit tests and browser-level Playwright tests and run reliably in local development and CI.
@@ -349,3 +351,15 @@ retain their existing behavior.
 Incoming transaction content retains its natural rendered size during the transition,
 anchored at the top left. Loading transaction data or changing the form height during
 the animation must not stretch or squash the incoming page snapshot.
+
+### Editing imported transactions
+
+Imported income and expenses MUST support authorized edits to categories, tags,
+description, memo, amount, business date and account through the transaction form.
+Edits MUST preserve transaction identity, workspace, kind, provider source and
+external ID. Imported income without a payment method MUST remain without one;
+editing MUST NOT convert it to manual income or default it to cash. Repeating
+manual bank sync MUST recognize the existing provider identity and preserve user
+edits without creating a duplicate or overwriting the transaction. Existing
+account/category validation, permissions, attribution, local durability and scope/
+shutdown settlement rules apply. Check-object redesign remains a separate slice.

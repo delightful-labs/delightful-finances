@@ -176,7 +176,7 @@ export function createTransactionEntryAvailability(binding: object) {
 							(f.transaction !== undefined &&
 								f.transaction !== null &&
 								(!validTransactionReferences(f, transactionAsInput(f.transaction)) ||
-									f.transaction.source !== 'manual' ||
+									(f.transaction.source === 'simplefin' && !f.transaction.externalId?.trim()) ||
 									f.transaction.organizationId !== f.organizationId ||
 									f.transaction.id !== f.transactionId ||
 									(f.transaction.paymentMethod === 'check' && !f.transaction.checkDetails))),
@@ -330,6 +330,7 @@ export function createTransactionEditFormOptions(
 				(draft.memo ?? '').trim() === (original.memo ?? '') &&
 				JSON.stringify(names(draft.tags ?? [])) === JSON.stringify(names(original.tags ?? [])) &&
 				(original.kind === 'expense' ||
+					original.source.source === 'simplefin' ||
 					('paymentMethod' in original &&
 						draft.paymentMethod === original.paymentMethod &&
 						(original.paymentMethod !== 'check' ||
@@ -360,6 +361,15 @@ function transactionAsInput(
 		...(transaction.memo ? { memo: transaction.memo } : {}),
 		source: { source: 'manual' } satisfies AppTransaction['source'],
 		...(tags.length ? { tags } : {})
+	}
+	if (transaction.source === 'simplefin') {
+		const source = {
+			source: 'simplefin',
+			externalId: transaction.externalId ?? ''
+		} satisfies AppTransaction['source']
+		return transaction.kind === 'expense'
+			? { ...base, kind: 'expense', source }
+			: { ...base, kind: 'income', source }
 	}
 	if (transaction.kind === 'expense') return { ...base, kind: 'expense' }
 	if (transaction.paymentMethod === 'check') {

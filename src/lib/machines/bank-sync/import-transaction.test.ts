@@ -109,7 +109,7 @@ describe('transaction import decisions', () => {
 		})
 	})
 
-	it('does not insert a duplicate found under the stable external identity', async () => {
+	it('preserves user-edited values when the stable provider transaction is imported again', async () => {
 		const row: TransactionRow = {
 			id: id(8),
 			organizationId: id(2),
@@ -117,10 +117,10 @@ describe('transaction import decisions', () => {
 			categoryId: id(6),
 			kind: 'expense',
 			bookedOn: '2026-10-14',
-			amountMinor: 1234,
+			amountMinor: 5678,
 			currency: 'USD',
-			memo: null,
-			description: 'Imported expense',
+			memo: 'User notes',
+			description: 'User description',
 			source: 'simplefin',
 			externalId: 'external',
 			paymentMethod: null,

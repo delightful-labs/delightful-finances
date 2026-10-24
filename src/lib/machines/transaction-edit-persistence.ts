@@ -63,7 +63,8 @@ function editable(existing: TransactionRow | undefined, values: AppTransaction) 
 	return (
 		existing !== undefined &&
 		existing.organizationId === values.organizationId &&
-		existing.source === 'manual' &&
+		existing.source === values.source.source &&
+		(values.source.source !== 'simplefin' || existing.externalId === values.source.externalId) &&
 		existing.kind === values.kind &&
 		(existing.paymentMethod !== 'check' || existing.accountId === values.accountId) &&
 		('paymentMethod' in values && values.paymentMethod === 'check') ===

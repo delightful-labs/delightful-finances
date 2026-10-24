@@ -161,7 +161,7 @@ describe('transaction edit domain invariants and planning', () => {
 	})
 	it.each([
 		{ label: 'missing row', rows: [] },
-		{ label: 'imported row', rows: [{ ...existingTransaction, source: 'simplefin' }] },
+		{ label: 'mismatched source', rows: [{ ...existingTransaction, source: 'simplefin' }] },
 		{ label: 'another workspace', rows: [{ ...existingTransaction, organizationId: 'other' }] },
 		{ label: 'another kind', rows: [{ ...existingTransaction, kind: 'income' }] }
 	] satisfies { label: string; rows: TransactionRow[] }[])(
@@ -451,7 +451,6 @@ describe('transaction edit staging boundaries', () => {
 	it.each([
 		{ ...historical },
 		{ ...historical, kind: 'income', archivedAt: null },
-		{ ...historical, kind: null, archivedAt: null },
 		{ ...historical, organizationId: 'other', archivedAt: null }
 	] satisfies Tag[])(
 		'creates a new typed assignment instead of reusing ineligible tag %j',
@@ -478,4 +477,55 @@ describe('transaction edit staging boundaries', () => {
 			)
 		}
 	)
+})
+
+describe('imported transaction edits', () => {
+	it.each(['expense', 'income'] satisfies TransactionRow['kind'][])(
+		'saves %s edits and tags without rewriting provenance or inventing a payment method',
+		async (kind) => {
+			const f = editFixture()
+			f.records({
+				rows: [{ ...existingTransaction, kind, source: 'simplefin', externalId: 'provider-id' }]
+			})
+			const base = {
+				...creationValues,
+				source: { source: 'simplefin', externalId: 'provider-id' },
+				description: 'Edited description',
+				memo: 'Edited memo',
+				tags: ['New tag']
+			}
+			const values: AppTransaction =
+				kind === 'expense'
+					? { ...base, kind: 'expense', source: { source: 'simplefin', externalId: 'provider-id' } }
+					: { ...base, kind: 'income', source: { source: 'simplefin', externalId: 'provider-id' } }
+			expect(await toPromise(f.start(values))).toMatchObject({
+				outcome: 'succeeded',
+				settlement: 'locallyPersisted'
+			})
+			const patch = f.update.mock.calls[0]?.[2]
+			expect(patch).toMatchObject({
+				description: 'Edited description',
+				memo: 'Edited memo',
+				paymentMethod: null
+			})
+			expect(patch).not.toHaveProperty('source')
+			expect(patch).not.toHaveProperty('externalId')
+			expect(f.insert).toHaveBeenCalledWith(
+				app.tags,
+				expect.objectContaining({ kind, name: 'New tag' }),
+				expect.anything()
+			)
+		}
+	)
+	it('rejects changing provider identity before staging', async () => {
+		const f = editFixture()
+		f.records({ rows: [{ ...existingTransaction, source: 'simplefin', externalId: 'original' }] })
+		expect(
+			await toPromise(
+				f.start({ ...creationValues, source: { source: 'simplefin', externalId: 'changed' } })
+			)
+		).toMatchObject({ outcome: 'failed' })
+		expectNoWrites(f)
+		expect(f.rollback).toHaveBeenCalledOnce()
+	})
 })
