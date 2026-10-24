@@ -115,19 +115,37 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-020**: Unit tests MUST cover domain logic, money/date handling, validation, state machines, permission helpers/adapters, and relevant edge cases. Playwright MUST cover each primary user workflow, authorization behavior, and offline workflows where supported by the runtime.
 - **FR-021**: A feature MUST NOT be considered complete until its relevant automated tests pass. New code requires coverage at the level appropriate to its behavior; tests need not be written to test test code or generated/vendor assets.
 
+### Approved split-transaction foundation (future functionality)
+
+These requirements record approved compatibility decisions, not shipped split functionality. Split entry, allocation storage, migration, and reporting changes are deferred. Existing MVP category/tag requirements describe the current single-allocation behavior until that implementation is separately planned and reviewed.
+
+- **FR-025 — Movement and allocation**: A transaction MUST represent one movement in one financial account. It owns the account, organization, income/expense kind, currency, total amount, business date, overall description, memo, and transaction attachments. Its allocations describe how that total is categorized. Payment/check references and provider provenance remain transaction-level relationships.
+- **FR-026 — Allocation contents and identity**: Each allocation MUST have its own stable identity, amount, category, optional description, and tags. Editing or reordering an allocation MUST preserve its identity. Allocations MUST inherit their transaction's kind and currency; all categories and tags MUST match that kind and organization. A transaction MUST NOT mix income and expense allocations.
+- **FR-027 — Amount integrity**: Allocation amounts MUST be non-negative integer minor units and MUST sum exactly to the transaction total. An ordinary transaction MUST have one allocation for its full amount. A split MUST have at least two allocations, each greater than zero. Existing zero-value ordinary transactions MUST remain valid; a zero-value transaction cannot satisfy the split rules.
+- **FR-028 — Remove split**: Converting a split into an ordinary transaction MUST require choosing the allocation to retain. Preserve that allocation's identity, category, optional description, and tags, and set its amount to the full transaction total. Preserve transaction-level details and relationships.
+- **FR-029 — Compatibility and reporting**: Introducing allocations MUST preserve existing transaction IDs, totals, kinds, currencies, dates, descriptions, memos, provider provenance, check references, attachment relationships, and historical category/tag associations. Each existing transaction MUST become equivalent to one full-amount allocation, without guessing new classifications or duplicating money. Account totals MUST count the transaction movement once; category reports MUST count allocation amounts without also adding the parent total. Future backup/restore and merge designs MUST preserve allocation identities and relationships.
+
+**Acceptance scenarios for the future implementation**:
+
+1. A $100 expense split into $70 groceries and $30 household supplies contributes $100 to the account's expense total and $70/$30 to the respective category totals. Each allocation may have its own description and tags while the transaction retains its overall description, memo, and attachments.
+2. Mixed income/expense allocations, amounts that do not sum to the total, zero-value split allocations, or fewer than two split allocations are rejected without persisting an invalid split.
+3. Editing or reordering allocations retains their IDs. Removing the split after choosing the $70 allocation retains its ID, category, description, and tags, changes its amount to $100, and preserves transaction-level information.
+4. Existing ordinary transactions, including zero-value entries, retain their identities, financial values, provenance, and relationships when allocation support is introduced. Their original category and tags describe the single allocation, and historical totals remain unchanged.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
 - Foreign exchange conversion or non-USD entry UI.
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
 - Transfers as a transaction kind; the model may add a third kind or linked pair later.
+- Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
 
 ## Data Model Invariants
 
 - Financial accounts are distinct from login identity and organization tenancy.
 - `amountMinor` is a non-negative integer; the sign is represented by `kind`.
 - Currency is copied from the account at creation and stored on the transaction.
-- `categoryId`, `accountId`, and `organizationId` are required references on every transaction.
+- Current MVP storage requires `categoryId`, `accountId`, and `organizationId` on every transaction. The approved future allocation model below moves categorization to allocations without changing the transaction's account movement or identity; that migration is not implemented.
 - Check metadata lives on independent account-scoped Checks. Transactions store a Check reference; multiple compatible transactions may reference one Check. Exclusive assignment is deferred.
 - `source` is a discriminated union in application types: manual, or SimpleFIN with `externalId`.
 - Jazz owns synchronized durable data and system audit timestamps.
@@ -142,6 +160,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
 - **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
 - **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional description/memo/provider id/batch, and tags.
+- **Transaction allocation** (future): an independently identified portion of a transaction, with amount, category, optional description, and tags. See the approved split-transaction foundation below; current category/tag storage remains unchanged until a separately reviewed implementation.
 - **Check**: independently identified, account-scoped payment metadata usable by income and expense transactions; a Check can remain detached after cancellation, failure or reference removal.
 - **SimpleFIN Connection / Account Link**: org-scoped connection credential/status and mapping to local accounts.
 - **Transaction Attachment / Batch**: schema-ready relationships for later features.
