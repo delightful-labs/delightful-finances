@@ -23,6 +23,7 @@ import type {
 	ScopedFormView,
 	FormSubmissionProgressEvent
 } from '#lib/form-contract.js'
+import { formInterruptionResult } from '#lib/form-contract.js'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 
@@ -92,6 +93,7 @@ export function createScopedFormMachine<
 		request: FormRequest<Scope> | undefined
 		sequence: number
 		result: FormResult<Result, Reason> | undefined
+		checkpoint: unknown
 		draftRevision: number
 		draft: unknown
 	}
@@ -177,8 +179,15 @@ export function createScopedFormMachine<
 			const child = self.getSnapshot().children.submission
 			if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type })
 		})
+	// Recovery belongs to the current scope lifetime, independently of feedback.
+	const acceptCheckpoint = (context: Context, result: FormResult<Result, Reason>) => {
+		if (context.request?.scopeRevision !== context.scopeRevision) return undefined
+		if (result.outcome === 'succeeded') return undefined
+		return result.checkpoint === undefined ? context.checkpoint : result.checkpoint
+	}
 	const clearDraft = workflow.assign({
 		draft: undefined,
+		checkpoint: undefined,
 		result: undefined,
 		draftRevision: ({ context }) => context.draftRevision + 1
 	})
@@ -198,6 +207,7 @@ export function createScopedFormMachine<
 			request: undefined,
 			sequence: 0,
 			result: undefined,
+			checkpoint: undefined,
 			draftRevision: 0,
 			draft: undefined
 		}),
@@ -223,6 +233,7 @@ export function createScopedFormMachine<
 									scopeRevision: ({ context }) => context.scopeRevision + 1,
 									draftRevision: ({ context }) => context.draftRevision + 1,
 									draft: undefined,
+									checkpoint: undefined,
 									result: undefined
 								}),
 								raise({ type: 'INVALIDATE' }),
@@ -332,6 +343,9 @@ export function createScopedFormMachine<
 													id: context.sequence + 1,
 													scope: context.scope.value,
 													scopeRevision: context.scopeRevision,
+													...(context.checkpoint === undefined
+														? {}
+														: { checkpoint: context.checkpoint }),
 													values: event.values
 												}
 											},
@@ -375,9 +389,10 @@ export function createScopedFormMachine<
 											guard: 'invalidated',
 											target: 'idle',
 											actions: assign({
+												checkpoint: ({ context, event }) => acceptCheckpoint(context, event.output),
 												result: ({ context, event }) =>
 													context.request?.scopeRevision === context.scopeRevision
-														? { outcome: 'scopeChanged', settlement: event.output.settlement }
+														? formInterruptionResult('scopeChanged', event.output)
 														: undefined,
 												request: undefined
 											})
@@ -386,9 +401,10 @@ export function createScopedFormMachine<
 											guard: 'cancelling',
 											target: 'idle',
 											actions: assign({
+												checkpoint: ({ context, event }) => acceptCheckpoint(context, event.output),
 												result: ({ context, event }) =>
 													context.request?.scopeRevision === context.scopeRevision
-														? { outcome: 'cancelled', settlement: event.output.settlement }
+														? formInterruptionResult('cancelled', event.output)
 														: undefined,
 												request: undefined
 											})
@@ -400,6 +416,7 @@ export function createScopedFormMachine<
 												context.request?.scopeRevision === context.scopeRevision,
 											target: 'completion',
 											actions: assign({
+												checkpoint: ({ context, event }) => acceptCheckpoint(context, event.output),
 												result: ({ event }) => event.output,
 												request: undefined
 											})
@@ -407,6 +424,7 @@ export function createScopedFormMachine<
 										{
 											target: 'idle',
 											actions: assign({
+												checkpoint: ({ context, event }) => acceptCheckpoint(context, event.output),
 												result: ({ context, event }) =>
 													context.request?.scopeRevision === context.scopeRevision
 														? event.output
@@ -559,6 +577,7 @@ export function createScopedFormMachine<
 					capability: undefined,
 					request: undefined,
 					result: undefined,
+					checkpoint: undefined,
 					draft: undefined
 				})
 			}

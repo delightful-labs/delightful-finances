@@ -1,6 +1,7 @@
 import { schema as s } from 'jazz-tools'
 import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
 import { app, type OrganizationMember, type Tag, type TransactionRow } from './schema.js'
+import { checkReferenceCondition } from './check-reference-permissions.js'
 
 type Role = NonNullable<OrganizationMember['role']>
 type IdExpression = string | RowRefValue
@@ -14,6 +15,7 @@ type TransactionContext = Pick<
 	| 'kind'
 	| 'paymentMethod'
 	| 'checkDetailsId'
+	| 'checkId'
 >
 
 export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowedTo }) => {
@@ -107,27 +109,11 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		allOf([
 			canWriteAccount(transaction.accountId, transaction.organizationId),
 			transactionReferencesAreValid(transaction),
-			anyOf([
-				{ kind: 'expense', checkDetailsId: { isNull: true } },
-				allOf([
-					{ kind: 'income', checkDetailsId: { isNull: true } },
-					anyOf([
-						{ source: 'simplefin', paymentMethod: { isNull: true } },
-						{ paymentMethod: 'cash' },
-						{ paymentMethod: 'transfer' },
-						{ paymentMethod: 'electronic' }
-					])
-				]),
-				allOf([
-					{ kind: 'income', paymentMethod: 'check' },
-					policy.checkDetails.exists.where({
-						id: transaction.checkDetailsId,
-						transactionId: transaction.id,
-						organizationId: transaction.organizationId,
-						accountId: transaction.accountId
-					})
-				])
-			])
+			{ checkDetailsId: { isNull: true } },
+			checkReferenceCondition({
+				transaction,
+				checkExists: (where) => policy.checks.exists.where(where)
+			})
 		])
 
 	policy.organizations.allowRead.where((organization) => isMember(organization.id))
@@ -279,20 +265,6 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 						id: transaction.id,
 						externalId: transaction.externalId
 					})
-				]),
-				// A check's selected detail cannot be replaced or shared with another transaction.
-				anyOf([
-					allOf([
-						{ checkDetailsId: { isNull: true } },
-						policy.transactions.exists.where({
-							id: transaction.id,
-							checkDetailsId: { isNull: true }
-						})
-					]),
-					policy.transactions.exists.where({
-						id: transaction.id,
-						checkDetailsId: transaction.checkDetailsId
-					})
 				])
 			])
 		)
@@ -345,41 +317,40 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		])
 	)
 
-	policy.checkDetails.allowRead.where((details) =>
-		canReadAccount(details.accountId, details.organizationId)
-	)
-	policy.checkDetails.allowInsert.where((details) =>
+	policy.checks.allowRead.where((check) => canReadAccount(check.accountId, check.organizationId))
+	policy.checks.allowInsert.where((check) =>
 		allOf([
-			// The detail is written before its transaction, using the ledger's authority.
-			canWriteAccount(details.accountId, details.organizationId),
+			canWriteAccount(check.accountId, check.organizationId),
 			policy.accounts.exists.where({
-				id: details.accountId,
-				organizationId: details.organizationId,
+				id: check.accountId,
+				organizationId: check.organizationId,
 				archivedAt: { isNull: true }
 			})
 		])
 	)
-	policy.checkDetails.allowUpdate.whereOld(allowedTo.update('transaction')).whereNew((details) =>
-		allOf([
-			allowedTo.update('transaction'),
-			// The existing row must already belong to this transaction.
-			policy.checkDetails.exists.where({
-				id: details.id,
-				transactionId: details.transactionId,
-				organizationId: details.organizationId,
-				accountId: details.accountId
-			}),
-			policy.transactions.exists.where({
-				id: details.transactionId,
-				checkDetailsId: details.id,
-				organizationId: details.organizationId,
-				accountId: details.accountId,
-				kind: 'income',
-				paymentMethod: 'check'
-			})
-		])
-	)
-	// Removing a referenced detail would leave a check transaction incomplete.
+	policy.checks.allowUpdate
+		.whereOld((check) => canWriteAccount(check.accountId, check.organizationId))
+		.whereNew((check) =>
+			allOf([
+				canWriteAccount(check.accountId, check.organizationId),
+				policy.accounts.exists.where({
+					id: check.accountId,
+					organizationId: check.organizationId,
+					archivedAt: { isNull: true }
+				}),
+				// Moving a Check requires write access to both accounts and preserves its organization.
+				policy.checks.exists.where({
+					id: check.id,
+					organizationId: check.organizationId
+				})
+			])
+		)
+	policy.checks.allowDelete.never()
+
+	// Retired embedded details cannot be read or mutated by production clients.
+	policy.checkDetails.allowRead.never()
+	policy.checkDetails.allowInsert.never()
+	policy.checkDetails.allowUpdate.never()
 	policy.checkDetails.allowDelete.never()
 
 	const ownsConnection = (connection: { organizationId: IdExpression; ownerId: IdExpression }) =>

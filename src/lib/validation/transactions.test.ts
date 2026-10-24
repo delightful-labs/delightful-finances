@@ -3,21 +3,22 @@ import type { Account, Category } from '../schema.js'
 import {
 	appTransactionSchema,
 	defaultTransactionCategory,
+	independentTransactionSchema,
 	transactionFormSchema
 } from './transactions.js'
 
 type Options = ReturnType<Parameters<typeof transactionFormSchema>[0]>
 const account: Account = {
-	id: 'account',
-	organizationId: 'workspace',
+	id: '11111111-1111-4111-8111-111111111111',
+	organizationId: '22222222-2222-4222-8222-222222222222',
 	name: 'Checking',
 	kind: 'bank',
 	currency: 'USD',
 	archivedAt: null
 }
 const category: Category = {
-	id: 'category',
-	organizationId: 'workspace',
+	id: '33333333-3333-4333-8333-333333333333',
+	organizationId: account.organizationId,
 	name: 'Groceries',
 	kind: 'expense',
 	isSystem: false,
@@ -81,35 +82,38 @@ describe('canonical transaction normalization', () => {
 			expect(result.memo).toBe('Additional notes\nSecond line')
 		}
 	)
-	it('defaults manual income to cash', () => {
+	it('leaves the payment method optional for income', () => {
 		expect(
 			appTransactionSchema.parse({ ...base, kind: 'income', source: { source: 'manual' } })
-		).toMatchObject({ paymentMethod: 'cash' })
+		).toMatchObject({ paymentMethod: null, checkId: null })
 	})
-	it('requires a valid check date and trims check numbers', () => {
+	it('accepts a saved Check reference for either transaction kind', () => {
 		const result = appTransactionSchema.parse({
 			...base,
-			kind: 'income',
+			kind: 'expense',
 			source: { source: 'manual' },
 			paymentMethod: 'check',
-			checkDetails: { checkNumber: ' 123 ', checkDate: '2026-10-12' }
+			check: {
+				kind: 'existing',
+				id: '55555555-5555-4555-8555-555555555555'
+			}
 		})
-		expect(result).toMatchObject({ checkDetails: { checkNumber: '123', checkDate: '2026-10-12' } })
+		expect(result).toMatchObject({ kind: 'expense', paymentMethod: 'check' })
 	})
-	it.each([undefined, '', '2026-02-29'])(
-		'rejects missing or invalid check date %j',
-		(checkDate) => {
-			expect(
-				appTransactionSchema.safeParse({
-					...base,
-					kind: 'income',
-					source: { source: 'manual' },
-					paymentMethod: 'check',
-					checkDetails: { checkNumber: '123', checkDate }
-				}).success
-			).toBe(false)
-		}
-	)
+	it.each([
+		{ paymentMethod: 'check' },
+		{ paymentMethod: 'cash', checkId: '55555555-5555-4555-8555-555555555555' },
+		{ paymentMethod: 'check', checkId: 'invalid' }
+	])('rejects malformed Check references: %j', (payment) => {
+		expect(
+			appTransactionSchema.safeParse({
+				...base,
+				kind: 'income',
+				source: { source: 'manual' },
+				...payment
+			}).success
+		).toBe(false)
+	})
 	it('does not give imported income a manual payment method', () => {
 		expect(
 			appTransactionSchema.parse({
@@ -117,12 +121,55 @@ describe('canonical transaction normalization', () => {
 				kind: 'income',
 				source: { source: 'simplefin', externalId: ' external ' }
 			})
-		).not.toHaveProperty('paymentMethod')
+		).toMatchObject({ paymentMethod: null, checkId: null })
+	})
+})
+
+describe('independent transaction payment references', () => {
+	const values = {
+		organizationId: '22222222-2222-4222-8222-222222222222',
+		accountId: '33333333-3333-4333-8333-333333333333',
+		categoryId: '44444444-4444-4444-8444-444444444444',
+		bookedOn: '2026-10-13',
+		money: { amountMinor: 100, currency: 'USD' },
+		source: { source: 'manual' }
+	}
+	it.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
+		'allows an optional payment method or a compatible Check for %s',
+		(kind) => {
+			expect(independentTransactionSchema.parse({ ...values, kind })).toMatchObject({
+				kind,
+				paymentMethod: null,
+				checkId: null
+			})
+			expect(
+				independentTransactionSchema.parse({
+					...values,
+					kind,
+					paymentMethod: 'check',
+					checkId: '55555555-5555-4555-8555-555555555555'
+				})
+			).toMatchObject({ kind, paymentMethod: 'check' })
+		}
+	)
+	it.each([
+		{ paymentMethod: 'check' },
+		{ paymentMethod: 'cash', checkId: '55555555-5555-4555-8555-555555555555' },
+		{ paymentMethod: 'check', checkId: 'invalid' }
+	])('rejects an invalid reference pairing: %j', (payment) => {
+		expect(
+			independentTransactionSchema.safeParse({ ...values, kind: 'expense', ...payment }).success
+		).toBe(false)
 	})
 })
 
 describe('default category', () => {
-	const system = { ...category, id: 'system', name: 'Renamed default', isSystem: true }
+	const system = {
+		...category,
+		id: '66666666-6666-4666-8666-666666666666',
+		name: 'Renamed default',
+		isSystem: true
+	}
 	it.each(['expense', 'income'] satisfies Options['kind'][])(
 		'defaults missing or empty %s categories by system identity',
 		(kind) => {
@@ -183,7 +230,10 @@ describe('transaction form schema', () => {
 			bookedOn: fields.bookedOn,
 			description: 'Groceries',
 			memo: 'Market',
-			source: { source: 'manual' }
+			source: { source: 'manual' },
+			paymentMethod: null,
+			checkId: null,
+			tags: undefined
 		})
 	})
 
@@ -213,8 +263,8 @@ describe('transaction form schema', () => {
 		}))
 		const result = schema.parse({ ...fields, amount: '0', description: '  ', memo: '  ' })
 		expect(result.money).toEqual({ amountMinor: 0, currency: 'EUR' })
-		expect(result).not.toHaveProperty('memo')
-		expect(result).not.toHaveProperty('description')
+		expect(result.memo).toBeUndefined()
+		expect(result.description).toBeUndefined()
 	})
 
 	it.each(['2026-02-29', '2026-13-01', '10/13/2026', ''])(
@@ -233,7 +283,7 @@ describe('transaction form schema', () => {
 	})
 
 	it.each(['cash', 'transfer', 'electronic'])(
-		'creates %s income without check details',
+		'creates %s income without a Check reference',
 		(paymentMethod) => {
 			const result = transactionFormSchema(() => options('income')).parse({
 				...fields,
@@ -242,18 +292,19 @@ describe('transaction form schema', () => {
 				checkDate: 'invalid'
 			})
 			expect(result).toMatchObject({ kind: 'income', paymentMethod })
-			expect(result).not.toHaveProperty('checkDetails')
+			expect(result).toHaveProperty('checkId', null)
 		}
 	)
 
-	it('defaults income to cash when no payment method is submitted', () => {
+	it('leaves income payment method unspecified when omitted', () => {
 		expect(transactionFormSchema(() => options('income')).parse(fields)).toMatchObject({
 			kind: 'income',
-			paymentMethod: 'cash'
+			paymentMethod: null,
+			checkId: null
 		})
 	})
 
-	it('trims check numbers and retains the required check date', () => {
+	it('creates a new Check from inline fields', () => {
 		const result = transactionFormSchema(() => options('income')).parse({
 			...fields,
 			paymentMethod: 'check',
@@ -263,7 +314,7 @@ describe('transaction form schema', () => {
 		expect(result).toMatchObject({
 			kind: 'income',
 			paymentMethod: 'check',
-			checkDetails: { checkNumber: '123', checkDate: '2026-10-12' }
+			check: { kind: 'new', values: { checkNumber: '123', checkDate: '2026-10-12' } }
 		})
 	})
 
@@ -346,7 +397,6 @@ describe('imported edit form provenance', () => {
 				...fields,
 				source: 'manual',
 				externalId: 'forged',
-				paymentMethod: 'cash',
 				tags: ['Garden']
 			})
 			expect(result).toMatchObject({
@@ -356,7 +406,7 @@ describe('imported edit form provenance', () => {
 				description: 'Groceries',
 				memo: 'Market'
 			})
-			expect(result).not.toHaveProperty('paymentMethod')
+			expect(result).toMatchObject({ paymentMethod: null, checkId: null })
 		}
 	)
 	it('rejects imported editing with missing provider identity', () => {

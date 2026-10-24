@@ -6,6 +6,8 @@ import permissions from './permissions.js'
 const organizationId = crypto.randomUUID()
 const otherOrganizationId = crypto.randomUUID()
 const accountId = crypto.randomUUID()
+const otherAccountId = crypto.randomUUID()
+const foreignAccountId = crypto.randomUUID()
 const expenseCategoryId = crypto.randomUUID()
 const incomeCategoryId = crypto.randomUUID()
 const foreignCategoryId = crypto.randomUUID()
@@ -19,6 +21,18 @@ const session = {
 } satisfies import('jazz-tools/testing').PolicyTestSession
 let fixture: PolicyTestApp
 let db: TestDb
+const selectedMemberSession = {
+	user_id: 'check-selected-member',
+	authMode: 'local-first',
+	claims: {}
+} satisfies import('jazz-tools/testing').PolicyTestSession
+const viewerSession = {
+	user_id: 'check-viewer',
+	authMode: 'local-first',
+	claims: {}
+} satisfies import('jazz-tools/testing').PolicyTestSession
+let selectedMemberDb: TestDb
+let viewerDb: TestDb
 
 function transaction(kind: 'expense' | 'income') {
 	return {
@@ -62,6 +76,46 @@ beforeAll(async () => {
 			{ id: accountId }
 		)
 	)
+	for (const [id, scope] of [
+		[otherAccountId, organizationId],
+		[foreignAccountId, otherOrganizationId]
+	] satisfies [string, string][]) {
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.accounts,
+				{ organizationId: scope, name: 'Other', kind: 'cash', currency: 'USD' },
+				{ id }
+			)
+		)
+	}
+	selectedMemberDb = fixture.as(selectedMemberSession)
+	viewerDb = fixture.as(viewerSession)
+	const selectedMemberId = fixture.accountFor(selectedMemberSession)
+	const viewerId = fixture.accountFor(viewerSession)
+	await fixture.seed((seed) =>
+		seed.insert(app.organizationMembers, {
+			organizationId,
+			userId: selectedMemberId,
+			role: 'member',
+			accountAccessMode: 'selected'
+		})
+	)
+	await fixture.seed((seed) =>
+		seed.insert(app.accountMemberships, {
+			organizationId,
+			accountId,
+			userId: selectedMemberId,
+			access: 'write'
+		})
+	)
+	await fixture.seed((seed) =>
+		seed.insert(app.organizationMembers, {
+			organizationId,
+			userId: viewerId,
+			role: 'viewer',
+			accountAccessMode: 'all'
+		})
+	)
 	for (const [id, kind, workspace] of [
 		[expenseCategoryId, 'expense', organizationId],
 		[incomeCategoryId, 'income', organizationId],
@@ -95,6 +149,113 @@ beforeAll(async () => {
 }, 30_000)
 afterAll(async () => {
 	await fixture?.shutdown()
+})
+
+describe('independent Check permissions', () => {
+	async function createCheck(scope = { organizationId, accountId }) {
+		return db
+			.insert(app.checks, {
+				...scope,
+				checkNumber: crypto.randomUUID().slice(0, 8),
+				checkDate: '2026-10-23'
+			})
+			.wait({ tier: 'global' })
+	}
+
+	it('allows a selected member to create and edit a Check only in a granted account', async () => {
+		const check = await selectedMemberDb
+			.insert(app.checks, {
+				organizationId,
+				accountId,
+				checkNumber: '101',
+				checkDate: '2026-10-23'
+			})
+			.wait({ tier: 'global' })
+		await selectedMemberDb
+			.update(app.checks, check.id, { memoOnCheck: 'Updated' })
+			.wait({ tier: 'global' })
+		expect(
+			(await selectedMemberDb.one(app.checks.where({ id: check.id }), { tier: 'remote' }))
+				?.memoOnCheck
+		).toBe('Updated')
+		await selectedMemberDb.expectDenied((writer) =>
+			writer.insert(app.checks, {
+				organizationId,
+				accountId: otherAccountId,
+				checkNumber: '102',
+				checkDate: '2026-10-23'
+			})
+		)
+		await db.update(app.checks, check.id, { accountId: otherAccountId }).wait({ tier: 'global' })
+		expect((await db.one(app.checks.where({ id: check.id }), { tier: 'remote' }))?.accountId).toBe(
+			otherAccountId
+		)
+		await db.expectDenied((writer) => writer.delete(app.checks, check.id))
+	})
+
+	it('keeps Check access within organization and viewer rules', async () => {
+		const check = await createCheck()
+		expect(await viewerDb.one(app.checks.where({ id: check.id }), { tier: 'remote' })).toBeTruthy()
+		await viewerDb.expectDenied((writer) => writer.update(app.checks, check.id, { bankName: 'No' }))
+		await selectedMemberDb.expectDenied((writer) =>
+			writer.insert(app.checks, {
+				organizationId: otherOrganizationId,
+				accountId: foreignAccountId,
+				checkNumber: '103',
+				checkDate: '2026-10-23'
+			})
+		)
+	})
+
+	it.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
+		'allows a direct %s transaction reference to a saved Check',
+		async (kind) => {
+			const check = await createCheck()
+			const row = await db
+				.insert(app.transactions, {
+					...transaction(kind),
+					paymentMethod: 'check',
+					checkId: check.id
+				})
+				.wait({ tier: 'global' })
+			expect(row.checkId).toBe(check.id)
+		}
+	)
+
+	it('rejects missing, mismatched, and simultaneous Check references on direct writes', async () => {
+		const check = await createCheck()
+		const otherCheck = await createCheck({ organizationId, accountId: otherAccountId })
+		const foreignCheck = await createCheck({
+			organizationId: otherOrganizationId,
+			accountId: foreignAccountId
+		})
+		for (const checkId of [crypto.randomUUID(), otherCheck.id, foreignCheck.id]) {
+			await db.expectDenied((writer) =>
+				writer.insert(app.transactions, {
+					...transaction('expense'),
+					paymentMethod: 'check',
+					checkId
+				})
+			)
+		}
+		await db.expectDenied((writer) =>
+			writer.insert(app.transactions, {
+				...transaction('expense'),
+				paymentMethod: 'cash',
+				checkId: check.id
+			})
+		)
+		const row = await db.insert(app.transactions, transaction('expense')).wait({ tier: 'global' })
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, row.id, { paymentMethod: 'check', checkId: otherCheck.id })
+		)
+		await db
+			.update(app.transactions, row.id, { paymentMethod: 'check', checkId: check.id })
+			.wait({ tier: 'global' })
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, row.id, { checkDetailsId: crypto.randomUUID() })
+		)
+	})
 })
 
 describe('tag permission integrity', () => {
@@ -226,14 +387,13 @@ describe('tag permission integrity', () => {
 })
 
 describe('income payment method permissions', () => {
-	it('rejects manual income without a method on insert and update', async () => {
-		await db.expectDenied((writer) => writer.insert(app.transactions, transaction('income')))
-		const row = await db
-			.insert(app.transactions, { ...transaction('income'), paymentMethod: 'cash' })
-			.wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, row.id, { paymentMethod: null })
-		)
+	it('allows manual income without a method on insert and update', async () => {
+		const row = await db.insert(app.transactions, transaction('income')).wait({ tier: 'global' })
+		expect(row.paymentMethod).toBeNull()
+		await db.update(app.transactions, row.id, { paymentMethod: null }).wait({ tier: 'global' })
+		expect(
+			(await db.one(app.transactions.where({ id: row.id }), { tier: 'remote' }))?.paymentMethod
+		).toBeNull()
 	})
 	it.each(['cash', 'transfer', 'electronic'] satisfies ('cash' | 'transfer' | 'electronic')[])(
 		'accepts manual %s income',
@@ -318,3 +478,223 @@ describe('immutable transaction provenance', () => {
 		)
 	})
 })
+
+const moveCases = [
+	{
+		label: 'owner',
+		role: 'owner',
+		mode: 'selected',
+		source: 'none',
+		target: 'none',
+		allowed: true
+	},
+	{
+		label: 'admin',
+		role: 'admin',
+		mode: 'selected',
+		source: 'none',
+		target: 'none',
+		allowed: true
+	},
+	{
+		label: 'all-account member',
+		role: 'member',
+		mode: 'all',
+		source: 'none',
+		target: 'none',
+		allowed: true
+	},
+	{
+		label: 'selected member with both writes',
+		role: 'member',
+		mode: 'selected',
+		source: 'write',
+		target: 'write',
+		allowed: true
+	},
+	{
+		label: 'selected member with only source write',
+		role: 'member',
+		mode: 'selected',
+		source: 'write',
+		target: 'none',
+		allowed: false
+	},
+	{
+		label: 'selected member with only destination write',
+		role: 'member',
+		mode: 'selected',
+		source: 'none',
+		target: 'write',
+		allowed: false
+	},
+	{
+		label: 'selected member with source read',
+		role: 'member',
+		mode: 'selected',
+		source: 'read',
+		target: 'write',
+		allowed: false
+	},
+	{
+		label: 'selected member with destination read',
+		role: 'member',
+		mode: 'selected',
+		source: 'write',
+		target: 'read',
+		allowed: false
+	},
+	{
+		label: 'selected member with no grants',
+		role: 'member',
+		mode: 'selected',
+		source: 'none',
+		target: 'none',
+		allowed: false
+	},
+	{
+		label: 'all-account viewer',
+		role: 'viewer',
+		mode: 'all',
+		source: 'write',
+		target: 'write',
+		allowed: false
+	},
+	{
+		label: 'selected viewer with both grants',
+		role: 'viewer',
+		mode: 'selected',
+		source: 'write',
+		target: 'write',
+		allowed: false
+	},
+	{
+		label: 'nonmember with orphan grants',
+		role: null,
+		mode: 'selected',
+		source: 'write',
+		target: 'write',
+		allowed: false
+	}
+] satisfies {
+	label: string
+	role: 'owner' | 'admin' | 'member' | 'viewer' | null
+	mode: 'all' | 'selected'
+	source: 'write' | 'read' | 'none'
+	target: 'write' | 'read' | 'none'
+	allowed: boolean
+}[]
+
+describe.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
+	'atomic %s transaction and Check account movement',
+	(kind) => {
+		it.each(moveCases)('$label', async ({ label, role, mode, source, target, allowed }) => {
+			const actorSession = {
+				user_id: `check-move-${kind}-${label}`,
+				authMode: 'local-first',
+				claims: {}
+			} satisfies import('jazz-tools/testing').PolicyTestSession
+			const writer = fixture.as(actorSession)
+			const userId = fixture.accountFor(actorSession)
+			if (role !== null)
+				await fixture.seed((seed) =>
+					seed.insert(app.organizationMembers, {
+						organizationId,
+						userId,
+						role,
+						accountAccessMode: mode
+					})
+				)
+			for (const [id, access] of [
+				[accountId, source],
+				[otherAccountId, target]
+			] satisfies [string, 'write' | 'read' | 'none'][]) {
+				if (access === 'write' || access === 'read')
+					await fixture.seed((seed) =>
+						seed.insert(app.accountMemberships, {
+							organizationId,
+							userId,
+							accountId: id,
+							access
+						})
+					)
+			}
+			const check = await db
+				.insert(app.checks, {
+					organizationId,
+					accountId,
+					checkNumber: 'move',
+					checkDate: '2026-10-23'
+				})
+				.wait({ tier: 'global' })
+			const row = await db
+				.insert(app.transactions, {
+					...transaction(kind),
+					paymentMethod: 'check',
+					checkId: check.id
+				})
+				.wait({ tier: 'global' })
+			const write = await writer.transaction((tx) => {
+				tx.update(app.checks, check.id, { accountId: otherAccountId })
+				tx.update(app.transactions, row.id, { accountId: otherAccountId })
+			})
+			if (allowed) await write.wait({ tier: 'global' })
+			else await expect(write.wait({ tier: 'global' })).rejects.toThrow()
+			const expectedAccountId = allowed ? otherAccountId : accountId
+			expect(
+				(await db.one(app.checks.where({ id: check.id }), { tier: 'remote' }))?.accountId
+			).toBe(expectedAccountId)
+			const saved = await db.one(app.transactions.where({ id: row.id }), { tier: 'remote' })
+			expect(saved).toMatchObject({ accountId: expectedAccountId, checkId: check.id })
+		})
+
+		it.each(['foreign', 'archived', 'invalid-category'])(
+			'rejects a %s destination or ledger update without moving either record',
+			async (scenario) => {
+				const archived =
+					scenario === 'archived'
+						? await fixture.seed((seed) =>
+								seed.insert(app.accounts, {
+									organizationId,
+									name: 'Archived move target',
+									kind: 'cash',
+									currency: 'USD',
+									archivedAt: new Date()
+								})
+							)
+						: null
+				const targetId =
+					archived?.id ?? (scenario === 'foreign' ? foreignAccountId : otherAccountId)
+				const check = await db
+					.insert(app.checks, {
+						organizationId,
+						accountId,
+						checkNumber: 'denied-move',
+						checkDate: '2026-10-23'
+					})
+					.wait({ tier: 'global' })
+				const row = await db
+					.insert(app.transactions, {
+						...transaction(kind),
+						paymentMethod: 'check',
+						checkId: check.id
+					})
+					.wait({ tier: 'global' })
+				const write = await db.transaction((tx) => {
+					tx.update(app.checks, check.id, { accountId: targetId })
+					tx.update(app.transactions, row.id, {
+						accountId: targetId,
+						...(scenario === 'invalid-category' ? { categoryId: crypto.randomUUID() } : {})
+					})
+				})
+				await expect(write.wait({ tier: 'global' })).rejects.toThrow()
+				expect(
+					(await db.one(app.checks.where({ id: check.id }), { tier: 'remote' }))?.accountId
+				).toBe(accountId)
+				expect(
+					(await db.one(app.transactions.where({ id: row.id }), { tier: 'remote' }))?.accountId
+				).toBe(accountId)
+			}
+		)
+	}
+)

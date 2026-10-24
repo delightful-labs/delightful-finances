@@ -6,7 +6,7 @@ import type {
 	OrganizationMember,
 	TransactionDetail
 } from './schema.js'
-import type { AppTransaction } from './domain/transaction.js'
+import type { TransactionSaveValues } from './validation/transactions.js'
 import type { ScopedFormView } from './form-contract.js'
 
 export type TransactionEntryScope = {
@@ -26,6 +26,8 @@ export type TransactionEntryReason =
 	| 'noCategories'
 	| 'unavailableReference'
 	| 'ambiguousTagName'
+	| 'checkRetained'
+	| 'saveUnresolved'
 export type TransactionEntryObservation = TransactionEntryScope & {
 	sessionReady: boolean
 	loading: boolean
@@ -35,7 +37,7 @@ export type TransactionEntryObservation = TransactionEntryScope & {
 	accounts: readonly Account[]
 	categories: readonly Category[]
 	tags: readonly Tag[]
-	intent?: AppTransaction
+	intent?: TransactionSaveValues
 	transaction?: TransactionDetail | null
 }
 export type TransactionEntryView = ScopedFormView<void, TransactionEntryReason>

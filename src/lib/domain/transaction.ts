@@ -1,8 +1,14 @@
 import type { z } from 'zod'
 import type { TransactionRow } from '../schema.js'
-import { appTransactionSchema, transactionSchemaFor } from '../validation/transactions.js'
+import {
+	appTransactionSchema,
+	independentTransactionSchema,
+	transactionSchemaFor
+} from '../validation/transactions.js'
 
 export type IncomePaymentMethod = NonNullable<TransactionRow['paymentMethod']>
+
+export type IndependentTransaction = z.output<typeof independentTransactionSchema>
 
 export type AppTransaction = z.output<typeof appTransactionSchema>
 export type TransactionValidationError =
@@ -18,8 +24,8 @@ const validationErrorByPath: Readonly<Record<string, TransactionValidationError>
 	'money.amountMinor': 'amount',
 	'money.currency': 'currency',
 	bookedOn: 'booked-on',
-	'checkDetails.checkNumber': 'check-number',
-	'checkDetails.checkDate': 'check-date',
+	'check.values.checkNumber': 'check-number',
+	'check.values.checkDate': 'check-date',
 	'source.externalId': 'source-id'
 }
 

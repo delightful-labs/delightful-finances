@@ -651,8 +651,8 @@ for (const scenario of formScenarios) {
 		await page
 			.getByLabel('Memo (additional notes)', { exact: true })
 			.fill('Draft from previous workspace')
-		await expect(page.getByLabel('Check number')).toHaveCount(0)
-		await expect(page.getByLabel('Check date')).toHaveCount(0)
+		await expect(page.getByLabel('Check number')).toBeHidden()
+		await expect(page.getByLabel('Check date')).toBeHidden()
 		if (scenario.kind === 'income') {
 			await page.getByLabel('Payment method').selectOption('check')
 			await page.getByLabel('Check number').fill('Previous workspace check')
@@ -679,8 +679,8 @@ for (const scenario of formScenarios) {
 		await page.getByLabel('Date', { exact: true }).fill('2026-10-13')
 		await page.getByLabel('Memo (additional notes)', { exact: true }).fill(scenario.memo)
 		if (scenario.kind === 'income') {
-			await expect(page.getByLabel('Payment method')).toHaveValue('cash')
-			await expect(page.getByLabel('Check number')).toHaveCount(0)
+			await expect(page.getByLabel('Payment method')).toHaveValue('')
+			await expect(page.getByLabel('Check number')).toBeHidden()
 			await page.getByLabel('Payment method').selectOption('check')
 			await expect(page.getByLabel('Check number')).toHaveValue('')
 			await expect(page.getByLabel('Check date')).toHaveValue(defaultCheckDate)
@@ -688,8 +688,8 @@ for (const scenario of formScenarios) {
 			await expect(page.getByLabel('Check date')).toHaveAttribute('required', '')
 			for (const method of ['cash', 'transfer', 'electronic']) {
 				await page.getByLabel('Payment method').selectOption(method)
-				await expect(page.getByLabel('Check number')).toHaveCount(0)
-				await expect(page.getByLabel('Check date')).toHaveCount(0)
+				await expect(page.getByLabel('Check number')).toBeHidden()
+				await expect(page.getByLabel('Check date')).toBeHidden()
 			}
 			await page.getByLabel('Payment method').selectOption('check')
 			await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
@@ -734,9 +734,9 @@ for (const scenario of formScenarios) {
 				const row = rows[0]
 				return {
 					rows,
-					checks: row
-						? await db.all(app.checkDetails.where({ transactionId: row.id }), { tier: 'remote' })
-						: []
+					check: row?.checkId
+						? await db.one(app.checks.where({ id: row.checkId }), { tier: 'remote' })
+						: null
 				}
 			},
 			{ organizationId: secondWorkspaceId, memo: scenario.memo }
@@ -749,16 +749,15 @@ for (const scenario of formScenarios) {
 		})
 		if (scenario.kind === 'income') {
 			expect(saved.rows[0]?.paymentMethod).toBe('check')
-			expect(saved.checks).toHaveLength(1)
-			expect(saved.checks[0]).toMatchObject({ checkNumber: '12345', checkDate: '2026-10-12' })
-		} else expect(saved.checks).toHaveLength(0)
+			expect(saved.check).toMatchObject({ checkNumber: '12345', checkDate: '2026-10-12' })
+		} else expect(saved.check).toBeNull()
 		await page.goto(`${scenario.path}?workspace=${secondWorkspaceId}`)
 		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue('')
 		await expect(account.locator('option')).toHaveText(['Select Account', 'Business checking'])
 		if (scenario.kind === 'income') {
-			await expect(page.getByLabel('Payment method')).toHaveValue('cash')
-			await expect(page.getByLabel('Check number')).toHaveCount(0)
-			await expect(page.getByLabel('Check date')).toHaveCount(0)
+			await expect(page.getByLabel('Payment method')).toHaveValue('')
+			await expect(page.getByLabel('Check number')).toBeHidden()
+			await expect(page.getByLabel('Check date')).toBeHidden()
 			await page.getByLabel('Payment method').selectOption('check')
 			await expect(page.getByLabel('Check number')).toHaveValue('')
 			await expect(page.getByLabel('Check date')).toHaveValue(defaultCheckDate)
@@ -2448,18 +2447,18 @@ for (const kind of ['expense', 'income']) {
 					})
 					.wait({ tier: 'global' })
 				const id = crypto.randomUUID()
+				const checkId = crypto.randomUUID()
 				const write = await db.transaction((tx) => {
 					if (kind === 'income')
 						tx.insert(
-							app.checkDetails,
+							app.checks,
 							{
-								transactionId: id,
 								organizationId,
 								accountId: account.id,
 								checkNumber: '12345',
 								checkDate: '2026-10-13'
 							},
-							{ id }
+							{ id: checkId }
 						)
 					const transaction = tx.insert(
 						app.transactions,
@@ -2474,7 +2473,7 @@ for (const kind of ['expense', 'income']) {
 							description: 'Detail description',
 							memo: 'Original detail memo',
 							source: 'manual',
-							...(kind === 'income' ? { paymentMethod: 'check', checkDetailsId: id } : {})
+							...(kind === 'income' ? { paymentMethod: 'check', checkId } : {})
 						},
 						{ id }
 					)
@@ -2529,7 +2528,7 @@ for (const kind of ['expense', 'income']) {
 			await expect(main.getByLabel('Payment method', { exact: true })).toHaveValue('check')
 			await expect(main.getByLabel('Check number', { exact: true })).toHaveValue('12345')
 			await expect(main.getByLabel('Check date', { exact: true })).toHaveValue('2026-10-13')
-		} else await expect(main.getByLabel('Check number', { exact: true })).toHaveCount(0)
+		} else await expect(main.getByLabel('Check number', { exact: true })).toBeHidden()
 		await page.evaluate(async (id) => {
 			const { app, db } = window.workspaceSettingsTest
 			await db

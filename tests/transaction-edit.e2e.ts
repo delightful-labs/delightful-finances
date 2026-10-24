@@ -28,6 +28,17 @@ async function seedTransaction(
 				currency: 'USD'
 			})
 			.wait({ tier: 'local' })
+		const destination =
+			scenario === 'check'
+				? await db
+						.insert(app.accounts, {
+							organizationId: organization.id,
+							name: 'Destination ledger',
+							kind: 'cash',
+							currency: 'USD'
+						})
+						.wait({ tier: 'local' })
+				: null
 		const category = await db
 			.insert(app.categories, {
 				organizationId: organization.id,
@@ -36,73 +47,53 @@ async function seedTransaction(
 				isSystem: false
 			})
 			.wait({ tier: 'local' })
-		const persistencePath = '/src/lib/machines/transaction-create-persistence.ts'
-		const xstatePath = '/node_modules/.vite/deps/xstate.js'
-		const {
-			createTransactionPersistenceMachine
-		}: typeof import('../src/lib/machines/transaction-create-persistence.js') = await import(
-			persistencePath
-		)
-		const { createActor, toPromise }: typeof import('xstate') = await import(xstatePath)
 		const base = {
 			organizationId: organization.id,
 			accountId: account.id,
 			categoryId: category.id,
-			money: { amountMinor: 1234, currency: 'USD' },
+			amountMinor: 1234,
+			currency: 'USD',
 			bookedOn: '2026-10-18',
-			memo: 'Original memo',
-			tags: ['Historical']
+			memo: 'Original memo'
 		}
-		const values: import('../src/lib/domain/transaction.js').AppTransaction =
+		const isIncome = scenario === 'check' || scenario === 'imported-income'
+		const check =
 			scenario === 'check'
-				? {
-						...base,
-						kind: 'income',
-						source: { source: 'manual' },
-						paymentMethod: 'check',
-						checkDetails: { checkNumber: '100', checkDate: base.bookedOn }
-					}
-				: scenario === 'imported-income'
-					? {
-							...base,
-							kind: 'income',
-							source: { source: 'simplefin', externalId: 'imported-edit-test' }
-						}
-					: {
-							...base,
-							kind: 'expense',
-							source:
-								scenario === 'imported'
-									? { source: 'simplefin', externalId: 'imported-edit-test' }
-									: { source: 'manual' }
-						}
-		const facts = {
-			identityId: snapshot.account.id,
-			organizationId: organization.id,
-			binding: db,
-			kind: values.kind,
-			sessionReady: true,
-			loading: false,
-			failed: false,
-			membership: null,
-			grants: [],
-			accounts: [account],
-			categories: [category],
-			tags: []
-		}
-		const actor = createActor(createTransactionPersistenceMachine(db), {
-			input: {
-				request: { id: 1, scopeRevision: 0, scope: facts, values },
-				observation: { revision: 0, facts }
-			}
-		}).start()
-		const result = await toPromise(actor)
-		if (result.outcome !== 'succeeded') throw new Error('Seed creation failed')
-		const [saved] = await db.all(app.transactions.where({ accountId: account.id }))
-		if (!saved) throw new Error('Missing seeded transaction')
-		const transactionId = saved.id
-		const [link] = await db.all(app.transactionTags.where({ transactionId }))
-		if (!link) throw new Error('Missing tag assignment')
+				? await db
+						.insert(app.checks, {
+							organizationId: organization.id,
+							accountId: account.id,
+							checkNumber: '100',
+							checkDate: base.bookedOn
+						})
+						.wait({ tier: 'local' })
+				: null
+		const saved = await db
+			.insert(app.transactions, {
+				...base,
+				kind: isIncome ? 'income' : 'expense',
+				source: scenario === 'imported' || scenario === 'imported-income' ? 'simplefin' : 'manual',
+				...(scenario === 'imported' || scenario === 'imported-income'
+					? { externalId: 'imported-edit-test' }
+					: {}),
+				...(check ? { paymentMethod: 'check', checkId: check.id } : {})
+			})
+			.wait({ tier: 'local' })
+		const tag = await db
+			.insert(app.tags, {
+				organizationId: organization.id,
+				kind: isIncome ? 'income' : 'expense',
+				name: 'Historical',
+				categoryId: category.id
+			})
+			.wait({ tier: 'local' })
+		const link = await db
+			.insert(app.transactionTags, {
+				organizationId: organization.id,
+				transactionId: saved.id,
+				tagId: tag.id
+			})
+			.wait({ tier: 'local' })
 		await db.update(app.tags, link.tagId, { archivedAt: new Date() }).wait({ tier: 'local' })
 		if (scenario === 'archived')
 			await db.update(app.accounts, account.id, { archivedAt: new Date() }).wait({ tier: 'local' })
@@ -119,8 +110,9 @@ async function seedTransaction(
 				.wait({ tier: 'local' })
 		}
 		return {
-			id: transactionId,
+			id: saved.id,
 			accountId: account.id,
+			destinationAccountId: destination?.id,
 			categoryId: category.id,
 			linkId: link.id,
 			tagId: link.tagId
@@ -140,8 +132,11 @@ async function persisted(page: Page, id: string) {
 		if (!db) throw new Error('Missing database')
 		const [row] = await db.all(app.transactions.where({ id }))
 		const links = await db.all(app.transactionTags.where({ transactionId: id }))
-		const details = await db.all(app.checkDetails.where({ transactionId: id }))
+		const check = row?.checkId
+			? await db.one(app.checks.where({ id: row.checkId }), { tier: 'local' })
+			: null
 		return {
+			accountId: row?.accountId,
 			amountMinor: row?.amountMinor,
 			memo: row?.memo,
 			description: row?.description,
@@ -150,7 +145,8 @@ async function persisted(page: Page, id: string) {
 			externalId: row?.externalId,
 			paymentMethod: row?.paymentMethod,
 			links: links.map(({ id, tagId }) => ({ id, tagId })),
-			checkNumber: details[0]?.checkNumber
+			checkNumber: check?.checkNumber,
+			checkAccountId: check?.accountId
 		}
 	}, id)
 }
@@ -222,17 +218,28 @@ test('removing a tag alone enables Save and persists removal', async ({ page }) 
 	await expect.poll(async () => (await persisted(page, seed.id)).links).toEqual([])
 })
 
-test('check details can be edited while payment conversion is unavailable', async ({ page }) => {
+test('inline Check details can be edited and its account moves with the transaction', async ({
+	page
+}) => {
 	const seed = await seedTransaction(page, 'check')
+	const destinationAccountId = seed.destinationAccountId
+	if (!destinationAccountId) throw new Error('Missing destination account fixture')
 	await page.goto(`/income/${seed.id}`)
 	const payment = page.getByLabel('Payment method', { exact: true })
 	await expect(payment).toHaveValue('check')
-	await expect(payment.locator('option[value="cash"]')).toBeDisabled()
+	await expect(payment.locator('option[value="cash"]')).toBeEnabled()
 	const check = page.locator('[name="checkNumber"]')
 	await expect(check).toHaveValue('100')
 	await check.fill('101')
+	await page.getByLabel('Account', { exact: true }).selectOption(destinationAccountId)
 	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-	await expect.poll(async () => (await persisted(page, seed.id)).checkNumber).toBe('101')
+	await expect
+		.poll(() => persisted(page, seed.id))
+		.toMatchObject({
+			checkNumber: '101',
+			accountId: destinationAccountId,
+			checkAccountId: destinationAccountId
+		})
 })
 
 for (const viewport of [
@@ -321,8 +328,11 @@ for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
 		const save = page.getByRole('button', { name: 'Save Transaction', exact: true })
 		await expect(amount).toBeEnabled()
 		await expect(save).toBeDisabled()
-		if (kind === 'income')
-			await expect(page.getByLabel('Payment method', { exact: true })).toHaveCount(0)
+		if (kind === 'income') {
+			const payment = page.getByLabel('Payment method', { exact: true })
+			await expect(payment).toBeVisible()
+			await expect(payment).toHaveValue('')
+		}
 		const memo = page.getByLabel('Memo (additional notes)', { exact: true })
 		await memo.fill('Changed')
 		await expect(save).toBeEnabled()

@@ -74,6 +74,51 @@ describe('scoped form ownership', () => {
 		expect(f.view().feedback).toEqual({ kind: 'result', result: success })
 	})
 
+	it('retains a partial checkpoint separately and supplies it to the next submission', async () => {
+		const f = fixture()
+		const checkpoint = { transactionId: 'stable-transaction', checkId: 'stable-check' }
+		f.submit()
+		const first = await f.working()
+		first.send({
+			type: 'SETTLE',
+			result: {
+				outcome: 'partial',
+				value: undefined,
+				reason: 'transactionFailed',
+				settlement: 'locallyPersisted',
+				checkpoint
+			}
+		})
+		await f.idle()
+		expect(f.view().feedback).toMatchObject({ result: { outcome: 'partial', checkpoint } })
+		expect(f.actor.getSnapshot().context.checkpoint).toEqual(checkpoint)
+		f.submit()
+		await f.working()
+		expect(f.started.mock.calls[1]?.[0].request.checkpoint).toEqual(checkpoint)
+	})
+
+	it('keeps a checkpoint from drained cancellation and clears it on reset or scope replacement', async () => {
+		const f = fixture()
+		const checkpoint = { transactionId: 'stable-transaction' }
+		f.submit()
+		const child = await f.working()
+		f.actor.send({ type: 'CANCEL' })
+		child.send({
+			type: 'SETTLE',
+			result: { outcome: 'failed', code: 'operationFailed', settlement: 'unknown', checkpoint }
+		})
+		await f.idle()
+		expect(f.view().feedback).toMatchObject({ result: { outcome: 'cancelled', checkpoint } })
+		expect(f.actor.getSnapshot().context.checkpoint).toEqual(checkpoint)
+		f.actor.send({ type: 'RESET' })
+		expect(f.actor.getSnapshot().context.checkpoint).toBeUndefined()
+		f.submit()
+		await f.working()
+		expect(f.started.mock.calls[1]?.[0].request.checkpoint).toBeUndefined()
+		f.actor.send({ type: 'OBSERVE', observation: { ...ready, scope: 'workspace-b' } })
+		expect(f.actor.getSnapshot().context.checkpoint).toBeUndefined()
+	})
+
 	it('normalizes invalid fields, permits correction, and distinguishes validation failures', async () => {
 		const f = fixture()
 		f.actor.send({ type: 'SUBMIT', values: { name: '' } })
@@ -171,9 +216,10 @@ describe('scoped form ownership', () => {
 		f.actor.send({ type: 'OBSERVE', observation: ready })
 		f.submit()
 		expect(f.view().canSubmit).toBe(false)
-		child.send({ type: 'SETTLE', result: success })
+		child.send({ type: 'SETTLE', result: { ...success, checkpoint: { transactionId: 'stale' } } })
 		await f.idle()
 		expect(f.view().feedback.kind).toBe('none')
+		expect(f.actor.getSnapshot().context.checkpoint).toBeUndefined()
 		expect(f.view().draftRevision).toBe(2)
 		expect(f.view().canSubmit).toBe(true)
 	})

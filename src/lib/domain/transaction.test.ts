@@ -6,11 +6,11 @@ const checkIncome: AppTransaction = {
 	source: { source: 'manual' },
 	paymentMethod: 'check',
 	money: { amountMinor: 2500, currency: 'USD' },
-	accountId: 'account-1',
-	organizationId: 'organization-1',
-	categoryId: 'category-1',
+	accountId: '11111111-1111-4111-8111-111111111111',
+	organizationId: '22222222-2222-4222-8222-222222222222',
+	categoryId: '33333333-3333-4333-8333-333333333333',
 	bookedOn: '2026-10-11',
-	checkDetails: { checkNumber: '101', checkDate: '2026-10-11' }
+	check: { kind: 'new', values: { checkNumber: '101', checkDate: '2026-10-11' } }
 }
 
 describe('validateTransaction', () => {
@@ -22,13 +22,13 @@ describe('validateTransaction', () => {
 		expect(
 			validateTransaction({
 				...checkIncome,
-				checkDetails: { checkNumber: ' ', checkDate: '2026-10-11' }
+				check: { kind: 'new', values: { checkNumber: ' ', checkDate: '2026-10-11' } }
 			})
 		).toBe('check-number')
 		expect(
 			validateTransaction({
 				...checkIncome,
-				checkDetails: { checkNumber: '101', checkDate: '2025-02-29' }
+				check: { kind: 'new', values: { checkNumber: '101', checkDate: '2025-02-29' } }
 			})
 		).toBe('check-date')
 	})
@@ -45,7 +45,9 @@ describe('validateTransaction', () => {
 			categoryId: checkIncome.categoryId,
 			bookedOn: checkIncome.bookedOn,
 			kind: 'income' as const,
-			source: { source: 'simplefin' as const, externalId: ' ' }
+			source: { source: 'simplefin' as const, externalId: ' ' },
+			paymentMethod: null,
+			checkId: null
 		}
 		expect(validateTransaction(importedIncome)).toBe('source-id')
 	})

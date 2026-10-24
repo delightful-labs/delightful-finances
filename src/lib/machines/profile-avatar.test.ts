@@ -258,6 +258,59 @@ describe('avatar preparation and saving', () => {
 })
 
 describe('avatar interruption and settlement', () => {
+	it.each(['initialize', 'canvas', 'resize', 'encode', 'read'])(
+		'retains a successful late %s result for cleanup without starting the next operation',
+		async (stage) => {
+			const f = fixture()
+			const pending = Promise.withResolvers<unknown>()
+			const blocked =
+				stage === 'initialize'
+					? f.initialize
+					: stage === 'canvas'
+						? f.createCanvas
+						: stage === 'resize'
+							? f.resize
+							: stage === 'encode'
+								? f.encode
+								: f.read
+			if (stage === 'initialize')
+				f.initialize.mockReturnValue(
+					pending.promise as unknown as ReturnType<typeof platform.initializeAvatarResizer>
+				)
+			if (stage === 'canvas')
+				f.createCanvas.mockReturnValue(pending.promise as unknown as OffscreenCanvas)
+			if (stage === 'resize') f.resize.mockReturnValue(pending.promise as Promise<OffscreenCanvas>)
+			if (stage === 'encode') f.encode.mockReturnValue(pending.promise as Promise<Blob>)
+			if (stage === 'read')
+				f.read.mockReturnValue(
+					pending.promise as unknown as ReturnType<typeof platform.readAvatarBytes>
+				)
+			const actor = f.start()
+			await vi.waitFor(() => expect(blocked).toHaveBeenCalledOnce())
+			actor.send({ type: 'SHUTDOWN' })
+			const output =
+				stage === 'initialize'
+					? undefined
+					: stage === 'canvas' || stage === 'resize'
+						? f.canvas
+						: stage === 'encode'
+							? new Blob(['encoded'], { type: 'image/webp' })
+							: new Uint8Array([1, 2, 3])
+			pending.resolve(output)
+			await expect(toPromise(actor)).resolves.toMatchObject({
+				outcome: 'closed',
+				settlement: 'notStarted'
+			})
+			expect(f.bitmap.close).toHaveBeenCalledOnce()
+			expect(f.closeCanvas).toHaveBeenCalledTimes(stage === 'initialize' ? 0 : 1)
+			expect(f.save).not.toHaveBeenCalled()
+			if (stage === 'initialize') expect(f.createCanvas).not.toHaveBeenCalled()
+			if (stage === 'canvas') expect(f.resize).not.toHaveBeenCalled()
+			if (stage === 'resize') expect(f.encode).not.toHaveBeenCalled()
+			if (stage === 'encode') expect(f.read).not.toHaveBeenCalled()
+		}
+	)
+
 	it.each(commands)(
 		'retains late decode on $type then closes its bitmap without starting resize',
 		async ({ type, outcome }) => {

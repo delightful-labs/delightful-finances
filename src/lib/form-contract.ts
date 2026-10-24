@@ -4,29 +4,33 @@ export type FormSettlement =
 	'notStarted' | 'locallyPersisted' | 'confirmed' | 'rejected' | 'unknown'
 export type FormInterruption = 'scopeChanged' | 'cancelled' | 'closed'
 export type FormReadiness<Reason> = { kind: 'ready' } | { kind: 'blocked'; reason: Reason }
-export type FormOperationResult<Result, Reason> =
-	| { outcome: 'succeeded'; value: Result; settlement: 'locallyPersisted' | 'confirmed' }
-	| { outcome: 'denied' | 'unavailable'; reason: Reason; settlement: 'notStarted' }
-	| { outcome: FormInterruption; settlement: FormSettlement }
-	| {
-			outcome: 'failed'
-			code:
-				| 'validationFailed'
-				| 'operationFailed'
-				| 'availabilityFailed'
-				| 'unexpected'
-				| 'completionFailed'
-			settlement: FormSettlement
-	  }
-	| {
-			outcome: 'partial'
-			value: Result
-			reason: Reason
-			settlement: 'locallyPersisted' | 'confirmed' | 'unknown'
-	  }
+/** Opaque domain-owned recovery data; consumers must validate it before reuse. */
+export type FormRecovery = { checkpoint?: unknown }
+export type FormOperationResult<Result, Reason> = FormRecovery &
+	(
+		| { outcome: 'succeeded'; value: Result; settlement: 'locallyPersisted' | 'confirmed' }
+		| { outcome: 'denied' | 'unavailable'; reason: Reason; settlement: 'notStarted' }
+		| { outcome: FormInterruption; settlement: FormSettlement }
+		| {
+				outcome: 'failed'
+				code:
+					| 'validationFailed'
+					| 'operationFailed'
+					| 'availabilityFailed'
+					| 'unexpected'
+					| 'completionFailed'
+				settlement: FormSettlement
+		  }
+		| {
+				outcome: 'partial'
+				value: Result
+				reason: Reason
+				settlement: 'locallyPersisted' | 'confirmed' | 'unknown'
+		  }
+	)
 export type FormResult<Result, Reason> =
 	| FormOperationResult<Result, Reason>
-	| { outcome: 'invalid'; issues: readonly FormIssue[]; settlement: 'notStarted' }
+	| (FormRecovery & { outcome: 'invalid'; issues: readonly FormIssue[]; settlement: 'notStarted' })
 export type ScopedFormView<Result, Reason> = {
 	readiness: FormReadiness<Reason> | { kind: 'observing' | 'failed' | 'closed' }
 	content: { kind: 'fields' } | { kind: 'success'; value: Result }
@@ -68,7 +72,7 @@ export type FormAssessmentToken = {
 export type FormReadinessResult<Scope, Reason> =
 	| { kind: 'assessed'; token: FormAssessmentToken; capability: FormCapability<Scope, Reason> }
 	| { kind: 'failed'; token?: FormAssessmentToken }
-export type FormRequest<Scope> = {
+export type FormRequest<Scope> = FormRecovery & {
 	id: number
 	scope: Scope
 	scopeRevision: number
@@ -97,3 +101,15 @@ export type FormMode<Values, Observation> =
 			initialValues: (observation: Observation) => Values
 			valuesEqual: (draft: unknown, initialValues: Values) => boolean
 	  }
+
+/** Interruption changes the outcome without discarding domain recovery data. */
+export function formInterruptionResult<Result, Reason>(
+	outcome: FormInterruption,
+	result: FormResult<Result, Reason> | undefined
+): FormOperationResult<Result, Reason> {
+	return {
+		outcome,
+		settlement: result?.settlement ?? 'unknown',
+		...(result?.checkpoint === undefined ? {} : { checkpoint: result.checkpoint })
+	}
+}

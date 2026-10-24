@@ -42,7 +42,7 @@ As a user, I can create and review income and expense transactions for an accoun
 **Acceptance Scenarios**
 
 1. **Given** an active account, **When** I save an expense or income, **Then** the transaction stores a non-negative integer amount in minor units, currency copied from the account, organization and account references, a `bookedOn` calendar date stored as an ISO 8601 `YYYY-MM-DD` string, and a category matching its kind.
-2. **Given** I record income paid by check, **When** I save it, **Then** check number and a valid check date are required and stored in a related check-details record; other income methods do not require those fields.
+2. **Given** I record income paid by check, **When** I save it, **Then** check number and a valid check date are required and stored on an independent Check referenced by the transaction; other payment methods do not require those fields.
 3. **Given** a transaction with no chosen category, **When** it is saved, **Then** it receives the organization's system Uncategorized category for that transaction kind.
 4. **Given** I create a transaction while offline, **When** I save it, **Then** it is visible locally without waiting for a network response and later syncs.
 5. **Given** an income or expense view, **When** I review transactions, **Then** entries are grouped by calendar date newest first, with daily totals reflecting selected account filters and kept separate by currency. Each entry shows category, tags, amount, and its description when present; account names are omitted from list items. The add-transaction action is a floating plus link at the bottom right, with a localized accessible name and the existing income/expense creation destination. Date groups use initially expanded Details disclosures with the date and daily totals in their summaries. Entries place category and tags above the description, with the amount and a single chevron navigation link on the right. Only the chevron is a link; its absolutely positioned pseudo-element expands the hit area across the row, and row text has no link underline.
@@ -90,7 +90,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-002**: The application MUST provide create, list, and archive flows for USD financial accounts scoped to the active organization, using the shared sidebar and existing account list/create forms. Account history is reviewed through the income/expense views.
 - **FR-003**: The application MUST provide create/list flows for income and expense transactions on an account. New income and expense forms MUST default to the first checked active account in sidebar list order. When all accounts are checked, use the first account; when none are checked, require manual selection. All active accounts remain available for manual selection. Once the form is open, changes to defaults MUST preserve its current account and category selections.
 - **FR-004**: Every transaction MUST have `amountMinor >= 0`, an ISO 4217 currency, `kind`, `accountId`, `organizationId`, `bookedOn` as an ISO 8601 `YYYY-MM-DD` calendar-date string, and a category matching its kind.
-- **FR-005**: Manually entered income MUST have a payment method (`cash`, `check`, `transfer`, or `electronic`); check income MUST use separate check details with a nonblank check number and a valid check date. The form MUST show those fields only when Check is selected. Imported SimpleFIN income may omit the payment method.
+- **FR-005**: Income and expense transactions MAY omit their payment method. When present it is `cash`, `check`, `transfer`, or `electronic`. A Check payment MUST reference an independent Check with a nonblank check number and a valid check date; other or absent methods MUST have no Check reference. Received-check controls MUST permit inline creation and metadata edits, without an existing-Check selector. One Save persists the Check before atomically persisting the transaction and tag assignments. Partial and uncertain results retain stable IDs for retry. Moving a transaction moves its attached Check in the same SDK transaction while preserving the Check ID and requiring old/new account write access. Written-check creation controls remain deferred, while expense references use the same backend contract. See `009-independent-checks`.
 - **FR-006**: Each organization MUST have non-deletable system Uncategorized categories for both expense and income.
 - **FR-007**: Users MUST be able to create and archive org-scoped categories and tags; tags MUST support optional category association and many-to-many transaction assignment.
 - **FR-008**: Archived accounts MUST be excluded from new transaction selection while historical data remains accessible. Archived tags MUST be excluded from new selection while retained on historical transactions.
@@ -106,7 +106,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 ### Schema and authorization readiness
 
-- **FR-014**: The schema MUST include profiles, organizations, organizationMembers, accounts, categories, tags, transactions, transactionTags, checkDetails, and accountMemberships.
+- **FR-014**: The schema MUST include profiles, organizations, organizationMembers, accounts, categories, tags, transactions, transactionTags, checks, and accountMemberships. Retired checkDetails storage remains inaccessible until an explicitly authorized schema/data transition.
 - **FR-015**: Authorization MUST implement the organization roles and explicit `accountAccessMode` rules in the constitution, including inherited access to associated transaction/tag data. Account grants MUST NOT grant access without active organization membership; viewer access MUST remain read-only.
 - **FR-016**: The schema MUST include SimpleFIN connection/account-link records, transaction source and optional externalId, and organization-scoped owner/admin access to connection status and encrypted credential metadata. Usable credential access MUST additionally require the connecting user’s identity and passkey; administrative membership alone MUST NOT grant decryption access.
 - **FR-017**: The schema MUST reserve attachment and batch records/relationships for later use; full attachment/batch UI is out of scope.
@@ -128,7 +128,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - `amountMinor` is a non-negative integer; the sign is represented by `kind`.
 - Currency is copied from the account at creation and stored on the transaction.
 - `categoryId`, `accountId`, and `organizationId` are required references on every transaction.
-- Check details live in a one-to-one related table; do not put check-only sparse fields on every transaction.
+- Check metadata lives on independent account-scoped Checks. Transactions store a Check reference; multiple compatible transactions may reference one Check. Exclusive assignment is deferred.
 - `source` is a discriminated union in application types: manual, or SimpleFIN with `externalId`.
 - Jazz owns synchronized durable data and system audit timestamps.
 
@@ -142,7 +142,7 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
 - **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
 - **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional description/memo/provider id/batch, and tags.
-- **Check Details**: one-to-one transaction record for check income.
+- **Check**: independently identified, account-scoped payment metadata usable by income and expense transactions; a Check can remain detached after cancellation, failure or reference removal.
 - **SimpleFIN Connection / Account Link**: org-scoped connection credential/status and mapping to local accounts.
 - **Transaction Attachment / Batch**: schema-ready relationships for later features.
 
@@ -357,9 +357,9 @@ the animation must not stretch or squash the incoming page snapshot.
 Imported income and expenses MUST support authorized edits to categories, tags,
 description, memo, amount, business date and account through the transaction form.
 Edits MUST preserve transaction identity, workspace, kind, provider source and
-external ID. Imported income without a payment method MUST remain without one;
+external ID. Imported income without a payment method MUST retain that omission unless the user explicitly selects a method;
 editing MUST NOT convert it to manual income or default it to cash. Repeating
 manual bank sync MUST recognize the existing provider identity and preserve user
 edits without creating a duplicate or overwriting the transaction. Existing
 account/category validation, permissions, attribution, local durability and scope/
-shutdown settlement rules apply. Check-object redesign remains a separate slice.
+shutdown settlement rules apply. The shared independent Check contract in `009-independent-checks` applies to imported and manual transactions alike.

@@ -17,7 +17,7 @@
 		applicableTransactionCategories
 	} from '#lib/machines/transaction-entry.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
-	import { transactionFormSchema } from '#lib/validation/transactions.js'
+	import { independentTransactionFormSchema } from '#lib/validation/transactions.js'
 	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
 	import {
 		developerMenuKey,
@@ -93,7 +93,7 @@
 		const date = new Date()
 		date.setDate(date.getDate() - Math.floor(index / 5))
 		const bookedOn = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-		const transaction = transactionFormSchema(() => ({
+		const transaction = independentTransactionFormSchema(() => ({
 			...observation,
 			accounts: writableTransactionAccounts(observation)
 		})).parse({

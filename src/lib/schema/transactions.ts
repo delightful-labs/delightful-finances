@@ -7,6 +7,7 @@ import {
 	externalIdText
 } from '../validation/transactions.js'
 import { validatedTextColumn } from './text-column.js'
+import { transactionCheckColumns, transactionCheckRelations } from './checks.js'
 
 const currencyColumn = validatedTextColumn(currencyText)
 const bookedOnColumn = validatedTextColumn(dateOnlyText)
@@ -32,6 +33,7 @@ export const transactionsSchema = {
 			memo: s.string().optional(),
 			paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 			checkDetailsId: s.uuid().optional(),
+			...transactionCheckColumns,
 			source: s.enum('manual', 'simplefin'),
 			externalId: externalIdColumn.column.optional(),
 			batchId: s.uuid().optional()
@@ -43,6 +45,7 @@ export const transactionsSchema = {
 			batch: s.rel('transactionBatches', 'batchId'),
 			tags: s.reverse('transactionTags', 'transaction'),
 			checkDetails: s.rel('checkDetails', 'checkDetailsId'),
+			...transactionCheckRelations,
 			attachments: s.reverse('transactionAttachments', 'transaction')
 		}
 	),

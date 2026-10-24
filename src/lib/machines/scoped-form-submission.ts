@@ -8,6 +8,7 @@ import {
 	type Snapshot
 } from 'xstate'
 import { z } from 'zod'
+import { formInterruptionResult } from '#lib/form-contract.js'
 import type {
 	FormChildEvent,
 	FormInterruption,
@@ -99,7 +100,7 @@ export function createScopedFormSubmissionMachine<
 		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, event)
 	})
 	const clearPayloads = workflow.assign({
-		request: ({ context }) => ({ ...context.request, values: undefined }),
+		request: ({ context }) => ({ ...context.request, values: undefined, checkpoint: undefined }),
 		validated: undefined,
 		recipient: undefined,
 		observation: undefined
@@ -210,30 +211,21 @@ export function createScopedFormSubmissionMachine<
 							guard: 'operationClosing',
 							target: 'closed',
 							actions: assign({
-								result: ({ event }) => ({
-									outcome: 'closed',
-									settlement: event.output?.settlement ?? 'unknown'
-								})
+								result: ({ event }) => formInterruptionResult('closed', event.output)
 							})
 						},
 						{
 							guard: 'operationInvalidated',
 							target: 'scopeChanged',
 							actions: assign({
-								result: ({ event }) => ({
-									outcome: 'scopeChanged',
-									settlement: event.output?.settlement ?? 'unknown'
-								})
+								result: ({ event }) => formInterruptionResult('scopeChanged', event.output)
 							})
 						},
 						{
 							guard: 'operationCancelling',
 							target: 'cancelled',
 							actions: assign({
-								result: ({ event }) => ({
-									outcome: 'cancelled',
-									settlement: event.output?.settlement ?? 'unknown'
-								})
+								result: ({ event }) => formInterruptionResult('cancelled', event.output)
 							})
 						},
 						{

@@ -1,3 +1,4 @@
+import { formInterruptionResult } from '#lib/form-contract.js'
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 import {
 	assign,
@@ -176,7 +177,7 @@ export function createScopedFormWriteMachine<
 			]
 		})
 	function interruptedResult(outcome: FormInterruption, result: Output | undefined): Output {
-		return { outcome, settlement: result?.settlement ?? 'unknown' }
+		return formInterruptionResult(outcome, result)
 	}
 	function failure(outcome: FormInterruption | 'failed'): Output {
 		return outcome === 'failed'

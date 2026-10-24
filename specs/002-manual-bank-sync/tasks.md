@@ -65,3 +65,15 @@
 - [x] Model unexpected startup/session-observer and workspace-bank child failures. Observer recovery waits for workspace/bank cleanup; failed actors are released without awaiting impossible acknowledgements. Bank availability/history/mapping errors use orderly shutdown. Organization selection is an invoked effect with a failure path. Late startup, stale workspace, and completed-setup notifications cannot interrupt cleanup. The user authorized completion and testing without further review pauses.
 - [x] Verify the XState cleanup with 144 passing unit tests across 17 machine/integration/session files. Coverage includes classification and sanitization, acquisition failures, identity/authorization changes, mapping eligibility, import decisions and idempotency, partial-result persistence, readiness retries, cancellation/shutdown races, and journal write-policy guards. `pnpm check` reports zero errors and warnings; test TypeScript, focused Prettier, and diff checks pass.
 - [x] Run eight passing Playwright checks against an isolated in-memory Jazz runtime: offline setup/controls, explicit connection/discovery/idempotent sync and provider failure, relay rejection, lock-start failure with explicit retry and no stale actor warnings, cancellation with actual late passkey completion, startup storage failure/retry, and native IndexedDB journal compare/write races, binding/discard conflict checks, abort settlement, and connection release. Replace obsolete standalone-demo tests with bank-page regressions. Rerun with `pnpm exec playwright test --config playwright.bank-sync.config.ts`. The account-merge migration implementation remains paused.
+
+## Current deferred status (2026-10-24)
+
+- [ ] Resume the paused account-merge implementation only as a separately reviewed feature; the spec/code repair cycle did not implement merging.
+- [ ] Validate physical-device passkey compatibility and encrypted credential replication; synthetic WebAuthn coverage does not establish physical-device support.
+- [ ] Design credential sharing, backup enrollment, or additional recovery mechanisms only if separately approved; organization membership does not grant credential decryption.
+
+Intermediate “awaiting review/no tests run” notes above describe historical slices.
+Later recorded actor and bank-page verification supersedes those notes for the
+covered behavior. The independent-Check test run included all current unit tests,
+but did not rerun the bank browser suite or establish the remaining demo/real-mode
+and physical-device checks. Those outstanding verification tasks remain open.
