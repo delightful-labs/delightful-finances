@@ -28,6 +28,17 @@ function required<T>(value: T | undefined): T {
 
 // Pure preparation: choose all row values and IDs before staging any writes.
 function planCreation(transaction: AppTransaction, existing: readonly Tag[]) {
+	const archivedSelection = (transaction.tags ?? []).some((name) =>
+		existing.some(
+			(tag) =>
+				tag.organizationId === transaction.organizationId &&
+				tag.kind === transaction.kind &&
+				Boolean(tag.archivedAt) &&
+				normalizedName(tag.name) === normalizedName(name)
+		)
+	)
+	if (archivedSelection)
+		return { kind: 'archivedSelection' } satisfies { kind: 'archivedSelection' }
 	const ambiguous = (transaction.tags ?? []).some(
 		(name) =>
 			existing.filter(
@@ -310,6 +321,14 @@ export function createTransactionPersistenceMachine(db: CreationDb) {
 												plan: ({ event }) =>
 													event.output.kind === 'planned' ? event.output : undefined
 											})
+										},
+										{
+											guard: ({ event }) => event.output.kind === 'archivedSelection',
+											target: 'rollingBack'
+										},
+										{
+											guard: ({ event }) => event.output.kind === 'ambiguous',
+											target: 'rollingBack'
 										},
 										{ target: 'rollingBack' }
 									],

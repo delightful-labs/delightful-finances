@@ -471,9 +471,9 @@ test('unavailable explicit scope stays unavailable and legacy details resolve th
 	await expect(page).toHaveURL(`/expenses/${transactionId}?workspace=${workspaceId}`)
 	await page.goto('/expenses?workspace=77777777-7777-4777-8777-777777777777')
 	await expect(
-		page
-			.getByRole('main')
-			.getByText('This workspace or transaction is unavailable. Select Workspace you can access.')
+		page.getByRole('main').locator('p[aria-hidden="true"]').filter({
+			hasText: 'This workspace or transaction is unavailable. Select a workspace you can access.'
+		})
 	).toBeVisible()
 	await expect(page).toHaveURL(/\/expenses\?workspace=77777777-7777-4777-8777-777777777777$/)
 })
@@ -619,14 +619,14 @@ test('lost membership does not resurrect the initial workspace or select a repla
 	})
 	await page.goto(`/expenses?workspace=${workspaceId}`)
 	await expect(
-		page.getByRole('main').getByRole('status').filter({
-			hasText: 'This workspace or transaction is unavailable. Select Workspace you can access.'
+		page.getByRole('main').locator('p[aria-hidden="true"]').filter({
+			hasText: 'This workspace or transaction is unavailable. Select a workspace you can access.'
 		})
 	).toBeVisible()
 	await page.reload()
 	await expect(
-		page.getByRole('main').getByRole('status').filter({
-			hasText: 'This workspace or transaction is unavailable. Select Workspace you can access.'
+		page.getByRole('main').locator('p[aria-hidden="true"]').filter({
+			hasText: 'This workspace or transaction is unavailable. Select a workspace you can access.'
 		})
 	).toBeVisible()
 	await harness(page)
@@ -655,11 +655,12 @@ test('journal storage failure blocks creation and permits explicit recovery', as
 		}
 	})
 	await page.goto('/settings/workspace')
-	await openCreationModal(page, 'Create Workspace')
+	const dialog = await openCreationModal(page, 'Create Workspace')
 	await expect(
-		page.getByText(
-			'Workspace creation could not finish. Check local storage and retry the same attempt.'
-		)
+		dialog.locator('p[aria-hidden="true"]').filter({
+			hasText:
+				'Workspace creation could not finish. Check local storage and retry the same attempt.'
+		})
 	).toBeVisible()
 	await harness(page)
 	expect(
@@ -772,9 +773,9 @@ for (const duplicate of [false, true]) {
 			: '/expenses?workspace=invalid'
 		await page.goto(href)
 		await expect(
-			page
-				.getByRole('main')
-				.getByText('This workspace or transaction is unavailable. Select Workspace you can access.')
+			page.getByRole('main').locator('p[aria-hidden="true"]').filter({
+				hasText: 'This workspace or transaction is unavailable. Select a workspace you can access.'
+			})
 		).toBeVisible()
 		await expect(page).toHaveURL(href)
 	})

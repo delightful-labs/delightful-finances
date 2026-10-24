@@ -398,7 +398,7 @@ test('maps and remaps a provider account to existing accounts without creating d
 	await discover.click()
 	const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Provider Checking' })
 	const existing = row.getByRole('combobox', {
-		name: 'Or link to an existing account',
+		name: 'Link to existing Account',
 		exact: true
 	})
 	await existing.selectOption({ label: 'Existing checking' })
