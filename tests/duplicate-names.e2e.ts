@@ -210,7 +210,9 @@ test('transaction tag choices respect kind, inline creation saves kind, and arch
 		await expect(page).toHaveURL(
 			(url) => url.pathname === (kind === 'expense' ? '/expenses' : '/income')
 		)
-		await expect(page.getByRole('main').getByText('Shared inline', { exact: true })).toBeVisible()
+		await expect(
+			page.getByRole('main').getByRole('listitem').filter({ hasText: 'Shared inline' })
+		).toHaveCount(1)
 	}
 	const persisted = await page.evaluate(async (seed) => {
 		const schemaPath = '/src/lib/schema.ts',
