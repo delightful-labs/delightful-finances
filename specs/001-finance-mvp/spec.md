@@ -132,12 +132,33 @@ These requirements record approved compatibility decisions, not shipped split fu
 3. Editing or reordering allocations retains their IDs. Removing the split after choosing the $70 allocation retains its ID, category, description, and tags, changes its amount to $100, and preserves transaction-level information.
 4. Existing ordinary transactions, including zero-value entries, retain their identities, financial values, provenance, and relationships when allocation support is introduced. Their original category and tags describe the single allocation, and historical totals remain unchanged.
 
+### Approved transfer foundation (future functionality)
+
+These requirements record approved compatibility decisions. Transfer creation, linking, lifecycle controls, and reporting changes remain deferred; the existing `transfer` payment-method value alone MUST NOT establish a linked transfer or trigger reporting exclusions.
+
+- **FR-030 — Linked movements**: An internal transfer MUST link two transactions in different financial accounts within the same workspace: one expense in the source account and one income in the destination account. Both MUST appear in their respective account histories and affect account balances. Their linked internal-transfer status MUST exclude them from workspace income/expense totals by default, including categorized income/expense reporting, without counting either movement twice.
+- **FR-031 — Currency and dates**: Each side MUST retain its account's currency and its own business date; posting dates MAY differ. Same-currency transfers MUST have equal amounts. Different-currency transfers MUST require both amounts to be explicitly entered or supplied by the existing transactions being linked; the app MUST NOT calculate either amount from an online exchange rate. Transfer fees MUST remain separate expense transactions rather than unequal same-currency transfer amounts.
+- **FR-032 — Existing entries**: Users MUST be able to create both sides together or link existing compatible expense/income transactions, including bank-imported entries. Linking MUST preserve transaction IDs, provider source/external identity, and existing transaction information and relationships, without creating duplicate movements.
+- **FR-033 — Edit and unlink**: Changes to dates, descriptions, categories, or tags MUST preserve the link. Account, currency, or amount changes MUST preserve the pairing rules; otherwise users MUST update both sides together or explicitly unlink them. Unlinking MUST retain both transactions as ordinary expense/income entries, included in the applicable totals again.
+- **FR-034 — Delete**: Deleting a linked transaction MUST require an explicit choice between deleting both sides, with permission to delete both, or unlinking and deleting only the selected side, with permission to delete that side. The latter MUST retain the counterpart as ordinary income/expense. The app MUST explain the effect on totals before proceeding.
+- **FR-035 — Authorization and privacy**: Creating, linking, unlinking, or changing a transfer pairing MUST require edit permission for both accounts. Deletion MUST additionally require the separate delete permission for each transaction being deleted. Access to only one account MUST NOT disclose details of the hidden counterpart through the transfer relationship; the accessible account's transaction remains visible under its ordinary permissions. These are future capability requirements, not a claim that current role policies already implement separate deletion authorization.
+- **FR-036 — Workspace boundary**: Movements across workspaces MUST remain ordinary expense in the source workspace and income in the destination workspace, included in each workspace's totals even when the same person owns both accounts. Cross-workspace linking is deferred and MUST NOT be inferred from matching ownership or amounts. A movement to or from an account outside the app MUST be recordable as ordinary expense/income without requiring a counterpart.
+
+**Acceptance scenarios for the future implementation**:
+
+1. A $500 transfer between checking and savings in one workspace appears as a $500 expense and $500 income in the respective account histories. Balances reflect both movements, while workspace income/expense totals exclude them by default.
+2. A transfer between different currencies retains both explicitly supplied amounts and each account's currency. Different posting dates are accepted; unequal same-currency amounts are rejected as a pair, with fees recorded separately.
+3. Linking existing imported entries preserves both IDs and provider provenance without adding transactions. Unlinking retains both entries and restores their inclusion in income/expense totals.
+4. An invalid one-sided amount/account/currency edit cannot leave an incompatible pair. Deletion presents the approved choices and their reporting effects; deleting only one side retains the unlinked counterpart.
+5. A person lacking edit permission for either account cannot change the pairing. A person who can read only one account can still read its transaction without receiving hidden-counterpart details; delete permission is checked separately for each deleted entry.
+6. Moving money between two workspaces owned by the same person remains expense/income in the respective workspace totals. An external-account movement can be recorded with no counterpart in the app.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
 - Foreign exchange conversion or non-USD entry UI.
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
-- Transfers as a transaction kind; the model may add a third kind or linked pair later.
+- Linked-transfer implementation and migration. The approved transfer foundation above uses linked expense/income transactions rather than a third transaction kind.
 - Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
 
 ## Data Model Invariants
@@ -161,6 +182,7 @@ These requirements record approved compatibility decisions, not shipped split fu
 - **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
 - **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional description/memo/provider id/batch, and tags.
 - **Transaction allocation** (future): an independently identified portion of a transaction, with amount, category, optional description, and tags. See the approved split-transaction foundation below; current category/tag storage remains unchanged until a separately reviewed implementation.
+- **Internal transfer** (future): a relationship pairing an expense and income in different accounts of one workspace, subject to the approved currency, reporting, lifecycle, and authorization rules above.
 - **Check**: independently identified, account-scoped payment metadata usable by income and expense transactions; a Check can remain detached after cancellation, failure or reference removal.
 - **SimpleFIN Connection / Account Link**: org-scoped connection credential/status and mapping to local accounts.
 - **Transaction Attachment / Batch**: schema-ready relationships for later features.
