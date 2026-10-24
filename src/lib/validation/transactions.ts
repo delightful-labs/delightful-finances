@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { appTagSchema } from './tags.js'
+import { checkNumberText } from './checks.js'
 import { parseAmountMinor } from '../domain/money.js'
 import type { Account, Category, TransactionRow } from '../schema.js'
+
+export { checkNumberText } from './checks.js'
 
 export const amountMinorValue = z.number().int().nonnegative()
 const supportedCurrencies = new Set(Intl.supportedValuesOf('currency'))
@@ -10,8 +13,16 @@ export const currencyText = z
 	.regex(/^[A-Z]{3}$/)
 	.refine((currency) => supportedCurrencies.has(currency))
 export const dateOnlyText = z.iso.date()
-export const checkNumberText = z.string().trim().min(1)
 export const externalIdText = z.string().trim().min(1)
+
+/** Direction-neutral persisted payment/check reference contract for independent checks. */
+export const transactionPaymentSchema = z.union([
+	z.strictObject({ paymentMethod: z.literal('check'), checkId: z.uuid() }),
+	z.strictObject({
+		paymentMethod: z.enum(['cash', 'transfer', 'electronic']).nullable().optional().default(null),
+		checkId: z.null().optional().default(null)
+	})
+])
 
 const tagNames = z
 	.array(appTagSchema.shape.name)
