@@ -171,6 +171,25 @@ These requirements record approved compatibility decisions. Non-USD account crea
 4. JPY 100, USD 1.23, and KWD 1.234 correspond to integer minor-unit amounts of 100, 123, and 1234. Entries with excess decimal places are rejected without rounding; stored values survive display and editing without precision loss.
 5. A cross-currency transfer preserves both supplied amounts even when they differ from an online exchange-rate estimate. No conversion is performed automatically.
 
+### Approved backup and restore foundation (future functionality)
+
+These requirements record approved compatibility decisions. Backup export, encryption, restore, and recovery implementation remain deferred.
+
+- **FR-042 — Complete workspace backup**: A backup MUST represent one complete workspace's finance data, including accounts, transactions, categories, tags, Checks, attachments and their contents, archived records, and future allocations, batches/templates, and internal-transfer links when present. It MUST preserve amounts, currencies, provenance, and relationships in a versioned format that supports future compatibility handling. Login recovery phrases and bank credentials MUST NOT be included; bank integrations require reconnection after restore.
+- **FR-043 — Backup authority and completeness**: Creating a complete-workspace backup MUST require owner permission and access to all included data. Selected-account access MUST NOT authorize an export labeled a complete workspace backup. All required records and attachment contents MUST be verified available before backup success is reported; unavailable data MUST prevent a complete-backup success claim.
+- **FR-044 — Optional encryption**: Users MUST be able to choose a password-encrypted backup or an unencrypted backup file. Restoring an encrypted backup MUST require its password independently of application login. Backup encryption MUST NOT depend on including login or bank credentials in the file.
+- **FR-045 — Restore isolation and authority**: Restore MUST create a new workspace without changing existing workspaces. The restoring user MUST become the new workspace's owner. Previous memberships, invitations, and access grants MUST remain reference information only and MUST NOT reactivate access; sharing requires explicit setup again. Importing backup data into an existing workspace is a separate future merge operation requiring conflict handling.
+- **FR-046 — Validate before writes**: Restore MUST validate the entire backup before writing restored data, including supported format version, readable attachment contents, valid amounts, and intact relationships. Invalid or unsupported backups MUST be rejected with an explanation, leaving existing workspaces untouched.
+- **FR-047 — Interrupted restoration**: If restoration is interrupted after writes begin, the new workspace MUST remain explicitly marked restore incomplete and unavailable for ordinary finance use until restoration finishes. Retrying the same restore MUST resume without duplicating records or relationships. The app MUST NOT report incomplete restoration as successful.
+
+**Acceptance scenarios for the future implementation**:
+
+1. An authorized owner exports a complete workspace including archived records and attachment contents. Missing required data prevents a complete-backup success result; selected-account access alone cannot authorize the operation.
+2. Both encrypted and unencrypted backups can be selected. An encrypted backup requires its password to restore, and neither form contains login recovery phrases or bank credentials.
+3. A valid backup restores into a new workspace owned by the restoring user, preserving financial values and relationships without modifying existing workspaces or granting access to previous collaborators. Bank access requires reconnection.
+4. An unsupported format, unreadable attachment, invalid amount, or broken relationship is rejected before restored-data writes begin.
+5. An interrupted restore remains visibly incomplete and outside ordinary finance use. Retrying resumes the same restoration without duplicate records; only completed restoration makes the workspace available for ordinary use.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
@@ -178,6 +197,7 @@ These requirements record approved compatibility decisions. Non-USD account crea
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
 - Linked-transfer implementation and migration. The approved transfer foundation above uses linked expense/income transactions rather than a third transaction kind.
 - Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
+- Backup/restore implementation, including optional password encryption and incomplete-restore recovery. The approved foundation above records future compatibility requirements.
 
 ## Data Model Invariants
 
