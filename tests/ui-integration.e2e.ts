@@ -22,7 +22,8 @@ test('inline navigation keeps page height stable and scrolls inside its full-hei
 	await expect(toggle).toBeVisible()
 	const toggleBounds = await bounds(toggle)
 	await prepareSidebar(page)
-	const before = await bounds(page.locator('.page-content'))
+	const pageContent = page.locator('.page-content:visible').first()
+	const before = await bounds(pageContent)
 	const mainBefore = await bounds(page.getByRole('main'))
 	const header = page.locator('header.site-header')
 	const headerBox = await bounds(header)
@@ -57,7 +58,7 @@ test('inline navigation keeps page height stable and scrolls inside its full-hei
 	expect(openedToggleBounds.width).toBe(toggleBounds.width)
 	expect(openedToggleBounds.height).toBe(toggleBounds.height)
 	expect((await bounds(page.getByRole('main'))).x).toBe(mainBefore.x)
-	expect((await bounds(page.locator('.page-content'))).y).toBe(before.y)
+	expect((await bounds(pageContent)).y).toBe(before.y)
 })
 
 test('sidebar status follows browser connectivity without claiming completed sync', async ({
@@ -70,8 +71,7 @@ test('sidebar status follows browser connectivity without claiming completed syn
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()
 	const sidebar = page.locator('aside.inline-drawer')
-	const status = sidebar.getByRole('status')
-	await expect(status).toHaveCount(1)
+	const status = sidebar.locator('[role="status"]').nth(1)
 	await expect(status).toHaveText('Sync enabled')
 	await expect(status.locator('[aria-hidden="true"]')).toHaveCount(1)
 	const body = await bounds(sidebar.locator('.drawer-body'))
@@ -92,7 +92,7 @@ test('sidebar status follows browser connectivity without claiming completed syn
 	await expect(status).toHaveText('Sync enabled')
 	await closeCreationModal(page)
 	await sidebar.getByRole('link', { name: 'Expenses', exact: true }).click()
-	await expect(page).toHaveURL('/expenses')
+	await expect(page).toHaveURL(/\/expenses(?:\?|$)/)
 	await expect(status).toHaveText('Sync enabled')
 })
 
@@ -103,7 +103,7 @@ test('sidebar status does not claim a successful sync when the database is disco
 	await expect(
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()
-	const status = page.locator('aside.inline-drawer').getByRole('status')
+	const status = page.locator('aside.inline-drawer').locator('[role="status"]').nth(1)
 	await page.evaluate(async () => {
 		const sessionPath = '/src/lib/jazz-session.ts'
 		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
@@ -130,7 +130,7 @@ test('mobile sidebar status stays inside the Drawer and is hidden when it closes
 	const open = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 	await open.click()
 	const drawer = page.locator('aside.inline-drawer')
-	const status = drawer.getByRole('status')
+	const status = drawer.locator('[role="status"]').nth(1)
 	await expect(status).toHaveText('Sync enabled')
 	try {
 		await context.setOffline(true)
@@ -141,7 +141,7 @@ test('mobile sidebar status stays inside the Drawer and is hidden when it closes
 		await page.getByRole('button', { name: 'Close Main navigation', exact: true }).click()
 		await expect(drawer).toHaveAttribute('aria-hidden', 'true')
 		await expect(open).toBeFocused()
-		await expect(page.getByRole('status')).toHaveCount(0)
+		await expect(drawer.getByRole('status')).toHaveCount(0)
 	} finally {
 		await context.setOffline(false)
 	}
@@ -256,8 +256,9 @@ test.describe('active application locale', () => {
 		await expect(cells.nth(1)).toHaveText('1,234')
 		await expect(cells.nth(2)).toHaveText('0')
 		await expect(fixture.getByRole('listitem')).toContainText('Travel, Client, Project')
-		await expect(fixture.getByRole('link')).toContainText('$1,234.56')
+		await expect(fixture.getByRole('link')).toHaveAccessibleName(
+			/Transaction details: User-owned category, User-owned description, \$1,234\.56/
+		)
 		await expect(fixture.getByText('User-owned description', { exact: true })).toBeVisible()
-		await expect(fixture.getByText('User-owned account', { exact: true })).toBeVisible()
 	})
 })

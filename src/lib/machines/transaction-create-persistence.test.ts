@@ -139,7 +139,6 @@ describe('transaction tag persistence', () => {
 		expect(insert).toHaveBeenCalledTimes(1)
 	})
 	it.each([
-		{ kind: 'expense', archivedAt: new Date(), organizationId: organization.id },
 		{ kind: 'income', archivedAt: null, organizationId: organization.id },
 		{ kind: null, archivedAt: null, organizationId: organization.id },
 		{ kind: 'expense', archivedAt: null, organizationId: 'other' }
@@ -164,6 +163,25 @@ describe('transaction tag persistence', () => {
 			app.transactionTags,
 			expect.objectContaining({ tagId: 'old-tag' })
 		)
+	})
+	it('rejects a selected tag archived before transaction persistence', async () => {
+		const { db, transaction, insert, wait } = setup()
+		vi.spyOn(transaction, 'all').mockResolvedValue([
+			{
+				id: 'archived-tag',
+				name: 'Garden',
+				kind: 'expense',
+				organizationId: organization.id,
+				archivedAt: new Date()
+			}
+		])
+		await expect(createTransaction(db, { ...input, tags: ['Garden'] })).resolves.toMatchObject({
+			outcome: 'failed',
+			settlement: 'rejected'
+		})
+		expect(insert).not.toHaveBeenCalledWith(app.transactions, expect.anything(), expect.anything())
+		expect(insert).not.toHaveBeenCalledWith(app.tags, expect.anything(), expect.anything())
+		expect(wait).not.toHaveBeenCalled()
 	})
 	it('rejects ambiguous active tag names at the transaction boundary', async () => {
 		const { db, transaction, wait } = setup()

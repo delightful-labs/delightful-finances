@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Tag } from '#lib/schema.js'
-	import { tick, untrack } from 'svelte'
+	import { tick } from 'svelte'
 	import { TagInput } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 	let {
@@ -14,7 +14,8 @@
 		initialTags?: readonly Tag['name'][]
 		disabled?: boolean
 	} = $props()
-	let selectedTags = $state(untrack(() => [...initialTags]))
+	let editedTags = $state<string[]>()
+	const selectedTags = $derived(editedTags ?? initialTags)
 	let inputHost: HTMLDivElement | undefined = $state()
 	$effect(() => {
 		void selectedTags
@@ -44,7 +45,7 @@
 			duplicateMessage={(name) =>
 				m['errors.already_selected_subject_name']({ subject: m['nouns.tag']({ count: 1 }), name })}
 			suggestions={[...suggestions]}
-			bind:value={selectedTags}
+			bind:value={() => [...selectedTags], (value) => (editedTags = value)}
 			{disabled}
 		/>
 	</div>

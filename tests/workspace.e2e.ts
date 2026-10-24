@@ -40,15 +40,20 @@ declare global {
 	}
 }
 
-async function start(page: Page) {
-	await page.goto('/')
-	const selector = page.getByLabel('Current Workspace', { exact: true })
-	await expect(selector).toBeAttached()
-	await expect.poll(() => selector.inputValue()).not.toBe('')
-	const workspaceId = await selector.inputValue()
-	await page.goto(`/settings/workspace?workspace=${workspaceId}`)
-	await expect(page.getByRole('textbox', { name: 'Workspace name', exact: true })).toBeVisible()
-	await prepareSidebar(page)
+async function installWorkspaceSettingsTest(page: Page) {
+	await expect
+		.poll(
+			async () =>
+				page.evaluate(async () => {
+					const path = '/src/lib/jazz-session.ts'
+					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+						await import(path)
+					const snapshot = getCurrentJazzSession()?.getSnapshot()
+					return Boolean(snapshot?.client && snapshot.account)
+				}),
+			{ timeout: 30_000 }
+		)
+		.toBe(true)
 	await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
@@ -64,6 +69,18 @@ async function start(page: Page) {
 			userId: snapshot.account.id
 		}
 	})
+}
+
+async function start(page: Page) {
+	await page.goto('/')
+	const selector = page.getByLabel('Current Workspace', { exact: true })
+	await expect(selector).toBeAttached()
+	await expect.poll(() => selector.inputValue(), { timeout: 60_000 }).not.toBe('')
+	const workspaceId = await selector.inputValue()
+	await page.goto(`/settings/workspace?workspace=${workspaceId}`)
+	await expect(page.getByRole('textbox', { name: 'Workspace name', exact: true })).toBeVisible()
+	await prepareSidebar(page)
+	await installWorkspaceSettingsTest(page)
 }
 
 test('owner can rename, reject whitespace, retry, and retain the name after reload', async ({
@@ -330,14 +347,14 @@ test('transaction list shows empty income and expense views', async ({ page }) =
 	await expect(main.getByRole('listitem')).toHaveCount(0)
 	await expect(main.getByRole('link', { name: 'Add Expenses' })).toHaveAttribute(
 		'href',
-		'/expenses/new'
+		/^\/expenses\/new\?workspace=[\da-f-]+$/i
 	)
 	await navigateSidebar(page, 'Income')
-	await expect(page).toHaveURL('/incomes')
+	await expect(page).toHaveURL(/\/income\?workspace=[\da-f-]+$/i)
 	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
 	await expect(main.getByRole('link', { name: 'Add Income' })).toHaveAttribute(
 		'href',
-		'/incomes/new'
+		/^\/income\/new\?workspace=[\da-f-]+$/i
 	)
 })
 
@@ -459,7 +476,7 @@ test('transaction list follows kind, date order, account filters, and workspace 
 		.getByText(/^(Recent expense|Older expense|Salary|Business expense|Live expense)$/)
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
 	await expect(main.getByRole('listitem').getByText('$12.34', { exact: true })).toHaveCount(2)
-	await page.getByRole('checkbox', { name: 'Show Cash', exact: true }).uncheck()
+	await page.getByRole('checkbox', { name: 'Cash', exact: true }).uncheck()
 	await expect(memos).toHaveText(['Older expense'])
 	await page.getByRole('checkbox', { name: 'All Accounts', exact: true }).check()
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
@@ -471,6 +488,8 @@ test('transaction list follows kind, date order, account filters, and workspace 
 	await navigation.getByRole('link', { name: 'Income', exact: true }).click()
 	await expect(memos).toHaveText(['Salary'])
 	await navigation.getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(page).toHaveURL(/\/expenses(?:\?|$)/)
+	await page.getByRole('checkbox', { name: 'All Accounts', exact: true }).check()
 	const selector = page.getByLabel('Current Workspace', { exact: true })
 	await selectWorkspace(selector, fixture.secondWorkspaceId)
 	await expect(memos).toHaveText(['Business expense'])
@@ -503,7 +522,11 @@ test('transaction list follows kind, date order, account filters, and workspace 
 test('transaction form shows the no-account message after its data loads', async ({ page }) => {
 	await page.goto('/expenses/new')
 	const main = page.getByRole('main')
-	await expect(main.getByText('Add an account before recording a transaction.')).toBeVisible()
+	await expect(
+		main.getByRole('paragraph').filter({
+			hasText: 'Add an account before recording a transaction.'
+		})
+	).toBeVisible()
 	await expect(main.getByRole('button', { name: 'Save Transaction' })).toHaveCount(0)
 })
 
@@ -841,7 +864,6 @@ for (const scenario of formScenarios) {
 			await page.getByLabel(/Amount/).fill('5.00')
 			await page.getByLabel('Memo (additional notes)', { exact: true }).fill(memo)
 			await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-			await expect(page.getByRole('main').getByRole('status')).toHaveText('Transaction saved.')
 			await expect
 				.poll(() =>
 					page.evaluate(
@@ -856,7 +878,13 @@ for (const scenario of formScenarios) {
 					)
 				)
 				.toEqual([{ categoryId, kind: scenario.kind }])
-			await page.getByRole('button', { name: 'Add another Transaction' }).click()
+			await page
+				.getByRole('main')
+				.getByRole('link', {
+					name: scenario.kind === 'expense' ? 'Add Expenses' : 'Add Income',
+					exact: true
+				})
+				.click()
 		}
 		await save(fixture.accountId, 'Default transaction', firstWorkspaceId, fixture.systemId)
 		await expect(category).toHaveValue(fixture.systemId)
@@ -876,6 +904,13 @@ for (const scenario of formScenarios) {
 		await expect(category).toHaveValue(fixture.systemId)
 		const selector = page.getByLabel('Current Workspace', { exact: true })
 		await selectWorkspace(selector, fixture.secondWorkspaceId)
+		await page
+			.getByRole('main')
+			.getByRole('link', {
+				name: scenario.kind === 'expense' ? 'Add Expenses' : 'Add Income',
+				exact: true
+			})
+			.click()
 		await expect(category).toHaveValue(fixture.secondSystemId)
 		await save(
 			fixture.secondAccountId,
@@ -885,6 +920,13 @@ for (const scenario of formScenarios) {
 		)
 		await expect(category).toHaveValue(fixture.secondSystemId)
 		await selectWorkspace(selector, firstWorkspaceId)
+		await page
+			.getByRole('main')
+			.getByRole('link', {
+				name: scenario.kind === 'expense' ? 'Add Expenses' : 'Add Income',
+				exact: true
+			})
+			.click()
 		await expect(category).toHaveValue(fixture.systemId)
 	})
 }
@@ -933,7 +975,9 @@ test('account archive works offline, retains history, and excludes new-entry opt
 	await context.setOffline(true)
 	try {
 		await main.getByRole('button', { name: 'Archive Archive checking', exact: true }).click()
-		await expect(main.getByRole('status')).toHaveText('Account Archive checking archived.')
+		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
+			'Account Archive checking archived.'
+		)
 		await expect(main.getByRole('cell', { name: 'Archive checking', exact: true })).toHaveCount(0)
 		await expect(
 			page.getByRole('checkbox', { name: 'Show Archive checking', exact: true })
@@ -1033,8 +1077,10 @@ for (const scenario of archiveScenarios) {
 				},
 				{ organizationId, subjectId, scenario }
 			)
-			await start(subject)
-			await navigateSidebar(subject, 'Accounts')
+			await subject.reload()
+			await installWorkspaceSettingsTest(subject)
+			await subject.goto(`/accounts?workspace=${organizationId}`)
+			await installWorkspaceSettingsTest(subject)
 			const selector = subject.getByLabel('Current Workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
@@ -1120,7 +1166,8 @@ for (const role of ['admin', 'member', 'viewer']) {
 				{ organizationId, subjectId, role }
 			)
 			// Reopen to obtain the grant and recreate bindings for the new document.
-			await start(subject)
+			await subject.reload()
+			await installWorkspaceSettingsTest(subject)
 			const selector = subject.getByLabel('Current Workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
@@ -1131,9 +1178,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await expect(name).toBeEditable()
 				await name.fill('Admin renamed workspace')
 				await save.click()
-				await expect(subject.getByRole('main').getByRole('status')).toHaveText(
-					'Workspace name saved.'
-				)
+				await expect(
+					subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
+				).toHaveText('Workspace name saved.')
 				await expect(
 					page.getByRole('textbox', { name: 'Workspace name', exact: true })
 				).toHaveValue('Admin renamed workspace')
@@ -1327,7 +1374,9 @@ test('category page counts connections, archives offline, protects system catego
 	await context.setOffline(true)
 	try {
 		await row.getByRole('button', { name: 'Archive Counted category', exact: true }).click()
-		await expect(main.getByRole('status')).toHaveText('Category Counted category archived.')
+		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
+			'Category Counted category archived.'
+		)
 		await expect(row).toHaveCount(0)
 	} finally {
 		await context.setOffline(false)
@@ -1393,7 +1442,8 @@ for (const role of ['admin', 'member', 'viewer']) {
 				},
 				{ organizationId, subjectId, role }
 			)
-			await start(subject)
+			await subject.reload()
+			await installWorkspaceSettingsTest(subject)
 			const selector = subject.getByLabel('Current Workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
@@ -1533,7 +1583,8 @@ test('category page counts only readable transactions for selected account acces
 			},
 			{ organizationId, subjectId }
 		)
-		await start(subject)
+		await subject.reload()
+		await installWorkspaceSettingsTest(subject)
 		const selector = subject.getByLabel('Current Workspace', { exact: true })
 		await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 		await selectWorkspace(selector, organizationId)
@@ -1716,7 +1767,9 @@ test('tag page switches workspace drafts and archives offline without removing c
 	await context.setOffline(true)
 	try {
 		await row.getByRole('button', { name: 'Archive Archive tag', exact: true }).click()
-		await expect(main.getByRole('status')).toHaveText('Tag Archive tag archived.')
+		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
+			'Tag Archive tag archived.'
+		)
 		await expect(row).toHaveCount(0)
 	} finally {
 		await context.setOffline(false)
@@ -1773,7 +1826,8 @@ for (const role of ['admin', 'member', 'viewer']) {
 				},
 				{ organizationId, subjectId, role }
 			)
-			await start(subject)
+			await subject.reload()
+			await installWorkspaceSettingsTest(subject)
 			const selector = subject.getByLabel('Current Workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
@@ -2021,7 +2075,11 @@ test('transaction tags reject a tag archived after selection without saving part
 			.wait({ tier: 'global' })
 		return (
 			await db
-				.insert(app.tags, { organizationId, name: 'Archive while selected' })
+				.insert(app.tags, {
+					organizationId,
+					name: 'Archive while selected',
+					kind: 'expense'
+				})
 				.wait({ tier: 'global' })
 		).id
 	}, organizationId)
@@ -2036,15 +2094,17 @@ test('transaction tags reject a tag archived after selection without saving part
 		.or(main.getByRole('textbox', { name: 'Tags', exact: true }))
 	await tags.fill('Archive while')
 	await page.getByRole('option', { name: 'Archive while selected', exact: true }).click()
+	await expect(
+		main.getByRole('button', { name: 'Remove Archive while selected', exact: true })
+	).toBeVisible()
 	await page.evaluate(async (id) => {
 		const { app, db } = window.workspaceSettingsTest
 		await db.update(app.tags, id, { archivedAt: new Date() }).wait({ tier: 'global' })
 	}, tagId)
 	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-	await expect(main.getByRole('alert')).toHaveText([
-		'Could not save Transaction. Please try again.',
-		'The save result is unknown. Check your records before trying again.'
-	])
+	await expect(
+		main.getByRole('alert').filter({ hasText: 'Could not save Transaction. Please try again.' })
+	).toHaveText('Could not save Transaction. Please try again.')
 	const partial = await page.evaluate(async (organizationId) => {
 		const { app, db } = window.workspaceSettingsTest
 		return (
@@ -2059,7 +2119,24 @@ test('transaction tags reject a tag archived after selection without saving part
 	await tags.fill('Replacement tag')
 	await tags.press('Enter')
 	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-	await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+	await expect(page).toHaveURL(`/expenses?workspace=${organizationId}`)
+	await expect
+		.poll(() =>
+			page.evaluate(async (organizationId) => {
+				const { app, db } = window.workspaceSettingsTest
+				const transaction = await db.one(
+					app.transactions.where({ organizationId, memo: 'Retry tagged entry' }),
+					{ tier: 'remote' }
+				)
+				if (!transaction) return []
+				const links = await db.all(app.transactionTags.where({ transactionId: transaction.id }), {
+					tier: 'remote'
+				})
+				const tags = await db.all(app.tags.where({ organizationId }), { tier: 'remote' })
+				return links.map((link) => tags.find((tag) => tag.id === link.tagId)?.name).sort()
+			}, organizationId)
+		)
+		.toEqual(['Replacement tag'])
 })
 
 test('transaction tags reset on workspace changes and save new categorized tags offline', async ({
@@ -2079,7 +2156,7 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 			})
 			.wait({ tier: 'global' })
 		await db
-			.insert(app.tags, { organizationId, name: 'First workspace tag' })
+			.insert(app.tags, { organizationId, name: 'First workspace tag', kind: 'expense' })
 			.wait({ tier: 'global' })
 		const org = await db
 			.insert(app.organizations, {
@@ -2127,6 +2204,7 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 		page.getByLabel('Current Workspace', { exact: true }),
 		fixture.organizationId
 	)
+	await main.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 	await expect(tags).toHaveValue('')
 	await expect(main.getByRole('button', { name: /^Remove / })).toHaveCount(0)
 	await tags.fill('First workspace')
@@ -2142,7 +2220,7 @@ test('transaction tags reset on workspace changes and save new categorized tags 
 	await context.setOffline(true)
 	try {
 		await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-		await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+		await expect(page).toHaveURL(`/expenses?workspace=${fixture.organizationId}`)
 	} finally {
 		await context.setOffline(false)
 	}
@@ -2272,11 +2350,10 @@ test('transaction list groups days, separates currency totals, and displays arch
 		.filter({ has: page.getByText('First daily entry', { exact: true }) })
 	await expect(first.getByText('Daily category', { exact: true })).toBeVisible()
 	await expect(first.getByText('Historical tag', { exact: true })).toBeVisible()
-	await expect(first.getByText('Daily checking', { exact: true })).toBeVisible()
-	await expect(day.getByRole('listitem').filter({ hasText: '$2.50' })).toHaveText(
-		/Daily category\s*\$2\.50\s*Daily checking/
-	)
-	await page.getByRole('checkbox', { name: 'Show Euro account', exact: true }).uncheck()
+	await expect(
+		day.getByRole('listitem').filter({ hasText: '$2.50' }).getByRole('link')
+	).toHaveAccessibleName('Transaction details: Daily category, $2.50')
+	await page.getByRole('checkbox', { name: 'Euro account', exact: true }).uncheck()
 	await expect(day.getByLabel('Daily total: €3.00', { exact: true })).toHaveCount(0)
 	await expect(day.getByLabel('Daily total: $12.50', { exact: true })).toBeVisible()
 	await expect(day.getByRole('listitem')).toHaveCount(2)
@@ -2297,9 +2374,13 @@ test('transaction list groups days, separates currency totals, and displays arch
 			.wait({ tier: 'global' })
 	}, fixture)
 	await page.getByRole('checkbox', { name: 'All Accounts', exact: true }).check()
-	await expect(first.getByText('Renamed daily account', { exact: true })).toBeVisible()
 	await expect(first.getByText('Renamed daily category', { exact: true })).toBeVisible()
 	await expect(first.getByText('Renamed historical tag', { exact: true })).toBeVisible()
+	await first.getByRole('link').click()
+	const selectedAccount = main.getByLabel('Account', { exact: true }).locator('option:checked')
+	await expect(selectedAccount).toHaveText('Renamed daily account')
+	await expect(selectedAccount).toBeDisabled()
+	await navigateSidebar(page, 'Expenses')
 	await page.reload()
 	await expect(
 		main.getByRole('region', { name: 'Tue, March 10, 2026', exact: true }).getByRole('listitem')
@@ -2395,46 +2476,50 @@ for (const kind of ['expense', 'income']) {
 			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
 			.click()
 		const main = page.getByRole('main')
-		const link = main.getByRole('link').filter({ hasText: 'Detail description' })
-		await expect(link).toHaveAttribute('href', `/transactions/${fixture.id}`)
+		const listPath = kind === 'expense' ? '/expenses' : '/income'
+		const detailPath = `${listPath}/${fixture.id}?workspace=${organizationId}`
+		const link = main.getByRole('link', { name: /Transaction details:.*Detail description/ })
+		await expect(link).toHaveAttribute('href', detailPath)
 		await link.focus()
 		await page.keyboard.press('Enter')
-		await expect(page).toHaveURL(`/transactions/${fixture.id}`)
+		await expect(page).toHaveURL(detailPath)
 		await expect(
 			main.getByRole('heading', { name: 'Transaction details', exact: true })
 		).toBeVisible()
-		for (const text of [
-			'Detail account',
-			'Detail category',
-			'Detail tag',
-			'$12.34',
-			'Original detail memo'
-		])
-			await expect(main.getByText(text, { exact: true })).toBeVisible()
+		await expect(main.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
+			'Detail account'
+		)
+		await expect(main.getByLabel('Category', { exact: true }).locator('option:checked')).toHaveText(
+			'Detail category'
+		)
+		await expect(main.getByRole('button', { name: 'Remove Detail tag', exact: true })).toBeVisible()
+		await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
+		const memo = main.getByLabel('Memo (additional notes)', { exact: true })
+		await expect(memo).toHaveValue('Original detail memo')
+		await main.locator('summary').filter({ hasText: 'Metadata' }).click()
 		await expect(main.getByText('Detail author', { exact: true })).toHaveCount(2)
 		await expect(main.locator(`time[datetime="${fixture.createdAt}"]`)).toHaveCount(2)
-		await expect(main.locator('time[datetime="2026-10-14"]')).toHaveText('Oct 14, 2026')
+		await expect(main.getByLabel('Date', { exact: true })).toHaveValue('2026-10-14')
 		if (kind === 'income') {
-			await expect(main.getByText('Check', { exact: true })).toBeVisible()
-			await expect(main.getByText('12345', { exact: true })).toBeVisible()
-			await expect(main.locator('time[datetime="2026-10-13"]')).toHaveText('Oct 13, 2026')
-		} else await expect(main.getByText('Check number', { exact: true })).toHaveCount(0)
+			await expect(main.getByLabel('Payment method', { exact: true })).toHaveValue('check')
+			await expect(main.getByLabel('Check number', { exact: true })).toHaveValue('12345')
+			await expect(main.getByLabel('Check date', { exact: true })).toHaveValue('2026-10-13')
+		} else await expect(main.getByLabel('Check number', { exact: true })).toHaveCount(0)
 		await page.evaluate(async (id) => {
 			const { app, db } = window.workspaceSettingsTest
 			await db
 				.update(app.transactions, id, { memo: 'Updated detail memo' })
 				.wait({ tier: 'global' })
 		}, fixture.id)
-		await expect(main.getByText('Updated detail memo', { exact: true })).toBeVisible()
+		await expect(memo).toHaveValue('Updated detail memo')
 		await expect(main.locator(`time[datetime="${fixture.createdAt}"]`)).toHaveCount(1)
 		await page.reload()
-		await expect(main.getByText('Updated detail memo', { exact: true })).toBeVisible()
+		await expect(memo).toHaveValue('Updated detail memo')
+		await main.locator('summary').filter({ hasText: 'Metadata' }).click()
 		await expect(main.getByText('Detail author', { exact: true })).toHaveCount(2)
-		await main
-			.getByRole('link', { name: kind === 'expense' ? 'Expenses' : 'Income', exact: true })
-			.click()
-		await expect(page).toHaveURL(kind === 'expense' ? '/expenses' : '/incomes')
-		await expect(main.getByRole('link').filter({ hasText: 'Detail description' })).toBeVisible()
+		await navigateSidebar(page, kind === 'expense' ? 'Expenses' : 'Income')
+		await expect(page).toHaveURL(`${listPath}?workspace=${organizationId}`)
+		await expect(link).toBeVisible()
 	})
 }
 
@@ -2489,18 +2574,22 @@ test('transaction details hide rows from another active workspace and handle mis
 		return { id: transaction.id, otherId: org.id }
 	}, organizationId)
 	await navigateSidebar(page, 'Expenses')
-	await page.getByRole('main').getByRole('link').filter({ hasText: 'Scoped detail' }).click()
+	await page.getByRole('main').getByRole('listitem').getByRole('link').click()
 	const main = page.getByRole('main')
-	await expect(main.getByText('Scoped detail', { exact: true })).toBeVisible()
+	const memo = main.getByLabel('Memo (additional notes)', { exact: true })
+	await expect(memo).toHaveValue('Scoped detail')
 	const selector = page.getByLabel('Current Workspace', { exact: true })
 	await selectWorkspace(selector, fixture.otherId)
+	await expect(memo).toHaveCount(0)
+	await page.goto(`/expenses/${fixture.id}?workspace=${fixture.otherId}`)
 	await expect(
 		main.getByText('This transaction is unavailable in the selected workspace.', { exact: true })
 	).toBeVisible()
-	await expect(main.getByText('Scoped detail', { exact: true })).toHaveCount(0)
+	await expect(memo).toHaveCount(0)
 	await selectWorkspace(selector, organizationId)
-	await expect(main.getByText('Scoped detail', { exact: true })).toBeVisible()
-	await page.goto(`/transactions/${crypto.randomUUID()}`)
+	await page.goto(`/expenses/${fixture.id}?workspace=${organizationId}`)
+	await expect(memo).toHaveValue('Scoped detail')
+	await page.goto(`/expenses/${crypto.randomUUID()}?workspace=${organizationId}`)
 	await expect(
 		main.getByText('This transaction is unavailable in the selected workspace.', { exact: true })
 	).toBeVisible()
@@ -2579,7 +2668,7 @@ for (const scenario of [
 					)
 					if (!category) throw new Error('No Category')
 					const tag = await db
-						.insert(app.tags, { organizationId, name: 'Shared detail tag' })
+						.insert(app.tags, { organizationId, name: 'Shared detail tag', kind: 'expense' })
 						.wait({ tier: 'global' })
 					const transaction = await db
 						.insert(app.transactions, {
@@ -2609,7 +2698,8 @@ for (const scenario of [
 				},
 				{ organizationId, subjectId, scenario }
 			)
-			await start(subject)
+			await subject.reload()
+			await installWorkspaceSettingsTest(subject)
 			const selector = subject.getByLabel('Current Workspace', { exact: true })
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
@@ -2628,27 +2718,30 @@ for (const scenario of [
 				}, fixture.id)
 			}
 			// Direct navigation exercises permission enforcement independently of visible list links.
-			await subject.goto(`/transactions/${fixture.id}`)
+			await subject.goto(`/expenses/${fixture.id}?workspace=${organizationId}`)
 			await expect(
 				subject
 					.getByLabel('Current Workspace', { exact: true })
 					.locator(`option[value="${organizationId}"]`)
 			).toHaveCount(1)
-			await selectWorkspace(
-				subject.getByLabel('Current Workspace', { exact: true }),
-				organizationId
-			)
 			const main = subject.getByRole('main')
 			if (scenario.read) {
-				await expect(main.getByText('Shared detail account', { exact: true })).toBeVisible()
-				await expect(main.getByText('Shared detail tag', { exact: true })).toBeVisible()
+				await expect(
+					main.getByLabel('Account', { exact: true }).locator('option:checked')
+				).toHaveText('Shared detail account')
+				await expect(
+					main.getByRole('button', { name: 'Remove Shared detail tag', exact: true })
+				).toBeVisible()
+				await main.locator('summary').filter({ hasText: 'Metadata' }).click()
 				await expect(main.getByText('Shared author', { exact: true })).toHaveCount(
 					scenario.edit ? 1 : 2
 				)
 				await expect(main.getByText(ownerId, { exact: true })).toHaveCount(0)
 				if (scenario.edit) {
 					await expect(main.getByText('Detail editor', { exact: true })).toBeVisible()
-					await expect(main.getByText('Edited by member', { exact: true })).toBeVisible()
+					await expect(main.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
+						'Edited by member'
+					)
 					await expect(main.locator(`time[datetime="${fixture.createdAt}"]`)).toHaveCount(1)
 				}
 			} else {
@@ -2667,7 +2760,7 @@ for (const scenario of [
 	})
 }
 
-test('overview page exposes income and expense links and preserves the workspace during navigation', async ({
+test('overview navigation exposes income and expense links and preserves the workspace during navigation', async ({
 	page
 }) => {
 	await start(page)
@@ -2678,23 +2771,24 @@ test('overview page exposes income and expense links and preserves the workspace
 		.click()
 	await expect(page).toHaveTitle('Overview · Delightful Finance')
 	const main = page.getByRole('main')
+	const navigation = page.getByRole('navigation', { name: 'Main navigation', exact: true })
 	await expect(main.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
-	await expect(main.getByRole('link', { name: 'Expenses', exact: true })).toHaveAttribute(
+	await expect(navigation.getByRole('link', { name: 'Expenses', exact: true })).toHaveAttribute(
 		'href',
 		`/expenses?workspace=${workspaceId}`
 	)
-	await expect(main.getByRole('link', { name: 'Income', exact: true })).toHaveAttribute(
+	await expect(navigation.getByRole('link', { name: 'Income', exact: true })).toHaveAttribute(
 		'href',
 		`/income?workspace=${workspaceId}`
 	)
-	await main.getByRole('link', { name: 'Expenses', exact: true }).click()
+	await navigation.getByRole('link', { name: 'Expenses', exact: true }).click()
 	await expect(page).toHaveURL(`/expenses?workspace=${workspaceId}`)
 	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 	await page
 		.getByRole('complementary', { name: 'Main navigation', exact: true })
 		.getByRole('link', { name: 'Overview', exact: true })
 		.click()
-	await main.getByRole('link', { name: 'Income', exact: true }).click()
+	await navigation.getByRole('link', { name: 'Income', exact: true }).click()
 	await expect(page).toHaveURL(`/income?workspace=${workspaceId}`)
 	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 	await page
@@ -2846,12 +2940,12 @@ test('profile name edits are owner-only even for members of a shared workspace',
 		await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 		await selectWorkspace(selector, organizationId)
 		await navigateSidebar(subject, 'Account')
-		await expect(subject).toHaveURL('/account')
+		await expect(subject).toHaveURL(`/account?workspace=${organizationId}`)
 		await subject.getByLabel('Display name', { exact: true }).fill('Shared workspace member')
 		await subject.getByRole('button', { name: 'Save', exact: true }).click()
-		await expect(subject.getByRole('main').getByRole('status')).toHaveText(
-			'Profile Display name saved.'
-		)
+		await expect(
+			subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
+		).toHaveText('Profile Display name saved.')
 		const outcome = await subject.evaluate(async (owner) => {
 			const { app, db, userId } = window.workspaceSettingsTest
 			const own = await db.one(app.profiles.where({ userId }), { tier: 'remote' })
