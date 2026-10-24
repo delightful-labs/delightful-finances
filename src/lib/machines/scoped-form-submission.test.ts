@@ -79,6 +79,25 @@ describe('scoped form submission resources', () => {
 		}
 	})
 
+	it('preserves an operation checkpoint when interruption changes its outcome', async () => {
+		const checkpoint = { transactionId: 'stable-transaction', checkId: 'stable-check' }
+		const f = submission()
+		try {
+			await waitForOperation(f)
+			f.submission.send({ type: 'CANCEL' })
+			f.settlement.resolve({ ...success, checkpoint })
+			const done = await waitFor(f.submission, (snapshot) => snapshot.status === 'done')
+			expect(done.output).toEqual({
+				outcome: 'cancelled',
+				settlement: 'locallyPersisted',
+				checkpoint
+			})
+			expect(done.context.request).toMatchObject({ values: undefined, checkpoint: undefined })
+		} finally {
+			f.submission.stop()
+		}
+	})
+
 	it.each([
 		{ outcome: 'denied', reason: 'readOnly', settlement: 'notStarted' },
 		{ outcome: 'unavailable', reason: 'missingRecord', settlement: 'notStarted' },

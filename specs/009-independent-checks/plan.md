@@ -113,3 +113,56 @@ No environment data reset, schema deployment or staged-save effect is included.
 Generated TransactionRow types also require mechanical checkId:null additions in
 five existing fixture/test files. No test cases or workflows are added by those
 fixture adjustments; they keep the additive schema adoption type-safe.
+
+## Check creation resource owner
+
+The next implementation slice is `check-create-persistence.ts`, one finite child
+invoked by the future staged-save coordinator. Input carries a stable Check ID
+allocated by that coordinator and canonical Check values. This child owns no form,
+subscription, retry policy or transaction/tag write. Authority is rechecked by the
+coordinator before invocation and enforced by the SDK policy at the write boundary.
+
+Its state sequence is validate -> open -> stage -> commit -> local settlement.
+Every effect is a leaf: parsing, acquiring the SDK transaction, staging one insert,
+requesting commit, waiting for settlement, or requesting rollback. The transaction
+is retained across these states. SDK transactions bind lazily on their first table
+operation; interruption before staging finishes without a bound write resource.
+
+A parallel control region records cancellation, scope invalidation and shutdown as
+states, with shutdown taking priority. It does not exit an issued effect: after
+staging, the child drains that operation and rolls back before commit when possible;
+after commit issuance it waits for local settlement before reporting interruption.
+Terminal output always retains Check ID and observed settlement. A rollback after
+commit issuance cannot establish remote rejection; that outcome remains unknown.
+Unknown results require coordinator reconciliation before another write attempt.
+This slice adds no automatic retry, deletion, UI wiring or remote acceptance claim.
+It needs implementation review before tests, followed by staged-coordinator work.
+
+## Staged coordinator design review
+
+The concrete ownership tree, finite-attempt statechart, recovery checkpoint
+protocol and implementation sequence are in [staged-save-statechart.md](staged-save-statechart.md).
+Inspection found that both current form wrappers discard interrupted saved values
+and creation allocates a fresh transaction ID on every attempt. Checkpoint retention
+and caller-owned transaction IDs are prerequisites for safe coordinator adoption.
+No coordinator or form behavior is implemented by this design artifact.
+
+## Form recovery foundation for review
+
+Four implementation files add optional opaque `checkpoint` data to requests and
+results, retain it separately from form feedback, and preserve it when interruption
+wrappers replace an outcome. Each new submission receives the retained checkpoint.
+Validation errors and results without new recovery data keep the previous value;
+success, explicit reset/open-new, scope replacement and shutdown release it.
+Results are accepted only from the owned invocation and matching scope revision.
+No domain validates or produces a checkpoint yet; that belongs to coordinator work.
+The form protocol does not authorize writes or persist recovery across reloads.
+
+This change adds no async actor, resource acquisition, promise orchestration or
+lifecycle flags. It extends payloads across the existing statechart and uses one
+shared pure interruption-result transformation. Review before adding or running
+checkpoint retention, interruption, reset and stale-scope regression tests.
+An unexpected actor crash cannot publish newly allocated recovery data through a
+terminal result. The future coordinator must expose stable IDs before issuing
+writes or classify such a crash as unresolved without automatically repeating it;
+this foundation alone does not provide crash-safe retries.

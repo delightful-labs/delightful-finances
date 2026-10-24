@@ -13,7 +13,11 @@ One focused reviewed slice at a time; no new tests before implementation review.
 - [ ] Verify organization roles and selected-account authorization during root-policy adoption.
 - [x] Review a root schema/permission adoption batch; implement and test after review.
 - [ ] Resolve shared Check account-movement behavior before implementing dependent moves.
-- [ ] Implement and review staged-save statechart and resource ownership, then effects.
+- [x] Review the Check creation resource child, then add/run its settlement and interruption tests.
+- [x] Review staged-save-statechart.md and its ownership/recovery protocol.
+- [x] Implement and review form checkpoint retention/forwarding, then test after review.
+- [ ] Adopt shared canonical transaction values and caller-owned transaction IDs.
+- [ ] Implement and review the staged-save coordinator and integrate its children.
 - [ ] Test partial failure, stable-ID retries, uncertain settlement, cancellation, scope replacement and offline behavior.
 - [ ] Adopt create/edit integration and inline income controls in focused reviewed slices.
 - [ ] Add/run browser workflow coverage after review.
@@ -40,3 +44,15 @@ references. Tests cover selected-member writes, viewer reads/update denial, scop
 immutability, deletion denial, both transaction kinds and incompatible references.
 An existing test caught and fixed a manual-income payment-method regression.
 The complete role/grant matrix remains pending. Static checks pass.
+
+Check creation resource child: 18 focused unit tests pass. Coverage includes
+validation, acquisition/staging/commit/settlement failures, rollback uncertainty,
+interruption before staging and commit, draining local settlement, retained Check
+identity, and shutdown priority over late cancellation/invalidation and failures.
+These are resource-owner tests; they do not verify the pending coordinator, actual
+offline synchronization, or browser workflow.
+
+Form checkpoint plumbing: 43 focused tests pass across scoped form ownership,
+submission and write handling. Coverage includes partial-result retention and retry
+forwarding, interrupted-write propagation, reset/scope clearing, and rejection of a
+late checkpoint after a scope change. Prettier and static checks pass.
