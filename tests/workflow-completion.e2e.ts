@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { prepareSidebar } from './helpers/ui.js'
 
 test('scoped workflow profile edit mode keeps pristine fields editable and unchanged saves disabled', async ({
 	page
@@ -17,7 +18,12 @@ test('scoped workflow profile edit mode keeps pristine fields editable and uncha
 	await expect(save).toBeDisabled()
 	await name.fill('Changed profile')
 	await save.click()
-	await expect(page.getByRole('main').getByRole('status')).toHaveText('Profile Display name saved.')
+	await expect(
+		page
+			.getByRole('main')
+			.getByRole('status')
+			.filter({ hasText: 'Profile Display name saved.' })
+	).toHaveText('Profile Display name saved.')
 	await expect(save).toBeDisabled()
 	await expect(name).toBeEditable()
 	await name.fill('Another profile')
@@ -30,9 +36,12 @@ test('scoped workflow first account saves offline and persists through reload', 
 }) => {
 	await page.goto('/expenses/new')
 	await expect(
-		page.getByText('Add an account before recording a transaction.', { exact: true })
+		page
+			.getByRole('main')
+			.getByRole('paragraph')
+			.filter({ hasText: 'Add an account before recording a transaction.' })
 	).toBeVisible()
-	const trigger = page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
+	const trigger = page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true }).first()
 	await trigger.click()
 	const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true })
 	await dialog.getByLabel('Account name', { exact: true }).fill('Offline first account')
@@ -72,15 +81,21 @@ for (const role of ['admin', 'member', 'viewer']) {
 		browser,
 		baseURL
 	}) => {
-		await page.goto('/settings/workspace')
-		await expect(page.getByLabel('Workspace name')).toBeEditable()
-		const organizationId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+		await page.goto('/')
+		const workspaceSelector = page.getByLabel('Current Workspace', { exact: true })
+		await expect.poll(() => workspaceSelector.inputValue()).not.toBe('')
+		const organizationId = await workspaceSelector.inputValue()
+		await page.goto(`/settings/workspace?workspace=${organizationId}`)
+		await expect(
+			page.getByRole('textbox', { name: 'Workspace name', exact: true })
+		).toBeEditable()
 		if (!baseURL) throw new Error('Missing browser base URL')
 		const context = await browser.newContext({ baseURL })
 		try {
 			const subject = await context.newPage()
-			await subject.goto('/settings/workspace')
-			await expect(subject.getByLabel('Workspace name')).toBeEditable()
+			await subject.goto('/')
+			await expect(subject.getByRole('complementary').getByRole('navigation')).toBeVisible()
+			await prepareSidebar(subject)
 			const subjectId = await subject.evaluate(async () => {
 				const path = '/src/lib/jazz-session.ts'
 				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
@@ -101,6 +116,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 					if (!db) throw new Error('Missing owner database')
 					if (role !== 'admin' && role !== 'member' && role !== 'viewer')
 						throw new Error('Invalid role')
+					const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+					if (!uuid.test(organizationId) || !uuid.test(subjectId))
+						throw new Error(`Invalid membership UUIDs: organization=${organizationId}, subject=${subjectId}`)
 					const membership = await db
 						.insert(app.organizationMembers, {
 							organizationId,
@@ -108,7 +126,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 							role,
 							accountAccessMode: 'all'
 						})
-						.wait({ tier: 'global' })
+						.wait({ tier: 'local' })
 					return membership.id
 				},
 				{ organizationId, subjectId, role }

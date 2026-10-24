@@ -184,7 +184,7 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 	await page.goto('/expenses')
 	await expect(page.getByRole('main').getByText('Legacy history', { exact: false })).toBeVisible()
 	for (const kind of ['expense', 'income']) {
-		await page.goto(kind === 'expense' ? '/expenses/new' : '/incomes/new')
+		await page.goto(kind === 'expense' ? '/expenses/new' : '/income/new')
 		const tags = page.getByRole('combobox', { name: 'Tags', exact: true })
 		await tags.click()
 		await expect(
@@ -210,7 +210,9 @@ test('transaction tag choices respect kind, inline creation saves kind, and lega
 			await tags.press('Enter')
 		}
 		await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-		await expect(page.getByRole('main').getByRole('status')).toContainText('Transaction saved.')
+		await expect(page).toHaveURL(
+			(url) => url.pathname === (kind === 'expense' ? '/expenses' : '/income')
+		)
 	}
 	const persisted = await page.evaluate(async (seed) => {
 		const schemaPath = '/src/lib/schema.ts',

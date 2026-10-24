@@ -290,8 +290,9 @@ for (const kind of ['income', 'expense']) {
 		await trigger.focus()
 		await trigger.click()
 		const dialog = page.getByRole('dialog', { name: 'Developer menu', exact: true })
+		const subject = kind === 'income' ? 'Income' : 'Expense'
 		const add = dialog.getByRole('button', {
-			name: `Add 25 sample ${kind} transactions`,
+			name: `Add 25 sample ${subject} Transactions`,
 			exact: true
 		})
 		await expect(add).toBeEnabled()

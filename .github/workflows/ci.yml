@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Types, unit tests, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm check:tests
+      - run: pnpm test:unit --run
+      - name: Build without a live or production Jazz service
+        run: pnpm build
+        env:
+          FINANCE_PREVIEW: 'true'
+          PUBLIC_JAZZ_APP_ID: ci-build
+          PUBLIC_JAZZ_SERVER_URL: http://127.0.0.1:9
+
+  browser:
+    name: Browser (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: application
+            config: playwright.config.ts
+          - suite: authentication
+            config: playwright.auth.config.ts
+          - suite: permissions
+            config: playwright.permissions.config.ts
+          - suite: workspace
+            config: playwright.workspace.config.ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run against a disposable in-memory Jazz server
+        run: pnpm exec playwright test --config=${{ matrix.config }} --workers=1 --forbid-only --reporter=line
+
+  pwa:
+    name: Production preview PWA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PUBLIC_JAZZ_APP_ID: 77777777-7777-4777-8777-777777777777
+      PUBLIC_JAZZ_SERVER_URL: http://127.0.0.1:5174
+      JAZZ_ADMIN_SECRET: ci-pwa-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Start disposable in-memory Jazz server
+        run: |
+          pnpm exec jazz-tools server "$PUBLIC_JAZZ_APP_ID" --port 5174 --in-memory --allow-local-first-auth --admin-secret "$JAZZ_ADMIN_SECRET" > /tmp/finance-ci-jazz.log 2>&1 &
+          jazz_pid=$!
+          for attempt in {1..30}; do
+            if curl --silent http://127.0.0.1:5174/ > /dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$jazz_pid" 2>/dev/null; then
+              cat /tmp/finance-ci-jazz.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/finance-ci-jazz.log
+          exit 1
+      - run: pnpm deploy:jazz
+      - name: Build against the disposable Jazz server
+        run: pnpm build
+        env:
+          FINANCE_PREVIEW: 'true'
+      - run: pnpm exec playwright test --config=playwright.pwa.config.ts --workers=1 --forbid-only --reporter=line

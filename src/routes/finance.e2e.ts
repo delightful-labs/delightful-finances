@@ -14,13 +14,16 @@ test('creates a workspace account and records an expense', async ({ page }) => {
 	await page.goto('/expenses/new')
 	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Everyday checking' })
 	await main.getByLabel('Amount', { exact: true }).fill('12.34')
-	await main.getByLabel('Memo').fill('Weekly market')
-	await main.getByRole('button', { name: 'Save transaction', exact: true }).click()
-	await expect(main.getByRole('status')).toHaveText('Transaction saved.')
+	await main.getByLabel('Description', { exact: true }).fill('Weekly market')
+	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await expect(page).toHaveURL((url) => url.pathname === '/expenses')
 
 	await page.goto('/expenses')
 	await expect(main.getByText('Weekly market', { exact: true })).toBeVisible()
 	await expect(
-		main.getByRole('link').filter({ hasText: 'Weekly market' }).getByText('$12.34', { exact: true })
+		main.getByRole('link', {
+			name: 'Transaction details: Uncategorized, Weekly market, $12.34',
+			exact: true
+		})
 	).toBeVisible()
 })
