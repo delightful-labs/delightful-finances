@@ -1069,7 +1069,8 @@ for (const scenario of archiveScenarios) {
 								organizationId,
 								accountId: account.id,
 								userId: subjectId,
-								access: scenario.grant
+								access: scenario.grant,
+								canDelete: false
 							})
 							.wait({ tier: 'global' })
 					return account.id
@@ -1582,7 +1583,8 @@ test('category page counts only readable transactions for selected account acces
 								organizationId,
 								userId: subjectId,
 								accountId: account.id,
-								access: 'read'
+								access: 'read',
+								canDelete: false
 							})
 							.wait({ tier: 'global' })
 					}
@@ -2684,7 +2686,8 @@ for (const scenario of [
 								organizationId,
 								userId: subjectId,
 								accountId: account.id,
-								access: 'read'
+								access: 'read',
+								canDelete: false
 							})
 							.wait({ tier: 'global' })
 					const category = await db.one(

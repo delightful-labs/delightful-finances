@@ -138,7 +138,8 @@ for (const scenario of scenarios) {
 							organizationId: owner.organizationId,
 							userId: identity.userId,
 							accountId: account.id,
-							access: scenario.grant
+							access: scenario.grant,
+							canDelete: false
 						})
 					await tx.commit().wait({ tier: 'global' })
 					return { transactionId: transaction.id, hiddenId: hidden.id }
