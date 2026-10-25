@@ -104,12 +104,12 @@
 		view-transition-name: transaction-content;
 	}
 
-	[hidden] {
-		display: none;
-	}
-
 	.drawer-toggle {
 		display: flex;
 		justify-content: flex-end;
+	}
+
+	[hidden] {
+		display: none;
 	}
 </style>
