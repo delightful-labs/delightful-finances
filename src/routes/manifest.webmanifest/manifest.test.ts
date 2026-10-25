@@ -36,7 +36,7 @@ describe('localized install manifest', () => {
 			start_url: '/',
 			scope: '/',
 			display: 'standalone',
-			icons: [{ src: '/app-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+			icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
 		})
 	})
 })
