@@ -1,0 +1,42 @@
+# Account balances
+
+## User goal
+
+Show a calculated balance for each active account in the accounts list. The displayed value is
+the net of saved transactions for that account: income adds and expenses subtract. With no opening
+balance feature, the calculation starts at zero and is explicitly a transaction-derived total, not a
+claim about the financial institution's current balance.
+
+For SimpleFIN-linked accounts, retain the provider's available balance and balance date for future
+reconciliation work. These provider values remain separate from the displayed calculated balance.
+Use the available balance when supplied, or the provider balance when the protocol omits the
+available balance. Save discovery values when the user adds or maps an account, and refresh
+snapshots during explicit sync operations.
+
+## Design
+
+The account route owns the organization-scoped transaction subscription alongside its existing
+account subscriptions. A pure domain calculation groups saved transactions by account and sums
+signed integer minor units. AccountList receives the resulting balances and formats them with the
+account currency. No Jazz write is made for the calculated value.
+
+Add optional available-balance text and balance-date timestamp fields to SimpleFIN account links.
+Provider response validation accepts the protocol's optional balance fields. Existing mapping and
+creation transactions store a snapshot with the link, while explicit sync refreshes snapshots for
+mapped accounts as part of the account import statechart. Existing accounts and links remain valid.
+No usable credential or provider response is persisted.
+
+No new multi-step workflow is introduced. The existing account import machine owns the additional
+readiness decision and snapshot write state; its update actor performs one already-decided leaf
+write. Account creation and mapping continue to use their existing transaction owner and cleanup
+states.
+
+## Review and verification
+
+- [x] Review the implementation before adding or running tests.
+- [x] After approval, test signed totals, empty accounts, currency isolation, and provider snapshot
+      parsing/persistence. Add account-list browser coverage for manual and linked accounts.
+- [x] Update bank-sync mapping/import fixtures and transaction write/import tests for the new
+      snapshot fields; add account-list assertions in the account archive and bank-sync browser
+      scenarios.
+- [x] Run relevant schema/type checks and approved focused tests.

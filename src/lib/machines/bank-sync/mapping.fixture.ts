@@ -14,7 +14,13 @@ import type { BankCommand, LockEvent, OperationWork } from './types.js'
 import type { bankLock } from './lock.js'
 
 type Link = schema.RowOf<typeof app.simplefinAccountLinks>
-export const provider = { id: 'provider-checking', name: 'Provider Checking', currency: 'USD' }
+export const provider = {
+	id: 'provider-checking',
+	name: 'Provider Checking',
+	currency: 'USD',
+	availableBalance: '125.00',
+	balanceDate: new Date('2026-10-22T12:00:00Z')
+}
 export const work: OperationWork = {
 	command: { type: 'CREATE_ACCOUNT', providerId: provider.id },
 	current: connection,
@@ -41,7 +47,9 @@ export const link: Link = {
 	connectionId: connection.id,
 	simplefinAccountId: provider.id,
 	simplefinOrgId: null,
-	accountId: account.id
+	accountId: account.id,
+	availableBalance: null,
+	balanceDate: null
 }
 const cleanups: (() => void)[] = []
 afterEach(() => {

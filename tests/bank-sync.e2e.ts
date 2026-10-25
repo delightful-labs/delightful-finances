@@ -55,8 +55,23 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	const operations: string[] = []
 	let failSync = false
 	const org = { 'sfin-url': 'https://bank.example', domain: 'bank.example' }
-	const checking = { id: 'checking', name: 'Provider Checking', currency: 'USD', org }
-	const savings = { id: 'savings', name: 'Provider Savings', currency: 'USD', org }
+	const checking = {
+		id: 'checking',
+		name: 'Provider Checking',
+		currency: 'USD',
+		balance: '100.00',
+		'available-balance': '90.00',
+		'balance-date': 1792000000,
+		org
+	}
+	const savings = {
+		id: 'savings',
+		name: 'Provider Savings',
+		currency: 'USD',
+		balance: '200.00',
+		'balance-date': 1792000000,
+		org
+	}
 	await page.route('**/api/simplefin', async (route) => {
 		const body: unknown = route.request().postDataJSON()
 		if (
@@ -155,6 +170,28 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 		.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
 	await sync.click()
 	await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
+	const savedBalances = await page.evaluate(async () => {
+		const schemaPath = '/src/lib/schema.ts',
+			sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const links = await db.all(app.simplefinAccountLinks)
+		return links.map(({ availableBalance, balanceDate }) => ({
+			availableBalance,
+			balanceDate: balanceDate?.toISOString()
+		}))
+	})
+	expect(savedBalances).toHaveLength(2)
+	expect(savedBalances).toEqual(
+		expect.arrayContaining([
+			{ availableBalance: '200.00', balanceDate: new Date(1792000000 * 1000).toISOString() },
+			{ availableBalance: '90.00', balanceDate: new Date(1792000000 * 1000).toISOString() }
+		])
+	)
 	const edited = await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts',
 			sessionPath = '/src/lib/jazz-session.ts'
@@ -420,6 +457,8 @@ test('maps and remaps a provider account to existing accounts without creating d
 	await expect(table.getByRole('row')).toHaveCount(3)
 	await expect(table.getByRole('cell', { name: 'Existing checking', exact: true })).toBeVisible()
 	await expect(table.getByRole('cell', { name: 'Replacement checking', exact: true })).toBeVisible()
+	const checkingRow = table.getByRole('row').filter({ hasText: 'Provider Checking' })
+	await expect(checkingRow.getByRole('cell').nth(3)).toHaveText('$87.66')
 })
 
 test('cancels a pending sync, ignores its late response, and imports only on a new explicit sync', async ({

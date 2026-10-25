@@ -5,9 +5,18 @@
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { AccountArchiveView } from '#lib/machines/account-archive.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { formatSignedMoney } from '#lib/domain/money.js'
+	import { getLocale } from '#lib/paraglide/runtime.js'
 
-	let { view, onArchive }: { view: AccountArchiveView; onArchive: (accountId: string) => void } =
-		$props()
+	let {
+		view,
+		onArchive,
+		balances
+	}: {
+		view: AccountArchiveView
+		onArchive: (accountId: string) => void
+		balances: ReadonlyMap<string, bigint> | null
+	} = $props()
 	const feedbackText = $derived(
 		view.feedback?.outcome === 'succeeded'
 			? m['status.archived_subject_name']({
@@ -58,6 +67,7 @@
 						>{m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })}</th
 					>
 					<th scope="col">{m['labels.currency']()}</th>
+					<th scope="col">{m['labels.calculated_balance']()}</th>
 					<th scope="col">{m['labels.actions']()}</th>
 				</tr>
 			</thead>
@@ -74,6 +84,11 @@
 									: m['accounts.type.card']()}
 						</td>
 						<td>{account.currency}</td>
+						<td>
+							{balances === null
+								? '—'
+								: formatSignedMoney(balances.get(account.id) ?? 0n, account.currency, getLocale())}
+						</td>
 						<td>
 							{#if row.action !== 'unavailable'}
 								<Button

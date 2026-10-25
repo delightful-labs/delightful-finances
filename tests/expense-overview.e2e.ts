@@ -187,3 +187,41 @@ test('slice clicks filter transactions and layout follows available width', asyn
 	await overview.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
 	await expect(overview).toContainText('Total Expenses: $30.00')
 })
+
+test('overview filters persist in this tab across page navigation', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 1000 })
+	await seed(page)
+	const overview = page.getByRole('region', { name: 'Expenses by Category', exact: true })
+	const start = overview.getByLabel('Start Date')
+	const end = overview.getByLabel('End Date')
+	await overview.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
+	const savedStart = await start.inputValue()
+	const savedEnd = await end.inputValue()
+	await overview.getByLabel('Currency').selectOption('EUR')
+	await overview
+		.locator('.legend')
+		.getByRole('button', { name: /Overview food/ })
+		.click()
+	await expect(overview.locator('.legend button[aria-pressed="true"]')).toHaveCount(1)
+	const storedFilters = await page.evaluate(() => {
+		const key = Object.keys(sessionStorage).find((item) =>
+			item.startsWith('finance-overview-filters:')
+		)
+		return key ? { key, value: sessionStorage.getItem(key) } : null
+	})
+	expect(storedFilters).not.toBeNull()
+	expect(storedFilters?.value).toContain(savedStart)
+	expect(storedFilters?.value).toContain(savedEnd)
+
+	await page.getByRole('link', { name: 'Expenses', exact: true }).click()
+	await expect(page).toHaveURL(/\/expenses/)
+	await page.getByRole('link', { name: 'Overview', exact: true }).click()
+	const restoredOverview = page.getByRole('region', { name: 'Expenses by Category', exact: true })
+	await expect(restoredOverview.getByLabel('Start Date')).toHaveValue(savedStart)
+	await expect(restoredOverview.getByLabel('End Date')).toHaveValue(savedEnd)
+	await expect(restoredOverview.getByLabel('Currency')).toHaveValue('EUR')
+	await expect(restoredOverview.locator('.legend button[aria-pressed="true"]')).toHaveCount(1)
+	await expect(restoredOverview.locator('.legend button[aria-pressed="true"]')).toContainText(
+		'Overview food'
+	)
+})

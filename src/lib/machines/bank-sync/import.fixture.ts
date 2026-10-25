@@ -60,6 +60,9 @@ export const response: ProviderResponse = {
 			id: 'checking',
 			name: 'Checking',
 			currency: 'USD',
+			balance: '100.00',
+			'available-balance': '90.00',
+			'balance-date': 1792000000,
 			org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' },
 			transactions: [raw('first')]
 		},
@@ -67,6 +70,8 @@ export const response: ProviderResponse = {
 			id: 'savings',
 			name: 'Savings',
 			currency: 'USD',
+			balance: '250.00',
+			'balance-date': 1792000000,
 			org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' },
 			transactions: [raw('second'), raw('third')]
 		}
@@ -89,7 +94,9 @@ export function importFixture() {
 				accountId: destination.id,
 				connectionId: connection.id,
 				simplefinAccountId: providerAccountIdentity(provider),
-				simplefinOrgId: null
+				simplefinOrgId: null,
+				availableBalance: null,
+				balanceDate: null
 			}
 		}
 	)
@@ -131,10 +138,14 @@ export function importFixture() {
 	const loadAccount = vi.fn(async ({ accountId }: { accountId: string; organizationId: string }) =>
 		accounts.filter((row) => row.id === accountId)
 	)
+	const saveBalanceSnapshot = vi.fn(
+		async (_input: { linkId: string; availableBalance: string; balanceDate: Date }) => {}
+	)
 	const accountImport = createAccountImportMachine(deps).provide({
 		actors: {
 			transaction,
-			account: fromPromise(({ input }) => loadAccount(input))
+			account: fromPromise(({ input }) => loadAccount(input)),
+			saveBalanceSnapshot: fromPromise(({ input }) => saveBalanceSnapshot(input))
 		}
 	})
 	const mappings = vi.fn(async () => links)
@@ -222,6 +233,7 @@ export function importFixture() {
 		lookup,
 		stored,
 		loadAccount,
+		saveBalanceSnapshot,
 		mappings,
 		loadCategories,
 		unlock,

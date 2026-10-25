@@ -7,7 +7,13 @@ import type { CredentialScope } from '#lib/validation/integrations.js'
 import type { fetchAccounts } from '#lib/integrations/simplefin.js'
 
 export type Connection = schema.RowOf<typeof app.simplefinConnections>
-export type ProviderSummary = { id: string; name: string; currency: string }
+export type ProviderSummary = {
+	id: string
+	name: string
+	currency: string
+	availableBalance?: string
+	balanceDate?: Date
+}
 export type ImportCounts = { imported: number; existing: number; omitted: number }
 export type ImportSettlement = 'settled' | 'unresolved'
 export type ImportResult =

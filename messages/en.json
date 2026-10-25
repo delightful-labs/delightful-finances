@@ -286,6 +286,7 @@
 		"cash": "Cash",
 		"actions": "Actions",
 		"currency": "Currency",
+		"calculated_balance": "Calculated balance",
 		"amount": "Amount",
 		"description": "Description",
 		"memo": "Memo (additional notes)",
