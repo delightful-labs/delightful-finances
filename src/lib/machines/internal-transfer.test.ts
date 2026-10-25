@@ -7,7 +7,7 @@ import {
 	type OrganizationMember,
 	type TransactionRow
 } from '#lib/schema.js'
-import { internalTransferLinkMachine } from './internal-transfer.js'
+import { internalTransferLinkMachine, internalTransferUnlinkMachine } from './internal-transfer.js'
 
 const organizationId = '11111111-1111-4111-8111-111111111111'
 const identityId = '22222222-2222-4222-8222-222222222222'
@@ -37,6 +37,7 @@ function transaction(
 		paymentMethod: null,
 		checkId: null,
 		checkDetailsId: null,
+		internalTransferId: null,
 		source: 'manual',
 		externalId: null,
 		batchId: null,
@@ -85,6 +86,9 @@ function fixture(
 	const all = vi.spyOn(tx, 'all').mockResolvedValueOnce([])
 	for (let index = 0; index < 4; index += 1) all.mockResolvedValueOnce([])
 	const insert = vi.spyOn(tx, 'insert').mockReturnValue(transfer)
+	const update = vi.spyOn(tx, 'update').mockImplementation(vi.fn())
+	const remove = vi.spyOn(tx, 'delete').mockImplementation(vi.fn())
+	vi.spyOn(crypto, 'randomUUID').mockReturnValue(transferId)
 	const rollback = vi.spyOn(tx, 'rollback').mockResolvedValue(true)
 	const wait = vi.fn(async () => {})
 	const commit = vi.fn(() => ({ wait }))
@@ -92,6 +96,8 @@ function fixture(
 		one: tx.one.bind(tx),
 		all: tx.all.bind(tx),
 		insert: tx.insert.bind(tx),
+		update: tx.update.bind(tx),
+		delete: tx.delete.bind(tx),
 		commit,
 		rollback: tx.rollback.bind(tx)
 	}))
@@ -109,7 +115,33 @@ function fixture(
 		actors.push(instance)
 		return instance.start()
 	}
-	return { tx, one, all, insert, rollback, wait, commit, beginExclusiveTransaction, actor }
+	const unlinkActor = (request: Partial<{ transferId: string; organizationId: string }> = {}) => {
+		const instance = createActor(internalTransferUnlinkMachine, {
+			input: {
+				db,
+				identityId,
+				organizationId,
+				transferId,
+				...request
+			}
+		})
+		actors.push(instance)
+		return instance.start()
+	}
+	return {
+		tx,
+		one,
+		all,
+		insert,
+		update,
+		remove,
+		rollback,
+		wait,
+		commit,
+		beginExclusiveTransaction,
+		actor,
+		unlinkActor
+	}
 }
 
 describe('internal transfer link machine', () => {
@@ -136,8 +168,15 @@ describe('internal transfer link machine', () => {
 				incomeAccountId,
 				amountMinor: 4500,
 				currency: 'USD'
-			})
+			}),
+			{ id: transferId }
 		)
+		expect(f.update).toHaveBeenCalledWith(app.transactions, expenseId, {
+			internalTransferId: transferId
+		})
+		expect(f.update).toHaveBeenCalledWith(app.transactions, incomeId, {
+			internalTransferId: transferId
+		})
 		expect(f.commit).toHaveBeenCalledOnce()
 		expect(f.wait).toHaveBeenCalledOnce()
 		expect(f.rollback).not.toHaveBeenCalled()
@@ -232,5 +271,82 @@ describe('internal transfer link machine', () => {
 		expect(done.output).toEqual({ outcome: 'cancelled', settlement: 'notStarted' })
 		expect(f.rollback).toHaveBeenCalledOnce()
 		expect(f.insert).not.toHaveBeenCalled()
+	})
+})
+
+describe('internal transfer unlink machine', () => {
+	function linkedFixture() {
+		const f = fixture()
+		f.one.mockReset().mockResolvedValueOnce({
+			id: transferId,
+			organizationId,
+			expenseTransactionId: expenseId,
+			incomeTransactionId: incomeId,
+			expenseAccountId,
+			incomeAccountId,
+			amountMinor: 4500,
+			currency: 'USD'
+		} satisfies InternalTransfer)
+		f.one.mockResolvedValueOnce(membership)
+		f.all.mockReset().mockResolvedValueOnce([
+			{ ...expense, internalTransferId: transferId },
+			{ ...income, internalTransferId: transferId }
+		])
+		f.all.mockResolvedValueOnce([])
+		return f
+	}
+
+	it('clears both endpoint markers and removes the relationship in one accepted transaction', async () => {
+		const f = linkedFixture()
+		const done = await waitFor(f.unlinkActor(), (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toEqual({
+			outcome: 'succeeded',
+			transferId,
+			settlement: 'authoritativelyAccepted'
+		})
+		expect(f.update).toHaveBeenCalledWith(app.transactions, expenseId, { internalTransferId: null })
+		expect(f.update).toHaveBeenCalledWith(app.transactions, incomeId, { internalTransferId: null })
+		expect(f.remove).toHaveBeenCalledWith(app.internalTransfers, transferId)
+		expect(f.commit).toHaveBeenCalledOnce()
+		expect(f.wait).toHaveBeenCalledOnce()
+		expect(f.rollback).not.toHaveBeenCalled()
+	})
+
+	it('does not stage writes when the user cannot edit both accounts', async () => {
+		const f = linkedFixture()
+		f.one.mockReset().mockResolvedValueOnce({
+			id: transferId,
+			organizationId,
+			expenseTransactionId: expenseId,
+			incomeTransactionId: incomeId,
+			expenseAccountId,
+			incomeAccountId,
+			amountMinor: 4500,
+			currency: 'USD'
+		} satisfies InternalTransfer)
+		f.one.mockResolvedValueOnce({ ...membership, role: 'viewer' })
+		const done = await waitFor(f.unlinkActor(), (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toEqual({ outcome: 'denied', settlement: 'notStarted' })
+		expect(f.update).not.toHaveBeenCalled()
+		expect(f.remove).not.toHaveBeenCalled()
+		expect(f.commit).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledOnce()
+	})
+
+	it('rejects a relationship whose endpoint facts no longer match', async () => {
+		const f = linkedFixture()
+		f.all.mockReset().mockResolvedValueOnce([
+			{ ...expense, internalTransferId: transferId },
+			{ ...income, internalTransferId: transferId, amountMinor: 4501 }
+		])
+		f.all.mockResolvedValueOnce([])
+		const done = await waitFor(f.unlinkActor(), (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toEqual({ outcome: 'incompatible', settlement: 'notStarted' })
+		expect(f.update).not.toHaveBeenCalled()
+		expect(f.remove).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledOnce()
 	})
 })

@@ -4,17 +4,17 @@ import type { TransactionRow } from '#lib/schema.js'
 const MATCH_WINDOW_DAYS = 7
 const MILLISECONDS_PER_DAY = 86_400_000
 
-type TransferCandidate = Pick<
+export type InternalTransferCandidate = Pick<
 	TransactionRow,
 	'id' | 'organizationId' | 'accountId' | 'kind' | 'amountMinor' | 'currency' | 'bookedOn'
 >
-type TransferSource = TransferCandidate
+type TransferSource = InternalTransferCandidate
 
 export function findInternalTransferCounterparts(
 	source: TransferSource,
-	candidates: readonly TransferCandidate[],
+	candidates: readonly InternalTransferCandidate[],
 	linkedTransactionIds: ReadonlySet<string>
-): TransferCandidate[] {
+): InternalTransferCandidate[] {
 	if (linkedTransactionIds.has(source.id)) return []
 
 	const sourceDay = calendarDay(source.bookedOn)

@@ -126,7 +126,8 @@ describe('transaction import decisions', () => {
 			paymentMethod: null,
 			batchId: null,
 			checkId: null,
-			checkDetailsId: null
+			checkDetailsId: null,
+			internalTransferId: null
 		}
 		const { actor, persist } = start(input, [row])
 		await expect(toPromise(actor)).resolves.toEqual({ kind: 'existing' })

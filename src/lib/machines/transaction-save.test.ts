@@ -281,6 +281,7 @@ describe('staged Check recovery and interruptions', () => {
 				paymentMethod: 'check',
 				checkId,
 				checkDetailsId: null,
+				internalTransferId: null,
 				batchId: null,
 				check: persistedCheck,
 				tags: []

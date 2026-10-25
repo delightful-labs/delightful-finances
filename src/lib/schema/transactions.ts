@@ -45,6 +45,7 @@ export const transactionsSchema = {
 				.optional(),
 			checkDetailsId: s.uuid().optional(),
 			...transactionCheckColumns,
+			internalTransferId: s.uuid().optional(),
 			source: s.enum(TRANSACTION_SOURCE.MANUAL, TRANSACTION_SOURCE.SIMPLEFIN),
 			externalId: externalIdColumn.column.optional(),
 			batchId: s.uuid().optional()
@@ -56,6 +57,7 @@ export const transactionsSchema = {
 			batch: s.rel('transactionBatches', 'batchId'),
 			tags: s.reverse('transactionTags', 'transaction'),
 			checkDetails: s.rel('checkDetails', 'checkDetailsId'),
+			internalTransfer: s.rel('internalTransfers', 'internalTransferId'),
 			...transactionCheckRelations,
 			attachments: s.reverse('transactionAttachments', 'transaction')
 		}

@@ -13,7 +13,7 @@ import {
 import { createJazzTransactionActors } from './jazz-transaction-actors.js'
 
 type JazzTransaction = ReturnType<ReturnType<typeof getDb>['beginExclusiveTransaction']>
-type Tx = Pick<JazzTransaction, 'one' | 'all' | 'insert' | 'rollback'> & {
+type Tx = Pick<JazzTransaction, 'one' | 'all' | 'insert' | 'update' | 'delete' | 'rollback'> & {
 	commit(): { wait(): Promise<void> }
 }
 type Db = { beginExclusiveTransaction(): Tx }
@@ -34,9 +34,24 @@ export type InternalTransferLinkResult =
 			error?: unknown
 	  }
 
+export type InternalTransferUnlinkResult =
+	| { outcome: 'succeeded'; transferId: string; settlement: 'authoritativelyAccepted' }
+	| {
+			outcome: 'cancelled' | 'closed' | 'denied' | 'incompatible' | 'unavailable'
+			settlement: 'notStarted' | 'authoritativelyRejected' | 'unresolved'
+			error?: unknown
+	  }
+
 type Endpoint = Pick<
 	TransactionRow,
-	'id' | 'organizationId' | 'accountId' | 'kind' | 'amountMinor' | 'currency' | 'bookedOn'
+	| 'id'
+	| 'organizationId'
+	| 'accountId'
+	| 'kind'
+	| 'amountMinor'
+	| 'currency'
+	| 'bookedOn'
+	| 'internalTransferId'
 >
 type Records = {
 	expense: Endpoint | null
@@ -110,7 +125,8 @@ const read = fromPromise(
 function assess(records: Records, request: Input): Assessment {
 	const { expense, income, membership, grants, links } = records
 	if (!expense || !income) return { outcome: 'unavailable' }
-	if (links.length > 0) return { outcome: 'alreadyLinked' }
+	if (links.length > 0 || expense.internalTransferId || income.internalTransferId)
+		return { outcome: 'alreadyLinked' }
 	if (
 		expense.organizationId !== request.organizationId ||
 		income.organizationId !== request.organizationId ||
@@ -132,18 +148,399 @@ function assess(records: Records, request: Input): Assessment {
 const stage = fromPromise(
 	({ input }: { input: { tx: Tx; assessment: Extract<Assessment, { outcome: 'eligible' }> } }) => {
 		const { tx, assessment } = input
-		const transfer = tx.insert(app.internalTransfers, {
-			organizationId: assessment.expense.organizationId,
-			expenseTransactionId: assessment.expense.id,
-			incomeTransactionId: assessment.income.id,
-			expenseAccountId: assessment.expense.accountId,
-			incomeAccountId: assessment.income.accountId,
-			amountMinor: assessment.expense.amountMinor,
-			currency: assessment.expense.currency
-		})
+		const transferId = crypto.randomUUID()
+		tx.update(app.transactions, assessment.expense.id, { internalTransferId: transferId })
+		tx.update(app.transactions, assessment.income.id, { internalTransferId: transferId })
+		const transfer = tx.insert(
+			app.internalTransfers,
+			{
+				organizationId: assessment.expense.organizationId,
+				expenseTransactionId: assessment.expense.id,
+				incomeTransactionId: assessment.income.id,
+				expenseAccountId: assessment.expense.accountId,
+				incomeAccountId: assessment.income.accountId,
+				amountMinor: assessment.expense.amountMinor,
+				currency: assessment.expense.currency
+			},
+			{ id: transferId }
+		)
 		return Promise.resolve(transfer.id)
 	}
 )
+
+type UnlinkInput = {
+	db: Db
+	organizationId: string
+	identityId: string
+	transferId: string
+}
+type UnlinkRecords = {
+	transfer: InternalTransfer | null
+	endpoints: Endpoint[]
+	membership: OrganizationMember | null
+	grants: Grant[]
+}
+type UnlinkAssessment =
+	| { outcome: 'eligible'; transfer: InternalTransfer; expense: Endpoint; income: Endpoint }
+	| { outcome: 'denied' | 'incompatible' | 'unavailable' }
+type UnlinkContext = {
+	request: UnlinkInput
+	tx: Tx | undefined
+	records: UnlinkRecords | undefined
+	assessment: UnlinkAssessment | undefined
+	write: OutputFrom<typeof commit> | undefined
+	result: InternalTransferUnlinkResult | undefined
+}
+type EligibleUnlink = Extract<UnlinkAssessment, { outcome: 'eligible' }>
+
+function eligibleUnlink(value: UnlinkAssessment | undefined): EligibleUnlink {
+	if (value?.outcome !== 'eligible') throw new Error('Transfer unlink was not eligible')
+	return value
+}
+
+const readUnlink = fromPromise(
+	async ({ input }: { input: { tx: Tx; request: UnlinkInput } }): Promise<UnlinkRecords> => {
+		const { tx, request } = input
+		const [transfer, endpoints, membership, grants] = await Promise.all([
+			tx.one(app.internalTransfers.where({ id: request.transferId })),
+			tx.all(app.transactions.where({ internalTransferId: request.transferId })),
+			tx.one(
+				app.organizationMembers.where({
+					organizationId: request.organizationId,
+					userId: request.identityId
+				})
+			),
+			tx.all(
+				app.accountMemberships.where({
+					organizationId: request.organizationId,
+					userId: request.identityId
+				})
+			)
+		])
+		return {
+			transfer,
+			endpoints,
+			membership,
+			grants: grants.map(({ accountId, access }) => ({ accountId, access }))
+		}
+	}
+)
+
+function assessUnlink(records: UnlinkRecords, request: UnlinkInput): UnlinkAssessment {
+	const { transfer, endpoints, membership, grants } = records
+	if (!transfer) return { outcome: 'unavailable' }
+	if (transfer.organizationId !== request.organizationId) return { outcome: 'incompatible' }
+	const expense = endpoints.find(({ id }) => id === transfer.expenseTransactionId)
+	const income = endpoints.find(({ id }) => id === transfer.incomeTransactionId)
+	if (
+		!expense ||
+		!income ||
+		endpoints.length !== 2 ||
+		expense.internalTransferId !== transfer.id ||
+		income.internalTransferId !== transfer.id ||
+		expense.organizationId !== request.organizationId ||
+		income.organizationId !== request.organizationId ||
+		expense.accountId !== transfer.expenseAccountId ||
+		income.accountId !== transfer.incomeAccountId ||
+		expense.kind !== EXPENSE ||
+		income.kind !== INCOME ||
+		expense.amountMinor !== transfer.amountMinor ||
+		income.amountMinor !== transfer.amountMinor ||
+		expense.currency !== transfer.currency ||
+		income.currency !== transfer.currency ||
+		expense.accountId === income.accountId
+	)
+		return { outcome: 'incompatible' }
+	if (
+		!canWriteAccount(membership, request.organizationId, expense.accountId, grants) ||
+		!canWriteAccount(membership, request.organizationId, income.accountId, grants)
+	)
+		return { outcome: 'denied' }
+	return { outcome: 'eligible', transfer, expense, income }
+}
+
+const stageUnlink = fromPromise(({ input }: { input: { tx: Tx; assessment: EligibleUnlink } }) => {
+	const { tx, assessment } = input
+	tx.update(app.transactions, assessment.expense.id, { internalTransferId: null })
+	tx.update(app.transactions, assessment.income.id, { internalTransferId: null })
+	tx.delete(app.internalTransfers, assessment.transfer.id)
+	return Promise.resolve(assessment.transfer.id)
+})
+
+/** Owns one exclusive Jazz transaction while removing a transfer relationship. */
+export const internalTransferUnlinkMachine = setup<
+	UnlinkContext,
+	InternalTransferLinkEvent,
+	{
+		open: typeof transactionActors.open
+		read: typeof readUnlink
+		stage: typeof stageUnlink
+		commit: typeof transactionActors.commit
+		settle: typeof transactionActors.settle
+		rollback: typeof transactionActors.rollback
+	},
+	{},
+	{},
+	{ closing: undefined; cancelling: undefined },
+	never,
+	string,
+	UnlinkInput,
+	InternalTransferUnlinkResult
+>({
+	actors: { open, read: readUnlink, stage: stageUnlink, commit, settle, rollback },
+	guards: {
+		closing: stateIn({ running: { control: 'closing' } }),
+		cancelling: stateIn({ running: { control: 'cancelling' } })
+	}
+}).createMachine({
+	id: 'internal-transfer-unlink',
+	context: ({ input }) => ({
+		request: input,
+		tx: undefined,
+		records: undefined,
+		assessment: undefined,
+		write: undefined,
+		result: undefined
+	}),
+	initial: 'running',
+	output: ({ context }) => required(context.result),
+	states: {
+		running: {
+			type: 'parallel',
+			states: {
+				control: {
+					initial: 'active',
+					states: {
+						active: { on: { CANCEL: 'cancelling', SHUTDOWN: 'closing' } },
+						cancelling: { on: { CANCEL: {}, SHUTDOWN: 'closing' } },
+						closing: { on: { CANCEL: {}, SHUTDOWN: {} } }
+					}
+				},
+				work: {
+					initial: 'opening',
+					states: {
+						opening: {
+							invoke: {
+								src: 'open',
+								input: ({ context }) => context.request.db,
+								onDone: {
+									target: 'checkingAfterOpen',
+									actions: assign({ tx: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }): InternalTransferUnlinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'notStarted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterOpen: {
+							always: [
+								{ guard: 'closing', target: 'rollingBack' },
+								{ guard: 'cancelling', target: 'rollingBack' },
+								{ target: 'reading' }
+							]
+						},
+						reading: {
+							invoke: {
+								src: 'read',
+								input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
+								onDone: {
+									target: 'checkingAfterRead',
+									actions: assign({ records: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'rollingBack',
+									actions: assign({
+										result: ({ event }): InternalTransferUnlinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'notStarted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterRead: {
+							always: [
+								{ guard: 'closing', target: 'rollingBack' },
+								{ guard: 'cancelling', target: 'rollingBack' },
+								{ target: 'assessing' }
+							]
+						},
+						assessing: {
+							always: {
+								target: 'checkingAssessment',
+								actions: assign({
+									assessment: ({ context }) =>
+										assessUnlink(required(context.records), context.request)
+								})
+							}
+						},
+						checkingAssessment: {
+							always: [
+								{ guard: 'closing', target: 'rollingBack' },
+								{ guard: 'cancelling', target: 'rollingBack' },
+								{
+									guard: ({ context }) => required(context.assessment).outcome !== 'eligible',
+									target: 'rollingBack',
+									actions: assign({
+										result: ({ context }): InternalTransferUnlinkResult => {
+											const assessment = required(context.assessment)
+											return assessment.outcome === 'eligible'
+												? { outcome: 'unavailable', settlement: 'notStarted' }
+												: { outcome: assessment.outcome, settlement: 'notStarted' }
+										}
+									})
+								},
+								{ target: 'staging' }
+							]
+						},
+						staging: {
+							invoke: {
+								src: 'stage',
+								input: ({ context }) => ({
+									tx: required(context.tx),
+									assessment: eligibleUnlink(context.assessment)
+								}),
+								onDone: { target: 'checkingAfterStage' },
+								onError: {
+									target: 'rollingBack',
+									actions: assign({
+										result: ({ event }): InternalTransferUnlinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'notStarted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterStage: {
+							always: [
+								{ guard: 'closing', target: 'rollingBack' },
+								{ guard: 'cancelling', target: 'rollingBack' },
+								{ target: 'committing' }
+							]
+						},
+						committing: {
+							invoke: {
+								src: 'commit',
+								input: ({ context }) => required(context.tx),
+								onDone: {
+									target: 'checkingAfterCommit',
+									actions: assign({ write: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }): InternalTransferUnlinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'unresolved',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterCommit: {
+							always: {
+								target: 'settling',
+								actions: assign({
+									result: (): InternalTransferUnlinkResult => ({
+										outcome: 'unavailable',
+										settlement: 'unresolved'
+									})
+								})
+							}
+						},
+						settling: {
+							invoke: {
+								src: 'settle',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context }): InternalTransferUnlinkResult => ({
+											outcome: 'succeeded',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'authoritativelyAccepted'
+										})
+									})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }): InternalTransferUnlinkResult =>
+											event.error instanceof PersistedWriteRejectedError
+												? {
+														outcome: 'denied',
+														settlement: 'authoritativelyRejected',
+														error: event.error
+													}
+												: {
+														outcome: 'unavailable',
+														settlement: 'unresolved',
+														error: event.error
+													}
+									})
+								}
+							}
+						},
+						rollingBack: {
+							invoke: {
+								src: 'rollback',
+								input: ({ context }) => required(context.tx),
+								onDone: [
+									{
+										guard: 'closing',
+										target: 'finishing',
+										actions: assign({
+											result: ({ context }): InternalTransferUnlinkResult =>
+												context.result ?? { outcome: 'closed', settlement: 'notStarted' }
+										})
+									},
+									{
+										guard: 'cancelling',
+										target: 'finishing',
+										actions: assign({
+											result: ({ context }): InternalTransferUnlinkResult =>
+												context.result ?? { outcome: 'cancelled', settlement: 'notStarted' }
+										})
+									},
+									{
+										target: 'finishing',
+										actions: assign({
+											result: ({ context }): InternalTransferUnlinkResult =>
+												context.result ?? { outcome: 'unavailable', settlement: 'notStarted' }
+										})
+									}
+								],
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }): InternalTransferUnlinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'unresolved',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						finishing: { always: '#internal-transfer-unlink.terminal' }
+					}
+				}
+			}
+		},
+		terminal: { type: 'final' }
+	}
+})
 type Context = {
 	request: Input
 	tx: Tx | undefined

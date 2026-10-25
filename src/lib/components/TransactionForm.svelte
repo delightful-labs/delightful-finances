@@ -14,6 +14,8 @@
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
+	import type { InternalTransferCandidate } from '#lib/domain/internal-transfer.js'
+	import type { InternalTransferLinkResult } from '#lib/machines/internal-transfer.js'
 	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -21,6 +23,7 @@
 	import FormContent from './FormContent.svelte'
 	import TransactionCheckFields from './TransactionCheckFields.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'
+	import InternalTransferSuggestions from './InternalTransferSuggestions.svelte'
 
 	let {
 		kind,
@@ -37,7 +40,14 @@
 		onsubmit,
 		onreset,
 		oncancel,
-		oninput
+		oninput,
+		transferSuggestions = [],
+		writableTransferSuggestionIds = new Set<string>(),
+		transferSuggestionsLoading = false,
+		transferSuggestionsFailed = false,
+		transferLinkPending = false,
+		transferLinkResult = null,
+		onLinkCounterpart
 	}: {
 		kind: TransactionKind
 		paymentEntry: TransactionPaymentEntry
@@ -63,6 +73,16 @@
 		onreset: (event: Event) => void
 		oncancel?: () => void
 		oninput?: (event: Event) => void
+		transferSuggestions?: readonly (InternalTransferCandidate & {
+			accountName: Account['name'] | undefined
+			description: TransactionDetail['description'] | undefined
+		})[]
+		writableTransferSuggestionIds?: ReadonlySet<string>
+		transferSuggestionsLoading?: boolean
+		transferSuggestionsFailed?: boolean
+		transferLinkPending?: boolean
+		transferLinkResult?: InternalTransferLinkResult | null
+		onLinkCounterpart?: (transactionId: string) => void
 	} = $props()
 
 	const resetRevision = $derived(view.draftRevision)
@@ -248,6 +268,17 @@
 						suggestions={tagSuggestions}
 						initialTags={initialTransaction?.tags ?? []}
 						disabled={!form.fieldsEditable}
+					/>
+				{/if}
+				{#if mode === 'edit' && onLinkCounterpart}
+					<InternalTransferSuggestions
+						suggestions={transferSuggestions}
+						writableSuggestionIds={writableTransferSuggestionIds}
+						loading={transferSuggestionsLoading}
+						failed={transferSuggestionsFailed}
+						pending={transferLinkPending}
+						result={transferLinkResult}
+						onLink={onLinkCounterpart}
 					/>
 				{/if}
 				<InputText

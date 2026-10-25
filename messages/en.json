@@ -111,6 +111,16 @@
 				}
 			}
 		],
+		"transfer": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Transfer",
+					"countPlural=*": "Transfers"
+				}
+			}
+		],
 		"workspace": [
 			{
 				"declarations": ["input count", "local countPlural = count: plural"],
@@ -415,6 +425,19 @@
 		"daily_total_amount": "Daily total: {amount}",
 		"check_retained": "The Check was saved, but the transaction was not. Save again to reuse the same Check.",
 		"save_unresolved": "The save result is uncertain. Save again to verify the same records when connected before issuing another write. Keep this form open until the result is resolved."
+	},
+	"transfers": {
+		"suggestions_heading": "Matching transactions",
+		"searching": "Looking for matching transactions…",
+		"search_failed": "Matching transactions could not be loaded.",
+		"no_matches": "No matching transactions were found.",
+		"select_match": "Select a transaction to link",
+		"link_permission_required": "Linking requires edit access to both accounts.",
+		"link_pending": "Waiting for the transfer link to be confirmed…",
+		"link_denied": "The transfer link was rejected. Your access may have changed.",
+		"link_incompatible": "These transactions no longer match the transfer requirements.",
+		"link_already_linked": "One of these transactions is already linked to a transfer.",
+		"link_unavailable": "The transfer link could not be confirmed. Check the transactions before trying again."
 	},
 	"login": {
 		"description": "Enter the recovery phrase for an existing local-first account.",

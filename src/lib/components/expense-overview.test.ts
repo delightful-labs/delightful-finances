@@ -26,6 +26,7 @@ function row(
 		paymentMethod: null,
 		checkId: null,
 		checkDetailsId: null,
+		internalTransferId: null,
 		externalId: null,
 		batchId: null
 	}

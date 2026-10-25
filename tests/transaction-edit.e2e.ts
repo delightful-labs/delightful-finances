@@ -9,7 +9,8 @@ async function seedTransaction(
 		| 'archived'
 		| 'viewer'
 		| 'check'
-		| 'expense-check' = 'manual'
+		| 'expense-check'
+		| 'transfer' = 'manual'
 ) {
 	await page.goto('/accounts')
 	await expect(
@@ -36,7 +37,7 @@ async function seedTransaction(
 			})
 			.wait({ tier: 'local' })
 		const destination =
-			scenario === 'check'
+			scenario === 'check' || scenario === 'transfer'
 				? await db
 						.insert(app.accounts, {
 							organizationId: organization.id,
@@ -75,17 +76,44 @@ async function seedTransaction(
 						})
 						.wait({ tier: 'local' })
 				: null
+		const destinationCategory =
+			scenario === 'transfer'
+				? await db
+						.insert(app.categories, {
+							organizationId: organization.id,
+							name: 'Destination category',
+							kind: 'income',
+							isSystem: false
+						})
+						.wait({ tier: 'local' })
+				: null
 		const saved = await db
 			.insert(app.transactions, {
 				...base,
 				kind: isIncome ? 'income' : 'expense',
-				source: scenario === 'imported' || scenario === 'imported-income' ? 'simplefin' : 'manual',
-				...(scenario === 'imported' || scenario === 'imported-income'
+				source:
+					scenario === 'imported' || scenario === 'imported-income' || scenario === 'transfer'
+						? 'simplefin'
+						: 'manual',
+				...(scenario === 'imported' || scenario === 'imported-income' || scenario === 'transfer'
 					? { externalId: 'imported-edit-test' }
 					: {}),
 				...(check ? { paymentMethod: 'check', checkId: check.id } : {})
 			})
 			.wait({ tier: 'local' })
+		const counterpart =
+			destination && destinationCategory
+				? await db
+						.insert(app.transactions, {
+							...base,
+							accountId: destination.id,
+							categoryId: destinationCategory.id,
+							kind: 'income',
+							source: 'simplefin',
+							externalId: 'imported-transfer-counterpart'
+						})
+						.wait({ tier: 'local' })
+				: null
 		const tag = await db
 			.insert(app.tags, {
 				organizationId: organization.id,
@@ -118,6 +146,7 @@ async function seedTransaction(
 		}
 		return {
 			id: saved.id,
+			counterpartId: counterpart?.id,
 			accountId: account.id,
 			destinationAccountId: destination?.id,
 			categoryId: category.id,
@@ -139,6 +168,7 @@ async function persisted(page: Page, id: string) {
 		if (!db) throw new Error('Missing database')
 		const [row] = await db.all(app.transactions.where({ id }))
 		const links = await db.all(app.transactionTags.where({ transactionId: id }))
+		const transfers = await db.all(app.internalTransfers.where({ expenseTransactionId: id }))
 		const check = row?.checkId
 			? await db.one(app.checks.where({ id: row.checkId }), { tier: 'local' })
 			: null
@@ -153,11 +183,46 @@ async function persisted(page: Page, id: string) {
 			paymentMethod: row?.paymentMethod,
 			checkId: row?.checkId,
 			links: links.map(({ id, tagId }) => ({ id, tagId })),
+			transfers: transfers.map(({ expenseTransactionId, incomeTransactionId }) => ({
+				expenseTransactionId,
+				incomeTransactionId
+			})),
 			checkNumber: check?.checkNumber,
 			checkAccountId: check?.accountId
 		}
 	}, id)
 }
+
+test('suggests and links a matching synced transaction without changing either transaction', async ({
+	page
+}) => {
+	const seed = await seedTransaction(page, 'transfer')
+	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
+	await page.goto(`/expenses/${seed.id}`)
+	const suggestions = page.getByRole('region', { name: 'Matching transactions' })
+	await expect(suggestions.getByText('Destination ledger', { exact: true })).toBeVisible()
+	await suggestions.getByText('Destination ledger', { exact: true }).click()
+	await suggestions
+		.getByRole('button', { name: 'Link to existing transaction', exact: true })
+		.click()
+	await expect(suggestions.getByText('Transfer saved.', { exact: true })).toBeVisible()
+	await expect
+		.poll(() => persisted(page, seed.id))
+		.toMatchObject({
+			source: 'simplefin',
+			externalId: 'imported-edit-test',
+			transfers: [{ expenseTransactionId: seed.id, incomeTransactionId: seed.counterpartId }]
+		})
+	const counterpartId = seed.counterpartId
+	if (!counterpartId) throw new Error('Missing transfer counterpart fixture')
+	await expect
+		.poll(() => persisted(page, counterpartId))
+		.toMatchObject({
+			source: 'simplefin',
+			externalId: 'imported-transfer-counterpart',
+			transfers: []
+		})
+})
 
 test('always-visible form supports reverted drafts, repeated offline saves and retained archived tags', async ({
 	page,
