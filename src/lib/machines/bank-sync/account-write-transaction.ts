@@ -57,6 +57,8 @@ type LinkValues = {
 	connectionId: string
 	simplefinAccountId: string
 	accountId: string
+	availableBalance?: string
+	balanceDate?: Date
 }
 type LinkWrite = { tx: Transaction; id: string; values: LinkValues }
 const insertLink = fromPromise(async ({ input }: { input: LinkWrite }) => {
@@ -93,7 +95,13 @@ function linkWrite(context: Context, id: string): LinkWrite {
 			organizationId: work.scope.organizationId,
 			connectionId: work.current.id,
 			simplefinAccountId: provider.id,
-			accountId
+			accountId,
+			...(provider.availableBalance !== undefined && provider.balanceDate !== undefined
+				? {
+						availableBalance: provider.availableBalance,
+						balanceDate: provider.balanceDate
+					}
+				: {})
 		}
 	}
 }

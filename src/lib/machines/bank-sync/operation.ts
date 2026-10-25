@@ -4,7 +4,11 @@ import type { ErrorActorEvent } from 'xstate'
 import { app } from '#lib/schema.js'
 import { createBankTrace } from '#lib/integrations/diagnostics.js'
 import { unlockCredential } from '#lib/integrations/passkey.js'
-import { fetchAccounts, providerAccountIdentity } from '#lib/integrations/simplefin.js'
+import {
+	fetchAccounts,
+	providerAccountIdentity,
+	providerBalanceSnapshot
+} from '#lib/integrations/simplefin.js'
 import { createAuthorizationMachine } from './authorization.js'
 import { createAccountMappingMachine } from './accounts.js'
 import { createImportMachine } from './import.js'
@@ -480,7 +484,8 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						required(context.response).accounts.map((account) => ({
 							id: providerAccountIdentity(account),
 							name: account.name,
-							currency: account.currency
+							currency: account.currency,
+							...providerBalanceSnapshot(account)
 						}))
 				}),
 				always: 'complete'

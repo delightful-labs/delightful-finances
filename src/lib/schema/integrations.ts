@@ -29,7 +29,9 @@ export const integrationsSchema = {
 			accountId: s.uuid(),
 			connectionId: s.uuid().optional(),
 			simplefinAccountId: s.string(),
-			simplefinOrgId: s.string().optional()
+			simplefinOrgId: s.string().optional(),
+			availableBalance: s.string().optional(),
+			balanceDate: s.timestamp().optional()
 		},
 		{
 			organization: s.rel('organizations', 'organizationId'),

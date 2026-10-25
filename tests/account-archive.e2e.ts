@@ -19,6 +19,11 @@ test('archives the chosen account locally, preserves other accounts, and survive
 		await expect(dialog).not.toBeVisible()
 	}
 	const main = page.getByRole('main')
+	const accountsTable = main.getByRole('table', { name: 'Accounts', exact: true })
+	for (const name of ['Archive checking', 'Keep savings']) {
+		const row = accountsTable.getByRole('row').filter({ hasText: name })
+		await expect(row.getByRole('cell').nth(3)).toHaveText('$0.00')
+	}
 	const archive = main.getByRole('button', { name: 'Archive Archive checking', exact: true })
 	await expect(archive).toBeEnabled()
 	// Archiving is a local write and must remain useful offline.

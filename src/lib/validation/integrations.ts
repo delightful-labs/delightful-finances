@@ -25,6 +25,15 @@ export const providerAccountSchema = z.object({
 	id: z.string().min(1).max(256),
 	name: z.string().min(1).max(256),
 	currency: z.string(),
+	balance: z
+		.string()
+		.regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/)
+		.optional(),
+	'available-balance': z
+		.string()
+		.regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/)
+		.optional(),
+	'balance-date': z.number().int().nonnegative().optional(),
 	org: z.object({
 		'sfin-url': z.url(),
 		domain: z.string().optional(),

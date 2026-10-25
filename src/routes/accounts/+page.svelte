@@ -7,6 +7,7 @@
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
+	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext, onMount } from 'svelte'
@@ -40,6 +41,11 @@
 			? app.accountMemberships.where({ organizationId, userId })
 			: undefined
 	})
+	const transactions = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
 	function observe() {
 		return {
 			identityId: session.current.account?.id ?? null,
@@ -58,6 +64,14 @@
 	)
 	let archiveSnapshot = $state.raw(actor.getSnapshot())
 	const view = $derived(selectAccountArchiveView(archiveSnapshot))
+	const balances = $derived(
+		transactions.isLoading || transactions.error
+			? null
+			: calculateAccountBalances(
+					view.rows.map((row) => row.account),
+					transactions.current ?? []
+				)
+	)
 	$effect(() => actor.send({ type: 'OBSERVE', observation: observe() }))
 	onMount(() => {
 		const subscription = actor.subscribe((snapshot) => {
@@ -85,4 +99,4 @@
 <svelte:head><title>{m['nouns.account']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
 <PageHeader title={m['nouns.account']({ count: 2 })} />
 <AccountCreation />
-<AccountList {view} {onArchive} />
+<AccountList {view} {onArchive} {balances} />
