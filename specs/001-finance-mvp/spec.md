@@ -530,3 +530,11 @@ DUI feedback/message, step-label and drawer-close snippets MUST preserve existin
 default callers. Custom content replaces only its documented presentation region;
 status announcements, step semantics and drawer dismissal/focus ownership MUST
 remain explicit. Finance need not adopt custom markup without a concrete use case.
+
+### Typography and Button styling
+
+Typography MUST retain semantic heading levels, default sizes, inherited omitted
+alignment, caller inline styles and public font-size overrides while minimizing
+variant selectors. Button MUST retain public theme overrides, native/fieldset
+disabled behavior, ARIA-disabled activation handling, flat/raised combinations,
+keyboard focus, reduced motion and forced colors with shared interaction rules.

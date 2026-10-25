@@ -532,3 +532,15 @@ applicable, and retain structural/accessibility ownership in the library. Custom
 Drawer controls receive the dismissal callback and translated label without
 default button sizing. Integrate one cumulative archive in Finance without
 changing its consumers. Review before behavior tests; no appearance tests.
+
+### Typography and Button simplification
+
+Use a shared typed font-size token lookup in DUI Text/Heading and private root
+style variables for prop values. Keep one scoped base rule per component and
+retain data attributes, native inline style precedence and public size tokens.
+Explicitly reset omitted private alignment so nested components inherit computed
+alignment rather than leaking a parent's private prop value. Configure Button
+variant color values through private variables consumed by common hover rules;
+keep disabled/focus/flat-active/motion handling explicit. Package and integrate
+one latest archive. Review before relevant behavior tests; temporary appearance
+checks need not become permanent tests.

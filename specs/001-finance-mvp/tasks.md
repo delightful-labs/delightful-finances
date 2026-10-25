@@ -712,3 +712,19 @@ by removing its old styling class. No new permanent test cases remain.
 
 - [x] Implement/document the four requested optional snippet APIs and retain existing defaults and accessibility ownership.
 - [ ] Review implementation, then validate default/replacement feedback, step labels and close controls with focused semantic/behavior coverage.
+
+### Typography and Button review cycle
+
+- [x] Commit and push the preceding Finance/DUI composition and styling work on feature branches.
+- [x] Simplify Text/Heading selectors with a genuinely shared token lookup and consolidate Button variant interaction styling.
+- [x] Review the new implementation before typography/Button behavior validation; inspect existing stories and fix stale story identifiers before tests.
+
+Typography/Button verification: all 13 existing semantic unit tests, five Button
+browser scenarios and 11 focused Finance browser scenarios pass. Temporary
+before/after inspection covered 69 component pairs and 258 observations across
+light/dark themes, size/alignment defaults, public and inline overrides, nested
+alignment and enabled/native-disabled/ARIA-disabled/fieldset-disabled Button
+states; no differences were observed. Temporary fixtures were removed. The only
+permanent test edit corrects the stale flat-secondary story identifier. No new
+style-only tests were retained. Library/application static, browser-test TypeScript,
+changed-file formatting and whitespace checks pass.

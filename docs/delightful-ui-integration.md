@@ -82,7 +82,7 @@ Migration validation after approval: all 319 unit tests pass. All 21 selected br
 
 ## Native CSS and composition cleanup (review pending)
 
-Finance consumes `vendor/delightful-ui-0.0.24-composition.tgz`, packed
+Finance consumes `vendor/delightful-ui-0.0.24-typography-button.tgz`, packed
 from the local Delightful UI feature branch, retaining version 0.0.24. Only this
 latest archive created during the cleanup is retained. It contains:
 
@@ -102,7 +102,7 @@ snippet-rendered form buttons and browser-owned view-transition pseudo-elements.
 
 The simple selector cleanup also uses local legend/button/amount selectors,
 native transaction-content visibility, simpler BankSync alignment and fewer
-sidebar wrappers. Typography and Button cascade changes remain separate work.
+sidebar wrappers. Typography and Button also use the shared styling described below.
 
 See [CSS styling boundaries](css-styling.md) and the
 [composition audit](composition-opportunities.md) for conventions and other
@@ -128,3 +128,24 @@ semantics; custom close controls use library dismissal/focus behavior while owni
 their markup and sizing. The README documents fallback precedence and examples.
 Package/static checks precede review; focused behavior tests follow approval.
 No appearance tests or speculative Finance composition APIs were added.
+
+## Typography and Button selectors — reviewed and verified
+
+Text and Heading share a typed font-token lookup and each retain one scoped base
+rule. Their public size overrides, caller inline styles, heading defaults and
+data attributes remain supported. Omitted alignment inherits computed parent
+alignment; private prop variables are reset per element to avoid nested leakage.
+Button variants configure private color values for common hover rules. Native
+fieldset-disabled state, ARIA-disabled handling, flat active behavior, focus,
+reduced motion and forced colors retain explicit rules. The new snapshot replaces
+the preceding cumulative archive; earlier changes are already committed/pushed.
+Library packaging/static checks, browser-test TypeScript, formatting and whitespace
+checks pass. After implementation review, all 13 existing semantic unit tests,
+five Button browser scenarios and 11 focused Finance browser scenarios pass. The
+stale `flat` story identifier was corrected to `flat-secondary`.
+
+Temporary before/after inspection covered 69 component pairs and 258 observations
+across light/dark themes, default sizes/alignment, public and inline overrides,
+nested alignment, and Button normal/hover/active states including native,
+ARIA and fieldset disabling. No differences were observed. Those temporary
+fixtures were removed; no new permanent appearance tests remain.
