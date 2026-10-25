@@ -2,12 +2,27 @@
 	import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
 	import Icon from './AppIcon.svelte'
 	import { Button, Table, StatusMessage } from 'delightful-ui'
-	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { AccountArchiveView } from '#lib/machines/account-archive.js'
+	import type { AccountDeleteGrantView } from '#lib/machines/account-delete-grants.js'
+	import type { AccountMembership, OrganizationMember } from '#lib/schema.js'
+	import AccountActionsDialog from './AccountActionsDialog.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
-	let { view, onArchive }: { view: AccountArchiveView; onArchive: (accountId: string) => void } =
-		$props()
+	let {
+		view,
+		onArchive,
+		deleteGrantView,
+		onDeleteGrant
+	}: {
+		view: AccountArchiveView
+		onArchive: (accountId: string) => void
+		deleteGrantView: AccountDeleteGrantView & {
+			canManage: boolean
+			members: readonly OrganizationMember[]
+			grants: readonly AccountMembership[]
+		}
+		onDeleteGrant: (accountId: string, userId: string, canDelete: boolean) => void
+	} = $props()
 	const feedbackText = $derived(
 		view.feedback?.outcome === 'succeeded'
 			? m['status.archived_subject_name']({
@@ -22,6 +37,19 @@
 						? m['accounts.archive_restricted']()
 						: m['errors.archive_subject']({ subject: m['nouns.account']({ count: 1 }) })
 	)
+	let selectedAccountId = $state<string | null>(null)
+	let dialogOpen = $state(false)
+	const selectedAccount = $derived(
+		view.kind === 'ready'
+			? view.rows.find((row) => row.account.id === selectedAccountId)?.account
+			: undefined
+	)
+	$effect(() => {
+		if (selectedAccountId && !selectedAccount) {
+			selectedAccountId = null
+			dialogOpen = false
+		}
+	})
 </script>
 
 {#if view.kind === 'sessionUnavailable'}
@@ -75,27 +103,30 @@
 						</td>
 						<td>{account.currency}</td>
 						<td>
-							{#if row.action !== 'unavailable'}
-								<Button
-									type="button"
-									disabled={row.action !== 'available'}
-									aria-label={m['actions.archive_subject']({ subject: account.name })}
-									onclick={() => onArchive(account.id)}
-								>
-									{#if row.action === 'archiving'}
-										{m['status.archiving_subject']({ subject: m['nouns.account']({ count: 1 }) })}
-									{:else}
-										<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
-										{m['actions.archive_button']()}
-									{/if}
-								</Button>
-							{:else}
-								<span>{m['accounts.archive_restricted']()}</span>
-							{/if}
+							<Button
+								type="button"
+								aria-label={m['actions.manage_subject']({ subject: account.name })}
+								onclick={() => {
+									selectedAccountId = account.id
+									dialogOpen = true
+								}}
+							>
+								{m['actions.manage_subject']({ subject: account.name })}
+							</Button>
 						</td>
 					</tr>
 				{/each}
 			</tbody>
 		</Table>
+		<AccountActionsDialog
+			account={selectedAccount}
+			archiveAction={selectedAccount
+				? view.rows.find((row) => row.account.id === selectedAccount.id)?.action
+				: undefined}
+			{deleteGrantView}
+			bind:open={dialogOpen}
+			onArchive={() => selectedAccount && onArchive(selectedAccount.id)}
+			{onDeleteGrant}
+		/>
 	{/if}
 {/if}

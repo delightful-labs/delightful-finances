@@ -334,6 +334,7 @@
 		"move_up_name": "Move {name} up",
 		"move_down_name": "Move {name} down",
 		"add_subject": "Add {subject}",
+		"delete_subject": "Delete {subject}",
 		"archive_subject": "Archive {subject}",
 		"select_subject": "Select {subject}",
 		"select_existing_subject": "Select existing {subject}",
@@ -355,6 +356,11 @@
 		"done": "Done",
 		"back_to_subject": "Back to {subject}"
 	},
+	"permissions": {
+		"updated": "Permissions were updated.",
+		"update_failed": "Permissions could not be updated. Please try again.",
+		"manage_restricted": "Only workspace owners and admins can manage this permission."
+	},
 	"accounts": {
 		"type": {
 			"bank": "Bank",
@@ -369,7 +375,9 @@
 		"archive_restricted": "You do not have permission to archive this account.",
 		"archive_scope_changed": "The workspace or access changed before archiving completed.",
 		"archive_interrupted_saved": "The archive was saved locally before the operation ended.",
-		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
+		"archive_session_unavailable": "Account actions are unavailable until your session is ready.",
+		"delete_access_description": "Delete access is granted separately from account write access.",
+		"delete_access_for_name": "Allow {name} to delete transactions"
 	},
 	"transactions": {
 		"samples": {
