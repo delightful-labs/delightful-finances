@@ -87,5 +87,17 @@ export const transactionsSchema = {
 			organization: s.rel('organizations', 'organizationId'),
 			account: s.rel('accounts', 'accountId')
 		}
+	),
+	internalTransfers: s.table(
+		{
+			organizationId: s.uuid(),
+			expenseTransactionId: s.uuid(),
+			incomeTransactionId: s.uuid()
+		},
+		{
+			organization: s.rel('organizations', 'organizationId'),
+			expenseTransaction: s.rel('transactions', 'expenseTransactionId'),
+			incomeTransaction: s.rel('transactions', 'incomeTransactionId')
+		}
 	)
 }

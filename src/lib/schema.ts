@@ -31,6 +31,7 @@ export type Account = s.RowOf<typeof app.accounts>
 export type Category = s.RowOf<typeof app.categories>
 export type Tag = s.RowOf<typeof app.tags>
 export type TransactionRow = s.RowOf<typeof app.transactions>
+export type InternalTransfer = s.RowOf<typeof app.internalTransfers>
 export type Check = s.RowOf<typeof app.checks>
 
 export const transactionDetailQuery = app.transactions
