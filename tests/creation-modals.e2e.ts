@@ -165,7 +165,10 @@ test('sidebar icons align and Details child content retains padding', async ({ p
 		.filter({ has: page.locator('summary', { hasText: 'Accounts' }) })
 	await accounts.locator('summary').click()
 	const topIcon = sidebar.getByRole('link', { name: 'Expenses', exact: true }).locator('svg')
-	const summaryIcon = accounts.locator('summary .menu-icon')
+	const summaryIcon = accounts
+		.locator('summary')
+		.getByText('Accounts', { exact: true })
+		.locator('svg')
 	const nestedIcon = accounts
 		.getByRole('link', { name: 'Manage Accounts', exact: true })
 		.locator('svg')

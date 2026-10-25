@@ -40,23 +40,31 @@
 </TransactionWorkspace>
 
 <style>
-	:global(::view-transition-old(root)),
-	:global(::view-transition-new(root)) {
-		animation: none;
-		mix-blend-mode: normal;
-	}
+	:global {
+		::view-transition-old(root),
+		::view-transition-new(root) {
+			animation: none;
+			mix-blend-mode: normal;
+		}
 
-	:global(::view-transition-group(transaction-content)) {
-		animation: none;
-	}
+		::view-transition-group(transaction-content) {
+			animation: none;
+		}
 
-	:global(::view-transition-old(transaction-content)) {
-		display: none;
-	}
+		::view-transition-old(transaction-content) {
+			display: none;
+		}
 
-	:global(::view-transition-new(transaction-content)) {
-		animation: transaction-slide-in 300ms ease-out both;
-		mix-blend-mode: normal;
+		::view-transition-new(transaction-content) {
+			animation: transaction-slide-in 300ms ease-out both;
+			mix-blend-mode: normal;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			::view-transition-new(transaction-content) {
+				animation: none;
+			}
+		}
 	}
 
 	@keyframes -global-transaction-slide-in {
@@ -65,12 +73,6 @@
 		}
 		to {
 			transform: translateX(0);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		:global(::view-transition-new(transaction-content)) {
-			animation: none;
 		}
 	}
 </style>

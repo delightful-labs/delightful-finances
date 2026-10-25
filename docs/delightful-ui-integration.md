@@ -79,3 +79,52 @@ The first review batch adopts Heading/Text in PageHeader and the profile forms, 
 The expense/income list batch uses PageContent in TransactionView and TransactionList. SplitRow shares the wrapping baseline-aligned layout for day headings/totals and transaction categories/amounts. List entries and metadata use DUI Text, day headings use Heading, and list/item spacing uses DUI tokens instead of custom margins. Shared Message feedback also uses Text with its existing role. Implementation review and runtime checks are pending.
 
 Migration validation after approval: all 319 unit tests pass. All 21 selected browser scenarios pass across focused runs, including profile/avatar persistence, offline operations, recovery, owner authorization, transaction grouping/filtering/workspace changes, locale formatting, responsive navigation, and sidebar status/layout. Updated avatar submit-button assertions, memo assertions independent of paragraph tags, current Add Account labels, stable-position geometry checks instead of a fixed 16px gap, and the profile authorization test's secondary browser base URL. Browser-test TypeScript checks pass. Browser tests used an isolated in-memory Jazz server at port 5180 because the existing server failed startup; the isolated server was stopped after validation.
+
+## Native CSS and composition cleanup (review pending)
+
+Finance consumes `vendor/delightful-ui-0.0.24-composition.tgz`, packed
+from the local Delightful UI feature branch, retaining version 0.0.24. Only this
+latest archive created during the cleanup is retained. It contains:
+
+- A public Drawer panel end-border token, replacing Finance's private panel selector.
+- Details' optional `content` snippet, replacing its default padded body while
+  keeping an absolute-positioning/overflow frame library-owned. Normal children
+  retain the default presentation. Custom content takes precedence over children.
+- StatusMessage spinner sizing inherited from its root/compact presentation.
+
+Finance owns its sidebar disclosure grid through content snippets and its sized
+transaction caret through the existing `caret(open)` snippet. The four
+layout-specific Details tokens were removed. Consumer CSS does not select private
+Drawer/Details classes. AppLink consumers own scoped native anchors via its render
+snippet; navigation icon styling lives in AppIcon's shared variant. Global CSS is
+limited to five native blocks for imported SVGs, composed shell roots,
+snippet-rendered form buttons and browser-owned view-transition pseudo-elements.
+
+The simple selector cleanup also uses local legend/button/amount selectors,
+native transaction-content visibility, simpler BankSync alignment and fewer
+sidebar wrappers. Typography and Button cascade changes remain separate work.
+
+See [CSS styling boundaries](css-styling.md) and the
+[composition audit](composition-opportunities.md) for conventions and other
+opportunities. Other replacement APIs were not added without a concrete consumer.
+
+Library packaging/publint, application/library static checks, formatting and
+whitespace checks pass. Current Details content-snippet behavior validation awaits
+implementation review, including default/custom disclosure, keyboard toggling,
+absolute placement and Finance navigation/grouping. Earlier snapshots were tested
+during development; those results do not validate this final API change.
+
+No new permanent style tests remain. The only retained test change replaces the
+removed icon CSS-class locator with a semantic text/SVG locator. Existing behavior
+coverage remains available. Both repositories remain uncommitted on feature branches.
+
+## DUI feedback and control snippets (review pending)
+
+The cumulative archive adds LoadingScreen `feedback()`, StatusMessage `message()`,
+Stepper `stepLabel(step)` and Drawer `closeControl(close, label)`. Existing Finance
+call sites keep their defaults. Custom feedback owns its announcements; richer
+status text retains the library live region; custom step labels retain status
+semantics; custom close controls use library dismissal/focus behavior while owning
+their markup and sizing. The README documents fallback precedence and examples.
+Package/static checks precede review; focused behavior tests follow approval.
+No appearance tests or speculative Finance composition APIs were added.

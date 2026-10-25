@@ -28,7 +28,7 @@
 				aria-pressed={selectedKey === slice.key}
 				onclick={() => onselect(slice.key)}
 				><span class="swatch" style:background={slice.color}></span><span>{slice.label}</span><span
-					>{formatMoney(slice.value, currency, getLocale())}</span
+					class="amount">{formatMoney(slice.value, currency, getLocale())}</span
 				></button
 			>
 		</li>
@@ -40,7 +40,7 @@
 		list-style: none;
 		padding: 0;
 	}
-	.legend button {
+	button {
 		display: flex;
 		align-items: center;
 		gap: var(--dui-spacing-xs);
@@ -53,10 +53,10 @@
 		text-align: start;
 		cursor: pointer;
 	}
-	.legend button[aria-pressed='true'] {
+	button[aria-pressed='true'] {
 		border-color: currentColor;
 	}
-	.legend button span:last-child {
+	.amount {
 		margin-inline-start: auto;
 	}
 	.swatch {

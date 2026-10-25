@@ -476,3 +476,59 @@ existing transaction-edit browser cases, two new offline imported-edit browser
 cases, and one repeat manual bank-sync case pass. Tests required fixture/locator
 corrections only; no production fixes. See the transaction-editing model for
 coverage and execution details. Check-object redesign remains a separate slice.
+
+### Drawer panel border API
+
+Add `--dui-drawer-panel-border-inline-end` to Delightful UI Drawer, defaulting to
+`0`. Package the focused library change in a distinct local archive, then set
+the token on Finance's existing `.site-drawer` styling boundary and remove its
+private panel selector. Preserve existing theme border width/color fallbacks and
+leave drawer lifecycle ownership in the library. Review before browser tests.
+
+### Details styling API
+
+Provide `content?: Snippet` as a replacement for Details' default padded body.
+Preserve a library-owned absolute positioning/border/overflow frame in absolute
+mode. Finance owns its disclosure grid and uses the existing `caret(open)` snippet
+for decorative caret sizing. Remove the four layout-specific tokens introduced
+earlier in this work. Package the cumulative library changes in one latest archive.
+Review before focused disclosure/navigation behavior tests.
+
+### Icon and top-menu styling ownership
+
+Move repeated navigation SVG rules into AppIcon's `navigation` variant. Keep
+the imported SVG's small global styling block in AppIcon and remove consumer
+descendant rules. Group TopNavigation/Button/logo overrides in AppTopMenu's
+native global block, use the existing header-height token and set pointer
+behavior directly on the decorative toggle icon. No new dependency or markup
+wrapper is required. Review before focused navigation/layout tests.
+
+### Complete native CSS cleanup
+
+The user authorized remaining implementation and tests in one batch. Convert the
+bounded form button selector and browser transition pseudo-elements to native
+global blocks, preserve declarations and keyframe names, and document ownership
+in `docs/css-styling.md`. Verify header/logo/toggle and navigation icon geometry,
+modal control sizing, normal/reduced-motion transitions, and the focused existing
+Drawer/Details/transaction scenarios. No workflow or data logic changes are needed.
+
+### Simple selector cleanup batch
+
+Limit this batch to CategoryLegend, AppDrawer, TransactionWorkspace, BankSync and
+DUI StatusMessage. BankSync relies on the existing flex stretch default instead
+of overriding a shared alignment rule. Remove duplicate drawer grids, an ineffective block-list gap,
+structural legend selectors and the workspace ancestor visibility selector.
+Move StatusMessage's spinner sizing to root/compact rules and package a local
+snapshot. Preserve existing component APIs, accessibility, spacing and callbacks.
+Typography and Button cascade redesign remain separate. Use existing behavior
+coverage after implementation review; add no permanent appearance tests.
+
+### DUI feedback and control composition
+
+Add the explicitly requested optional feedback/message/stepLabel/closeControl
+snippets in LoadingScreen, StatusMessage, Stepper and Drawer. Keep existing
+presentations as defaults, require either text or custom feedback/message where
+applicable, and retain structural/accessibility ownership in the library. Custom
+Drawer controls receive the dismissal callback and translated label without
+default button sizing. Integrate one cumulative archive in Finance without
+changing its consumers. Review before behavior tests; no appearance tests.

@@ -523,3 +523,57 @@ native wrappers. Feature 009 separately defers written-check controls and exclus
 assignment/shared-reference handling. Earlier review checkboxes in this chronological
 file are historical; completed later verification supersedes their corresponding
 review/test gates, not these outstanding feature or verification items.
+
+### Drawer panel border API review cycle
+
+- [x] Add and document the public Drawer panel end-border token, package it locally, and replace Finance's private panel-border selector.
+- [x] Review the library and Finance implementation before executing affected browser tests.
+- [x] After approval, inspect and run focused Drawer/navigation/layout coverage, including a public-token geometry check for the separator.
+
+### Details styling API review cycle
+
+- [x] Add/document the four Details styling tokens, package locally, and replace Finance's private caret/content selectors.
+- [x] Review the library and Finance implementation before executing affected tests.
+- [x] After approval, inspect and validate Details disclosure behavior, sidebar spacing, transaction group summaries and caret geometry.
+
+### Icon and top-menu styling review cycle
+
+- [x] Consolidate navigation icon styling in AppIcon and simplify AppTopMenu's global rules using existing native tokens/attributes.
+- [x] Review the four-component implementation before executing affected tests (remaining implementation and tests authorized together).
+- [x] After approval, inspect and validate icon alignment, responsive navigation, header/logo geometry and drawer offsets.
+
+### Complete native CSS cleanup and validation
+
+- [x] Convert remaining form and view-transition selectors to readable native global blocks and document intentional styling boundaries.
+- [x] Inspect/update affected browser assertions for navigation/header/icon geometry, form controls and motion preferences.
+- [x] Run focused Finance and library browser coverage, static checks and changed-file formatting/whitespace checks; record outcomes.
+
+Final styling verification: 17 focused Finance scenarios and all 15 Drawer/Details
+library scenarios pass. The icon alignment scenario also passes after removing
+obsolete icon classes and replacing its locator with a semantic one. Application,
+service-worker, browser-test and library static checks pass; changed-file
+formatting and whitespace checks pass. No domain/workflow logic changed, so no
+new unit-test coverage is required for this CSS-only batch. Five intentional
+global blocks remain and no parenthesized global selectors remain in Finance.
+
+Permanent test scope after review: removed all seven new styling-validation
+scenarios, extra geometry/color assertions and the development-only Details story.
+The executed results above remain historical development evidence. Existing
+behavior tests remain unchanged except the semantic icon-locator update required
+by removing its old styling class. No new permanent test cases remain.
+
+### Simple selector cleanup review cycle
+
+- [x] Simplify the four presentation components, package DUI locally and complete static/formatting checks.
+- [ ] Review implementation before running existing status-message, navigation, overview and transaction-workspace behavior coverage.
+
+### Details content snippet review cycle
+
+- [x] Replace the four layout-specific Details tokens with a default/replacement content snippet, preserve the absolute frame, and adopt consumer-owned content/caret layout in Finance.
+- [x] Audit both repositories for other composition opportunities and record findings without adding unused APIs.
+- [ ] Review the focused implementation and then validate default/custom disclosure, keyboard behavior, absolute placement and Finance navigation/grouping using behavior coverage.
+
+### DUI feedback/control composition review cycle
+
+- [x] Implement/document the four requested optional snippet APIs and retain existing defaults and accessibility ownership.
+- [ ] Review implementation, then validate default/replacement feedback, step labels and close controls with focused semantic/behavior coverage.

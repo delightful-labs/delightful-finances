@@ -50,7 +50,7 @@
 	"dependencies": {
 		"@opentelemetry/api": "^1.9.1",
 		"@xstate/svelte": "^5.0.0",
-		"delightful-ui": "file:vendor/delightful-ui-0.0.24-tags-adcfd60.tgz",
+		"delightful-ui": "file:vendor/delightful-ui-0.0.24-composition.tgz",
 		"jazz-tools": "2.0.0-alpha.59",
 		"layerchart": "^2.9.0",
 		"pica": "^10.0.3",

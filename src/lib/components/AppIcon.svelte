@@ -4,16 +4,18 @@
 
 	let {
 		icon: Glyph,
+		navigation = false,
 		class: className,
 		...attributes
 	}: SVGAttributes<SVGSVGElement> & {
 		icon: Component<SVGAttributes<SVGSVGElement>>
+		navigation?: boolean
 	} = $props()
 </script>
 
 <Glyph
 	{...attributes}
-	class={['app-icon', className]}
+	class={['app-icon', { 'navigation-icon': navigation }, className]}
 	viewBox="0 0 24 24"
 	width="1em"
 	height="1em"
@@ -22,9 +24,17 @@
 />
 
 <style>
-	:global(svg.app-icon) {
-		display: inline-block;
-		flex-shrink: 0;
-		vertical-align: middle;
+	:global {
+		.app-icon {
+			display: inline-block;
+			flex-shrink: 0;
+			vertical-align: middle;
+		}
+
+		.app-icon.navigation-icon {
+			inline-size: 1.25rem;
+			block-size: 1.25rem;
+			margin-inline-end: var(--dui-space-xs, 0.5rem);
+		}
 	}
 </style>

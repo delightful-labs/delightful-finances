@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { Details, Heading, Pagination, Text } from 'delightful-ui'
+	import Icon from './AppIcon.svelte'
+	import ChevronDown from 'tdesign-icons-svg/src/chevron-down.svg?component'
+	import ChevronRight from 'tdesign-icons-svg/src/chevron-right.svg?component'
 	import PageContent from './PageContent.svelte'
 	import PaginationLink from './PaginationLink.svelte'
 	import SplitRow from './SplitRow.svelte'
@@ -73,6 +76,9 @@
 		{#each visibleGroups as group (group.bookedOn)}
 			<section aria-labelledby={`${listId}-${group.bookedOn}`}>
 				<Details open caretPosition="right">
+					{#snippet caret(expanded)}
+						<span class="caret"><Icon icon={expanded ? ChevronDown : ChevronRight} /></span>
+					{/snippet}
 					{#snippet summary()}
 						<SplitRow>
 							<Heading level="h2" size="md" id={`${listId}-${group.bookedOn}`}>
@@ -146,19 +152,17 @@
 		--dui-details-summary-padding: var(--dui-spacing-xs);
 		--dui-details-caret-gap: var(--dui-spacing-md);
 		--dui-details-summary-font-size: var(--dui-font-size-sm);
+		--dui-heading-color: currentColor;
+		--dui-text-color: currentColor;
 		display: grid;
 		gap: var(--dui-spacing-xs);
 		min-inline-size: 0;
 	}
 
-	section :global(summary) {
-		--dui-heading-color: currentColor;
-		--dui-text-color: currentColor;
-	}
-
-	section :global(summary .details-caret) {
+	.caret {
+		display: inline-grid;
 		min-inline-size: 24px;
-		justify-content: center;
+		place-items: center;
 	}
 
 	.entries {

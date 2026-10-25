@@ -31,7 +31,7 @@
 <svelte:window onresize={() => (desktop = !isMobile())} />
 
 <div class="transaction-workspace" data-desktop={desktop}>
-	<div class="transaction-content" class:index>
+	<div class="transaction-content" hidden={!desktop && index}>
 		{#if !desktop && listHref}
 			<AppLink href={listHref}
 				>{m['actions.back_to_subject']({ subject: m['nouns.list']({ count: 1 }) })}</AppLink
@@ -100,15 +100,11 @@
 		flex: 1 1 0%;
 	}
 
-	.transaction-workspace[data-desktop='false'] .transaction-content.index {
-		display: none;
-	}
-
 	.transaction-mobile-list {
 		view-transition-name: transaction-content;
 	}
 
-	.drawer-toggle[hidden] {
+	[hidden] {
 		display: none;
 	}
 
