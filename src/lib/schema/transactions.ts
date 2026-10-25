@@ -17,14 +17,15 @@ const bookedOnColumn = validatedTextColumn(dateOnlyText)
 const checkDateColumn = validatedTextColumn(dateOnlyText)
 const checkNumberColumn = validatedTextColumn(checkNumberText)
 const externalIdColumn = validatedTextColumn(externalIdText)
+const amountMinorColumn = s.bigint().transform<number>({
+	from: (value) => amountMinorValue.parse(Number(value)),
+	to: (value) => BigInt(amountMinorValue.parse(value))
+})
 
 export const transactionsSchema = {
 	transactions: s.table(
 		{
-			amountMinor: s.bigint().transform<number>({
-				from: (value) => amountMinorValue.parse(Number(value)),
-				to: (value) => BigInt(amountMinorValue.parse(value))
-			}),
+			amountMinor: amountMinorColumn,
 			kind: s.enum(EXPENSE, INCOME),
 			currency: currencyColumn.column,
 			categoryId: s.uuid(),
@@ -92,12 +93,18 @@ export const transactionsSchema = {
 		{
 			organizationId: s.uuid(),
 			expenseTransactionId: s.uuid(),
-			incomeTransactionId: s.uuid()
+			incomeTransactionId: s.uuid(),
+			expenseAccountId: s.uuid().optional(),
+			incomeAccountId: s.uuid().optional(),
+			amountMinor: amountMinorColumn.optional(),
+			currency: currencyColumn.column.optional()
 		},
 		{
 			organization: s.rel('organizations', 'organizationId'),
 			expenseTransaction: s.rel('transactions', 'expenseTransactionId'),
-			incomeTransaction: s.rel('transactions', 'incomeTransactionId')
+			incomeTransaction: s.rel('transactions', 'incomeTransactionId'),
+			expenseAccount: s.rel('accounts', 'expenseAccountId'),
+			incomeAccount: s.rel('accounts', 'incomeAccountId')
 		}
 	)
 }

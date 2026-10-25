@@ -14,6 +14,12 @@
 - **Rationale**: This follows the approved authorization/privacy rules. A linked transaction remains available under ordinary account permissions; the relationship cannot reveal the hidden counterpart.
 - **Alternatives considered**: Expose the counterpart ID or label while hiding its fields (still leaks relationship details); rely only on editor visibility (does not protect direct Jazz reads/writes).
 
+### Store policy-checkable pair facts
+
+- **Decision**: Store the two endpoint account IDs, shared minor-unit amount, and currency on each relationship as immutable policy facts. Populate them from the current endpoint rows in the same exclusive transaction. Keep the new columns nullable only for migration compatibility; relationship policies reject rows missing them.
+- **Rationale**: Jazz alpha.59 permission expressions can correlate each endpoint query to fields on the relationship row, but cannot compare two joined sibling transaction rows to each other. Storing the shared values lets policy verify each endpoint independently, reject same-account links, and preserve amount/account/currency facts during transaction edits. It also lets direct Jazz writes receive the same pair-shape checks as application workflows.
+- **Alternatives considered**: Enforce pair shape only in the UI or statechart (permits malformed direct Jazz writes); add transfer metadata to each transaction (creates partial pair state and duplicates lifecycle); leave current schema and weaken direct-write guarantees (does not meet the approved authorization model).
+
 ### Use exclusive transactions for pair invariants
 
 - **Decision**: Model link, unlink, and linked deletion as statecharts owning resource acquisition, read/check decisions, staging, commit settlement, rollback, cancellation, and typed outcomes. Use Jazz exclusive transactions for their serializable authority validation. Leaf promise actors carry out individual database operations.
@@ -52,7 +58,7 @@
 
 ## Risks to Resolve During Implementation
 
-- Confirm the installed Jazz permission DSL can enforce both endpoint account permissions and pair-shape invariants for the proposed relationship table. If a policy expression cannot express this safely, stop that slice and revise the data model before implementation continues.
+- Verify the transfer policies reject missing policy facts and malformed direct writes, including during paired creation and unlink-and-delete transactions.
 - Exclusive link operations require authoritative acceptance, so disconnected users can review suggestions but cannot complete a link or unlink until the authority responds. Ensure pending/cancellation behavior does not imply rollback before actual settlement.
 - Verify whether Jazz migration generation produces a compatible migration and snapshot from the current schema. Do not publish/reset data as part of local implementation.
 - Account-level delete controls do not currently exist; keep permission grant changes in a focused review slice and inspect every affected access helper and UI caller.

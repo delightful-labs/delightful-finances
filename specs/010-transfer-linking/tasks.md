@@ -24,8 +24,8 @@ No setup tasks.
 
 **Purpose**: Establish the persisted pair and enforce cross-account authorization before any UI can create or reveal one.
 
-- [ ] T001 Add the workspace-scoped `internalTransfers` table in `src/lib/schema/transactions.ts`, the optional `canDelete` capability in `src/lib/schema/accounts.ts`, expose the transfer row type in `src/lib/schema.ts`, and add the workspace reverse relation in `src/lib/schema/identity.ts`.
-- [ ] T002 Add an additive Jazz migration and matching schema snapshot under `src/lib/migrations/` from the current `3407b5b1f26c` schema, defaulting existing grants to no delete authority; do not reset local or remote data.
+- [ ] T001 Add the workspace-scoped `internalTransfers` table and policy-checkable endpoint account, amount, and currency facts in `src/lib/schema/transactions.ts`, the optional `canDelete` capability in `src/lib/schema/accounts.ts`, expose the transfer row type in `src/lib/schema.ts`, and add the workspace reverse relation in `src/lib/schema/identity.ts`.
+- [ ] T002 Add additive Jazz migrations and matching schema snapshots under `src/lib/migrations/` from the current schema heads, defaulting existing account grants to no delete authority and policy facts to null; do not reset local or remote data.
 
 **Review checkpoint**: Review the pair data model and additive migration before changing authorization or UI.
 

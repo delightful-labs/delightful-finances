@@ -2,8 +2,19 @@ import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 import { schema as s } from 'jazz-tools'
-import type { RowContext, RowRefValue } from 'jazz-tools/permissions'
-import { app, type OrganizationMember, type Tag, type TransactionRow } from './schema.js'
+import {
+	relationToIr,
+	rawPermissionExpression as raw,
+	type RowContext,
+	type RowRefValue
+} from 'jazz-tools/permissions'
+import {
+	app,
+	type InternalTransfer,
+	type OrganizationMember,
+	type Tag,
+	type TransactionRow
+} from './schema.js'
 import { checkReferenceCondition } from './check-reference-permissions.js'
 
 type Role = NonNullable<OrganizationMember['role']>
@@ -14,11 +25,23 @@ type TransactionContext = Pick<
 	| 'accountId'
 	| 'categoryId'
 	| 'organizationId'
+	| 'amountMinor'
 	| 'currency'
 	| 'kind'
 	| 'paymentMethod'
 	| 'checkDetailsId'
 	| 'checkId'
+>
+type InternalTransferContext = Pick<
+	RowContext<InternalTransfer>,
+	| 'id'
+	| 'organizationId'
+	| 'expenseTransactionId'
+	| 'incomeTransactionId'
+	| 'expenseAccountId'
+	| 'incomeAccountId'
+	| 'amountMinor'
+	| 'currency'
 >
 
 export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowedTo }) => {
@@ -138,6 +161,78 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			checkReferenceCondition({
 				transaction,
 				checkExists: (where) => policy.checks.exists.where(where)
+			})
+		])
+
+	const transferEndpointFactsMatch = (transfer: InternalTransferContext) =>
+		allOf([
+			policy.transactions.exists.where({
+				id: transfer.expenseTransactionId,
+				organizationId: transfer.organizationId,
+				accountId: transfer.expenseAccountId,
+				kind: EXPENSE,
+				amountMinor: transfer.amountMinor,
+				currency: transfer.currency
+			}),
+			policy.transactions.exists.where({
+				id: transfer.incomeTransactionId,
+				organizationId: transfer.organizationId,
+				accountId: transfer.incomeAccountId,
+				kind: INCOME,
+				amountMinor: transfer.amountMinor,
+				currency: transfer.currency
+			}),
+			policy.internalTransfers.exists.where({
+				id: transfer.id,
+				expenseAccountId: { ne: transfer.incomeAccountId }
+			})
+		])
+
+	const transactionTransferFactsMatch = (transaction: TransactionContext) =>
+		anyOf([
+			policy.internalTransfers.exists.where({
+				organizationId: transaction.organizationId,
+				expenseTransactionId: transaction.id,
+				expenseAccountId: transaction.accountId,
+				amountMinor: transaction.amountMinor,
+				currency: transaction.currency
+			}),
+			policy.internalTransfers.exists.where({
+				organizationId: transaction.organizationId,
+				incomeTransactionId: transaction.id,
+				incomeAccountId: transaction.accountId,
+				amountMinor: transaction.amountMinor,
+				currency: transaction.currency
+			})
+		])
+
+	const transactionIsNotLinked = (transaction: TransactionContext) =>
+		raw({
+			type: 'Not',
+			expr: {
+				type: 'ExistsRel',
+				rel: relationToIr(
+					policy.internalTransfers.where({
+						organizationId: transaction.organizationId,
+						expenseTransactionId: transaction.id
+					})
+				)
+			}
+		})
+	const transactionHasNoTransfer = (transaction: TransactionContext) =>
+		allOf([
+			transactionIsNotLinked(transaction),
+			raw({
+				type: 'Not',
+				expr: {
+					type: 'ExistsRel',
+					rel: relationToIr(
+						policy.internalTransfers.where({
+							organizationId: transaction.organizationId,
+							incomeTransactionId: transaction.id
+						})
+					)
+				}
 			})
 		])
 
@@ -285,6 +380,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((transaction) =>
 			allOf([
 				canWriteTransaction(transaction),
+				anyOf([transactionHasNoTransfer(transaction), transactionTransferFactsMatch(transaction)]),
 				// Preserve tenancy, kind and provenance so edits cannot break provider deduplication.
 				policy.transactions.exists.where({
 					id: transaction.id,
@@ -305,7 +401,54 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			])
 		)
 	policy.transactions.allowDelete.where((transaction) =>
-		canDeleteAccount(transaction.accountId, transaction.organizationId)
+		allOf([
+			canDeleteAccount(transaction.accountId, transaction.organizationId),
+			transactionHasNoTransfer(transaction)
+		])
+	)
+
+	policy.internalTransfers.allowRead.where((transfer) =>
+		allOf([
+			allowedTo.read('expenseTransaction'),
+			allowedTo.read('incomeTransaction'),
+			transferEndpointFactsMatch(transfer)
+		])
+	)
+	policy.internalTransfers.allowInsert.where((transfer) =>
+		allOf([
+			transferEndpointFactsMatch(transfer),
+			canWriteAccount(transfer.expenseAccountId, transfer.organizationId),
+			canWriteAccount(transfer.incomeAccountId, transfer.organizationId),
+			raw({
+				type: 'Not',
+				expr: {
+					type: 'ExistsRel',
+					rel: relationToIr(
+						policy.internalTransfers.where({
+							expenseTransactionId: transfer.expenseTransactionId
+						})
+					)
+				}
+			}),
+			raw({
+				type: 'Not',
+				expr: {
+					type: 'ExistsRel',
+					rel: relationToIr(
+						policy.internalTransfers.where({
+							incomeTransactionId: transfer.incomeTransactionId
+						})
+					)
+				}
+			})
+		])
+	)
+	policy.internalTransfers.allowUpdate.never()
+	policy.internalTransfers.allowDelete.where((transfer) =>
+		allOf([
+			canWriteAccount(transfer.expenseAccountId, transfer.organizationId),
+			canWriteAccount(transfer.incomeAccountId, transfer.organizationId)
+		])
 	)
 
 	policy.transactionTags.allowRead.where((link) =>

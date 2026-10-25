@@ -16,7 +16,7 @@
 		onDeleteGrant
 	}: {
 		account: Account | undefined
-		archiveAction: 'available' | 'archiving' | 'unavailable' | undefined
+		archiveAction: 'available' | 'archiving' | 'disabled' | 'unavailable' | undefined
 		deleteGrantView: AccountDeleteGrantView & {
 			canManage: boolean
 			members: readonly OrganizationMember[]

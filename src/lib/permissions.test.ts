@@ -105,7 +105,8 @@ beforeAll(async () => {
 			organizationId,
 			accountId,
 			userId: selectedMemberId,
-			access: 'write'
+			access: 'write',
+			canDelete: false
 		})
 	)
 	await fixture.seed((seed) =>
@@ -615,7 +616,8 @@ describe.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
 							organizationId,
 							userId,
 							accountId: id,
-							access
+							access,
+							canDelete: false
 						})
 					)
 			}

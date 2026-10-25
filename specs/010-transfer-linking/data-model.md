@@ -9,12 +9,23 @@ Represents a single relationship between one expense and one income transaction.
 | `organizationId`       | Yes      | Same workspace as both referenced transactions |
 | `expenseTransactionId` | Yes      | References an expense transaction              |
 | `incomeTransactionId`  | Yes      | References an income transaction               |
+| `expenseAccountId`     | Policy   | Snapshot of the expense transaction's account  |
+| `incomeAccountId`      | Policy   | Snapshot of the income transaction's account   |
+| `amountMinor`          | Policy   | Shared amount in integer minor units           |
+| `currency`             | Policy   | Shared ISO 4217 currency                       |
+
+The four policy-fact fields are nullable in the structural schema only to support the additive
+migration. New relationships must populate them. Jazz permissions compare each endpoint against
+these stored facts; rows missing any fact fail closed and cannot be read, changed, or deleted through
+the transfer policy. The application remains responsible for supplying the facts from both current
+endpoints inside the exclusive transaction.
 
 ### Invariants
 
 - Both references exist and belong to `organizationId` when the relationship is committed. Paired creation stages both transaction rows and this relationship in the same authoritative operation; the relationship does not require that the rows existed before the user's action.
 - The expense and income are in different accounts.
 - Both endpoints have the same currency and equal amounts in minor units. Cross-currency links are deferred from this feature.
+- The stored account, amount, and currency facts must match both endpoints; account IDs must differ. These facts cannot be updated after linking.
 - A transaction may belong to at most one internal transfer.
 - Linking and unlinking use exclusive transactions so the authority validates the stable endpoint and relationship reads against concurrent writes.
 - A transfer record is readable only when both endpoints are readable. Creating or removing a link requires write access to both endpoints.
