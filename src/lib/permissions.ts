@@ -95,6 +95,25 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			])
 		])
 
+	const canDeleteAccount = (accountId: IdExpression, organizationId: IdExpression) =>
+		anyOf([
+			isAdmin(organizationId),
+			allOf([
+				hasRole(organizationId, ORGANIZATION_ROLE.MEMBER),
+				policy.organizationMembers.exists.where({
+					organizationId,
+					userId: session.user.account,
+					accountAccessMode: ACCOUNT_ACCESS.SELECTED
+				}),
+				policy.accountMemberships.exists.where({
+					organizationId,
+					accountId,
+					userId: session.user.account,
+					canDelete: true
+				})
+			])
+		])
+
 	const transactionReferencesAreValid = (transaction: TransactionContext) =>
 		allOf([
 			policy.categories.exists.where({
@@ -286,7 +305,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			])
 		)
 	policy.transactions.allowDelete.where((transaction) =>
-		canWriteAccount(transaction.accountId, transaction.organizationId)
+		canDeleteAccount(transaction.accountId, transaction.organizationId)
 	)
 
 	policy.transactionTags.allowRead.where((link) =>

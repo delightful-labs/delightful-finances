@@ -26,7 +26,8 @@ export const accountsSchema = {
 			organizationId: s.uuid(),
 			userId: s.uuid(),
 			accountId: s.uuid(),
-			access: s.enum('read', 'write')
+			access: s.enum('read', 'write'),
+			canDelete: s.boolean()
 		},
 		{
 			organization: s.rel('organizations', 'organizationId'),

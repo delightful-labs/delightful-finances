@@ -29,6 +29,21 @@ export function canWriteAccount(
 	)
 }
 
+export function canDeleteAccount(
+	membership: OrganizationMember | null | undefined,
+	organizationId: string | null,
+	accountId: string,
+	grants: readonly { accountId: string; canDelete: boolean }[]
+): boolean {
+	if (membership?.organizationId !== organizationId) return false
+	if (membership.role === ORGANIZATION_ROLE.OWNER || membership.role === ORGANIZATION_ROLE.ADMIN)
+		return true
+	return (
+		membership.role === ORGANIZATION_ROLE.MEMBER &&
+		grants.some((grant) => grant.accountId === accountId && grant.canDelete)
+	)
+}
+
 export function canEditCategoriesAndTags(
 	membership: OrganizationMember | null | undefined,
 	organizationId: string | null
