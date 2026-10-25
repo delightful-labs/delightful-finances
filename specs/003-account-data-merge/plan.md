@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add a choice before recovery-phrase connection. For Merge, durably snapshot the source personal workspace, switch with the supported Jazz session API, wait for the replacement workspace dependencies, preview the destination mapping and import additive records with stable identities. Preserve source records and remote edits. This is a proposed design, not implemented behavior.
+Add a choice before recovery-phrase connection. For Merge, durably snapshot the selected eligible source workspace, switch with the supported Jazz session API, wait for the replacement workspace dependencies, preview the destination mapping and import additive records with stable identities. Preserve source records and remote edits. This is a proposed design, not implemented behavior.
 
 ## Technical context
 
@@ -47,10 +47,10 @@ Child actors: source inspection/validation; journal I/O; session switch; destina
 ## Import strategy
 
 1. Hydrate source remote scope with ReadTier.Remote and reconcile pending ReadTier.LocalFirst records (or use a confirmed sync barrier first). Validate the complete graph; save snapshot before switching. Offline inability to establish scope is a retryable failure, not an empty workspace. Refuse incomplete/unsupported records with actionable explanation.
-2. Hydrate destination queries and verify target identity, owned personal organization and permissions. Empty local query results alone do not prove remote absence. If SDK cannot establish safe readiness, stop with retry guidance.
+2. Hydrate destination queries and verify target identity, selected eligible organization and permissions under an approved eligibility policy. Empty local query results alone do not prove remote absence. If SDK cannot establish safe readiness, stop with retry guidance.
 3. Build stable destination IDs scoped to destination organization + source organization + entity type + source ID. Use canonical existing bank IDs instead for imported provider transactions; map system categories by kind. Preview additions, known existing records, conflicts and excluded bank connections.
 4. Persist mapping/provenance with each corresponding write atomically. Recheck identity, permission, reference invariants and duplicate existence in transactions. Existing target rows are skipped or classified as conflicts, never blindly updated. Deterministic identities protect retries and concurrent devices; lock/journal ownership protects concurrent tabs on this device.
-5. Insert dependencies before dependents; check details and transactions need planned IDs and valid ordering. Restore archived flags only after dependent writes. Existing protected-system-category and archived-reference permissions require deliberate sequencing, not blanket policy relaxation.
+5. Insert dependencies before dependents; independent Checks and their transaction references need planned IDs and valid ordering. Restore archived flags only after dependent writes. Existing protected-system-category and archived-reference permissions require deliberate sequencing, not blanket policy relaxation.
 6. Wait for local persistence before reporting locally saved/pending synchronization. Use write-handle global waits for server acceptance before reporting globally confirmed completion; never use browser online status as proof. Retain an unfinished journal until resume or explicit discard. Completed snapshot cleanup removes local finance payload but retains minimal durable provenance for deduplication.
 
 ## Focused delivery/review cycles
@@ -72,3 +72,7 @@ Proposed implementation: `src/lib/machines/account-merge/`, focused `src/lib/sch
 ## Complexity tracking
 
 No constitutional exceptions proposed. SDK capability checks and physical cross-device validation remain implementation gates; no runtime feasibility is claimed from planning alone.
+
+## Foundation compatibility gate
+
+Before implementation, resolve workspace eligibility without relying on personal/business kind or a unique initial workspace. Align snapshot validation and dependency mapping with the compatibility requirements in spec.md and data-model.md: independent Checks, descriptions, currency precision, and any supported allocations, attachments, and transfer pairs. Unsupported graphs must fail before writes. Plan coordinated transfer-pair collision handling rather than independently skipping a side and leaving invalid relationships. Investigate archived/incomplete-restore workspace eligibility and source history preservation separately; none is implicitly authorized by this plan. Backup merge remains a separate future entry point.

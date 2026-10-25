@@ -19,7 +19,7 @@ export function GET() {
 			display: 'standalone',
 			theme_color: '#f5f2ea',
 			background_color: '#f5f2ea',
-			icons: [{ src: '/app-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+			icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
 		},
 		{ headers: { 'Content-Type': 'application/manifest+json' } }
 	)
