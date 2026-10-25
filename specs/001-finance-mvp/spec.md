@@ -84,6 +84,8 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 ## Product Requirements
 
+See [MVP requirement classification](status.md) for verified-complete scope, outstanding verification, remaining MVP work, and deferred feature gates. Recorded focused results do not establish a fully verified deployed environment.
+
 ### MVP
 
 - **FR-001**: The application MUST provide Jazz-backed sign-in and automatically create/reuse a personal organization for each first-time user.
@@ -103,6 +105,16 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 - **FR-023**: Transaction attribution MUST expose its creator, most recent editor, and corresponding timestamps using Jazz's built-in `$createdBy`, `$createdAt`, `$updatedBy`, and `$updatedAt` metadata, without redundant application-owned audit columns. Edits MUST preserve creator attribution and update latest-editor attribution. A complete edit-history UI is not required.
 - **FR-024**: Users MUST be able to set a display name and add, replace, or remove an optional avatar for their login account. Profiles MUST belong to login identities, be reused across workspaces, and be editable only by their owners. Authorized workspace members MUST be able to resolve transaction authors to display profiles, with usable fallbacks for missing profile details.
+
+### MVP real-data readiness work
+
+These items are required readiness work, not claims of completed implementation or verification. Deferred feature gates do not require shipping those features in MVP.
+
+- **FR-056 — Verified data recovery**: MVP readiness for substantial real-data use MUST include an implemented and verified workspace backup/restore path following FR-042–047 for every data type supported by the released app. Verify that a backup restores into a new workspace with the same financial values and intact supported relationships while leaving existing workspaces untouched. Missing required records or file contents MUST prevent a complete-backup success claim. Future data types MUST extend this recovery path before being released. Login recovery alone MUST NOT be presented as an independent finance-data backup. Implementation review precedes adding/running recovery tests.
+- **FR-057 — USD-only release boundary**: Until currency-specific entry and import are implemented and verified under FR-037–041, MVP manual entry and bank import MUST explicitly retain their USD-only boundary. Unsupported currencies MUST NOT be silently parsed using two decimal places, converted, relabeled USD, or written as supported transactions. Existing stored currency and amount values MUST remain intact. Enabling additional currencies requires review of entry, validation, imports, editing, formatting, and totals together; full multi-currency functionality remains deferred.
+- **FR-058 — Sharing release gate**: Before enabling sharing, reconcile current fixed-role policies and single-owner storage with the approved `006-multiple-workspaces` scoped capabilities, selected-account privacy, independent deletion capability, and accepted multiple ownership. Align the constitution, affected requirements, schema/migrations, and enforced data permissions before implementing dependent sharing workflows. Verify direct-query privacy and authorization outcomes, not only UI visibility. Existing current-role behavior MUST NOT be presented as meeting the future sharing model. This gate does not require sharing UI or permission migration to ship in the owned-workspace MVP.
+
+**Acceptance expectations**: recovery preserves supported finance values and relationships; unsupported-currency input/import produces an explicit unsupported outcome without incorrect writes; sharing stays deferred until its policy migration and focused authorization verification are complete.
 
 ### Schema and authorization readiness
 
@@ -173,7 +185,7 @@ These requirements record approved compatibility decisions. Non-USD account crea
 
 ### Approved backup and restore foundation (future functionality)
 
-These requirements record approved compatibility decisions. Backup export, encryption, restore, and recovery implementation remain deferred.
+These requirements record approved backup/restore behavior. FR-056 now requires a verified recovery path for released MVP data types; support for future data types remains deferred until those types ship.
 
 - **FR-042 — Complete workspace backup**: A backup MUST represent one complete workspace's finance data, including accounts, transactions, categories, tags, Checks, attachments and their contents, archived records, and future allocations, batches/templates, and internal-transfer links when present. It MUST preserve amounts, currencies, provenance, and relationships in a versioned format that supports future compatibility handling. Login recovery phrases and bank credentials MUST NOT be included; bank integrations require reconnection after restore.
 - **FR-043 — Backup authority and completeness**: Creating a complete-workspace backup MUST require owner permission and access to all included data. Selected-account access MUST NOT authorize an export labeled a complete workspace backup. All required records and attachment contents MUST be verified available before backup success is reported; unavailable data MUST prevent a complete-backup success claim.
@@ -227,7 +239,7 @@ These requirements record approved compatibility decisions. Attachment upload, d
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
 - Linked-transfer implementation and migration. The approved transfer foundation above uses linked expense/income transactions rather than a third transaction kind.
 - Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
-- Backup/restore implementation, including optional password encryption and incomplete-restore recovery. The approved foundation above records future compatibility requirements.
+- Backup/restore support for future data types not yet released. A verified recovery path for released MVP data types is required by FR-056, following the approved backup/restore rules above.
 - Transaction version-history/restoration UI and a general-purpose conflict-resolution interface. Supported history APIs and related-record restoration consistency require investigation before implementation.
 
 ## Data Model Invariants
