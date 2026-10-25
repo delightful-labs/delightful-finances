@@ -1,0 +1,33 @@
+# Data Model: Link Internal Transfers
+
+## InternalTransfer
+
+Represents a single relationship between one expense and one income transaction. The transactions may predate the relationship (when linking synced or manually entered entries) or be created in the same user action as the relationship.
+
+| Field                  | Required | Rule                                           |
+| ---------------------- | -------- | ---------------------------------------------- |
+| `organizationId`       | Yes      | Same workspace as both referenced transactions |
+| `expenseTransactionId` | Yes      | References an expense transaction              |
+| `incomeTransactionId`  | Yes      | References an income transaction               |
+
+### Invariants
+
+- Both references exist and belong to `organizationId` when the relationship is committed. Paired creation stages both transaction rows and this relationship in the same authoritative operation; the relationship does not require that the rows existed before the user's action.
+- The expense and income are in different accounts.
+- Both endpoints have the same currency and equal amounts in minor units. Cross-currency links are deferred from this feature.
+- A transaction may belong to at most one internal transfer.
+- Linking and unlinking use exclusive transactions so the authority validates the stable endpoint and relationship reads against concurrent writes.
+- A transfer record is readable only when both endpoints are readable. Creating or removing a link requires write access to both endpoints.
+- Deleting one endpoint must resolve the relationship in the same atomic workflow. Delete-both requires delete permission for both; unlink-and-delete requires delete permission for the selected endpoint and write permission for both endpoints to unlink.
+
+## Transaction (existing)
+
+Linking existing entries does not alter transaction values. Paired creation creates two distinct ordinary rows: one expense and one income, with equal amount, currency, and date, separate account IDs, and no provider identity. The relationship does not replace either row. Existing `paymentMethod: transfer` does not represent this relationship.
+
+## AccountMembership (existing, extended)
+
+Add a distinct account-level delete capability. Existing read/write semantics remain; write permission does not imply delete permission. Administrators can grant or revoke delete authority independently. Workspace owner/admin authority follows existing role policy. Existing grants migrate with deletion disabled unless existing role policy grants administrative authority.
+
+## Suggested Counterpart (derived)
+
+Not persisted. Candidate rows are current-workspace transactions satisfying all of the following: opposite kind; different account; equal currency and amount; within seven calendar days on either side; and not referenced by an internal transfer. Only readable transaction rows are presented.
