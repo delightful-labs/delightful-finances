@@ -84,6 +84,8 @@ As the product evolves, organizations can support multiple roles, selective acco
 
 ## Product Requirements
 
+See [MVP requirement classification](status.md) for verified-complete scope, outstanding verification, remaining MVP work, and deferred feature gates. Recorded focused results do not establish a fully verified deployed environment.
+
 ### MVP
 
 - **FR-001**: The application MUST provide Jazz-backed sign-in and automatically create/reuse a personal organization for each first-time user.
@@ -104,6 +106,16 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-023**: Transaction attribution MUST expose its creator, most recent editor, and corresponding timestamps using Jazz's built-in `$createdBy`, `$createdAt`, `$updatedBy`, and `$updatedAt` metadata, without redundant application-owned audit columns. Edits MUST preserve creator attribution and update latest-editor attribution. A complete edit-history UI is not required.
 - **FR-024**: Users MUST be able to set a display name and add, replace, or remove an optional avatar for their login account. Profiles MUST belong to login identities, be reused across workspaces, and be editable only by their owners. Authorized workspace members MUST be able to resolve transaction authors to display profiles, with usable fallbacks for missing profile details.
 
+### MVP real-data readiness work
+
+These items are required readiness work, not claims of completed implementation or verification. Deferred feature gates do not require shipping those features in MVP.
+
+- **FR-056 — Verified data recovery**: MVP readiness for substantial real-data use MUST include an implemented and verified workspace backup/restore path following FR-042–047 for every data type supported by the released app. Verify that a backup restores into a new workspace with the same financial values and intact supported relationships while leaving existing workspaces untouched. Missing required records or file contents MUST prevent a complete-backup success claim. Future data types MUST extend this recovery path before being released. Login recovery alone MUST NOT be presented as an independent finance-data backup. Implementation review precedes adding/running recovery tests.
+- **FR-057 — USD-only release boundary**: Until currency-specific entry and import are implemented and verified under FR-037–041, MVP manual entry and bank import MUST explicitly retain their USD-only boundary. Unsupported currencies MUST NOT be silently parsed using two decimal places, converted, relabeled USD, or written as supported transactions. Existing stored currency and amount values MUST remain intact. Enabling additional currencies requires review of entry, validation, imports, editing, formatting, and totals together; full multi-currency functionality remains deferred.
+- **FR-058 — Sharing release gate**: Before enabling sharing, reconcile current fixed-role policies and single-owner storage with the approved `006-multiple-workspaces` scoped capabilities, selected-account privacy, independent deletion capability, and accepted multiple ownership. Align the constitution, affected requirements, schema/migrations, and enforced data permissions before implementing dependent sharing workflows. Verify direct-query privacy and authorization outcomes, not only UI visibility. Existing current-role behavior MUST NOT be presented as meeting the future sharing model. This gate does not require sharing UI or permission migration to ship in the owned-workspace MVP.
+
+**Acceptance expectations**: recovery preserves supported finance values and relationships; unsupported-currency input/import produces an explicit unsupported outcome without incorrect writes; sharing stays deferred until its policy migration and focused authorization verification are complete.
+
 ### Schema and authorization readiness
 
 - **FR-014**: The schema MUST include profiles, organizations, organizationMembers, accounts, categories, tags, transactions, transactionTags, checks, and accountMemberships. Retired checkDetails storage remains inaccessible until an explicitly authorized schema/data transition.
@@ -115,19 +127,127 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **FR-020**: Unit tests MUST cover domain logic, money/date handling, validation, state machines, permission helpers/adapters, and relevant edge cases. Playwright MUST cover each primary user workflow, authorization behavior, and offline workflows where supported by the runtime.
 - **FR-021**: A feature MUST NOT be considered complete until its relevant automated tests pass. New code requires coverage at the level appropriate to its behavior; tests need not be written to test test code or generated/vendor assets.
 
+### Approved split-transaction foundation (future functionality)
+
+These requirements record approved compatibility decisions, not shipped split functionality. Split entry, allocation storage, migration, and reporting changes are deferred. Existing MVP category/tag requirements describe the current single-allocation behavior until that implementation is separately planned and reviewed.
+
+- **FR-025 — Movement and allocation**: A transaction MUST represent one movement in one financial account. It owns the account, organization, income/expense kind, currency, total amount, business date, overall description, memo, and transaction attachments. Its allocations describe how that total is categorized. Payment/check references and provider provenance remain transaction-level relationships.
+- **FR-026 — Allocation contents and identity**: Each allocation MUST have its own stable identity, amount, category, optional description, and tags. Editing or reordering an allocation MUST preserve its identity. Allocations MUST inherit their transaction's kind and currency; all categories and tags MUST match that kind and organization. A transaction MUST NOT mix income and expense allocations.
+- **FR-027 — Amount integrity**: Allocation amounts MUST be non-negative integer minor units and MUST sum exactly to the transaction total. An ordinary transaction MUST have one allocation for its full amount. A split MUST have at least two allocations, each greater than zero. Existing zero-value ordinary transactions MUST remain valid; a zero-value transaction cannot satisfy the split rules.
+- **FR-028 — Remove split**: Converting a split into an ordinary transaction MUST require choosing the allocation to retain. Preserve that allocation's identity, category, optional description, and tags, and set its amount to the full transaction total. Preserve transaction-level details and relationships.
+- **FR-029 — Compatibility and reporting**: Introducing allocations MUST preserve existing transaction IDs, totals, kinds, currencies, dates, descriptions, memos, provider provenance, check references, attachment relationships, and historical category/tag associations. Each existing transaction MUST become equivalent to one full-amount allocation, without guessing new classifications or duplicating money. Account totals MUST count the transaction movement once; category reports MUST count allocation amounts without also adding the parent total. Future backup/restore and merge designs MUST preserve allocation identities and relationships.
+
+**Acceptance scenarios for the future implementation**:
+
+1. A $100 expense split into $70 groceries and $30 household supplies contributes $100 to the account's expense total and $70/$30 to the respective category totals. Each allocation may have its own description and tags while the transaction retains its overall description, memo, and attachments.
+2. Mixed income/expense allocations, amounts that do not sum to the total, zero-value split allocations, or fewer than two split allocations are rejected without persisting an invalid split.
+3. Editing or reordering allocations retains their IDs. Removing the split after choosing the $70 allocation retains its ID, category, description, and tags, changes its amount to $100, and preserves transaction-level information.
+4. Existing ordinary transactions, including zero-value entries, retain their identities, financial values, provenance, and relationships when allocation support is introduced. Their original category and tags describe the single allocation, and historical totals remain unchanged.
+
+### Approved transfer foundation (future functionality)
+
+These requirements record approved compatibility decisions. Transfer creation, linking, lifecycle controls, and reporting changes remain deferred; the existing `transfer` payment-method value alone MUST NOT establish a linked transfer or trigger reporting exclusions.
+
+- **FR-030 — Linked movements**: An internal transfer MUST link two transactions in different financial accounts within the same workspace: one expense in the source account and one income in the destination account. Both MUST appear in their respective account histories and affect account balances. Their linked internal-transfer status MUST exclude them from workspace income/expense totals by default, including categorized income/expense reporting, without counting either movement twice.
+- **FR-031 — Currency and dates**: Each side MUST retain its account's currency and its own business date; posting dates MAY differ. Same-currency transfers MUST have equal amounts. Different-currency transfers MUST require both amounts to be explicitly entered or supplied by the existing transactions being linked; the app MUST NOT calculate either amount from an online exchange rate. Transfer fees MUST remain separate expense transactions rather than unequal same-currency transfer amounts.
+- **FR-032 — Existing entries**: Users MUST be able to create both sides together or link existing compatible expense/income transactions, including bank-imported entries. Linking MUST preserve transaction IDs, provider source/external identity, and existing transaction information and relationships, without creating duplicate movements.
+- **FR-033 — Edit and unlink**: Changes to dates, descriptions, categories, or tags MUST preserve the link. Account, currency, or amount changes MUST preserve the pairing rules; otherwise users MUST update both sides together or explicitly unlink them. Unlinking MUST retain both transactions as ordinary expense/income entries, included in the applicable totals again.
+- **FR-034 — Delete**: Deleting a linked transaction MUST require an explicit choice between deleting both sides, with permission to delete both, or unlinking and deleting only the selected side, with permission to delete that side. The latter MUST retain the counterpart as ordinary income/expense. The app MUST explain the effect on totals before proceeding.
+- **FR-035 — Authorization and privacy**: Creating, linking, unlinking, or changing a transfer pairing MUST require edit permission for both accounts. Deletion MUST additionally require the separate delete permission for each transaction being deleted. Access to only one account MUST NOT disclose details of the hidden counterpart through the transfer relationship; the accessible account's transaction remains visible under its ordinary permissions. These are future capability requirements, not a claim that current role policies already implement separate deletion authorization.
+- **FR-036 — Workspace boundary**: Movements across workspaces MUST remain ordinary expense in the source workspace and income in the destination workspace, included in each workspace's totals even when the same person owns both accounts. Cross-workspace linking is deferred and MUST NOT be inferred from matching ownership or amounts. A movement to or from an account outside the app MUST be recordable as ordinary expense/income without requiring a counterpart.
+
+**Acceptance scenarios for the future implementation**:
+
+1. A $500 transfer between checking and savings in one workspace appears as a $500 expense and $500 income in the respective account histories. Balances reflect both movements, while workspace income/expense totals exclude them by default.
+2. A transfer between different currencies retains both explicitly supplied amounts and each account's currency. Different posting dates are accepted; unequal same-currency amounts are rejected as a pair, with fees recorded separately.
+3. Linking existing imported entries preserves both IDs and provider provenance without adding transactions. Unlinking retains both entries and restores their inclusion in income/expense totals.
+4. An invalid one-sided amount/account/currency edit cannot leave an incompatible pair. Deletion presents the approved choices and their reporting effects; deleting only one side retains the unlinked counterpart.
+5. A person lacking edit permission for either account cannot change the pairing. A person who can read only one account can still read its transaction without receiving hidden-counterpart details; delete permission is checked separately for each deleted entry.
+6. Moving money between two workspaces owned by the same person remains expense/income in the respective workspace totals. An external-account movement can be recorded with no counterpart in the app.
+
+### Approved multi-currency foundation (future functionality)
+
+These requirements record approved compatibility decisions. Non-USD account creation/entry and currency-aware entry changes remain deferred; current USD MVP behavior is not expanded by this specification update.
+
+- **FR-037 — Account currency**: Each financial account MUST have exactly one currency. Every transaction MUST use its account's currency and retain that currency on the transaction. Once an account has transactions, its currency MUST NOT be changed; users needing a different currency MUST create another account rather than reinterpret historical amounts.
+- **FR-038 — Separate totals**: Totals MUST remain separate by currency. For example, USD 500 and EUR 200 MUST NOT be added into a single monetary total. The approved internal-transfer reporting exclusions still apply within these currency-separated totals. Converted reporting is a separate future feature requiring explicit exchange-rate rules.
+- **FR-039 — Workspace default**: A workspace's default currency MUST prefill new financial accounts. Changing that default MUST NOT change existing account or transaction currencies, convert amounts, or reinterpret historical data.
+- **FR-040 — Currency precision**: Amount entry, validation, import, and display MUST respect the currency's minor-unit precision rather than assume two decimal places. For example, JPY uses zero decimal places, USD two, and KWD three. Entry MUST reject excess decimal places rather than silently round. Stored amounts MUST remain exact integer minor units within the supported safe-integer range. Introducing currency-aware behavior MUST preserve existing stored amounts and currencies without rescaling or reinterpreting them; incompatible legacy records require explicit review rather than silent correction.
+- **FR-041 — Cross-currency transfers**: Transfers between accounts with different currencies MUST retain each side's explicitly supplied amount and currency under FR-031. Neither a workspace default nor an online exchange rate MUST determine or replace either recorded amount.
+
+**Acceptance scenarios for the future implementation**:
+
+1. An account with transaction history cannot have its currency changed. Existing transactions retain their original account currency and amounts when multi-currency support is introduced.
+2. A workspace with USD 500 and EUR 200 reports those totals separately, with no implied conversion or combined monetary total.
+3. Changing a workspace default from USD to EUR prefills EUR for a new account while leaving existing USD accounts and transactions unchanged.
+4. JPY 100, USD 1.23, and KWD 1.234 correspond to integer minor-unit amounts of 100, 123, and 1234. Entries with excess decimal places are rejected without rounding; stored values survive display and editing without precision loss.
+5. A cross-currency transfer preserves both supplied amounts even when they differ from an online exchange-rate estimate. No conversion is performed automatically.
+
+### Approved backup and restore foundation (future functionality)
+
+These requirements record approved backup/restore behavior. FR-056 now requires a verified recovery path for released MVP data types; support for future data types remains deferred until those types ship.
+
+- **FR-042 — Complete workspace backup**: A backup MUST represent one complete workspace's finance data, including accounts, transactions, categories, tags, Checks, attachments and their contents, archived records, and future allocations, batches/templates, and internal-transfer links when present. It MUST preserve amounts, currencies, provenance, and relationships in a versioned format that supports future compatibility handling. Login recovery phrases and bank credentials MUST NOT be included; bank integrations require reconnection after restore.
+- **FR-043 — Backup authority and completeness**: Creating a complete-workspace backup MUST require owner permission and access to all included data. Selected-account access MUST NOT authorize an export labeled a complete workspace backup. All required records and attachment contents MUST be verified available before backup success is reported; unavailable data MUST prevent a complete-backup success claim.
+- **FR-044 — Optional encryption**: Users MUST be able to choose a password-encrypted backup or an unencrypted backup file. Restoring an encrypted backup MUST require its password independently of application login. Backup encryption MUST NOT depend on including login or bank credentials in the file.
+- **FR-045 — Restore isolation and authority**: Restore MUST create a new workspace without changing existing workspaces. The restoring user MUST become the new workspace's owner. Previous memberships, invitations, and access grants MUST remain reference information only and MUST NOT reactivate access; sharing requires explicit setup again. Importing backup data into an existing workspace is a separate future merge operation requiring conflict handling.
+- **FR-046 — Validate before writes**: Restore MUST validate the entire backup before writing restored data, including supported format version, readable attachment contents, valid amounts, and intact relationships. Invalid or unsupported backups MUST be rejected with an explanation, leaving existing workspaces untouched.
+- **FR-047 — Interrupted restoration**: If restoration is interrupted after writes begin, the new workspace MUST remain explicitly marked restore incomplete and unavailable for ordinary finance use until restoration finishes. Retrying the same restore MUST resume without duplicating records or relationships. The app MUST NOT report incomplete restoration as successful.
+
+**Acceptance scenarios for the future implementation**:
+
+1. An authorized owner exports a complete workspace including archived records and attachment contents. Missing required data prevents a complete-backup success result; selected-account access alone cannot authorize the operation.
+2. Both encrypted and unencrypted backups can be selected. An encrypted backup requires its password to restore, and neither form contains login recovery phrases or bank credentials.
+3. A valid backup restores into a new workspace owned by the restoring user, preserving financial values and relationships without modifying existing workspaces or granting access to previous collaborators. Bank access requires reconnection.
+4. An unsupported format, unreadable attachment, invalid amount, or broken relationship is rejected before restored-data writes begin.
+5. An interrupted restore remains visibly incomplete and outside ordinary finance use. Retrying resumes the same restoration without duplicate records; only completed restoration makes the workspace available for ordinary use.
+
+### Approved transaction attachment foundation (future functionality)
+
+These requirements record approved compatibility decisions. Attachment upload, download, lifecycle controls, and file cleanup remain deferred; existing placeholder tables do not establish implemented attachment support.
+
+- **FR-048 — Scope and access**: Attachments MUST belong to the whole transaction, including transactions with multiple allocations. Attachment read access MUST follow the transaction's account permissions; adding or removing attachments MUST require transaction-edit permission. Account sharing MUST include attachments on historical transactions within the recipient's authorized access, without granting access to unrelated files.
+- **FR-049 — Multiple original files**: A transaction MUST support multiple attachments, including images, PDFs, and other files. Each attachment MUST retain its original filename, file type, and contents and support downloading the original contents unchanged. Adding a file and removing an existing attachment MUST be separate actions; no replacement workflow is required.
+- **FR-050 — Offline and synchronization**: Users MUST be able to add attachments offline and synchronize them later. Previously downloaded file contents MUST remain available offline; attachments whose contents are not available locally MUST indicate that downloading is required. Pending or failed attachment uploads MUST NOT prevent saving the transaction. The app MUST clearly distinguish attachments that are not fully synchronized from completed synchronization and MUST NOT claim unavailable file contents are available offline.
+- **FR-051 — Removal and cleanup**: Removing an attachment MUST leave the transaction intact. Deleting a transaction MUST remove its attachments from ordinary access, subject to the eventual transaction deletion/undo policy. Physical file cleanup MUST preserve files still referenced elsewhere and MUST respect future retention and recovery rules; this foundation does not decide a retention period or promise immediate physical erasure.
+- **FR-052 — Stable identity**: Each attachment MUST have a stable identity preserved through synchronization, backup, restore, and merging. The identity MUST distinguish attachments independently of filenames or matching contents; future backup/restore and merge implementations MUST preserve attachment relationships without silently omitting files.
+
+**Acceptance scenarios for the future implementation**:
+
+1. A transaction with multiple allocations can have several attachments of different file types. Authorized users can download original contents with the retained filename and file type; attachments belong to the transaction rather than individual allocations.
+2. A user who can read the transaction can read its attachments, including historical attachments on a shared account. Adding or removing attachments requires transaction-edit permission; unrelated files remain inaccessible.
+3. A user saves a transaction with files while offline. The transaction remains saved while attachment synchronization is pending or failed, and the app reports that status. Downloaded files remain readable offline; missing local contents are identified as requiring download.
+4. Removing one attachment retains the transaction and its other attachments. Deleting the transaction removes its attachments from ordinary access without physically deleting file contents still referenced elsewhere or required by the eventual recovery policy.
+5. Adding or removing other files does not change an existing attachment's identity. Synchronization, backup, restore, and merging preserve attachment identities and relationships.
+
+### Approved transaction history direction (future functionality)
+
+- **FR-053 — Visible history and restoration**: Authorized users MUST eventually be able to inspect earlier transaction versions and restore a selected version as a new edit. Restoration MUST preserve transaction identity and existing history rather than erase intervening edits, and MUST remain subject to current permissions, workspace lifecycle restrictions, and financial validation. A general-purpose conflict-resolution interface is deferred.
+- **FR-054 — History scope and SDK investigation**: Before implementation, verify the installed Jazz SDK's supported history/read/restore APIs and define a consistent transaction version across its main row and related allocations, tag assignments, and other associated records. Jazz synchronization reconciliation MUST NOT be assumed to enforce application financial invariants such as allocation totals or valid transfer pairs. Related-record version boundaries, restoration effects on shared references and transfer counterparts, and handling of concurrent changes during restoration remain unresolved design decisions; no complete transaction-history or revert capability is claimed by current creator/latest-editor metadata.
+- **FR-055 — Backup merge distinction**: Importing a backup into an existing workspace is not covered completely by the login-identity account-merge specification. Its future design SHOULD reuse applicable provenance, duplicate-detection, retry, and conflict-reporting rules from `003-account-data-merge`, but MUST explicitly define backup input, destination eligibility, and support for the complete included graph, including attachments, allocations, and transfer links. Restore into a new workspace remains the approved backup restore behavior; merging into an existing workspace remains deferred.
+
+**Acceptance expectations for future planning**:
+
+1. Restoring an earlier transaction version produces a new authorized edit while retaining the transaction ID and intervening history. Invalid financial combinations cannot be introduced by restoration.
+2. The history design explicitly establishes which related records belong to each displayed/restorable version and how concurrent changes are handled, based on verified SDK capabilities rather than assumptions about internal row history.
+3. Backup-to-existing-workspace merging is specified separately before implementation and does not silently omit related data or treat login-identity merge support as sufficient.
+
 ### Out of scope for MVP
 
 - Scheduled or automatic SimpleFIN imports remain out of scope. Explicit setup, account discovery/linking, and manual transaction import are governed by [002-manual-bank-sync](../002-manual-bank-sync/spec.md), including its credential, authorization, cancellation, and idempotency requirements.
-- Foreign exchange conversion or non-USD entry UI.
+- Foreign exchange conversion or non-USD entry UI. The approved multi-currency foundation above constrains future implementation and compatibility; it does not ship those features.
 - Transaction attachment image upload, transaction batches/templates, advanced invites, fine-grained sharing UI, and Capacitor/Tauri native wrappers.
-- Transfers as a transaction kind; the model may add a third kind or linked pair later.
+- Linked-transfer implementation and migration. The approved transfer foundation above uses linked expense/income transactions rather than a third transaction kind.
+- Split-transaction implementation and migration. The approved foundation above constrains future design without requiring split functionality in MVP.
+- Backup/restore support for future data types not yet released. A verified recovery path for released MVP data types is required by FR-056, following the approved backup/restore rules above.
+- Transaction version-history/restoration UI and a general-purpose conflict-resolution interface. Supported history APIs and related-record restoration consistency require investigation before implementation.
 
 ## Data Model Invariants
 
 - Financial accounts are distinct from login identity and organization tenancy.
 - `amountMinor` is a non-negative integer; the sign is represented by `kind`.
 - Currency is copied from the account at creation and stored on the transaction.
-- `categoryId`, `accountId`, and `organizationId` are required references on every transaction.
+- Current MVP storage requires `categoryId`, `accountId`, and `organizationId` on every transaction. The approved future allocation model below moves categorization to allocations without changing the transaction's account movement or identity; that migration is not implemented.
 - Check metadata lives on independent account-scoped Checks. Transactions store a Check reference; multiple compatible transactions may reference one Check. Exclusive assignment is deferred.
 - `source` is a discriminated union in application types: manual, or SimpleFIN with `externalId`.
 - Jazz owns synchronized durable data and system audit timestamps.
@@ -137,11 +257,13 @@ As the product evolves, organizations can support multiple roles, selective acco
 - **Profile**: login-identity display profile with a display name and optional avatar, reused across workspaces. Profile avatar upload is included in MVP scope.
 - **Organization**: personal or business workspace with a default currency.
 - **Organization Member**: organization/user association with owner, admin, member, or viewer role.
-- **Account**: USD cash/bank/card ledger belonging to an organization; archivable.
+- **Account**: cash/bank/card ledger belonging to an organization; archivable. MVP entry is USD; future multi-currency accounts follow the fixed-currency rules above.
 - **Account Membership**: explicit read/write grant to an account for an org member in `selected` access mode.
 - **Category**: org-scoped expense/income classification; system Uncategorized entries cannot be deleted.
 - **Tag**: org-scoped income/expense label with optional matching-kind category; can be archived.
 - **Transaction**: account-linked income or expense, with amount, currency, date, category, source, optional description/memo/provider id/batch, and tags.
+- **Transaction allocation** (future): an independently identified portion of a transaction, with amount, category, optional description, and tags. See the approved split-transaction foundation below; current category/tag storage remains unchanged until a separately reviewed implementation.
+- **Internal transfer** (future): a relationship pairing an expense and income in different accounts of one workspace, subject to the approved currency, reporting, lifecycle, and authorization rules above.
 - **Check**: independently identified, account-scoped payment metadata usable by income and expense transactions; a Check can remain detached after cancellation, failure or reference removal.
 - **SimpleFIN Connection / Account Link**: org-scoped connection credential/status and mapping to local accounts.
 - **Transaction Attachment / Batch**: schema-ready relationships for later features.
@@ -340,8 +462,9 @@ remains outside the disclosure.
 ### Transaction page transitions
 
 Client-side navigation between income/expense index, creation, and detail paths uses
-the native View Transitions API to slide the incoming content 24px from the right
-over 200ms, without fading. Keep surrounding navigation and the desktop transaction
+the native View Transitions API to slide the incoming content from one full viewport
+width to the left (`translateX(-100vw)`) to its natural position over 300ms with
+ease-out timing, without fading. Keep surrounding navigation and the desktop transaction
 drawer still. On mobile, transition between the list and form/detail content.
 Respect reduced-motion preferences
 and fall back to immediate navigation when unsupported. Query/hash-only changes and

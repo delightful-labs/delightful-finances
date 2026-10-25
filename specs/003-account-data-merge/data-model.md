@@ -12,15 +12,19 @@ Proposed dedicated `mergeOrigins` table, finalized in the schema review: destina
 
 ## Mapping rules
 
-- Organization: chosen source owned personal workspace → chosen destination owned personal workspace.
+- Organization: explicitly selected eligible source workspace → explicitly selected eligible destination workspace. Exact eligibility remains unresolved; no unique-personal-home or kind-based authority assumption.
 - System categories: map by income/expense kind, independent of translated name.
 - User categories/tags/accounts/batches/templates: stable imported IDs; no name-based unification. Restore archives after references.
-- Transactions: preserve integer amount, kind, currency, bookedOn, memo, payment method, source/externalId and relationships. Manual IDs derive from full origin. SimpleFIN IDs use the existing provider formula. Existing records remain authoritative; differing source values or ledger mapping become visible conflicts.
-- Check details: preallocate detail/transaction IDs and remap both directions; verify one-to-one relation.
+- Transactions: preserve integer amount, kind, currency, bookedOn, description, memo, payment method, source/externalId and relationships. Manual IDs derive from full origin. SimpleFIN IDs use the existing provider formula. Existing records remain authoritative; differing source values or ledger mapping become visible conflicts.
+- Independent Checks: map stable Check origins and account references, including detached Checks and multiple compatible transaction references. Preserve shared references; do not assume one-to-one assignment or import retired checkDetails storage.
 - Transaction-tag links: remap both ends and use stable IDs.
-- Attachments: detect and stop unsupported graphs before import; current file permissions cannot support lossless copying.
+- Attachments: detect and stop unsupported graphs before import. Future supported copying must map attachment identities and transaction relationships and preserve original filenames/types and complete contents under reviewed destination permissions. Placeholder file tables do not establish lossless copying support.
+- Allocations (when supported): map allocation origins and transaction/category/tag references; preserve amount, optional description, and ordering when represented. Retain stable mappings across retries; enforce same kind/currency and exact transaction totals.
+- Internal transfers (when supported): map the relationship and both transaction sides together; preserve source/destination accounts, per-side dates and currencies, and equal same-currency amounts. Provider collisions or missing counterparts require explicit pair-level assessment; never silently drop a side.
 - Credentials/connections/memberships/profile: excluded with explicit connection reconnection notice. Preserve provider account identity as non-secret provenance for later reconnect decisions; do not create active links to absent connections.
 
 ## Invariants
 
 All references stay within the destination organization. Currency and transaction kind match referenced account/category. No implicit authorization transfer, no unrelated destination overwrites. A committed target row and its origin receipt must be consistent atomically. A retry skips already imported origin even after the user edits the target. A canonical provider collision without matching provenance is existing/conflict, never replacement. Import conflicts result in partial completion until explicitly resolved; unsupported graph errors block before any writes.
+
+Future formats must reject unsupported related graphs rather than omit them. Preserve original monetary values without conversion or rescaling. Archived/incomplete-restore workspace eligibility and full source-version-history preservation remain unresolved; current-value snapshots are not a promise of full history migration.
