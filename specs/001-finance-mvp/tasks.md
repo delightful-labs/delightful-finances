@@ -9,7 +9,7 @@ Reconciled against the implementation, existing tests, and recorded verification
 
 ### Remaining MVP work
 
-- **T040 — Remaining browser verification:** Authentication network/session failure and retry coverage is now verified under T058. Remaining: native installation-prompt review and the combined offline/access matrix.
+- **T040 — Remaining browser verification:** Automated offline/access and production-PWA coverage is now verified on 2026-10-25 (see the final readiness record below). Native installation-prompt/device review remains manual.
 
 ### Verified foundations
 
@@ -110,7 +110,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 - [x] T038 Complete PWA offline shell behavior and ensure cache rules do not conflict with Jazz data.
 
-- [ ] T040 Add Playwright coverage for org access boundaries, credential visibility, sync/pending state, and supported offline writes/sync.
+- [x] T040 Add Playwright coverage for org access boundaries, credential visibility, sync/pending state, and supported offline writes/sync. Resolved within available automated scope by existing permission/sync tests and the 2026-10-25 combined offline/access matrix; actual-device installation review remains separately open.
   - Partial: role/grant/credential visibility and offline account/category/tag/profile write/sync cases have recorded passing coverage. All six current production-preview PWA browser checks pass, including a two-tab update lifecycle: drafts/controllers remain intact while waiting, closing one tab does not activate the update, closing the last controlled tab activates it, and a reopened tab uses the active worker. The generated worker fixture is restored after the test; production code is unchanged. Remaining: install-prompt review and review of the combined offline/access matrix. Authentication failures are verified under T058.
 - [x] T041 Confirm all user-visible strings use Paraglide and all currency/date display uses locale-aware APIs.
   - Audited on 2026-10-15: page/component labels, titles, feedback, accessibility labels, bootstrap defaults, manifest metadata, and every money/date display. Localized bootstrap names while preserving deterministic seed IDs and existing saved names; moved install metadata to a prerendered Paraglide manifest endpoint at the existing URL; localized category counts and transaction tag-list punctuation with Intl. Existing money/date displays already pass the active locale, with UTC for calendar dates. Static application/service-worker checks pass without warnings. Full build generated the manifest but fails on the unchanged dynamic transaction route inheriting prerender=true without entries. Implementation reviewed and focused tests verified: 88 unit tests and four browser scenarios pass, including translation-driven seed names with original UUIDs/reuse, locale-aware count/tag formatting, manifest metadata/language/install URLs, and existing category/history/currency display regressions. Browser-test TypeScript checks pass. Follow-up production verification now passes for the manifest cache and transaction-detail route. Details are in plan.md under T041 Localization and Formatting Audit.
@@ -120,7 +120,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 
 - [ ] T039 Revisit responsive layout, keyboard/focus behavior, and interaction states after the planned post-MVP design and layout revision. Existing shell behavior has focused responsive/keyboard coverage; perform the broader review against the revised design rather than polishing the current layout prematurely.
 - [ ] Revisit Jazz pending/sync-completion observability and the app-shell status indicator when the SDK exposes a supported whole-device signal. The current shell reports only local mode, browser offline state, or sync configuration; do not claim a completed sync. See the deferred sync-status observability investigation in plan.md.
-- [ ] Add GitHub Actions CI for application checks, unit tests, and Playwright suites. `.github/workflows/ci.yml` defines type/unit/build checks, four isolated browser jobs (application, authentication, permissions, workspace), and a production-preview PWA job. GitHub-hosted verification remains pending this merged branch's CI run. Keep this task open until all browser suites pass and GitHub Actions reports a successful run.
+- [x] Add GitHub Actions CI for application checks, unit tests, and Playwright suites. Resolved for committed revision 6243f75: run 40182572033 succeeds in all six jobs, including all four browser suites and production PWA. Uncommitted local additions are not yet covered by a GitHub run.
 - T043 **Superseded** by constitution VI and [002-manual-bank-sync](../002-manual-bank-sync/spec.md): the original server-side claim/import-worker task is retired. Explicit client-initiated setup, passkey-protected credentials and manual imports are tracked under feature 002; scheduled/automatic imports are outside the approved design.
 - T044 **Superseded tracking**: account linking and explicit manual import requirements, implementation and verification are tracked in [002-manual-bank-sync](../002-manual-bank-sync/spec.md) and its [tasks](../002-manual-bank-sync/tasks.md), rather than as an independent deferred MVP task. This reference does not declare every feature-002 requirement complete.
 - [ ] T045 Implement transaction image upload and attachment UI using Jazz blob APIs; include unit and Playwright coverage.
@@ -177,17 +177,17 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 ### Mobile drawer push layout
 
 - [x] Keep mobile main content full width while the drawer pushes it offscreen, leaving a 3.5rem strip visible; preserve desktop layout.
-- [ ] Review the implementation, then add and run focused mobile/desktop geometry and horizontal-overflow browser coverage.
+- [x] Review the implementation, then add and run focused mobile/desktop geometry and horizontal-overflow browser coverage. Resolved by the 2026-10-25 focused UI verification below; broader design audit remains deferred.
 
 ### Mobile drawer accessibility
 
 - [x] Make main content inert only while mobile navigation is open; add a native dismissal button over the visible main strip and restore toggle focus on activation.
-- [ ] After implementation review, add and run focused inertness, dismissal, focus restoration, and resize coverage.
+- [x] After implementation review, add and run focused inertness, dismissal, focus restoration, and resize coverage. Resolved by the 2026-10-25 focused UI verification below.
 
 ### Sidebar settings navigation
 
 - [x] Group Workspace, Banks, and Account in Settings Details; add sidebar icons and rename Account/Login labels.
-- [ ] After implementation approval, update and run relevant navigation coverage.
+- [x] After implementation approval, update and run relevant navigation coverage. Resolved by the 2026-10-25 focused UI verification below.
 
 - [x] Move account navigation and filters into Accounts Details above Settings; move the selector into Settings as Current workspace.
 
@@ -262,7 +262,7 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
   - Account archive admin replication timed out once under the parallel run and passed in an isolated rerun. Drawer geometry now waits for transition completion; offline status expectations match the compact Offline label.
   - Browser-test TypeScript, changed-file formatting/whitespace checks and the production build pass. No assertions were weakened to hide the category-default failures.
 
-- [ ] Investigate the existing expense/income default-category regression: after saving in a second workspace and switching back, the category select remains blank instead of selecting the original system category. Keep both existing assertions intact; this is application behavior rather than a navigation-selector migration.
+- [x] Investigate the existing expense/income default-category regression: both unchanged `default category ... survives overrides, reset, and workspace switching` scenarios pass on 2026-10-25. They save in the second workspace, switch back, reopen entry and assert the original system category. No application fix or weakened assertion was needed; see focused verification below.
 
 ### Expense and income list presentation migration
 
@@ -276,36 +276,36 @@ Deferred T043–T048 are outside MVP. T023 was removed when account-detail/histo
 ### App shell component boundaries
 
 - [x] Extract props-driven AppTopMenu and AppDrawer with their existing styles; preserve shell-owned responsive coordination and callbacks.
-- [ ] Review the component extraction.
-- [ ] After implementation approval, run relevant navigation coverage and update it if needed.
+- [x] Review the component extraction. Revisited AppShell, AppTopMenu, AppDrawer and AppNavigationLink on 2026-10-25; responsive policy remains shell-owned and extracted presentation receives props/callbacks.
+- [x] After implementation approval, run relevant navigation coverage and update it if needed. The 2026-10-25 focused navigation checks pass; see below.
 
 - [x] Share drawer navigation links across top-level and Details sections using AppNavigationLink.
-- [ ] Review shared-link implementation before running relevant navigation tests.
+- [x] Review shared-link implementation before running relevant navigation tests. Exact current-page matching and workspace-scoped hrefs pass the 2026-10-25 focused check.
 
 ### Transaction pagination
 
 - [x] Bundle and install local DUI with Pagination and PaginationItem.
 - [x] Paginate the shared transaction list at 25 entries, preserving daily totals and filter resets, with localized accessible controls.
-- [ ] Review the pagination implementation.
-- [ ] After approval, add and run focused pagination unit and browser coverage for boundaries, date splits, filter resets, and shrinking results.
+- [x] Review the pagination implementation. Revisited for the 2026-10-25 edge-case checks below.
+- [x] After approval, add and run focused pagination unit and browser coverage for boundaries, date splits, filter resets, and shrinking results. Earlier verification covers boundaries/totals/filter resets; live shrinking-result coverage passes on 2026-10-25.
 
 - [x] Add a development-only button for 25 persisted sample transactions per explicit click, with sequential write states and localized progress.
-- [ ] Review the sample creation implementation before adding or running its tests.
+- [x] Review the sample creation implementation before adding or running its tests. Existing implementation reviewed; original machine coverage and new edge-case browser results are recorded below.
 
 - [x] Keep pagination controls at a consistent slot count and omit truncation for five or fewer pages.
-- [ ] Review the pagination range adjustment before adding or running its tests.
+- [x] Review the pagination range adjustment before adding or running its tests. Covered by the recorded earlier range verification.
 
 - [x] Drive transaction pagination from the URL `page` parameter with real links and filter reset behavior.
-- [ ] Review URL pagination before adding or running focused link, reload, history, invalid-page and filter-reset coverage.
+- [x] Review URL pagination before adding or running focused link, reload, history, invalid-page and filter-reset coverage. Earlier verification covers those scenarios; shrinking-result URL preservation now also passes.
 
 - [x] Move development sample controls into a developer dialog with a focus-revealed opener at the top of every page.
-- [ ] Review developer menu before adding or running keyboard visibility, modal dismissal/focus, and batch-preservation coverage.
+- [x] Review developer menu before adding or running keyboard visibility, modal dismissal/focus, and batch-preservation coverage. Earlier focused verification and the 2026-10-25 source review supersede this historical gate.
 
 - [x] Move the developer menu to the root layout with identical income/expense actions on every page; move sample actors/subscriptions out of TransactionView.
-- [ ] Review global developer menu before adding or running route availability, session-disabled controls and navigation-progress coverage.
+- [x] Review global developer menu before adding or running route availability, session-disabled controls and navigation-progress coverage. Earlier route/navigation checks plus the new held-startup disabled-control check cover this scope.
 
 - [x] Encapsulate content, control context, development gating and sample session binding inside DeveloperMenu; simplify shared layout to one mount.
-- [ ] Review developer menu encapsulation before its focused checks.
+- [x] Review developer menu encapsulation before its focused checks. Revisited DeveloperMenu, its dialog/control presentation and SampleTransactions integration on 2026-10-25.
 
 ### Pagination and developer menu verification
 
@@ -420,14 +420,14 @@ All 15 focused browser scenarios pass across the suite and targeted reruns using
 Cancel/primary Save verification: all 12 focused Playwright scenarios pass (eight Cancel cases covering valid/invalid income/expense drafts on desktop/mobile, plus four existing offline creation/edit regressions). Cancel returns to Overview without saving; Save uses the primary style in create/edit mode. Browser-test TypeScript, focused Prettier and whitespace checks pass. Existing XState assign warnings remain.
 
 - [x] Extract a reusable avatar display and show existing creator/editor profile avatars beside transaction attribution names; prefill the DUI profile avatar input and preserve name fallbacks.
-- [ ] After implementation review, add/run focused avatar display and transaction attribution coverage (missing/broken/replaced images and object URL cleanup).
+- [x] After implementation review, add/run focused avatar display and transaction attribution coverage (missing/broken/replaced images and object URL cleanup). The 2026-10-25 transaction polish checks below pass.
 
-- [x] Add native transaction content slide-in through SvelteKit onNavigate (200ms, 24px from the right, no fade), with stationary navigation/desktop drawer, reduced-motion/unsupported-browser fallbacks and unchanged-path/outside-route exclusions; revised implementation awaiting review.
-- [ ] After implementation approval, add/run focused transaction navigation coverage for list/new/detail and history navigation, reduced motion, unsupported API, skipped captures, and unchanged-path/outside-route exclusions.
+- [x] Add native transaction content slide-in through SvelteKit onNavigate (300ms ease-out, full viewport from the left, no fade), with stationary navigation/desktop drawer, reduced-motion/unsupported-browser fallbacks and unchanged-path/outside-route exclusions; current animation confirmed by the user on 2026-10-25.
+- [x] After implementation approval, add/run focused transaction navigation coverage for list/new/detail and history navigation, reduced motion, unsupported API, skipped captures, and unchanged-path/outside-route exclusions. The 2026-10-25 transaction polish checks below pass; the user confirmed the current animation and the spec was corrected on 2026-10-25.
 
 - [x] Put transaction attribution and timestamps in a Metadata Details disclosure closed by default; implementation approved for testing.
 - [x] Add a localized mobile Back to list link on income and expense detail pages, preserving URL pagination; awaiting implementation review.
-- [ ] After implementation approval, add/run focused coverage for mobile detail back links, matching section and pagination, and absence on desktop and creation pages.
+- [x] After implementation approval, add/run focused coverage for mobile detail back links, matching section and pagination, and absence on desktop and creation pages. Both income/expense scenarios pass on 2026-10-25.
 - [x] Verify desktop/mobile disclosure defaults, pointer/keyboard toggling, visible editable form and retained drafts, timestamps, and closed-on-reload behavior. All eight transaction-edit Playwright scenarios pass, including six existing edit regressions; browser-test TypeScript, focused formatting and whitespace checks pass.
 
 ## Permission integrity follow-up
@@ -523,3 +523,138 @@ native wrappers. Feature 009 separately defers written-check controls and exclus
 assignment/shared-reference handling. Earlier review checkboxes in this chronological
 file are historical; completed later verification supersedes their corresponding
 review/test gates, not these outstanding feature or verification items.
+
+## Resolved: Older UI review notes and default-category regression (2026-10-25)
+
+The user requested this verification after reviewing the existing implementation.
+Source review covered AppShell, AppTopMenu, AppDrawer, AppNavigationLink and
+transaction default-category rendering. Existing default-category fixtures and
+assertions were inspected before execution and left unchanged.
+
+Nine scenarios pass across focused runs: both expense/income category-default
+regressions; four drawer startup/navigation viewport cases (390, 768, 769, 1280px);
+resize/disclosure navigation; new mobile full-width push/overflow/inertness/dismissal/
+focus coverage; and new Accounts/Settings disclosure, exact current-page and
+workspace-scoped shared-link coverage. The new mobile test checks 390px content
+width and a 334px pushed position, no document horizontal overflow, desktop/mobile
+inertness changes without changing disclosure, and dismissal focus restoration.
+The Settings test checks initially closed disclosures, a single exact active link,
+workspace navigation and Account/Login href scope. Its first attempt incorrectly
+scoped Login inside Settings; source/snapshot inspection confirmed Login is a
+top-level link, the locator was corrected, and only that failed scenario was rerun.
+
+Browser-test TypeScript passes. All browser checks used the same known disposable
+in-memory agent server at http://127.0.0.1:5185. Initial sandbox listener/connection
+restrictions were environment failures; testing proceeded with authorized access.
+No application code changed, no hosted records were accessed, and the user's
+persistent development server/storage was untouched. This does not close Sync now
+mobile dismissal, all T059 default-account permutations, the deferred broader
+responsive/accessibility audit, or unrelated browser/CI gaps.
+
+## Resolved: Pagination/developer-menu edge cases (2026-10-25)
+
+Inspected TransactionList/TransactionView pagination, DeveloperMenu and its pure
+dialog/controls, SampleTransactions integration and the batch-machine tests before
+adding focused coverage to tests/pagination.e2e.ts. The existing implementation was
+already reviewed and the user explicitly requested verification of this scope.
+
+All four new Playwright scenarios pass across focused runs:
+
+- Hold WASM startup; both sample-kind controls remain disabled while the runtime
+  is unavailable, and startup proceeds when the hold is released.
+- Save 25 samples while offline after the destination route is ready; assert local
+  list visibility, reconnect, confirm all 25 through a remote-tier query, then reload.
+- Shrink 76 results while page 4 is requested to 26, 25 and zero; assert clamped
+  current page, entry counts, recalculated full daily totals, pagination removal,
+  and preservation of the requested URL during subscription updates.
+- Pause the first sample write's settlement, switch to a second authorized
+  workspace, release settlement, and assert the partial outcome and enabled
+  control. A remote-tier query confirms exactly one original-workspace transaction
+  and zero replacement-workspace transactions; no subsequent sample is retargeted.
+
+The first offline attempt disconnected before client navigation finished and hit
+an unloaded development route. The test now explicitly waits for the Expenses
+heading before disconnecting; only that scenario was rerun and it passes. The
+other three passed on their first run. The database wait wrapper is test-only and
+is released/restored in finally. No application code or hosted data changed.
+All browser checks reused the disposable in-memory agent server at
+http://127.0.0.1:5185. Broader browser/CI status and physical-device offline support
+are not established by these checks.
+
+## Resolved: Attribution avatar rendering and object-URL cleanup (2026-10-25)
+
+The user explicitly authorized completing the remaining verification together.
+Inspected Avatar, TransactionDetails, TransactionEditEntry, ProfileAvatarForm and
+existing profile/avatar tests before adding tests/transaction-polish.e2e.ts.
+The focused attribution scenario passes for missing avatar/name identity fallbacks;
+decorative creator/editor images that decode; live replacement and revoked old
+URLs; undecodable-image fallback with retained names; cleanup after missing data;
+and cleanup when navigating away. Account settings show the saved avatar preview,
+allow selecting and clearing an unsaved replacement back to the saved preview,
+and expose exactly one saved-avatar removal action. Removal clears the image and
+revokes its preview URL without changing the display name. Failed-image URLs are
+also verified revoked when data is removed.
+
+The expanded scenario's synthetic canvas fixture initially lacked a rendering
+context. That fixture was corrected before rerunning the one scenario, which
+passes. No production fix was needed.
+
+## Resolved: Transaction routing transitions and mobile back links within tested scope (2026-10-25)
+
+Seven other scenarios pass across focused runs: income and expense mobile detail
+Back to List links retain the workspace and page=2, reach the matching section's
+second page and are absent on index/creation and desktop detail pages; native
+transitions occur on list/new/detail path changes and browser Back/Forward; they
+do not occur on query/hash-only changes or navigation outside transaction routes;
+and navigation completes with reduced motion, unavailable APIs, skipped captures
+and rejected update-callback promises.
+
+The history scenario initially issued Forward before Back had finished rendering;
+it now waits for the list and absence of the detail form, preserving all transition
+count assertions. The one corrected scenario passes. Rejection/skip adapters are
+test-only; normal routing coverage wraps the real browser transition API.
+
+- [x] Resolved: Animation style alignment. The user confirmed that the spec was wrong; it now matches the existing translateX(-100vw) slide from the left over 300ms with ease-out timing and no fade. No application styling changed, and this documentation correction does not claim additional visual testing.
+
+All eight transaction-polish scenarios have passing results across the focused
+runs, including the final expanded avatar test. These are not a combined full-suite
+run. Tests reused the disposable in-memory agent server at
+http://127.0.0.1:5185. No application code, hosted data or user browser storage changed.
+
+## Resolved: Remaining automated readiness checks (2026-10-25)
+
+The user authorized all remaining automated verification. Hosted recovery in a
+separate empty-storage browser retrieves the retained sample identity's account,
+exact bigint expense and independent Check, establishing server persistence beyond
+same-browser reload. Recovery phrases were kept private.
+
+Ten new offline-access browser scenarios pass across owner/admin/member/viewer,
+selected/all/no grants and no-membership/orphan-grant cases. Offline local query
+results match warmed authorized online results, read-only UI remains disabled,
+and authorized offline edits are confirmed through owner remote reads after
+reconnection. This is not an offline revocation/erasure guarantee. Existing CI
+permission cases separately cover direct-write denials.
+
+All ten production PWA scenarios pass against a build using the disposable agent
+backend and preview at http://127.0.0.1:4176. Worker fixtures restore generated
+bytes. The cache assertion derives the expected origin from page.url() so it can
+use a separate preview port without changing its same-origin security invariant.
+Chromium diagnostics report no manifest parsing or installability errors. Device
+prompt presentation/install/OS integration remain manual.
+
+Application/service-worker checks, browser-test TypeScript and the build pass.
+Current unit verification totals 1,079 passing tests across 74 files: 1,020 pass
+in the initial run; sandbox listener restrictions prevent two authority suites
+from starting, then those 59 cases pass under authorized listener access. No
+production defect was found and no app code changed.
+
+GitHub Actions run 40182572033 on this branch at 6243f75 has all six jobs successful:
+application, authentication, permissions and workspace browser suites, production
+PWA, and types/unit/build. Historical broader browser/CI failure notes are resolved
+for that revision, not evidence against the current branch. Local uncommitted
+verification additions still require their own future CI run after commit/push.
+
+- [x] Resolved: Automated combined offline/access matrix and production PWA/update verification.
+- [x] Resolved: Hosted recovery from an empty-storage independent browser context.
+- [x] Resolved: Successful GitHub-hosted checks and broad browser suite evidence for 6243f75.
+- [ ] Review passkeys, credential unlock/replication and native installation/prompt/installed-app behavior on actual intended devices. Synthetic/browser automation does not close those checks.

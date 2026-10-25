@@ -462,8 +462,9 @@ remains outside the disclosure.
 ### Transaction page transitions
 
 Client-side navigation between income/expense index, creation, and detail paths uses
-the native View Transitions API to slide the incoming content 24px from the right
-over 200ms, without fading. Keep surrounding navigation and the desktop transaction
+the native View Transitions API to slide the incoming content from one full viewport
+width to the left (`translateX(-100vw)`) to its natural position over 300ms with
+ease-out timing, without fading. Keep surrounding navigation and the desktop transaction
 drawer still. On mobile, transition between the list and form/detail content.
 Respect reduced-motion preferences
 and fall back to immediate navigation when unsupported. Query/hash-only changes and
