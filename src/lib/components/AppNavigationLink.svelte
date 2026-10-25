@@ -22,26 +22,22 @@
 	)
 </script>
 
-<AppLink class="navigation-link" {href} aria-current={current} {onclick}>
-	<Icon class="navigation-link-icon" {icon} />{label}
+<AppLink {href}>
+	{#snippet render(destination)}
+		<a class="navigation-link" href={destination} aria-current={current} {onclick}>
+			<Icon navigation {icon} />{label}
+		</a>
+	{/snippet}
 </AppLink>
 
 <style>
-	:global(a.navigation-link) {
+	.navigation-link {
 		padding-inline: 1rem;
 	}
 
-	:global(a.navigation-link[aria-current='page']) {
+	.navigation-link[aria-current='page'] {
 		background-color: var(--dui-color-accent, #94ff47);
 		color: #000;
 		text-decoration: none;
-	}
-
-	:global(a.navigation-link .navigation-link-icon) {
-		inline-size: 1.25rem;
-		block-size: 1.25rem;
-		flex-shrink: 0;
-		margin-inline-end: var(--dui-space-xs, 0.5rem);
-		vertical-align: middle;
 	}
 </style>

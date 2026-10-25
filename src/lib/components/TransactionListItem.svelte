@@ -39,9 +39,13 @@
 	<Text size="sm" as="span"
 		>{formatMoney(transaction.amountMinor, transaction.currency, getLocale())}</Text
 	>
-	<AppLink class="transaction-link" {href} aria-labelledby={labelId}
-		><Icon icon={ChevronRight} /></AppLink
-	>
+	<AppLink {href}>
+		{#snippet render(destination)}
+			<a class="transaction-link" href={destination} aria-labelledby={labelId}>
+				<Icon icon={ChevronRight} />
+			</a>
+		{/snippet}
+	</AppLink>
 	<span id={labelId} class="link-label"
 		>{m['labels.subject_details']({ subject: m['nouns.transaction']({ count: 1 }) })}: {categoryName ??
 			m['status.unavailable_subject']({ subject: m['nouns.category']({ count: 1 }) })}, {transaction.description
@@ -68,7 +72,7 @@
 		overflow-wrap: anywhere;
 	}
 
-	li :global(a.transaction-link) {
+	.transaction-link {
 		color: inherit;
 		display: inline-flex;
 		align-self: start;
@@ -84,17 +88,17 @@
 		background-color: var(--dui-color-accent);
 	}
 
-	li :global(a.transaction-link::after) {
+	.transaction-link::after {
 		content: '';
 		position: absolute;
 		inset: 0;
 	}
 
-	li :global(a.transaction-link:focus-visible) {
+	.transaction-link:focus-visible {
 		outline: none;
 	}
 
-	li :global(a.transaction-link:focus-visible::after) {
+	.transaction-link:focus-visible::after {
 		outline: 2px solid var(--dui-color-focus, currentColor);
 		outline-offset: 2px;
 	}

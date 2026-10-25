@@ -486,3 +486,55 @@ manual bank sync MUST recognize the existing provider identity and preserve user
 edits without creating a duplicate or overwriting the transaction. Existing
 account/category validation, permissions, attribution, local durability and scope/
 shutdown settlement rules apply. The shared independent Check contract in `009-independent-checks` applies to imported and manual transactions alike.
+
+### Drawer styling boundary
+
+Finance MUST configure the navigation Drawer panel separator through the public
+`--dui-drawer-panel-border-inline-end` custom property, preserving its existing
+logical end border, responsive sizing, scrolling, and open/close behavior. Finance
+MUST NOT select the private `.inline-panel` element to style that separator.
+
+### Details styling boundary
+
+Finance MUST own custom Details content/caret markup through snippets, preserving
+native disclosure semantics, sidebar spacing, transaction grouping, and summary
+hover colors. Default children retain the library presentation; absolute content
+retains a library-owned positioning/overflow frame. Consumer CSS MUST NOT
+select private `.details-caret` or `.details-content` classes.
+
+### Shared navigation icon presentation
+
+Navigation link and drawer action/disclosure icons MUST share AppIcon's
+`navigation` presentation variant, preserving their current size, alignment,
+and spacing. Top-menu refactoring MUST preserve accessible toggle behavior,
+header/logo geometry and drawer offset measurement.
+
+### Global CSS exceptions
+
+Necessary cross-snippet, imported-SVG and browser view-transition styles MUST use
+readable native global blocks with explicit application boundaries where available.
+Preserve form button wrapping, transition keyframes, and reduced-motion behavior;
+do not add a styling dependency or extra markup solely to avoid global selectors.
+
+### Simple selector cleanup
+
+Category legend styling MUST target its native buttons and named amount element
+without depending on ancestor or child position. Sidebar disclosures MUST retain
+spacing without redundant content-group wrappers. Transaction index visibility
+MUST use the native hidden attribute with a local override for layout display.
+StatusMessage compact spinner sizing MUST inherit from its presentation root.
+
+### Optional DUI composition
+
+DUI feedback/message, step-label and drawer-close snippets MUST preserve existing
+default callers. Custom content replaces only its documented presentation region;
+status announcements, step semantics and drawer dismissal/focus ownership MUST
+remain explicit. Finance need not adopt custom markup without a concrete use case.
+
+### Typography and Button styling
+
+Typography MUST retain semantic heading levels, default sizes, inherited omitted
+alignment, caller inline styles and public font-size overrides while minimizing
+variant selectors. Button MUST retain public theme overrides, native/fieldset
+disabled behavior, ARIA-disabled activation handling, flat/raised combinations,
+keyboard focus, reduced motion and forced colors with shared interaction rules.

@@ -658,3 +658,73 @@ verification additions still require their own future CI run after commit/push.
 - [x] Resolved: Hosted recovery from an empty-storage independent browser context.
 - [x] Resolved: Successful GitHub-hosted checks and broad browser suite evidence for 6243f75.
 - [ ] Review passkeys, credential unlock/replication and native installation/prompt/installed-app behavior on actual intended devices. Synthetic/browser automation does not close those checks.
+
+### Drawer panel border API review cycle
+
+- [x] Add and document the public Drawer panel end-border token, package it locally, and replace Finance's private panel-border selector.
+- [x] Review the library and Finance implementation before executing affected browser tests.
+- [x] After approval, inspect and run focused Drawer/navigation/layout coverage, including a public-token geometry check for the separator.
+
+### Details styling API review cycle
+
+- [x] Add/document the four Details styling tokens, package locally, and replace Finance's private caret/content selectors.
+- [x] Review the library and Finance implementation before executing affected tests.
+- [x] After approval, inspect and validate Details disclosure behavior, sidebar spacing, transaction group summaries and caret geometry.
+
+### Icon and top-menu styling review cycle
+
+- [x] Consolidate navigation icon styling in AppIcon and simplify AppTopMenu's global rules using existing native tokens/attributes.
+- [x] Review the four-component implementation before executing affected tests (remaining implementation and tests authorized together).
+- [x] After approval, inspect and validate icon alignment, responsive navigation, header/logo geometry and drawer offsets.
+
+### Complete native CSS cleanup and validation
+
+- [x] Convert remaining form and view-transition selectors to readable native global blocks and document intentional styling boundaries.
+- [x] Inspect/update affected browser assertions for navigation/header/icon geometry, form controls and motion preferences.
+- [x] Run focused Finance and library browser coverage, static checks and changed-file formatting/whitespace checks; record outcomes.
+
+Final styling verification: 17 focused Finance scenarios and all 15 Drawer/Details
+library scenarios pass. The icon alignment scenario also passes after removing
+obsolete icon classes and replacing its locator with a semantic one. Application,
+service-worker, browser-test and library static checks pass; changed-file
+formatting and whitespace checks pass. No domain/workflow logic changed, so no
+new unit-test coverage is required for this CSS-only batch. Five intentional
+global blocks remain and no parenthesized global selectors remain in Finance.
+
+Permanent test scope after review: removed all seven new styling-validation
+scenarios, extra geometry/color assertions and the development-only Details story.
+The executed results above remain historical development evidence. Existing
+behavior tests remain unchanged except the semantic icon-locator update required
+by removing its old styling class. No new permanent test cases remain.
+
+### Simple selector cleanup review cycle
+
+- [x] Simplify the four presentation components, package DUI locally and complete static/formatting checks.
+- [ ] Review implementation before running existing status-message, navigation, overview and transaction-workspace behavior coverage.
+
+### Details content snippet review cycle
+
+- [x] Replace the four layout-specific Details tokens with a default/replacement content snippet, preserve the absolute frame, and adopt consumer-owned content/caret layout in Finance.
+- [x] Audit both repositories for other composition opportunities and record findings without adding unused APIs.
+- [ ] Review the focused implementation and then validate default/custom disclosure, keyboard behavior, absolute placement and Finance navigation/grouping using behavior coverage.
+
+### DUI feedback/control composition review cycle
+
+- [x] Implement/document the four requested optional snippet APIs and retain existing defaults and accessibility ownership.
+- [ ] Review implementation, then validate default/replacement feedback, step labels and close controls with focused semantic/behavior coverage.
+
+### Typography and Button review cycle
+
+- [x] Commit and push the preceding Finance/DUI composition and styling work on feature branches.
+- [x] Simplify Text/Heading selectors with a genuinely shared token lookup and consolidate Button variant interaction styling.
+- [x] Review the new implementation before typography/Button behavior validation; inspect existing stories and fix stale story identifiers before tests.
+
+Typography/Button verification: all 13 existing semantic unit tests, five Button
+browser scenarios and 11 focused Finance browser scenarios pass. Temporary
+before/after inspection covered 69 component pairs and 258 observations across
+light/dark themes, size/alignment defaults, public and inline overrides, nested
+alignment and enabled/native-disabled/ARIA-disabled/fieldset-disabled Button
+states; no differences were observed. Temporary fixtures were removed. The only
+permanent test edit corrects the stale flat-secondary story identifier. No new
+style-only tests were retained. Library/application static, browser-test TypeScript,
+changed-file formatting and whitespace checks pass.
