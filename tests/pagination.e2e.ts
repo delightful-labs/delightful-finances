@@ -27,7 +27,7 @@ async function seed(page: Page, count = 0) {
 		)
 		const category = categories[0]
 		if (!category) throw new Error('Category not ready')
-		await db.transaction((tx) => {
+		const write = await db.transaction((tx) => {
 			const account = tx.insert(app.accounts, {
 				organizationId: organization.id,
 				name: 'Pagination account',
@@ -48,6 +48,7 @@ async function seed(page: Page, count = 0) {
 				})
 			}
 		})
+		await write.wait({ tier: 'global' })
 	}, count)
 	await expect(
 		page.getByRole('main').getByRole('cell', { name: 'Pagination account', exact: true })
