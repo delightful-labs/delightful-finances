@@ -36,6 +36,7 @@
 		"load_failed": "Editing information could not be loaded.",
 		"read_only": "You do not have permission to make this change.",
 		"unavailable_reference": "A selected record is no longer available in this workspace. Select an available record and try again.",
+		"linked_transfer_requires_unlink": "Unlink this transfer before changing its amount, account, or currency.",
 		"protected_record": "System categories cannot be archived.",
 		"profile_unavailable": "Your profile is unavailable for editing.",
 		"no_categories": "No applicable category is available for this transaction.",

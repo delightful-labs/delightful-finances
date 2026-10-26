@@ -8,6 +8,7 @@ import {
 	type TransactionSaveValues
 } from './validation/transactions.js'
 import type { IndependentTransaction } from './domain/transaction.js'
+import type { TransactionDetail } from './schema.js'
 import type { TransactionEntryScope } from './transaction-entry-contract.js'
 
 const settlementSchema = z.enum([
@@ -36,6 +37,23 @@ export const transactionCheckpointSchema = z.strictObject({
 	submitted: independentTransactionSchema.optional()
 })
 export type TransactionCheckpoint = z.output<typeof transactionCheckpointSchema>
+export function transferEditRequiresUnlink(
+	transaction: Pick<
+		TransactionDetail,
+		'internalTransferId' | 'accountId' | 'amountMinor' | 'currency'
+	> | null | undefined,
+	values: Pick<TransactionSaveValues, 'accountId' | 'money'>,
+	hasTransferRelation = false
+) {
+	return (
+		(transaction?.internalTransferId != null || hasTransferRelation) &&
+		transaction !== null &&
+		transaction !== undefined &&
+		(values.accountId !== transaction.accountId ||
+			values.money.amountMinor !== transaction.amountMinor ||
+			values.money.currency !== transaction.currency)
+	)
+}
 export function sameSaveScope(
 	a: Omit<TransactionEntryScope, 'transactionId'> & { transactionId?: string | null | undefined },
 	b: TransactionEntryScope

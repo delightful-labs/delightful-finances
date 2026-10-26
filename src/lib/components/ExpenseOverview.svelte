@@ -13,11 +13,13 @@
 	let {
 		transactions,
 		categoryNames,
-		tagNamesByTransaction
+		tagNamesByTransaction,
+		linkedExpenseIds
 	}: {
 		transactions: readonly TransactionRow[]
 		categoryNames: ReadonlyMap<string, string>
 		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
+		linkedExpenseIds: ReadonlySet<string>
 	} = $props()
 	function daysAgo(days: number) {
 		const date = new Date()
@@ -29,15 +31,22 @@
 	let selectedCategory = $state<string | null>(null)
 	let selectedCurrency = $state('USD')
 	const validRange = $derived(Boolean(start && end && start <= end))
+	const unlinkedTransactions = $derived(
+		transactions.filter((row) => row.internalTransferId == null && !linkedExpenseIds.has(row.id))
+	)
 	const period = $derived(
-		validRange ? transactions.filter((row) => row.bookedOn >= start && row.bookedOn <= end) : []
+		validRange
+			? unlinkedTransactions.filter((row) => row.bookedOn >= start && row.bookedOn <= end)
+			: []
 	)
 	const currencies = $derived([...new Set(period.map((row) => row.currency))].sort())
 	const currency = $derived(
 		currencies.includes(selectedCurrency) ? selectedCurrency : (currencies[0] ?? 'USD')
 	)
 	const expenses = $derived(period.filter((row) => row.currency === currency))
-	const categoryIds = $derived([...new Set(transactions.map((row) => row.categoryId))].sort())
+	const categoryIds = $derived(
+		[...new Set(unlinkedTransactions.map((row) => row.categoryId))].sort()
+	)
 	// A shared perceptual lightness/chroma keeps the categorical palette cohesive.
 	// Golden-angle hue spacing adds colors without cycling a fixed swatch list.
 	function categoryColor(categoryId: string) {

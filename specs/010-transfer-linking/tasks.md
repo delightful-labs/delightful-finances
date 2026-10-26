@@ -74,7 +74,7 @@ No setup tasks.
 
 ### Offline safety and sync outcomes
 
-- [ ] T014a Serialize safety-sensitive transfer mutations within the active local workspace through an explicit domain owner; document that this does not serialize writes across independently offline devices.
+- [x] T014a Serialize safety-sensitive transfer mutations within the active local workspace through an explicit domain owner; document that this does not serialize writes across independently offline devices.
 - [ ] T014b Implement app conflict detection for two independent clients linking one endpoint while offline; an alpha.59 probe showed both conflicting marker writes can be accepted after reconnect. Expose a deterministic effective-link view that prevents double counting, and provide a repair flow that still passes Jazz permissions. Keep this as recovery without weakening positive Jazz-enforced safety.
 - [ ] T014c Verify tracked link and unlink transaction IDs correlate late rejections to operation-specific rollback notices; retain generic reporting for unmatched, evicted, or post-restart rejections. Review and test this behavior before completion.
 
@@ -90,8 +90,8 @@ No setup tasks.
 
 ### Implementation
 
-- [ ] T015 [US3] Observe readable internal-transfer rows for the active workspace and selected accounts in `src/routes/+page.svelte`, preserving current account filters and loading/error feedback.
-- [ ] T016 [US3] Filter linked expense IDs from period totals, category slices, and visible expense rows in `src/lib/components/ExpenseOverview.svelte`; leave `src/lib/components/TransactionView.svelte` and account balance/history semantics intact.
+- [x] T015 [US3] Observe readable internal-transfer rows for the active workspace and selected accounts in `src/routes/+page.svelte`, preserving current account filters and loading/error feedback.
+- [x] T016 [US3] Filter linked expense IDs from period totals, category slices, and visible expense rows in `src/lib/components/ExpenseOverview.svelte`; leave `src/lib/components/TransactionView.svelte` and account balance/history semantics intact.
 
 **Checkpoint**: Workspace totals exclude linked movements and account transaction history still includes both sides.
 
@@ -107,7 +107,7 @@ No setup tasks.
 
 - [ ] T017 [US4] Design reciprocal unlink enforcement against alpha.59: stage marker clearing before relationship deletion on one offline replica; handle deletion arriving first from another replica (rejected without retry); make the pending-unlink relationship readable through a positive both-linked-or-both-clear predicate while retaining read access checks on both endpoint accounts; and model local durability, partial sync, cancellation, and shutdown before implementation.
 - [ ] T018 [US4] Observe the selected transaction's readable internal-transfer relationship in `src/lib/components/TransactionEditEntry.svelte` and expose explicit link status and unlink callbacks through `src/lib/components/TransactionForm.svelte`.
-- [ ] T019 [US4] Protect linked amount/account edits in `src/lib/machines/transaction-save.ts`; preserve compatible metadata edits and require explicit unlink before a one-sided change can invalidate the pair.
+- [x] T019 [US4] Protect linked amount/account edits in `src/lib/machines/transaction-save.ts`; preserve compatible metadata edits and require explicit unlink before a one-sided change can invalidate the pair.
 - [ ] T020 [US4] Add machine-owned mergeable delete-both and unlink-and-delete operations with separate endpoint Jazz delete checks, local durability, and typed outcomes in `src/lib/machines/internal-transfer.ts`.
 - [ ] T021 [US4] Add the linked-transaction deletion choices and reporting-effect explanation to `src/lib/components/TransactionDetails.svelte` and `src/lib/components/TransactionEditEntry.svelte`.
 - [ ] T022 [US4] Add localized link-status, unlink, delete-choice, permission-denied, delete-grant, and totals-effect messages in `messages/en.json` and compile the catalog after implementation review.

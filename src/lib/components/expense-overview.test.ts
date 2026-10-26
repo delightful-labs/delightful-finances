@@ -31,10 +31,14 @@ function row(
 		batchId: null
 	}
 }
-function overview(transactions: TransactionRow[]) {
+function overview(
+	transactions: TransactionRow[],
+	linkedExpenseIds: ReadonlySet<string> = new Set()
+) {
 	return render(ExpenseOverview, {
 		props: {
 			transactions,
+			linkedExpenseIds,
 			categoryNames: new Map([
 				['food', 'Food'],
 				['travel', 'Travel']
@@ -76,6 +80,24 @@ describe('expense overview presentation', () => {
 		expect(html).not.toContain('euro-entry')
 		expect(html).toContain('EUR')
 		expect(html).not.toContain('$5.30')
+	})
+	it('excludes linked movements from totals, categories, and transaction rows', () => {
+		const html = overview(
+			[
+				row('ordinary-food', '2026-10-23', 500),
+				{ ...row('linked-marker', '2026-10-23', 100), internalTransferId: 'transfer-id' },
+				row('linked-food', '2026-10-23', 200),
+				row('linked-travel', '2026-10-23', 300, 'travel')
+			],
+			new Set(['linked-food', 'linked-travel'])
+		)
+		expect(html).toContain('$5.00')
+		expect(html).not.toContain('$10.00')
+		expect(html).toContain('ordinary-food')
+		expect(html).not.toContain('linked-marker')
+		expect(html).not.toContain('linked-food')
+		expect(html).not.toContain('linked-travel')
+		expect(html).not.toContain('Travel')
 	})
 	it('handles empty periods and unavailable historical category names', () => {
 		expect(overview([])).toContain('No Expenses in this time period.')

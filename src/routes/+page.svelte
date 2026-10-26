@@ -32,6 +32,14 @@
 			? app.transactionTags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
+	const transfers = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+	const linkedExpenseIds = $derived(
+		new Set((transfers.current ?? []).map((transfer) => transfer.expenseTransactionId))
+	)
 	const visibleTransactions = $derived(
 		(transactions.current ?? []).filter(
 			(transaction) =>
@@ -50,11 +58,16 @@
 <svelte:head><title>{m['navigation.overview']()} · {m['app.name']()}</title></svelte:head>
 <PageHeader title={m['navigation.overview']()} />
 <QueryContent
-	queries={[transactions, categories, tags, links]}
+	queries={[transactions, categories, tags, links, transfers]}
 	loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
 	errorMessage={m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
 >
 	{#key JSON.stringify([filters.activeOrganizationId, filters.selectedAccountIds])}
-		<ExpenseOverview transactions={visibleTransactions} {categoryNames} {tagNamesByTransaction} />
+		<ExpenseOverview
+			transactions={visibleTransactions}
+			{categoryNames}
+			{tagNamesByTransaction}
+			{linkedExpenseIds}
+		/>
 	{/key}
 </QueryContent>

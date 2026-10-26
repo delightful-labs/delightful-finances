@@ -28,6 +28,7 @@ export type TransactionEntryReason =
 	| 'ambiguousTagName'
 	| 'checkRetained'
 	| 'saveUnresolved'
+	| 'linkedTransferRequiresUnlink'
 export type TransactionEntryObservation = TransactionEntryScope & {
 	sessionReady: boolean
 	loading: boolean

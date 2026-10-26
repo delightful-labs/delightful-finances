@@ -533,6 +533,67 @@ describe('internal transfer read safety during unlink recovery', () => {
 	})
 })
 
+describe('linked transaction update safety', () => {
+	it('allows metadata edits and rejects one-sided amount, account, or currency changes', async () => {
+		const transferId = crypto.randomUUID()
+		const linkedExpenseId = crypto.randomUUID()
+		const incomeId = crypto.randomUUID()
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{ ...transaction('expense'), internalTransferId: transferId },
+				{ id: linkedExpenseId }
+			)
+		)
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{
+					...transaction('income'),
+					accountId: otherAccountId,
+					internalTransferId: transferId
+				},
+				{ id: incomeId }
+			)
+		)
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.internalTransfers,
+				{
+					organizationId,
+					expenseTransactionId: linkedExpenseId,
+					incomeTransactionId: incomeId,
+					expenseAccountId: accountId,
+					incomeAccountId: otherAccountId,
+					amountMinor: 100,
+					currency: 'USD'
+				},
+				{ id: transferId }
+			)
+		)
+
+		await db
+			.update(app.transactions, linkedExpenseId, { description: 'Card payment' })
+			.wait({ tier: 'global' })
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, linkedExpenseId, { amountMinor: 101 })
+		)
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, linkedExpenseId, { accountId: otherAccountId })
+		)
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, linkedExpenseId, { currency: 'CAD' })
+		)
+		const saved = await db.one(app.transactions.where({ id: linkedExpenseId }), { tier: 'remote' })
+		expect(saved).toMatchObject({
+			amountMinor: 100,
+			accountId,
+			currency: 'USD',
+			description: 'Card payment'
+		})
+	})
+})
+
 const moveCases = [
 	{
 		label: 'owner',

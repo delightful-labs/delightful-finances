@@ -12,6 +12,7 @@ const transactionId = '11111111-1111-4111-8111-111111111111'
 const organizationId = '22222222-2222-4222-8222-222222222222'
 const accountId = '33333333-3333-4333-8333-333333333333'
 const categoryId = '44444444-4444-4444-8444-444444444444'
+const transferId = '77777777-7777-4777-8777-777777777777'
 const input: IndependentTransactionInput = {
 	transactionId,
 	values: {
@@ -187,6 +188,94 @@ describe('independent transaction persistence', () => {
 	})
 })
 
+describe('linked transaction edit safety', () => {
+	function linkedEditFixture(marker: string | null) {
+		const f = fixture()
+		const existing = {
+			id: transactionId,
+			organizationId,
+			accountId,
+			categoryId,
+			kind: 'expense',
+			source: 'manual',
+			externalId: null,
+			amountMinor: 1234,
+			currency: 'USD',
+			bookedOn: input.values.bookedOn,
+			description: null,
+			memo: null,
+			paymentMethod: 'check',
+			checkId: input.values.checkId,
+			checkDetailsId: null,
+			batchId: null,
+			internalTransferId: marker
+		}
+		const transfer = {
+			id: transferId,
+			organizationId,
+			expenseTransactionId: transactionId,
+			incomeTransactionId: '88888888-8888-4888-8888-888888888888',
+			expenseAccountId: accountId,
+			incomeAccountId: '99999999-9999-4999-8999-999999999999',
+			amountMinor: 1234,
+			currency: 'USD'
+		}
+		f.all
+			.mockResolvedValueOnce([existing])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([transfer])
+			.mockResolvedValueOnce([])
+		return f
+	}
+
+	it('allows metadata edits while retaining the linked pair', async () => {
+		const f = linkedEditFixture(transferId)
+		const update = vi.spyOn(f.tx, 'update').mockImplementation(() => {})
+		const result = await toPromise(
+			f.start({
+				...input,
+				mode: 'edit',
+				values: {
+					...input.values,
+					bookedOn: '2026-10-24',
+					description: 'Payment',
+					tags: []
+				}
+			})
+		)
+		expect(result).toMatchObject({ outcome: 'succeeded', settlement: 'locallyPersisted' })
+		expect(update).toHaveBeenCalledWith(
+			app.transactions,
+			transactionId,
+			expect.objectContaining({ bookedOn: '2026-10-24', description: 'Payment' })
+		)
+	})
+
+	it('rolls back a one-sided amount change while the unlink relationship remains', async () => {
+		const f = linkedEditFixture(null)
+		const result = await toPromise(
+			f.start({
+				...input,
+				mode: 'edit',
+				values: {
+					...input.values,
+					money: { amountMinor: 1235, currency: 'USD' },
+					tags: []
+				}
+			})
+		)
+		expect(result).toEqual({
+			outcome: 'failed',
+			transactionId,
+			settlement: 'rejected',
+			reason: 'linkedTransferRequiresUnlink'
+		})
+		expect(f.insert).not.toHaveBeenCalled()
+		expect(f.commit).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledOnce()
+	})
+})
+
 describe('independent transaction interruptions', () => {
 	it('cancels before persistence without opening a transaction', async () => {
 		const f = fixture()
@@ -266,6 +355,8 @@ describe('atomic Check account move resource ownership', () => {
 						batchId: null
 					}
 				])
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([])
 				.mockResolvedValueOnce([])
 				.mockResolvedValueOnce([
 					{

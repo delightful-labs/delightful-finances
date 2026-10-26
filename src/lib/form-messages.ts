@@ -3,6 +3,7 @@ import { m } from './paraglide/messages.js'
 export const formReasonText = {
 	checkRetained: () => m['transactions.check_retained'](),
 	saveUnresolved: () => m['transactions.save_unresolved'](),
+	linkedTransferRequiresUnlink: () => m['forms.linked_transfer_requires_unlink'](),
 	sessionUnavailable: () => m['forms.session_unavailable'](),
 	selectWorkspace: () =>
 		m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
