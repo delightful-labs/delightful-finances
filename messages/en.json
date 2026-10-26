@@ -429,6 +429,15 @@
 		"save_unresolved": "The save result is uncertain. Save again to verify the same records when connected before issuing another write. Keep this form open until the result is resolved."
 	},
 	"transfers": {
+		"source_subject": "Source {subject}",
+		"destination_subject": "Destination {subject}",
+		"insufficient_accounts": "Add a second writable account to record a transfer.",
+		"invalid": "Check the transfer details and try again.",
+		"pending": "Saving the transfer on this device…",
+		"created": "Transfer saved on this device.",
+		"permission_changed": "You no longer have write access to both accounts.",
+		"incompatible": "Choose different accounts with the same currency.",
+		"unavailable": "The transfer could not be saved. Check the accounts and try again.",
 		"suggestions_heading": "Matching transactions",
 		"convert_to_transfer": "Convert this transaction to a transfer",
 		"searching": "Looking for matching transactions…",
@@ -467,6 +476,7 @@
 	},
 	"sync": {
 		"mutation_rejected": "A change saved on this device was rejected while syncing. Your data has been updated to match the latest accepted changes.",
+		"transfer_create_rejected": "The transfer saved on this device was rejected while syncing. The transfer changes were rolled back locally.",
 		"transfer_link_rejected": "The transfer link saved on this device was rejected while syncing. The transfer changes were rolled back locally.",
 		"transfer_unlink_rejected": "The transfer unlink saved on this device was rejected while syncing. The remaining transfer changes are shown locally."
 	},

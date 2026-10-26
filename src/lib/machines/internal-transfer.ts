@@ -28,7 +28,7 @@ type UnlinkDb = Pick<ReturnType<typeof getDb>, 'one' | 'all'> & {
 type Grant = { accountId: string; access: 'read' | 'write' }
 export type TransferWriteTracking = {
 	transactionId: string
-	operation: 'link' | 'unlink'
+	operation: 'create' | 'link' | 'unlink'
 	transferId: string
 }
 type TrackTransferWrite = (write: TransferWriteTracking) => void
