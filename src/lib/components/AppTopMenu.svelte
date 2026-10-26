@@ -44,7 +44,6 @@
 	:global {
 		.site-header {
 			--dui-top-navigation-padding: 0;
-			--dui-top-navigation-height: 44px;
 			inline-size: 100%;
 		}
 

@@ -18,15 +18,15 @@
 
 <style>
 	.floating-action-space {
-		min-block-size: 5rem;
+		position: sticky;
+		bottom: 0;
+		display: flex;
+		justify-content: end;
 	}
 
 	.floating-action-link {
-		position: fixed;
-		inset-inline-end: calc(var(--dui-spacing-md) + env(safe-area-inset-right, 0px));
-		inset-block-end: calc(var(--dui-spacing-md) + env(safe-area-inset-bottom, 0px));
 		z-index: 1;
-		display: inline-flex;
+		display: flex;
 		align-items: center;
 		justify-content: center;
 		inline-size: 3.5rem;

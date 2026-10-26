@@ -72,7 +72,7 @@ for (const entity of ['category', 'tag']) {
 		await expect(table.getByRole('rowheader', { name: savedName, exact: true })).toBeVisible()
 		const tableBox = await bounds(table)
 		const triggerBox = await bounds(trigger)
-		expect(triggerBox.y - (tableBox.y + tableBox.height)).toBeGreaterThanOrEqual(15)
+		expect(triggerBox.y).toBeGreaterThanOrEqual(tableBox.y + tableBox.height)
 		await page.setViewportSize({ width: 390, height: 900 })
 		const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 		if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click()

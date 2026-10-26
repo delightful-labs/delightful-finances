@@ -728,3 +728,23 @@ states; no differences were observed. Temporary fixtures were removed. The only
 permanent test edit corrects the stale flat-secondary story identifier. No new
 style-only tests were retained. Library/application static, browser-test TypeScript,
 changed-file formatting and whitespace checks pass.
+
+### Viewport shell and shared drawer sections review cycle
+
+- [x] Extract AppDrawerContentSection and reuse it for filters, workspace selection and the navigation footer.
+- [x] Apply the user-edited viewport grid, main scrolling, direct route/dialog content and sticky transaction creation action; remove unused header measurement.
+- [x] Review implementation and align browser assertions with removed wrappers and shared footer padding.
+- [x] Complete focused static, formatting, rendering-unit and browser validation; record results.
+
+Earlier PageContent adoption entries describe historical work; the viewport shell
+change above supersedes that component and its shared spacing contract.
+
+Validation: changed-file Prettier and whitespace checks pass. Application/service-worker
+and browser-test TypeScript checks pass with zero Svelte errors or warnings. All nine
+rendering unit tests pass. Across creation modals, navigation, overview, transaction
+workspace and UI integration, 41 browser scenarios passed initially; the tag scenario
+stopped at the obsolete PageContent 15px-gap assertion. After replacing that with a
+non-overlap assertion, both category/tag scenarios pass, completing all 42 scenarios.
+Browser validation used a disposable in-memory Jazz server and isolated temporary
+environment settings on app port 5182. No standalone lint script is configured;
+Svelte and TypeScript checks supply the available static validation.

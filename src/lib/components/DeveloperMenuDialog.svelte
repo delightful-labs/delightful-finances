@@ -2,7 +2,6 @@
 	import { Button, Dialog } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
-	import PageContent from './PageContent.svelte'
 
 	let {
 		children,
@@ -32,20 +31,18 @@
 </button>
 
 <Dialog id={dialogId} heading={m['developer.menu']()} bind:open closedby="any">
-	<PageContent>
-		<dl>
-			<dt>{m['developer.browser_origin']()}</dt>
-			<dd><code>{browserOrigin || m['developer.unavailable']()}</code></dd>
-			<dt>{m['developer.jazz_app_id']()}</dt>
-			<dd><code>{appId || m['developer.unavailable']()}</code></dd>
-			<dt>{m['developer.jazz_server_url']()}</dt>
-			<dd><code>{serverUrl || m['developer.unavailable']()}</code></dd>
-			<dt>{m['developer.account_id']()}</dt>
-			<dd><code>{accountId || m['developer.unavailable']()}</code></dd>
-		</dl>
-		{@render children()}
-		<Button type="button" onclick={() => (open = false)}>{m['actions.close']()}</Button>
-	</PageContent>
+	<dl>
+		<dt>{m['developer.browser_origin']()}</dt>
+		<dd><code>{browserOrigin || m['developer.unavailable']()}</code></dd>
+		<dt>{m['developer.jazz_app_id']()}</dt>
+		<dd><code>{appId || m['developer.unavailable']()}</code></dd>
+		<dt>{m['developer.jazz_server_url']()}</dt>
+		<dd><code>{serverUrl || m['developer.unavailable']()}</code></dd>
+		<dt>{m['developer.account_id']()}</dt>
+		<dd><code>{accountId || m['developer.unavailable']()}</code></dd>
+	</dl>
+	{@render children()}
+	<Button type="button" onclick={() => (open = false)}>{m['actions.close']()}</Button>
 </Dialog>
 
 <style>

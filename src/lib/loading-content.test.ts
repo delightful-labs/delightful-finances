@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest'
 import { createRawSnippet } from 'svelte'
 import { render } from 'svelte/server'
-import LoadingContent from './LoadingContent.svelte'
-import QueryContent from './QueryContent.svelte'
+import LoadingContent from '#lib/components/LoadingContent.svelte'
+import QueryContent from '#lib/components/QueryContent.svelte'
 
 const children = createRawSnippet(() => ({ render: () => '<button>Add Category</button>' }))
 
