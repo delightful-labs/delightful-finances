@@ -29,14 +29,18 @@ import {
 	transactionEntryScope
 } from './transaction-entry.js'
 import {
-	internalTransferLinkMachine,
-	internalTransferUnlinkMachine,
 	type InternalTransferLinkInput,
 	type InternalTransferLinkResult,
 	type InternalTransferUnlinkInput,
 	type InternalTransferUnlinkResult,
 	type TransferWriteTracking
 } from './internal-transfer.js'
+import {
+	type TransferMutationGateway,
+	type TransferMutationRequestInput
+} from './internal-transfer-mutation-request.js'
+import { createTransferMutationRequestMachine } from './internal-transfer-mutation-request.js'
+import type { TransferMutationResult } from './internal-transfer-mutation-owner.js'
 
 export type TransactionEditOptions = ReturnType<typeof createTransactionEditFormOptions>
 export type TransactionEditTransferState =
@@ -76,10 +80,23 @@ function required<Value>(value: Value | undefined): Value {
 	return value
 }
 
+function linkResult(result: TransferMutationResult): InternalTransferLinkResult {
+	return result.operation === 'link'
+		? result.result
+		: { outcome: 'unavailable', settlement: 'unresolved' }
+}
+
+function unlinkResult(result: TransferMutationResult): InternalTransferUnlinkResult {
+	return result.operation === 'unlink'
+		? result.result
+		: { outcome: 'unavailable', settlement: 'unresolved' }
+}
+
 export function createTransactionEditMachine(
 	options: TransactionEditOptions,
 	db: ReturnType<typeof getDb>,
-	trackTransferWrite: (write: TransferWriteTracking) => void
+	trackTransferWrite: (write: TransferWriteTracking) => void,
+	mutationGateway: TransferMutationGateway
 ) {
 	const formMachine = createScopedFormMachine(options)
 	type FormEvent = EventFrom<typeof formMachine>
@@ -113,10 +130,11 @@ export function createTransactionEditMachine(
 		| { type: 'LINK_SUCCEEDED' }
 		| { type: 'UNLINK_SUCCEEDED' }
 		| { type: 'SHUTDOWN' }
+	const mutationRequest = createTransferMutationRequestMachine(mutationGateway)
 	const actors = {
 		form: formMachine,
-		linkOperation: internalTransferLinkMachine,
-		unlinkOperation: internalTransferUnlinkMachine
+		linkOperation: mutationRequest,
+		unlinkOperation: mutationRequest
 	}
 	const workflow = setup<
 		Context,
@@ -500,7 +518,13 @@ export function createTransactionEditMachine(
 								invoke: {
 									id: 'linkOperation',
 									src: 'linkOperation',
-									input: ({ context }) => required(context.linkInput),
+									input: ({
+										context
+									}): Extract<TransferMutationRequestInput, { operation: 'link' }> => ({
+										workspaceId: required(context.linkInput).organizationId,
+										operation: 'link',
+										input: required(context.linkInput)
+									}),
 									onDone: [
 										{
 											guard: 'linkIsClosing',
@@ -512,17 +536,22 @@ export function createTransactionEditMachine(
 											actions: assign({ linkInput: undefined, linkResult: null })
 										},
 										{
-											guard: ({ event }) => event.output.outcome === 'succeeded',
+											guard: ({ event }) =>
+												event.output.operation === 'link' &&
+												event.output.result.outcome === 'succeeded',
 											target: '#transaction-edit-form.running.link.succeeded',
 											actions: [
-												assign({ linkResult: ({ event }) => event.output, linkInput: undefined }),
+												assign({
+													linkResult: ({ event }) => linkResult(event.output),
+													linkInput: undefined
+												}),
 												raise({ type: 'LINK_SUCCEEDED' })
 											]
 										},
 										{
 											target: '#transaction-edit-form.running.link.rejected',
 											actions: assign({
-												linkResult: ({ event }) => event.output,
+												linkResult: ({ event }) => linkResult(event.output),
 												linkInput: undefined
 											})
 										}
@@ -613,7 +642,13 @@ export function createTransactionEditMachine(
 								invoke: {
 									id: 'unlinkOperation',
 									src: 'unlinkOperation',
-									input: ({ context }) => required(context.unlinkInput),
+									input: ({
+										context
+									}): Extract<TransferMutationRequestInput, { operation: 'unlink' }> => ({
+										workspaceId: required(context.unlinkInput).organizationId,
+										operation: 'unlink',
+										input: required(context.unlinkInput)
+									}),
 									onDone: [
 										{
 											guard: 'unlinkIsClosing',
@@ -625,11 +660,13 @@ export function createTransactionEditMachine(
 											actions: assign({ unlinkInput: undefined, unlinkResult: null })
 										},
 										{
-											guard: ({ event }) => event.output.outcome === 'succeeded',
+											guard: ({ event }) =>
+												event.output.operation === 'unlink' &&
+												event.output.result.outcome === 'succeeded',
 											target: '#transaction-edit-form.running.unlink.succeeded',
 											actions: [
 												assign({
-													unlinkResult: ({ event }) => event.output,
+													unlinkResult: ({ event }) => unlinkResult(event.output),
 													unlinkInput: undefined
 												}),
 												raise({ type: 'UNLINK_SUCCEEDED' })
@@ -638,7 +675,7 @@ export function createTransactionEditMachine(
 										{
 											target: '#transaction-edit-form.running.unlink.rejected',
 											actions: assign({
-												unlinkResult: ({ event }) => event.output,
+												unlinkResult: ({ event }) => unlinkResult(event.output),
 												unlinkInput: undefined
 											})
 										}

@@ -18,9 +18,12 @@ import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
 import { createJazzTransactionActors } from './jazz-transaction-actors.js'
 
-type Db = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
-type Transaction = ReturnType<Db['beginTransaction']>
-type LocalWrite = ReturnType<Transaction['commit']>
+type JazzTransaction = ReturnType<ReturnType<typeof getDb>['beginTransaction']>
+type LocalWrite = { txId: Promise<string>; wait(options: { tier: 'local' }): Promise<void> }
+type Transaction = Pick<JazzTransaction, 'one' | 'all' | 'insert' | 'rollback'> & {
+	commit(): LocalWrite
+}
+type Db = { beginTransaction(): Transaction }
 type TrackedWrite = LocalWrite & { txId: Promise<string> }
 type Grant = Pick<AccountMembership, 'accountId' | 'access'>
 export type InternalTransferCreateInput = {

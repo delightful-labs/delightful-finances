@@ -68,7 +68,8 @@
 		createInternalTransferEntryFormOptions({
 			db,
 			observe,
-			trackWrite: (write) => readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write })
+			trackWrite: (write) => readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write }),
+			mutationGateway: { send: (event) => readiness.actor.send(event) }
 		})
 	)
 	const writableAccounts = $derived(selectInternalTransferEntryAccounts(observe()))

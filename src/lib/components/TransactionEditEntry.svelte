@@ -43,7 +43,9 @@
 		readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write })
 	const session = fromStore(getJazzSession())
 	const entryForm = createTransactionEditFormOptions({ binding: db, observe, db })
-	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite)
+	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite, {
+		send: (event) => readiness.actor.send(event)
+	})
 	const editActor = createActor(editWorkflow.logic, {
 		input: {
 			identityId: session.current.account?.id ?? null,

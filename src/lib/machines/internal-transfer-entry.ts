@@ -21,11 +21,14 @@ import type {
 } from '#lib/transfer-create-contract.js'
 import { defaultTransactionCategory, dateOnlyText } from '#lib/validation/transactions.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
-import {
-	createInternalTransferCreateMachine,
-	type InternalTransferCreateInput
-} from './internal-transfer-create.js'
 import type { TransferWriteTracking } from './internal-transfer.js'
+import {
+	createTransferMutationRequestMachine,
+	type TransferMutationGateway,
+	type TransferMutationRequestInput
+} from './internal-transfer-mutation-request.js'
+import type { InternalTransferCreateResult } from './internal-transfer-create.js'
+import type { TransferMutationResult } from './internal-transfer-mutation-owner.js'
 
 type CreatedTransfer = {
 	transferId: string
@@ -36,6 +39,7 @@ type Dependencies = {
 	db: Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 	trackWrite: (write: TransferWriteTracking) => void
 	observe: () => InternalTransferEntryObservation
+	mutationGateway: TransferMutationGateway
 }
 type PersistenceInput = FormOperationInput<
 	InternalTransferEntryValues,
@@ -48,6 +52,12 @@ function required<T>(value: T | null | undefined): T {
 	return value
 }
 
+function createdResult(result: TransferMutationResult): InternalTransferCreateResult {
+	return result.operation === 'create'
+		? result.result
+		: { outcome: 'unavailable', settlement: 'unresolved' }
+}
+
 function mapSettlement(settlement: 'notStarted' | 'unresolved'): FormSettlement {
 	return settlement === 'notStarted' ? settlement : 'unknown'
 }
@@ -58,11 +68,11 @@ function createPersistence(dependencies: Dependencies) {
 		result: FormOperationResult<CreatedTransfer, InternalTransferEntryReason> | undefined
 	}
 	type Event = FormChildEvent<InternalTransferEntryObservation>
-	const actors = { create: createInternalTransferCreateMachine() }
+	const actors = { create: createTransferMutationRequestMachine(dependencies.mutationGateway) }
 	const workflow = setup<
 		Context,
 		Event,
-		{ create: ReturnType<typeof createInternalTransferCreateMachine> },
+		typeof actors,
 		{},
 		{},
 		{},
@@ -99,18 +109,22 @@ function createPersistence(dependencies: Dependencies) {
 				invoke: {
 					id: 'create',
 					src: 'create',
-					input: ({ context }): InternalTransferCreateInput => {
+					input: ({ context }): Extract<TransferMutationRequestInput, { operation: 'create' }> => {
 						const { request } = context.input
 						const { values, scope } = request
 						return {
-							db: dependencies.db,
-							identityId: required(scope.identityId),
-							organizationId: required(scope.organizationId),
-							expenseAccountId: values.expenseAccountId,
-							incomeAccountId: values.incomeAccountId,
-							amountMinor: values.amountMinor,
-							bookedOn: values.bookedOn,
-							trackWrite: dependencies.trackWrite
+							workspaceId: required(scope.organizationId),
+							operation: 'create',
+							input: {
+								db: dependencies.db,
+								identityId: required(scope.identityId),
+								organizationId: required(scope.organizationId),
+								expenseAccountId: values.expenseAccountId,
+								incomeAccountId: values.incomeAccountId,
+								amountMinor: values.amountMinor,
+								bookedOn: values.bookedOn,
+								trackWrite: dependencies.trackWrite
+							}
 						}
 					},
 					onDone: {
@@ -119,7 +133,7 @@ function createPersistence(dependencies: Dependencies) {
 							result: ({
 								event
 							}): FormOperationResult<CreatedTransfer, InternalTransferEntryReason> => {
-								const result = event.output
+								const result = createdResult(event.output)
 								if (result.outcome === 'succeeded')
 									return {
 										outcome: 'succeeded',
