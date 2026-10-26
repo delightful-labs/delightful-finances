@@ -7,15 +7,22 @@ import type {
 	InternalTransferLinkInput,
 	InternalTransferLinkResult,
 	InternalTransferUnlinkInput,
-	InternalTransferUnlinkResult
+	InternalTransferUnlinkResult,
+	InternalTransferDeleteInput,
+	InternalTransferDeleteResult
 } from './internal-transfer.js'
 import { createInternalTransferCreateMachine } from './internal-transfer-create.js'
-import { internalTransferLinkMachine, internalTransferUnlinkMachine } from './internal-transfer.js'
+import {
+	internalTransferDeleteMachine,
+	internalTransferLinkMachine,
+	internalTransferUnlinkMachine
+} from './internal-transfer.js'
 
 export type TransferMutationResult =
 	| { operation: 'create'; result: InternalTransferCreateResult }
 	| { operation: 'link'; result: InternalTransferLinkResult }
 	| { operation: 'unlink'; result: InternalTransferUnlinkResult }
+	| { operation: 'delete'; result: InternalTransferDeleteResult }
 
 export type TransferMutationResponse = {
 	type: 'TRANSFER_MUTATION_RESULT'
@@ -47,6 +54,13 @@ export type TransferMutationRequest =
 			workspaceId: string
 			operation: 'unlink'
 			input: InternalTransferUnlinkInput
+			recipient: TransferMutationRecipient
+	  }
+	| {
+			requestId: string
+			workspaceId: string
+			operation: 'delete'
+			input: InternalTransferDeleteInput
 			recipient: TransferMutationRecipient
 	  }
 
@@ -94,12 +108,22 @@ function unlinkRequest(
 	return value
 }
 
+function deleteRequest(
+	request: TransferMutationRequest | undefined
+): Extract<TransferMutationRequest, { operation: 'delete' }> {
+	const value = required(request)
+	if (value.operation !== 'delete') throw new Error('Unexpected transfer deletion request')
+	return value
+}
+
 function rejection(request: TransferMutationRequest): TransferMutationResult {
 	if (request.operation === 'create')
 		return { operation: 'create', result: { outcome: 'scopeChanged', settlement: 'notStarted' } }
 	if (request.operation === 'link')
 		return { operation: 'link', result: { outcome: 'unavailable', settlement: 'notStarted' } }
-	return { operation: 'unlink', result: { outcome: 'unavailable', settlement: 'notStarted' } }
+	if (request.operation === 'unlink')
+		return { operation: 'unlink', result: { outcome: 'unavailable', settlement: 'notStarted' } }
+	return { operation: 'delete', result: { outcome: 'unavailable', settlement: 'notStarted' } }
 }
 
 function cancelled(request: TransferMutationRequest): TransferMutationResult {
@@ -107,7 +131,9 @@ function cancelled(request: TransferMutationRequest): TransferMutationResult {
 		return { operation: 'create', result: { outcome: 'cancelled', settlement: 'notStarted' } }
 	if (request.operation === 'link')
 		return { operation: 'link', result: { outcome: 'cancelled', settlement: 'notStarted' } }
-	return { operation: 'unlink', result: { outcome: 'cancelled', settlement: 'notStarted' } }
+	if (request.operation === 'unlink')
+		return { operation: 'unlink', result: { outcome: 'cancelled', settlement: 'notStarted' } }
+	return { operation: 'delete', result: { outcome: 'cancelled', settlement: 'notStarted' } }
 }
 
 function failure(request: TransferMutationRequest): TransferMutationResult {
@@ -115,14 +141,17 @@ function failure(request: TransferMutationRequest): TransferMutationResult {
 		return { operation: 'create', result: { outcome: 'unavailable', settlement: 'unresolved' } }
 	if (request.operation === 'link')
 		return { operation: 'link', result: { outcome: 'unavailable', settlement: 'unresolved' } }
-	return { operation: 'unlink', result: { outcome: 'unavailable', settlement: 'unresolved' } }
+	if (request.operation === 'unlink')
+		return { operation: 'unlink', result: { outcome: 'unavailable', settlement: 'unresolved' } }
+	return { operation: 'delete', result: { outcome: 'unavailable', settlement: 'unresolved' } }
 }
 
 export function createInternalTransferMutationOwner() {
 	const actors = {
 		create: createInternalTransferCreateMachine(),
 		link: internalTransferLinkMachine,
-		unlink: internalTransferUnlinkMachine
+		unlink: internalTransferUnlinkMachine,
+		delete: internalTransferDeleteMachine
 	}
 	const machine = setup<
 		Context,
@@ -132,6 +161,7 @@ export function createInternalTransferMutationOwner() {
 			createOperation: 'create'
 			linkOperation: 'link'
 			unlinkOperation: 'unlink'
+			deleteOperation: 'delete'
 		},
 		{
 			queueRequest: undefined
@@ -148,6 +178,7 @@ export function createInternalTransferMutationOwner() {
 			creating: undefined
 			linking: undefined
 			unlinking: undefined
+			deleting: undefined
 			queuedRequestInScope: undefined
 			cancelsCurrent: undefined
 		},
@@ -159,6 +190,7 @@ export function createInternalTransferMutationOwner() {
 			creating: ({ context }) => context.request?.operation === 'create',
 			linking: ({ context }) => context.request?.operation === 'link',
 			unlinking: ({ context }) => context.request?.operation === 'unlink',
+			deleting: ({ context }) => context.request?.operation === 'delete',
 			queuedRequestInScope: ({ context }) => context.queue[0]?.workspaceId === context.workspaceId,
 			cancelsCurrent: ({ context, event }) =>
 				event.type === 'CANCEL_TRANSFER_MUTATION' && context.request?.requestId === event.requestId
@@ -259,6 +291,7 @@ export function createInternalTransferMutationOwner() {
 					{ guard: 'creating', target: 'creating' },
 					{ guard: 'linking', target: 'linking' },
 					{ guard: 'unlinking', target: 'unlinking' },
+					{ guard: 'deleting', target: 'deleting' },
 					{ target: 'finishing', actions: 'finishFailure' }
 				]
 			},
@@ -397,6 +430,53 @@ export function createInternalTransferMutationOwner() {
 					SHUTDOWN: {
 						actions: [
 							sendTo('unlinkOperation', { type: 'SHUTDOWN' }),
+							'rejectQueue',
+							assign({ queue: [], closing: true })
+						]
+					}
+				}
+			},
+			deleting: {
+				invoke: {
+					id: 'deleteOperation',
+					src: 'delete',
+					input: ({ context }) => deleteRequest(context.request).input,
+					onDone: {
+						target: 'finishing',
+						actions: assign(({ context, event }) => ({
+							result: {
+								type: 'TRANSFER_MUTATION_RESULT',
+								requestId: required(context.request).requestId,
+								result: { operation: 'delete', result: event.output }
+							}
+						}))
+					},
+					onError: { target: 'finishing', actions: 'finishFailure' }
+				},
+				on: {
+					REQUEST_TRANSFER_MUTATION: [
+						{
+							guard: ({ context, event }) =>
+								!context.closing && event.request.workspaceId === context.workspaceId,
+							actions: 'queueRequest'
+						},
+						{ actions: 'rejectRequest' }
+					],
+					CANCEL_TRANSFER_MUTATION: [
+						{ guard: 'cancelsCurrent', actions: sendTo('deleteOperation', { type: 'SHUTDOWN' }) },
+						{ actions: ['cancelQueued', 'removeCancelled'] }
+					],
+					TRANSFER_SCOPE_CHANGED: {
+						actions: [
+							sendTo('deleteOperation', { type: 'SHUTDOWN' }),
+							'rejectQueue',
+							'setWorkspace',
+							assign({ queue: [] })
+						]
+					},
+					SHUTDOWN: {
+						actions: [
+							sendTo('deleteOperation', { type: 'SHUTDOWN' }),
 							'rejectQueue',
 							assign({ queue: [], closing: true })
 						]

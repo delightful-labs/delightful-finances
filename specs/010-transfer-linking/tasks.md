@@ -120,8 +120,23 @@ No setup tasks.
 
 **Purpose**: Prepare the implementation for the user's review and then complete approved verification.
 
-- [ ] T023 Inspect the complete new actor tree and helpers for hidden orchestration, cancellation/cleanup gaps, stale observations, and permission rechecks; record findings in `specs/010-transfer-linking/tasks.md`.
-- [ ] T024 Identify the affected existing unit and Playwright test files and fixtures in `specs/010-transfer-linking/tasks.md` for the implementation review; keep test-file changes and execution outside this task list.
+- [x] T023 Inspect the complete new actor tree and helpers for hidden orchestration, cancellation/cleanup gaps, stale observations, and permission rechecks; record findings in `specs/010-transfer-linking/tasks.md`.
+- [x] T024 Identify the affected existing unit and Playwright test files and fixtures in `specs/010-transfer-linking/tasks.md` for the implementation review; keep test-file changes and execution outside this task list.
+
+### T020 implementation review notes
+
+- The application-owned transfer mutation coordinator routes and serializes delete requests with create, link, and unlink operations for the active workspace. The delete child checks the relationship, endpoint facts, reciprocal/pending markers, edit access to both accounts, the requested choice, and delete access separately for each endpoint before writing.
+- A linked pair clears both endpoint markers in one local transaction and waits for local durability before deleting. The second local transaction deletes the relationship and the selected endpoint(s) together. A previously cleared pair can retry deletion. Cancellation or shutdown before writes returns without mutation; after marker clearing it returns `recoveryRequired`; once record deletion starts the actor drains that write and reports its settlement.
+- The machine models two committed local phases because alpha.59 rejects deleting the relationship while endpoint markers still refer to it. Machine tests cover both local phases. In the full app `createPolicyTestApp` fixture, an owner-authorized relationship delete after marker clearing and a relationship-plus-endpoint delete bundle both remained unsettled at `tier: 'global'` through 8–12 second focused timeouts; no `AuthorizationDenied` result surfaced. This is inconclusive, not proof of denial, and blocks claiming authority-settlement verification for T020. The simplified transfer-policy fixture still verifies its smaller relationship-delete case, but does not substitute for the full app policy path.
+- Jazz remains the authority for endpoint delete and relationship delete permissions. The machine's preflight checks only improve local feedback; an authority rejection remains a separate synchronization outcome. Cross-device stale observations remain subject to Jazz policy enforcement and the already documented safety-conflict recovery work.
+
+### T020 review test inventory (after production-code approval)
+
+- `src/lib/machines/internal-transfer.test.ts`: add deletion cases for both-endpoint and selected-endpoint choices, invalid choices, independent endpoint delete grants, linked versus pending markers, cancellation after marker clearing, local settlement failures, and write tracking for both stages.
+- `src/lib/machines/internal-transfer-mutation-owner.test.ts`: cover delete dispatch, same-workspace serialization, queued cancellation, scope changes, and shutdown while deletion is in either local phase.
+- `src/lib/permissions.test.ts`: verify the real app policies allow the mergeable delete bundle only with the correct delete authority on each selected endpoint, and reject missing endpoint authority; preserve existing transfer-read and transaction-delete policy assertions.
+- `src/lib/machines/application-readiness.test.ts`: verify late rejections for either locally tracked delete write produce the delete-specific notice while unmatched rejections remain generic.
+- `tests/transaction-edit.e2e.ts`: extend the existing linked-transaction fixture to exercise both deletion choices, denied choices, and the totals explanation after T021 wires the UI. No separate transfer-delete Playwright test currently exists; use the existing transaction edit config/fixture.
 
 ## Dependencies and Execution Order
 

@@ -33,6 +33,7 @@ const viewerSession = {
 } satisfies import('jazz-tools/testing').PolicyTestSession
 let selectedMemberDb: TestDb
 let viewerDb: TestDb
+let selectedMemberId: string
 
 function transaction(kind: 'expense' | 'income') {
 	return {
@@ -90,7 +91,7 @@ beforeAll(async () => {
 	}
 	selectedMemberDb = fixture.as(selectedMemberSession)
 	viewerDb = fixture.as(viewerSession)
-	const selectedMemberId = fixture.accountFor(selectedMemberSession)
+	selectedMemberId = fixture.accountFor(selectedMemberSession)
 	const viewerId = fixture.accountFor(viewerSession)
 	await fixture.seed((seed) =>
 		seed.insert(app.organizationMembers, {
@@ -591,6 +592,116 @@ describe('linked transaction update safety', () => {
 			currency: 'USD',
 			description: 'Card payment'
 		})
+	})
+})
+
+describe('linked transaction deletion permissions', () => {
+	async function configureMemberDeleteGrants(expenseCanDelete: boolean, incomeCanDelete: boolean) {
+		const sourceGrant = await db.one(
+			app.accountMemberships.where({
+				organizationId,
+				accountId,
+				userId: selectedMemberId
+			})
+		)
+		if (!sourceGrant) throw new Error('Missing selected member source grant')
+		await db
+			.update(app.accountMemberships, sourceGrant.id, {
+				access: 'write',
+				canDelete: expenseCanDelete
+			})
+			.wait({ tier: 'global' })
+		const destinationGrant = await db.one(
+			app.accountMemberships.where({
+				organizationId,
+				accountId: otherAccountId,
+				userId: selectedMemberId
+			})
+		)
+		if (destinationGrant) {
+			await db
+				.update(app.accountMemberships, destinationGrant.id, {
+					access: 'write',
+					canDelete: incomeCanDelete
+				})
+				.wait({ tier: 'global' })
+			return
+		}
+		await db
+			.insert(app.accountMemberships, {
+				organizationId,
+				accountId: otherAccountId,
+				userId: selectedMemberId,
+				access: 'write',
+				canDelete: incomeCanDelete
+			})
+			.wait({ tier: 'global' })
+	}
+
+	async function seedTransferPair() {
+		const transferId = crypto.randomUUID()
+		const linkedExpenseId = crypto.randomUUID()
+		const linkedIncomeId = crypto.randomUUID()
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{ ...transaction('expense'), internalTransferId: transferId },
+				{ id: linkedExpenseId }
+			)
+		)
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{
+					...transaction('income'),
+					accountId: otherAccountId,
+					internalTransferId: transferId
+				},
+				{ id: linkedIncomeId }
+			)
+		)
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.internalTransfers,
+				{
+					organizationId,
+					expenseTransactionId: linkedExpenseId,
+					incomeTransactionId: linkedIncomeId,
+					expenseAccountId: accountId,
+					incomeAccountId: otherAccountId,
+					amountMinor: 100,
+					currency: 'USD'
+				},
+				{ id: transferId }
+			)
+		)
+		return { transferId, linkedExpenseId, linkedIncomeId }
+	}
+
+	async function clearTransferMarkers(
+		writer: TestDb,
+		linkedExpenseId: string,
+		linkedIncomeId: string
+	) {
+		const write = await writer.transaction((tx) => {
+			tx.update(app.transactions, linkedExpenseId, { internalTransferId: null })
+			tx.update(app.transactions, linkedIncomeId, { internalTransferId: null })
+		})
+		await write.wait({ tier: 'global' })
+	}
+
+	it('rejects endpoint deletion without that account delete grant', async () => {
+		const { linkedIncomeId } = await seedTransferPair()
+		await configureMemberDeleteGrants(true, false)
+		const linkedExpenseId = (
+			await db.one(app.internalTransfers.where({ incomeTransactionId: linkedIncomeId }))
+		)?.expenseTransactionId
+		if (!linkedExpenseId) throw new Error('Missing seeded transfer expense')
+		await clearTransferMarkers(selectedMemberDb, linkedExpenseId, linkedIncomeId)
+		await selectedMemberDb.expectDenied((writer) => writer.delete(app.transactions, linkedIncomeId))
+		expect(
+			(await db.one(app.transactions.where({ id: linkedIncomeId }), { tier: 'remote' }))?.id
+		).toBe(linkedIncomeId)
 	})
 })
 

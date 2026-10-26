@@ -478,6 +478,7 @@
 	"sync": {
 		"mutation_rejected": "A change saved on this device was rejected while syncing. Your data has been updated to match the latest accepted changes.",
 		"transfer_create_rejected": "The transfer saved on this device was rejected while syncing. The transfer changes were rolled back locally.",
+		"transfer_delete_rejected": "The transfer deletion saved on this device was rejected while syncing. Review the affected transactions before trying again.",
 		"transfer_link_rejected": "The transfer link saved on this device was rejected while syncing. The transfer changes were rolled back locally.",
 		"transfer_unlink_rejected": "The transfer unlink saved on this device was rejected while syncing. The remaining transfer changes are shown locally."
 	},

@@ -8,8 +8,11 @@ import {
 	type TransactionRow
 } from '#lib/schema.js'
 import {
+	internalTransferDeleteMachine,
 	internalTransferLinkMachine,
 	internalTransferUnlinkMachine,
+	type InternalTransferDeleteInput,
+	type InternalTransferDeleteChoice,
 	type InternalTransferUnlinkInput,
 	type TransferWriteTracking
 } from './internal-transfer.js'
@@ -119,6 +122,12 @@ function fixture(
 			return unlinkWrite()
 		}
 	)
+	const deleteTransaction = vi.fn<InternalTransferDeleteInput['db']['transaction']>(
+		async (callback) => {
+			callback({ update, delete: remove })
+			return unlinkWrite()
+		}
+	)
 	const unlinkDelete = vi.fn((table: typeof app.internalTransfers, id: string) => {
 		remove(table, id)
 		return unlinkWrite()
@@ -128,6 +137,11 @@ function fixture(
 		all: unlinkAll,
 		transaction: unlinkTransaction,
 		delete: unlinkDelete
+	}
+	const deleteDb = {
+		one: unlinkOne,
+		all: unlinkAll,
+		transaction: deleteTransaction
 	}
 	const beginTransaction = vi.fn(() => ({
 		one: tx.one.bind(tx),
@@ -172,6 +186,26 @@ function fixture(
 		actors.push(instance)
 		return instance.start()
 	}
+	const deleteActor = (
+		choice: InternalTransferDeleteChoice,
+		request: Partial<{ transferId: string; organizationId: string }> = {}
+	) => {
+		const instance = createActor(internalTransferDeleteMachine, {
+			input: {
+				db: deleteDb,
+				identityId,
+				organizationId,
+				transferId,
+				expenseTransactionId: expenseId,
+				incomeTransactionId: incomeId,
+				trackWrite,
+				choice,
+				...request
+			}
+		})
+		actors.push(instance)
+		return instance.start()
+	}
 	return {
 		tx,
 		one,
@@ -188,10 +222,12 @@ function fixture(
 		unlinkOne,
 		unlinkAll,
 		unlinkTransaction,
+		deleteTransaction,
 		unlinkDelete,
 		beginTransaction,
 		actor,
-		unlinkActor
+		unlinkActor,
+		deleteActor
 	}
 }
 
@@ -445,5 +481,179 @@ describe('internal transfer unlink machine', () => {
 		expect(f.update).not.toHaveBeenCalled()
 		expect(f.remove).not.toHaveBeenCalled()
 		expect(f.unlinkTransaction).not.toHaveBeenCalled()
+	})
+})
+
+describe('internal transfer delete machine', () => {
+	function linkedFixture(
+		options: {
+			membership?: OrganizationMember
+			grants?: { accountId: string; access: 'read' | 'write'; canDelete: boolean }[]
+			markers?: 'linked' | 'pending'
+		} = {}
+	) {
+		const f = fixture()
+		const marker = options.markers === 'pending' ? null : transferId
+		f.unlinkOne
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: transferId,
+				organizationId,
+				expenseTransactionId: expenseId,
+				incomeTransactionId: incomeId,
+				expenseAccountId,
+				incomeAccountId,
+				amountMinor: 4500,
+				currency: 'USD'
+			} satisfies InternalTransfer)
+			.mockResolvedValueOnce({ ...expense, internalTransferId: marker })
+			.mockResolvedValueOnce({ ...income, internalTransferId: marker })
+			.mockResolvedValueOnce(options.membership ?? membership)
+		f.unlinkAll.mockReset().mockResolvedValueOnce(
+			options.grants ?? [
+				{ accountId: expenseAccountId, access: 'write', canDelete: true },
+				{ accountId: incomeAccountId, access: 'write', canDelete: true }
+			]
+		)
+		return f
+	}
+
+	it('clears markers, then atomically deletes the relationship and both endpoints', async () => {
+		const f = linkedFixture()
+		const done = await waitFor(
+			f.deleteActor({ kind: 'both' }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toEqual({
+			outcome: 'succeeded',
+			transferId,
+			choice: { kind: 'both' },
+			deletedTransactionIds: [expenseId, incomeId],
+			settlement: 'locallyPersisted'
+		})
+		expect(f.deleteTransaction).toHaveBeenCalledTimes(2)
+		expect(f.update).toHaveBeenCalledWith(app.transactions, expenseId, { internalTransferId: null })
+		expect(f.update).toHaveBeenCalledWith(app.transactions, incomeId, { internalTransferId: null })
+		expect(f.remove).toHaveBeenCalledWith(app.internalTransfers, transferId)
+		expect(f.remove).toHaveBeenCalledWith(app.transactions, expenseId)
+		expect(f.remove).toHaveBeenCalledWith(app.transactions, incomeId)
+		expect(f.trackWrite).toHaveBeenNthCalledWith(1, {
+			transactionId: 'unlink-transaction-1',
+			operation: 'delete',
+			transferId
+		})
+		expect(f.trackWrite).toHaveBeenNthCalledWith(2, {
+			transactionId: 'unlink-transaction-2',
+			operation: 'delete',
+			transferId
+		})
+		expect(f.writeOrder).toEqual(['tracked', 'local', 'tracked', 'local'])
+	})
+
+	it('deletes only the selected endpoint and retains the now-unlinked counterpart', async () => {
+		const f = linkedFixture()
+		const choice = { kind: 'selected', transactionId: expenseId } as const
+		const done = await waitFor(f.deleteActor(choice), (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toMatchObject({
+			outcome: 'succeeded',
+			choice,
+			deletedTransactionIds: [expenseId],
+			settlement: 'locallyPersisted'
+		})
+		expect(f.remove).toHaveBeenCalledWith(app.internalTransfers, transferId)
+		expect(f.remove).toHaveBeenCalledWith(app.transactions, expenseId)
+		expect(f.remove).not.toHaveBeenCalledWith(app.transactions, incomeId)
+	})
+
+	it('retries a pending unlink by deleting records without clearing markers again', async () => {
+		const f = linkedFixture({ markers: 'pending' })
+		const done = await waitFor(
+			f.deleteActor({ kind: 'both' }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toMatchObject({ outcome: 'succeeded', settlement: 'locallyPersisted' })
+		expect(f.deleteTransaction).toHaveBeenCalledOnce()
+		expect(f.update).not.toHaveBeenCalled()
+	})
+
+	it('requires delete authority independently for every selected endpoint', async () => {
+		const f = linkedFixture({
+			membership: { ...membership, role: 'member', accountAccessMode: 'selected' },
+			grants: [
+				{ accountId: expenseAccountId, access: 'write', canDelete: true },
+				{ accountId: incomeAccountId, access: 'write', canDelete: false }
+			]
+		})
+		const done = await waitFor(
+			f.deleteActor({ kind: 'both' }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toEqual({ outcome: 'denied', settlement: 'notStarted' })
+		expect(f.deleteTransaction).not.toHaveBeenCalled()
+		expect(f.remove).not.toHaveBeenCalled()
+	})
+
+	it('permits selected-side deletion with only that endpoint grant', async () => {
+		const f = linkedFixture({
+			membership: { ...membership, role: 'member', accountAccessMode: 'selected' },
+			grants: [
+				{ accountId: expenseAccountId, access: 'write', canDelete: true },
+				{ accountId: incomeAccountId, access: 'write', canDelete: false }
+			]
+		})
+		const done = await waitFor(
+			f.deleteActor({ kind: 'selected', transactionId: expenseId }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toMatchObject({
+			outcome: 'succeeded',
+			deletedTransactionIds: [expenseId]
+		})
+	})
+
+	it('reports recovery when cancelled after marker clearing is locally durable', async () => {
+		const f = linkedFixture()
+		const firstSettlement = Promise.withResolvers<void>()
+		f.unlinkWait.mockImplementationOnce(() => firstSettlement.promise)
+		const actor = f.deleteActor({ kind: 'both' })
+		await vi.waitFor(() =>
+			expect(actor.getSnapshot().matches({ running: { work: 'settlingClearWrite' } })).toBe(true)
+		)
+		actor.send({ type: 'CANCEL' })
+		firstSettlement.resolve()
+		const done = await waitFor(actor, (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toMatchObject({
+			outcome: 'recoveryRequired',
+			phase: 'clearingMarkers',
+			settlement: 'locallyPersisted'
+		})
+		expect(f.deleteTransaction).toHaveBeenCalledOnce()
+	})
+
+	it('reports the failed local delete phase after the unlink phase settled', async () => {
+		const f = linkedFixture()
+		const error = new Error('local delete unavailable')
+		f.deleteTransaction.mockResolvedValueOnce({
+			txId: Promise.resolve('clear-markers'),
+			wait: f.unlinkWait
+		})
+		f.deleteTransaction.mockRejectedValueOnce(error)
+		const done = await waitFor(
+			f.deleteActor({ kind: 'both' }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toMatchObject({
+			outcome: 'recoveryRequired',
+			phase: 'deletingRecords',
+			settlement: 'locallyPersisted',
+			error
+		})
 	})
 })

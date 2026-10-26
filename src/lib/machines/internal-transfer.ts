@@ -1,5 +1,5 @@
 import { EXPENSE, INCOME } from '#lib/domain/transaction-kind.js'
-import { canWriteAccount } from '#lib/domain/organization-permissions.js'
+import { canDeleteAccount, canWriteAccount } from '#lib/domain/organization-permissions.js'
 import { findInternalTransferCounterparts } from '#lib/domain/internal-transfer.js'
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
@@ -21,14 +21,28 @@ type Tx = Pick<JazzTransaction, 'one' | 'all' | 'insert' | 'update' | 'delete' |
 }
 type Db = { beginTransaction(): Tx }
 type TransferWrite = LocalWrite & { txId: Promise<string> }
-type UnlinkDb = Pick<ReturnType<typeof getDb>, 'one' | 'all'> & {
+type TransferReadDb = Pick<ReturnType<typeof getDb>, 'one' | 'all'>
+type TransferEndpointRequest = {
+	db: TransferReadDb
+	organizationId: string
+	identityId: string
+	transferId: string
+	expenseTransactionId: string
+	incomeTransactionId: string
+}
+type UnlinkDb = TransferReadDb & {
 	transaction(callback: (tx: Pick<JazzTransaction, 'update'>) => void): Promise<TransferWrite>
 	delete(table: typeof app.internalTransfers, id: string): TransferWrite
 }
-type Grant = { accountId: string; access: 'read' | 'write' }
+type DeleteDb = TransferReadDb & {
+	transaction(
+		callback: (tx: Pick<JazzTransaction, 'update' | 'delete'>) => void
+	): Promise<TransferWrite>
+}
+type Grant = { accountId: string; access: 'read' | 'write'; canDelete: boolean }
 export type TransferWriteTracking = {
 	transactionId: string
-	operation: 'create' | 'link' | 'unlink'
+	operation: 'create' | 'link' | 'unlink' | 'delete'
 	transferId: string
 }
 type TrackTransferWrite = (write: TransferWriteTracking) => void
@@ -56,6 +70,28 @@ export type InternalTransferUnlinkResult =
 			outcome: 'recoveryRequired'
 			transferId: string
 			settlement: 'locallyPersisted' | 'unresolved'
+			error?: unknown
+	  }
+	| {
+			outcome: 'cancelled' | 'closed' | 'denied' | 'incompatible' | 'unavailable'
+			settlement: 'notStarted' | 'unresolved'
+			error?: unknown
+	  }
+
+export type InternalTransferDeleteResult =
+	| {
+			outcome: 'succeeded'
+			transferId: string
+			choice: InternalTransferDeleteChoice
+			deletedTransactionIds: readonly string[]
+			settlement: 'locallyPersisted'
+	  }
+	| {
+			outcome: 'recoveryRequired'
+			transferId: string
+			choice: InternalTransferDeleteChoice
+			settlement: 'locallyPersisted' | 'unresolved'
+			phase: 'clearingMarkers' | 'deletingRecords'
 			error?: unknown
 	  }
 	| {
@@ -143,7 +179,7 @@ const read = fromPromise(
 			expense,
 			income,
 			membership,
-			grants: grants.map(({ accountId, access }) => ({ accountId, access })),
+			grants: grants.map(({ accountId, access, canDelete }) => ({ accountId, access, canDelete })),
 			links: [...expenseOutgoing, ...expenseIncoming, ...incomeOutgoing, ...incomeIncoming]
 		}
 	}
@@ -195,14 +231,16 @@ const stage = fromPromise(
 	}
 )
 
-export type InternalTransferUnlinkInput = {
+export type InternalTransferUnlinkInput = Omit<TransferEndpointRequest, 'db'> & {
 	db: UnlinkDb
-	organizationId: string
-	identityId: string
-	transferId: string
-	expenseTransactionId: string
-	incomeTransactionId: string
 	trackWrite: TrackTransferWrite
+}
+export type InternalTransferDeleteChoice =
+	{ kind: 'both' } | { kind: 'selected'; transactionId: string }
+export type InternalTransferDeleteInput = Omit<TransferEndpointRequest, 'db'> & {
+	db: DeleteDb
+	trackWrite: TrackTransferWrite
+	choice: InternalTransferDeleteChoice
 }
 type UnlinkRecords = {
 	transfer: InternalTransfer | null
@@ -220,6 +258,9 @@ type UnlinkAssessment =
 			income: Endpoint
 	  }
 	| { outcome: 'denied' | 'incompatible' | 'unavailable' }
+type DeleteAssessment =
+	| (Extract<UnlinkAssessment, { outcome: 'eligible' }> & { transactionIds: readonly string[] })
+	| { outcome: 'denied' | 'incompatible' | 'unavailable' }
 type UnlinkContext = {
 	request: InternalTransferUnlinkInput
 	records: UnlinkRecords | undefined
@@ -235,7 +276,7 @@ function eligibleUnlink(value: UnlinkAssessment | undefined): EligibleUnlink {
 }
 
 const readUnlink = fromPromise(
-	async ({ input }: { input: InternalTransferUnlinkInput }): Promise<UnlinkRecords> => {
+	async ({ input }: { input: TransferEndpointRequest }): Promise<UnlinkRecords> => {
 		const [transfer, expense, income, membership, grants] = await Promise.all([
 			input.db.one(app.internalTransfers.where({ id: input.transferId })),
 			input.db.one(app.transactions.where({ id: input.expenseTransactionId })),
@@ -258,15 +299,12 @@ const readUnlink = fromPromise(
 			expense,
 			income,
 			membership,
-			grants: grants.map(({ accountId, access }) => ({ accountId, access }))
+			grants: grants.map(({ accountId, access, canDelete }) => ({ accountId, access, canDelete }))
 		}
 	}
 )
 
-function assessUnlink(
-	records: UnlinkRecords,
-	request: InternalTransferUnlinkInput
-): UnlinkAssessment {
+function assessUnlink(records: UnlinkRecords, request: TransferEndpointRequest): UnlinkAssessment {
 	const { transfer, expense, income, membership, grants } = records
 	if (!transfer) return { outcome: 'unavailable' }
 	if (transfer.organizationId !== request.organizationId) return { outcome: 'incompatible' }
@@ -322,6 +360,31 @@ const deleteUnlinkRelationship = fromPromise(
 )
 const settleUnlinkWrite = fromPromise(({ input }: { input: TransferWrite }) =>
 	input.wait({ tier: 'local' })
+)
+
+type EligibleDelete = Extract<DeleteAssessment, { outcome: 'eligible' }>
+function eligibleDelete(value: DeleteAssessment | undefined): EligibleDelete {
+	if (value?.outcome !== 'eligible') throw new Error('Transfer deletion was not eligible')
+	return value
+}
+const clearDeleteMarkers = fromPromise(
+	({ input }: { input: { request: InternalTransferDeleteInput; assessment: EligibleUnlink } }) =>
+		input.request.db.transaction((tx) => {
+			tx.update(app.transactions, input.assessment.expense.id, { internalTransferId: null })
+			tx.update(app.transactions, input.assessment.income.id, { internalTransferId: null })
+		})
+)
+const deleteTransferBundle = fromPromise(
+	({
+		input
+	}: {
+		input: { request: InternalTransferDeleteInput; assessment: EligibleDelete }
+	}): Promise<TransferWrite> =>
+		input.request.db.transaction((tx) => {
+			tx.delete(app.internalTransfers, input.assessment.transfer.id)
+			for (const transactionId of input.assessment.transactionIds)
+				tx.delete(app.transactions, transactionId)
+		})
 )
 
 /** Owns ordered local-first unlink writes and exposes partial completion for recovery. */
@@ -630,6 +693,526 @@ export const internalTransferUnlinkMachine = setup<
 							}
 						},
 						finishing: { always: '#internal-transfer-unlink.terminal' }
+					}
+				}
+			}
+		},
+		terminal: { type: 'final' }
+	}
+})
+
+type DeleteContext = {
+	request: InternalTransferDeleteInput
+	records: UnlinkRecords | undefined
+	pairState: 'linked' | 'pending' | undefined
+	assessment: DeleteAssessment | undefined
+	write: TransferWrite | undefined
+	result: InternalTransferDeleteResult | undefined
+}
+const deleteActors = {
+	read: readUnlink,
+	clearMarkers: clearDeleteMarkers,
+	identifyTransferWrite,
+	settleWrite: settleUnlinkWrite,
+	deleteBundle: deleteTransferBundle
+}
+function deleteRecovery(
+	context: DeleteContext,
+	phase: 'clearingMarkers' | 'deletingRecords',
+	settlement: 'locallyPersisted' | 'unresolved',
+	error?: unknown
+): InternalTransferDeleteResult {
+	const assessment = eligibleDelete(context.assessment)
+	return {
+		outcome: 'recoveryRequired',
+		transferId: assessment.transfer.id,
+		choice: context.request.choice,
+		settlement,
+		phase,
+		...(error === undefined ? {} : { error })
+	}
+}
+function prepareDeleteAssessment(context: DeleteContext): DeleteAssessment {
+	const records = required(context.records)
+	const transfer = requiredDeleteRecord(records.transfer)
+	const expense = requiredDeleteRecord(records.expense)
+	const income = requiredDeleteRecord(records.income)
+	const transactionIds =
+		context.request.choice.kind === 'both'
+			? [expense.id, income.id]
+			: [context.request.choice.transactionId]
+	return {
+		outcome: 'eligible',
+		state: required(context.pairState),
+		transfer,
+		expense,
+		income,
+		transactionIds
+	}
+}
+function requiredDeleteRecord<Value>(value: Value | null): Value {
+	if (value === null) throw new Error('Missing verified transfer deletion record')
+	return value
+}
+export const internalTransferDeleteMachine = setup<
+	DeleteContext,
+	InternalTransferLinkEvent,
+	typeof deleteActors,
+	{},
+	{},
+	{
+		closing: undefined
+		cancelling: undefined
+		transferWorkspaceMatches: undefined
+		endpointFactsMatch: undefined
+		markersLinked: undefined
+		markersPending: undefined
+		canWriteExpense: undefined
+		canWriteIncome: undefined
+		deleteChoiceValid: undefined
+		deleteBoth: undefined
+		canDeleteExpense: undefined
+		canDeleteIncome: undefined
+		selectedIncome: undefined
+	},
+	never,
+	string,
+	InternalTransferDeleteInput,
+	InternalTransferDeleteResult
+>({
+	actors: deleteActors,
+	guards: {
+		closing: stateIn({ running: { control: 'closing' } }),
+		cancelling: stateIn({ running: { control: 'cancelling' } }),
+		transferWorkspaceMatches: ({ context }) =>
+			context.records?.transfer?.organizationId === context.request.organizationId,
+		endpointFactsMatch: ({ context }) => {
+			const records = context.records
+			const transfer = records?.transfer
+			const expense = records?.expense
+			const income = records?.income
+			return Boolean(
+				transfer &&
+				expense &&
+				income &&
+				expense.id === transfer.expenseTransactionId &&
+				income.id === transfer.incomeTransactionId &&
+				expense.organizationId === context.request.organizationId &&
+				income.organizationId === context.request.organizationId &&
+				expense.accountId === transfer.expenseAccountId &&
+				income.accountId === transfer.incomeAccountId &&
+				expense.kind === EXPENSE &&
+				income.kind === INCOME &&
+				expense.amountMinor === transfer.amountMinor &&
+				income.amountMinor === transfer.amountMinor &&
+				expense.currency === transfer.currency &&
+				income.currency === transfer.currency &&
+				expense.accountId !== income.accountId
+			)
+		},
+		markersLinked: ({ context }) => {
+			const transfer = context.records?.transfer
+			return Boolean(
+				transfer &&
+				context.records?.expense?.internalTransferId === transfer.id &&
+				context.records?.income?.internalTransferId === transfer.id
+			)
+		},
+		markersPending: ({ context }) =>
+			context.records?.expense?.internalTransferId == null &&
+			context.records?.income?.internalTransferId == null,
+		canWriteExpense: ({ context }) =>
+			Boolean(
+				context.records?.expense &&
+				canWriteAccount(
+					context.records.membership,
+					context.request.organizationId,
+					context.records.expense.accountId,
+					context.records.grants
+				)
+			),
+		canWriteIncome: ({ context }) =>
+			Boolean(
+				context.records?.income &&
+				canWriteAccount(
+					context.records.membership,
+					context.request.organizationId,
+					context.records.income.accountId,
+					context.records.grants
+				)
+			),
+		deleteChoiceValid: ({ context }) => {
+			const { choice } = context.request
+			return (
+				choice.kind === 'both' ||
+				choice.transactionId === context.records?.expense?.id ||
+				choice.transactionId === context.records?.income?.id
+			)
+		},
+		deleteBoth: ({ context }) => context.request.choice.kind === 'both',
+		canDeleteExpense: ({ context }) =>
+			Boolean(
+				context.records?.expense &&
+				canDeleteAccount(
+					context.records.membership,
+					context.request.organizationId,
+					context.records.expense.accountId,
+					context.records.grants
+				)
+			),
+		canDeleteIncome: ({ context }) =>
+			Boolean(
+				context.records?.income &&
+				canDeleteAccount(
+					context.records.membership,
+					context.request.organizationId,
+					context.records.income.accountId,
+					context.records.grants
+				)
+			),
+		selectedIncome: ({ context }) =>
+			context.request.choice.kind === 'selected' &&
+			context.request.choice.transactionId === context.records?.income?.id
+	}
+}).createMachine({
+	id: 'internal-transfer-delete',
+	context: ({ input }) => ({
+		request: input,
+		records: undefined,
+		pairState: undefined,
+		assessment: undefined,
+		write: undefined,
+		result: undefined
+	}),
+	initial: 'running',
+	output: ({ context }) => required(context.result),
+	states: {
+		running: {
+			type: 'parallel',
+			states: {
+				control: {
+					initial: 'active',
+					states: {
+						active: { on: { CANCEL: 'cancelling', SHUTDOWN: 'closing' } },
+						cancelling: { on: { CANCEL: {}, SHUTDOWN: 'closing' } },
+						closing: { on: { CANCEL: {}, SHUTDOWN: {} } }
+					}
+				},
+				work: {
+					initial: 'reading',
+					states: {
+						reading: {
+							invoke: {
+								src: 'read',
+								input: ({ context }) => context.request,
+								onDone: {
+									target: 'checkingAfterRead',
+									actions: assign({ records: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }): InternalTransferDeleteResult => ({
+											outcome: 'unavailable',
+											settlement: 'notStarted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterRead: {
+							always: [
+								{
+									guard: 'closing',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'closed', settlement: 'notStarted' } })
+								},
+								{
+									guard: 'cancelling',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'cancelled', settlement: 'notStarted' } })
+								},
+								{ target: 'checkingTransfer' }
+							]
+						},
+						checkingTransfer: {
+							always: [
+								{
+									guard: ({ context }) => context.records?.transfer == null,
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'unavailable', settlement: 'notStarted' } })
+								},
+								{ guard: 'transferWorkspaceMatches', target: 'checkingEndpoints' },
+								{
+									guard: ({ context }) => context.records?.transfer !== null,
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'incompatible', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingEndpoints: {
+							always: [
+								{
+									guard: ({ context }) => !context.records?.expense || !context.records?.income,
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'unavailable', settlement: 'notStarted' } })
+								},
+								{ guard: 'endpointFactsMatch', target: 'checkingMarkers' },
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'incompatible', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingMarkers: {
+							always: [
+								{
+									guard: 'markersLinked',
+									target: 'checkingExpenseWrite',
+									actions: assign({ pairState: 'linked' })
+								},
+								{
+									guard: 'markersPending',
+									target: 'checkingExpenseWrite',
+									actions: assign({ pairState: 'pending' })
+								},
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'incompatible', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingExpenseWrite: {
+							always: [
+								{ guard: 'canWriteExpense', target: 'checkingIncomeWrite' },
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'denied', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingIncomeWrite: {
+							always: [
+								{ guard: 'canWriteIncome', target: 'checkingChoice' },
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'denied', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingChoice: {
+							always: [
+								{ guard: 'deleteChoiceValid', target: 'checkingChoiceKind' },
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'incompatible', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingChoiceKind: {
+							always: [
+								{ guard: 'selectedIncome', target: 'checkingDeleteIncome' },
+								{ target: 'checkingDeleteExpense' }
+							]
+						},
+						checkingDeleteExpense: {
+							always: [
+								{ guard: 'canDeleteExpense', target: 'checkingDeleteChoice' },
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'denied', settlement: 'notStarted' } })
+								}
+							]
+						},
+						checkingDeleteChoice: {
+							always: [
+								{ guard: 'deleteBoth', target: 'checkingDeleteIncome' },
+								{ target: 'preparingDeletion' }
+							]
+						},
+						checkingDeleteIncome: {
+							always: [
+								{ guard: 'canDeleteIncome', target: 'preparingDeletion' },
+								{
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'denied', settlement: 'notStarted' } })
+								}
+							]
+						},
+						preparingDeletion: {
+							always: {
+								target: 'checkingAfterAssessment',
+								actions: assign({ assessment: ({ context }) => prepareDeleteAssessment(context) })
+							}
+						},
+						checkingAfterAssessment: {
+							always: [
+								{
+									guard: 'closing',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'closed', settlement: 'notStarted' } })
+								},
+								{
+									guard: 'cancelling',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'cancelled', settlement: 'notStarted' } })
+								},
+								{
+									guard: ({ context }) => context.pairState === 'pending',
+									target: 'deletingRecords'
+								},
+								{ target: 'clearingMarkers' }
+							]
+						},
+						clearingMarkers: {
+							invoke: {
+								src: 'clearMarkers',
+								input: ({ context }) => ({
+									request: context.request,
+									assessment: eligibleUnlink(context.assessment)
+								}),
+								onDone: {
+									target: 'identifyingClearWrite',
+									actions: assign({ write: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }) =>
+											deleteRecovery(context, 'clearingMarkers', 'unresolved', event.error)
+									})
+								}
+							}
+						},
+						identifyingClearWrite: {
+							invoke: {
+								src: 'identifyTransferWrite',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'settlingClearWrite',
+									actions: ({ context, event }) =>
+										context.request.trackWrite({
+											transactionId: event.output,
+											operation: 'delete',
+											transferId: eligibleDelete(context.assessment).transfer.id
+										})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }) =>
+											deleteRecovery(context, 'clearingMarkers', 'unresolved', event.error)
+									})
+								}
+							}
+						},
+						settlingClearWrite: {
+							invoke: {
+								src: 'settleWrite',
+								input: ({ context }) => required(context.write),
+								onDone: { target: 'checkingAfterClear' },
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }) =>
+											deleteRecovery(context, 'clearingMarkers', 'unresolved', event.error)
+									})
+								}
+							}
+						},
+						checkingAfterClear: {
+							always: [
+								{
+									guard: 'closing',
+									target: 'finishing',
+									actions: assign({
+										result: ({ context }) =>
+											deleteRecovery(context, 'clearingMarkers', 'locallyPersisted')
+									})
+								},
+								{
+									guard: 'cancelling',
+									target: 'finishing',
+									actions: assign({
+										result: ({ context }) =>
+											deleteRecovery(context, 'clearingMarkers', 'locallyPersisted')
+									})
+								},
+								{ target: 'deletingRecords' }
+							]
+						},
+						deletingRecords: {
+							invoke: {
+								src: 'deleteBundle',
+								input: ({ context }) => ({
+									request: context.request,
+									assessment: eligibleDelete(context.assessment)
+								}),
+								onDone: {
+									target: 'identifyingDeleteWrite',
+									actions: assign({ write: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }) =>
+											deleteRecovery(context, 'deletingRecords', 'locallyPersisted', event.error)
+									})
+								}
+							}
+						},
+						identifyingDeleteWrite: {
+							invoke: {
+								src: 'identifyTransferWrite',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'settlingDeleteWrite',
+									actions: ({ context, event }) =>
+										context.request.trackWrite({
+											transactionId: event.output,
+											operation: 'delete',
+											transferId: eligibleDelete(context.assessment).transfer.id
+										})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }) =>
+											deleteRecovery(context, 'deletingRecords', 'locallyPersisted', event.error)
+									})
+								}
+							}
+						},
+						settlingDeleteWrite: {
+							invoke: {
+								src: 'settleWrite',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context }): InternalTransferDeleteResult => {
+											const assessment = eligibleDelete(context.assessment)
+											return {
+												outcome: 'succeeded',
+												transferId: assessment.transfer.id,
+												choice: context.request.choice,
+												deletedTransactionIds: assessment.transactionIds,
+												settlement: 'locallyPersisted'
+											}
+										}
+									})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }) =>
+											deleteRecovery(context, 'deletingRecords', 'locallyPersisted', event.error)
+									})
+								}
+							}
+						},
+						finishing: { always: '#internal-transfer-delete.terminal' }
 					}
 				}
 			}

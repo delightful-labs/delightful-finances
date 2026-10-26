@@ -153,6 +153,28 @@ describe('application readiness supervision', () => {
 		})
 
 		actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
+		for (const transactionId of ['delete-clear-write', 'delete-records-write'])
+			actor.send({
+				type: 'TRANSFER_WRITE_TRACKED',
+				write: { transactionId, operation: 'delete', transferId: 'transfer-id' }
+			})
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'delete-clear-write' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'transfer',
+			transactionId: 'delete-clear-write',
+			operation: 'delete',
+			transferId: 'transfer-id'
+		})
+		actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'delete-records-write' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'transfer',
+			transactionId: 'delete-records-write',
+			operation: 'delete',
+			transferId: 'transfer-id'
+		})
+
+		actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
 		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'untracked-write' })
 		expect(actor.getSnapshot().context.mutationNotice).toEqual({
 			kind: 'generic',

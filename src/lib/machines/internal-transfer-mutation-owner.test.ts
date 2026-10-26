@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Transaction } from 'jazz-tools'
 import { createActor, setup, waitFor } from 'xstate'
-import type { InternalTransferLinkInput } from './internal-transfer.js'
+import type { InternalTransferDeleteInput, InternalTransferLinkInput } from './internal-transfer.js'
 import {
 	createInternalTransferMutationOwner,
 	type TransferMutationRequest,
@@ -48,6 +48,29 @@ function linkRequest(
 	}
 }
 
+function deleteRequest(
+	requestId: string,
+	db: InternalTransferDeleteInput['db'],
+	responses: TransferMutationResponse[]
+): TransferMutationRequest {
+	return {
+		requestId,
+		workspaceId: organizationId,
+		operation: 'delete',
+		input: {
+			db,
+			organizationId,
+			identityId,
+			transferId: '77777777-7777-4777-8777-777777777777',
+			expenseTransactionId,
+			incomeTransactionId,
+			trackWrite: vi.fn(),
+			choice: { kind: 'both' }
+		},
+		recipient: { send: (event) => responses.push(event) }
+	}
+}
+
 function database(read: () => Promise<null>) {
 	const tx = new Transaction('mergeable', () => {
 		throw new Error('Fixture must not open a Jazz runtime')
@@ -60,7 +83,59 @@ function database(read: () => Promise<null>) {
 	return { db, beginTransaction }
 }
 
+function deletionDatabase(read: () => Promise<null>) {
+	const base = database(read)
+	const one = vi.fn(async () => read())
+	const all = vi.fn(async () => [])
+	const transaction = vi.fn<InternalTransferDeleteInput['db']['transaction']>(async () => ({
+		txId: Promise.resolve('delete-write'),
+		wait: vi.fn(async () => {})
+	}))
+	const db = { one, all, transaction } satisfies InternalTransferDeleteInput['db']
+	return { ...base, db, one, all, transaction }
+}
+
 describe('internal transfer mutation owner', () => {
+	it('dispatches and serializes deletion through the workspace owner', async () => {
+		const firstRead = deferred()
+		const firstDb = deletionDatabase(async () => {
+			await firstRead.promise
+			return null
+		})
+		const secondDb = database(async () => null)
+		const firstResponses: TransferMutationResponse[] = []
+		const secondResponses: TransferMutationResponse[] = []
+		const actor = createActor(createInternalTransferMutationOwner()).start()
+		actors.push(actor)
+
+		actor.send({ type: 'TRANSFER_SCOPE_CHANGED', workspaceId: organizationId })
+		actor.send({
+			type: 'REQUEST_TRANSFER_MUTATION',
+			request: deleteRequest('delete-first', firstDb.db, firstResponses)
+		})
+		await waitFor(actor, (snapshot) => snapshot.matches('deleting'))
+		actor.send({
+			type: 'REQUEST_TRANSFER_MUTATION',
+			request: linkRequest('link-second', secondDb.db, secondResponses)
+		})
+
+		expect(firstDb.beginTransaction).not.toHaveBeenCalled()
+		expect(secondDb.beginTransaction).not.toHaveBeenCalled()
+
+		firstRead.release()
+		await waitFor(actor, () => secondDb.beginTransaction.mock.calls.length === 1)
+		await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+
+		expect(firstResponses[0]?.result).toEqual({
+			operation: 'delete',
+			result: { outcome: 'unavailable', settlement: 'notStarted' }
+		})
+		expect(secondResponses[0]?.result).toEqual({
+			operation: 'link',
+			result: { outcome: 'unavailable', settlement: 'notStarted' }
+		})
+	})
+
 	it('serializes workspace mutations and returns each result to its requester', async () => {
 		const firstRead = deferred()
 		const firstDb = database(async () => {
