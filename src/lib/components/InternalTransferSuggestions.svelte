@@ -137,6 +137,9 @@
 			</p>{/if}
 		{#if !unlinkAvailable && !unlinkPending}<p>{m['transfers.unlink_unavailable']()}</p>{/if}
 	{/if}
+	{#if editorState === 'conflicted'}
+		<p>{m['transfers.conflict_notice']()}</p>
+	{/if}
 	{#if editorState === 'empty'}
 		<p>{m['transfers.no_matches']()}</p>
 	{/if}
@@ -175,7 +178,7 @@
 			<p>{m['transfers.link_permission_required']()}</p>
 		{/if}
 	{/if}
-	<p role="status" aria-live="polite" aria-atomic="true">{statusMessage}</p>
+	<p>{statusMessage}</p>
 	{#if import.meta.env.DEV && editorState !== 'linked'}
 		<details>
 			<summary>{m['transfers.diagnostics_heading']()}</summary>

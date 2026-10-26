@@ -47,7 +47,7 @@ import type { TransferMutationResult } from './internal-transfer-mutation-owner.
 
 export type TransactionEditOptions = ReturnType<typeof createTransactionEditFormOptions>
 export type TransactionEditTransferState =
-	'unselected' | 'searching' | 'matches' | 'empty' | 'failed' | 'linked'
+	'unselected' | 'searching' | 'matches' | 'empty' | 'failed' | 'linked' | 'conflicted'
 type TransferObservation = {
 	rows: readonly InternalTransferCandidate[]
 	scope: TransactionEntryScope
@@ -55,6 +55,8 @@ type TransferObservation = {
 	linkedTransactionIds: readonly string[]
 	linkedTransfer: InternalTransfer | null
 	linked: boolean
+	conflicted: boolean
+	searchEnabled: boolean
 	pendingUnlink: boolean
 	loading: boolean
 	failed: boolean
@@ -161,7 +163,9 @@ export function createTransactionEditMachine(
 		},
 		{},
 		{
+			conflictedObservation: undefined
 			linkedObservation: undefined
+			searchDisabledObservation: undefined
 			searchLoading: undefined
 			searchFailed: undefined
 			currentTransferObservation: undefined
@@ -190,8 +194,12 @@ export function createTransactionEditMachine(
 	>({
 		actors,
 		guards: {
+			conflictedObservation: ({ event }) =>
+				event.type === 'TRANSFER_OBSERVATION' && event.observation.conflicted,
 			linkedObservation: ({ context, event }) =>
 				event.type === 'TRANSFER_OBSERVATION' && event.observation.linked,
+			searchDisabledObservation: ({ event }) =>
+				event.type === 'TRANSFER_OBSERVATION' && !event.observation.searchEnabled,
 			searchLoading: ({ event }) =>
 				event.type === 'TRANSFER_OBSERVATION' && event.observation.loading,
 			searchFailed: ({ event }) =>
@@ -511,6 +519,11 @@ export function createTransactionEditMachine(
 							SCOPE_CHANGED: { target: '.unselected', actions: clearTransferResults },
 							TRANSFER_OBSERVATION: [
 								{
+									guard: and(['currentTransferObservation', 'conflictedObservation']),
+									target: '.conflicted',
+									actions: updateTransferObservation
+								},
+								{
 									guard: and(['currentTransferObservation', 'linkedObservation']),
 									target: '.linked',
 									actions: updateTransferObservation
@@ -546,6 +559,11 @@ export function createTransactionEditMachine(
 									guard: and(['currentTransferObservation', 'transferSearchActive']),
 									target: '.empty',
 									actions: updateTransferObservation
+								},
+								{
+									guard: and(['currentTransferObservation', 'searchDisabledObservation']),
+									target: '.unselected',
+									actions: updateTransferObservation
 								}
 							],
 							LINK_SUCCEEDED: { target: '.linked' },
@@ -553,6 +571,7 @@ export function createTransactionEditMachine(
 						},
 						states: {
 							unselected: { on: { ENABLE_SEARCH: 'searching' } },
+							conflicted: {},
 							searching: {
 								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
 							},
@@ -956,6 +975,7 @@ export function createTransactionEditMachine(
 		const state = snapshot.value
 		if (!isRecord(state) || !isRecord(state.running)) return 'unselected'
 		const transfer = state.running.transfer
+		if (transfer === 'conflicted') return 'conflicted'
 		if (transfer === 'linked') return 'linked'
 		if (transfer === 'searching') return 'searching'
 		if (transfer === 'matches') return 'matches'

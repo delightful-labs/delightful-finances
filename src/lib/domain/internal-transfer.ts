@@ -9,6 +9,7 @@ type TransferMarker = Pick<TransactionRow, 'id' | 'internalTransferId'>
 
 export type InternalTransferResolution = {
 	effectiveLinks: readonly TransferLink[]
+	pendingLinks: readonly TransferLink[]
 	conflictedLinks: readonly TransferLink[]
 	suppressedTransactionIds: ReadonlySet<string>
 }
@@ -32,8 +33,27 @@ export function resolveInternalTransferLinks(
 		)
 		.sort((first, second) => compareText(first.id, second.id))
 	const effectiveIds = new Set(effectiveLinks.map(({ id }) => id))
+	const relationshipCountByTransactionId = new Map<string, number>()
+	for (const { expenseTransactionId, incomeTransactionId } of links) {
+		for (const transactionId of [expenseTransactionId, incomeTransactionId])
+			relationshipCountByTransactionId.set(
+				transactionId,
+				(relationshipCountByTransactionId.get(transactionId) ?? 0) + 1
+			)
+	}
+	const pendingLinks = links
+		.filter(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				transferIdByTransactionId.get(expenseTransactionId) === null &&
+				transferIdByTransactionId.get(incomeTransactionId) === null &&
+				relationshipCountByTransactionId.get(expenseTransactionId) === 1 &&
+				relationshipCountByTransactionId.get(incomeTransactionId) === 1
+		)
+		.slice()
+		.sort((first, second) => compareText(first.id, second.id))
+	const pendingIds = new Set(pendingLinks.map(({ id }) => id))
 	const conflictedLinks = links
-		.filter(({ id }) => !effectiveIds.has(id))
+		.filter(({ id }) => !effectiveIds.has(id) && !pendingIds.has(id))
 		.slice()
 		.sort((first, second) => compareText(first.id, second.id))
 	const suppressedTransactionIds = new Set<string>()
@@ -43,7 +63,7 @@ export function resolveInternalTransferLinks(
 	}
 	for (const transaction of transactions)
 		if (transaction.internalTransferId != null) suppressedTransactionIds.add(transaction.id)
-	return { effectiveLinks, conflictedLinks, suppressedTransactionIds }
+	return { effectiveLinks, pendingLinks, conflictedLinks, suppressedTransactionIds }
 }
 
 export type InternalTransferCandidate = Pick<

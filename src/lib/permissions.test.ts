@@ -658,6 +658,17 @@ describe('linked transaction update safety', () => {
 })
 
 describe('linked transaction deletion permissions', () => {
+	it('globally deletes an ordinary transaction', async () => {
+		const transactionId = crypto.randomUUID()
+		await fixture.seed((seed) =>
+			seed.insert(app.transactions, transaction('expense'), { id: transactionId })
+		)
+		await db.delete(app.transactions, transactionId).wait({ tier: 'global' })
+		expect(
+			await db.one(app.transactions.where({ id: transactionId }), { tier: 'remote' })
+		).toBeNull()
+	})
+
 	async function configureMemberDeleteGrants(expenseCanDelete: boolean, incomeCanDelete: boolean) {
 		const sourceGrant = await db.one(
 			app.accountMemberships.where({
@@ -751,6 +762,62 @@ describe('linked transaction deletion permissions', () => {
 		})
 		await write.wait({ tier: 'global' })
 	}
+
+	it('globally deletes a linked transfer after marker clearing settles', async () => {
+		const { transferId, linkedExpenseId, linkedIncomeId } = await seedTransferPair()
+		await clearTransferMarkers(db, linkedExpenseId, linkedIncomeId)
+		const deletion = await db.transaction((tx) => {
+			tx.delete(app.internalTransfers, transferId)
+			tx.delete(app.transactions, linkedExpenseId)
+			tx.delete(app.transactions, linkedIncomeId)
+		})
+		await deletion.wait({ tier: 'global' })
+
+		expect(
+			await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' })
+		).toBeNull()
+		expect(
+			await db.one(app.transactions.where({ id: linkedExpenseId }), { tier: 'remote' })
+		).toBeNull()
+		expect(
+			await db.one(app.transactions.where({ id: linkedIncomeId }), { tier: 'remote' })
+		).toBeNull()
+	}, 10_000)
+
+	it('allows a selected member to delete the transfer with write access to both accounts', async () => {
+		const { transferId, linkedExpenseId, linkedIncomeId } = await seedTransferPair()
+		await configureMemberDeleteGrants(false, false)
+		await clearTransferMarkers(selectedMemberDb, linkedExpenseId, linkedIncomeId)
+		await selectedMemberDb.delete(app.internalTransfers, transferId).wait({ tier: 'global' })
+
+		expect(
+			await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' })
+		).toBeNull()
+	}, 10_000)
+
+	it('denies transfer deletion when a selected member can write to only one endpoint account', async () => {
+		const { transferId, linkedExpenseId, linkedIncomeId } = await seedTransferPair()
+		await configureMemberDeleteGrants(false, false)
+		const incomeGrant = await db.one(
+			app.accountMemberships.where({
+				organizationId,
+				accountId: otherAccountId,
+				userId: selectedMemberId
+			})
+		)
+		if (!incomeGrant) throw new Error('Missing selected member income grant')
+		await db
+			.update(app.accountMemberships, incomeGrant.id, { access: 'read' })
+			.wait({ tier: 'global' })
+		await clearTransferMarkers(db, linkedExpenseId, linkedIncomeId)
+
+		await selectedMemberDb.expectDenied((writer) =>
+			writer.delete(app.internalTransfers, transferId)
+		)
+		expect(
+			(await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' }))?.id
+		).toBe(transferId)
+	}, 10_000)
 
 	it('rejects endpoint deletion without that account delete grant', async () => {
 		const { linkedIncomeId } = await seedTransferPair()

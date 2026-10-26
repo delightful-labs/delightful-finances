@@ -71,11 +71,10 @@ function fixture() {
 	} as unknown as TransactionEntryObservation
 	const db = {} as ReturnType<typeof getDb>
 	const options = createTransactionEditFormOptions({ binding, observe: () => facts, db })
-	const requests: Extract<TransferMutationRequest, { operation: 'delete' }>[] = []
+	const requests: TransferMutationRequest[] = []
 	const gateway: TransferMutationGateway = {
 		send(event) {
-			if (event.type === 'TRANSFER_MUTATION_REQUEST' && event.request.operation === 'delete')
-				requests.push(event.request)
+			if (event.type === 'TRANSFER_MUTATION_REQUEST') requests.push(event.request)
 		}
 	}
 	const workflow = createTransactionEditMachine(options, db, vi.fn(), gateway)
@@ -110,6 +109,30 @@ async function linkedFixture() {
 			linkedTransactionIds: [expenseId, incomeId],
 			linkedTransfer,
 			linked: true,
+			conflicted: false,
+			searchEnabled: false,
+			pendingUnlink: false,
+			loading: false,
+			failed: false
+		}
+	})
+	return f
+}
+
+async function conflictedFixture() {
+	const f = fixture()
+	await waitFor(f.actor, (snapshot) => f.workflow.selectFormView(snapshot).fieldsEditable)
+	f.actor.send({
+		type: 'TRANSFER_OBSERVATION',
+		observation: {
+			rows: [],
+			scope: transactionEntryScope(f.facts),
+			scopeGeneration: f.actor.getSnapshot().context.scopeGeneration,
+			linkedTransactionIds: [expenseId, incomeId],
+			linkedTransfer: null,
+			linked: false,
+			conflicted: true,
+			searchEnabled: false,
 			pendingUnlink: false,
 			loading: false,
 			failed: false
@@ -154,5 +177,17 @@ describe('transaction edit transfer deletion', () => {
 		await waitFor(f.actor, (snapshot) => snapshot.context.deleteResult?.outcome === 'denied')
 		expect(f.actor.getSnapshot().context.deleteInput).toBeUndefined()
 		expect(f.workflow.selectFormView(f.actor.getSnapshot()).fieldsEditable).toBe(true)
+	})
+
+	it('keeps inconsistent transfer actions unavailable', async () => {
+		const f = await conflictedFixture()
+		expect(f.workflow.selectTransferState(f.actor.getSnapshot())).toBe('conflicted')
+
+		f.actor.send({ type: 'UNLINK_TRANSFER' })
+		f.actor.send({ type: 'DELETE_LINKED_TRANSFER', choice: { kind: 'both' } })
+		f.actor.send({ type: 'LINK_COUNTERPART', candidateId: incomeId })
+
+		expect(f.requests).toEqual([])
+		expect(f.actor.getSnapshot().context.linkedTransfer).toBeNull()
 	})
 })

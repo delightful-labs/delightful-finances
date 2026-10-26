@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { EXPENSE, INCOME, transactionPages } from '#lib/domain/transaction-kind.js'
-	import { inspectInternalTransferCounterparts } from '#lib/domain/internal-transfer.js'
+	import {
+		inspectInternalTransferCounterparts,
+		resolveInternalTransferLinks
+	} from '#lib/domain/internal-transfer.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { app, transactionDetailQuery } from '#lib/schema.js'
 	import {
@@ -107,21 +110,27 @@
 				})
 			: undefined
 	)
+	const transferLinksQuery = new QuerySubscription(() =>
+		filters.activeOrganizationId && transactionQuery.current
+			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
 	const counterpartQuery = new QuerySubscription(() => {
 		const current = transaction
 		const organizationId = filters.activeOrganizationId
-		return transferSearchEnabled && current && organizationId
+		const related = transferLinksQuery.current?.some(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === current?.id || incomeTransactionId === current?.id
+		)
+		return (transferSearchEnabled || Boolean(current?.internalTransferId) || related) &&
+			current &&
+			organizationId
 			? app.transactions.where({
 					organizationId,
 					kind: current.kind === EXPENSE ? INCOME : EXPENSE
 				})
 			: undefined
 	})
-	const transferLinksQuery = new QuerySubscription(() =>
-		filters.activeOrganizationId && transactionQuery.current
-			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
-			: undefined
-	)
 	const transferAccountsQuery = new QuerySubscription(() =>
 		filters.activeOrganizationId &&
 		(transferSearchEnabled ||
@@ -259,14 +268,72 @@
 	const tagSuggestions = $derived(applicableTransactionTags(observe()).map((tag) => tag.name))
 	const counterpartRows = $derived(observeRows(counterpartQuery.current))
 	const transferLinks = $derived(observeRows(transferLinksQuery.current))
-	const linkedTransfer = $derived(
-		transferLinks.find(
-			({ id, expenseTransactionId, incomeTransactionId }) =>
-				id === transaction?.internalTransferId ||
-				expenseTransactionId === transaction?.id ||
-				incomeTransactionId === transaction?.id
+	const currentHasRelatedTransfer = $derived(
+		transferLinks.some(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === transaction?.id || incomeTransactionId === transaction?.id
+		)
+	)
+	const transferResolution = $derived(
+		resolveInternalTransferLinks(
+			transferLinks,
+			transaction ? [transaction, ...counterpartRows] : counterpartRows
+		)
+	)
+	const effectiveTransferLink = $derived(
+		transferResolution.effectiveLinks.find(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === transaction?.id || incomeTransactionId === transaction?.id
 		) ?? null
 	)
+	const effectiveTransfer = $derived(
+		effectiveTransferLink
+			? (transferLinks.find(({ id }) => id === effectiveTransferLink.id) ?? null)
+			: null
+	)
+	const pendingTransferLink = $derived(
+		transferResolution.pendingLinks.find(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === transaction?.id || incomeTransactionId === transaction?.id
+		) ?? null
+	)
+	const pendingTransfer = $derived(
+		pendingTransferLink
+			? (transferLinks.find(({ id }) => id === pendingTransferLink.id) ?? null)
+			: null
+	)
+	const counterpartObservationRequired = $derived(
+		transferSearchEnabled || Boolean(transaction?.internalTransferId) || currentHasRelatedTransfer
+	)
+	const transferObservationsSettled = $derived(
+		!transferLinksQuery.isLoading &&
+			(!counterpartObservationRequired || !counterpartQuery.isLoading)
+	)
+	const transferConflict = $derived.by(() => {
+		if (!transaction || !transferObservationsSettled) return false
+		const currentId = transaction.id
+		const resolvedTransfer = effectiveTransfer ?? pendingTransfer
+		const relatedIds = new Set([currentId])
+		if (resolvedTransfer)
+			relatedIds.add(
+				resolvedTransfer.expenseTransactionId === currentId
+					? resolvedTransfer.incomeTransactionId
+					: resolvedTransfer.expenseTransactionId
+			)
+		const hasConflictingLink = transferResolution.conflictedLinks.some(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				relatedIds.has(expenseTransactionId) || relatedIds.has(incomeTransactionId)
+		)
+		const hasOrphanMarker =
+			transaction.internalTransferId != null &&
+			!transferLinks.some(
+				({ id, expenseTransactionId, incomeTransactionId }) =>
+					id === transaction.internalTransferId &&
+					(expenseTransactionId === currentId || incomeTransactionId === currentId)
+			)
+		return hasConflictingLink || hasOrphanMarker
+	})
+	const linkedTransfer = $derived(transferConflict ? null : (effectiveTransfer ?? pendingTransfer))
 	const linkedCounterpartHref = $derived.by(() => {
 		if (!linkedTransfer || !transaction) return null
 		const counterpartId =
@@ -313,7 +380,9 @@
 	$effect(() => {
 		const searchEnabled = transferSearchEnabled
 		const linked = linkedTransfer !== null
-		if (!searchEnabled && !linked) return
+		const conflicted = transferConflict
+		const previouslyObserved = ['linked', 'conflicted'].includes(transferEditorState)
+		if (!searchEnabled && !linked && !conflicted && !previouslyObserved) return
 		const observation = {
 			rows: counterpartRows,
 			scope: transactionEntryScope(observe()),
@@ -321,9 +390,9 @@
 			linkedTransactionIds: [...linkedTransactionIds],
 			linkedTransfer,
 			linked,
-			pendingUnlink: Boolean(
-				linkedTransfer && transaction?.internalTransferId !== linkedTransfer.id
-			),
+			conflicted,
+			searchEnabled,
+			pendingUnlink: Boolean(linkedTransfer && pendingTransfer?.id === linkedTransfer.id),
 			loading:
 				counterpartQuery.isLoading ||
 				transferLinksQuery.isLoading ||

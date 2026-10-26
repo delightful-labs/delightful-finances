@@ -452,6 +452,7 @@
 		"link_already_linked": "One of these transactions is already linked to a transfer.",
 		"link_unavailable": "The transfer link could not be confirmed. Check the transactions before trying again.",
 		"linked_status": "This transaction is linked to an internal transfer.",
+		"conflict_notice": "This transfer link is inconsistent. Related transactions are excluded from totals until it is repaired.",
 		"diagnostics_heading": "Development transfer match diagnostics",
 		"diagnostics_loading": "The counterpart search is still loading.",
 		"diagnostics_failed": "The counterpart search failed.",

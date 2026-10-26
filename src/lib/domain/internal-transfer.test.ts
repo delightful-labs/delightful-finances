@@ -52,10 +52,55 @@ describe('internal transfer counterparts', () => {
 		const result = resolveInternalTransferLinks(links, transactions)
 
 		expect(result.effectiveLinks).toEqual([links[1]])
+		expect(result.pendingLinks).toEqual([])
 		expect(result.conflictedLinks).toEqual([links[0]])
 		expect(result.suppressedTransactionIds).toEqual(
 			new Set(['expense-a', 'expense-b', 'income', 'orphan-marker'])
 		)
+	})
+
+	it('keeps a locally staged unlink pending and treats a one-sided marker as a conflict', () => {
+		const links = [
+			{
+				id: 'pending',
+				expenseTransactionId: 'expense-pending',
+				incomeTransactionId: 'income-pending'
+			},
+			{
+				id: 'partial',
+				expenseTransactionId: 'expense-partial',
+				incomeTransactionId: 'income-partial'
+			}
+		]
+		const transactions = [
+			{ id: 'expense-pending', internalTransferId: null },
+			{ id: 'income-pending', internalTransferId: null },
+			{ id: 'expense-partial', internalTransferId: 'partial' },
+			{ id: 'income-partial', internalTransferId: null }
+		]
+
+		const result = resolveInternalTransferLinks(links, transactions)
+
+		expect(result.effectiveLinks).toEqual([])
+		expect(result.pendingLinks).toEqual([links[0]])
+		expect(result.conflictedLinks).toEqual([links[1]])
+	})
+
+	it('treats competing pending relationships as a conflict', () => {
+		const links = [
+			{ id: 'pending-a', expenseTransactionId: 'expense', incomeTransactionId: 'income-a' },
+			{ id: 'pending-b', expenseTransactionId: 'expense', incomeTransactionId: 'income-b' }
+		]
+		const transactions = [
+			{ id: 'expense', internalTransferId: null },
+			{ id: 'income-a', internalTransferId: null },
+			{ id: 'income-b', internalTransferId: null }
+		]
+
+		const result = resolveInternalTransferLinks(links, transactions)
+
+		expect(result.pendingLinks).toEqual([])
+		expect(result.conflictedLinks).toEqual(links)
 	})
 
 	it('returns effective and conflicted relationships in stable ID order', () => {

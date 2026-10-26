@@ -302,7 +302,7 @@
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
-				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked'}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked' && transferEditorState !== 'conflicted'}
 					<label>
 						<input
 							type="checkbox"

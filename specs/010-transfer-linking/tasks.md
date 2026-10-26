@@ -91,10 +91,10 @@ No setup tasks.
 
 ### T014b1–T014b2 implementation review notes
 
-- `resolveInternalTransferLinks` treats a relationship as effective only when both observed endpoint markers equal its ID. Other relationship rows remain classified as conflicted. For reporting safety, it returns all relationship endpoint IDs plus every non-null transfer-marked transaction ID as suppressed, including unresolved and pending rows.
+- `resolveInternalTransferLinks` treats a relationship as effective only when both observed endpoint markers equal its ID. A uniquely referenced relationship with both markers clear is classified as a pending unlink; one-sided markers, missing markers, and competing pending relationships remain conflicts. For reporting safety, it returns all relationship endpoint IDs plus every non-null transfer-marked transaction ID as suppressed.
 - The overview now observes all readable transactions and transfer relationships to calculate this result; it displays expense rows only and excludes the suppression set from totals, categories, and rows.
 - Jazz relationship reads still require read access to both endpoint transactions. A conflict row is additionally readable when both endpoints retain the relationship's workspace, account, kind, amount, and currency facts and both carry a non-null marker. Insert, update, and delete security rules are unchanged.
-- Repair remains deferred. The current slice prevents conflicted movements from entering totals and distinguishes effective from conflicted links in the domain result, but it does not display a repair notice or mutate conflict records.
+- The transaction editor now displays a conflict notice and suppresses link, unlink, and linked-delete actions when it observes an inconsistent relationship. Repair remains deferred; the current slice prevents conflicted movements from entering totals and does not mutate conflict records.
 - Verification: focused domain and overview tests passed (12 tests); production permission tests passed (56 tests), including conflict visibility for an owner and denial for a member who can read only one endpoint account. `pnpm check`, `pnpm check:tests`, and `git diff --check` passed.
 
 ---

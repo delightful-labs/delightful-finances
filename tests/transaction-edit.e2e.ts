@@ -345,6 +345,34 @@ test('links and unlinks a matching synced transaction without changing either tr
 		.toMatchObject({ internalTransferId: null, transfers: [] })
 })
 
+test('shows an inconsistent transfer and prevents further link actions', async ({ page }) => {
+	const seed = await seedTransaction(page, 'transfer')
+	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
+	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
+	await page.evaluate(async (incomeId) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		await db
+			.update(app.transactions, incomeId, { internalTransferId: null })
+			.wait({ tier: 'local' })
+	}, seed.counterpartId)
+	await page.goto(`/expenses/${seed.id}`)
+
+	const suggestions = page.getByRole('region', { name: 'Matching transactions' })
+	await expect(suggestions.getByText(/This transfer link is inconsistent\./)).toBeVisible()
+	await expect(
+		page.getByRole('checkbox', { name: 'Convert this transaction to a transfer' })
+	).toHaveCount(0)
+	await expect(suggestions.getByRole('button', { name: 'Unlink Transfer' })).toHaveCount(0)
+	await expect(page.getByRole('button', { name: 'Delete Transactions' })).toHaveCount(0)
+})
+
 test('deletes both transactions from the linked-transaction choices', async ({ page }) => {
 	const seed = await seedTransaction(page, 'transfer')
 	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')

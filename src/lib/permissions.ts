@@ -133,6 +133,31 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			])
 		])
 
+	const canWriteTransferAccounts = (transfer: InternalTransferContext) =>
+		anyOf([
+			canWriteAllAccounts(transfer.organizationId),
+			allOf([
+				policy.organizationMembers.exists.where({
+					organizationId: transfer.organizationId,
+					userId: session.user.account,
+					role: ORGANIZATION_ROLE.MEMBER,
+					accountAccessMode: ACCOUNT_ACCESS.SELECTED
+				}),
+				policy.accountMemberships.exists.where({
+					organizationId: transfer.organizationId,
+					accountId: transfer.expenseAccountId,
+					userId: session.user.account,
+					access: 'write'
+				}),
+				policy.accountMemberships.exists.where({
+					organizationId: transfer.organizationId,
+					accountId: transfer.incomeAccountId,
+					userId: session.user.account,
+					access: 'write'
+				})
+			])
+		])
+
 	const transactionReferencesAreValid = (transaction: TransactionContext) =>
 		allOf([
 			policy.categories.exists.where({
@@ -435,12 +460,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		])
 	)
 	policy.internalTransfers.allowUpdate.never()
-	policy.internalTransfers.allowDelete.where((transfer) =>
-		allOf([
-			canWriteAccount(transfer.expenseAccountId, transfer.organizationId),
-			canWriteAccount(transfer.incomeAccountId, transfer.organizationId)
-		])
-	)
+	policy.internalTransfers.allowDelete.where((transfer) => canWriteTransferAccounts(transfer))
 
 	policy.transactionTags.allowRead.where((link) =>
 		allOf([

@@ -158,9 +158,7 @@ describe('positive Check-style transfer endpoint lookups', () => {
 	})
 
 	it('rejects clearing both markers and deleting the relationship in one transaction', async () => {
-		await db
-			.insert(app.internalTransfers, transfer(), { id: transferId })
-			.wait({ tier: 'global' })
+		await db.insert(app.internalTransfers, transfer(), { id: transferId }).wait({ tier: 'global' })
 		const unlink = await db.transaction((tx) => {
 			tx.update(app.transactions, expenseTransactionId, { internalTransferId: null })
 			tx.update(app.transactions, incomeTransactionId, { internalTransferId: null })
@@ -170,16 +168,30 @@ describe('positive Check-style transfer endpoint lookups', () => {
 	})
 
 	it('accepts clearing both endpoint markers before deleting the relationship', async () => {
-		await db
-			.insert(app.internalTransfers, transfer(), { id: transferId })
-			.wait({ tier: 'global' })
+		await db.insert(app.internalTransfers, transfer(), { id: transferId }).wait({ tier: 'global' })
 		const clearMarkers = await db.transaction((tx) => {
 			tx.update(app.transactions, expenseTransactionId, { internalTransferId: null })
 			tx.update(app.transactions, incomeTransactionId, { internalTransferId: null })
 		})
 		await clearMarkers.wait({ tier: 'global' })
 		await db.delete(app.internalTransfers, transferId).wait({ tier: 'global' })
-		expect(await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' })).toBeNull()
+		expect(
+			await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' })
+		).toBeNull()
+	})
+
+	it('rejects deleting a transaction while an explicit Jazz relation still references it', async () => {
+		await db.insert(app.internalTransfers, transfer(), { id: transferId }).wait({ tier: 'global' })
+		const clearMarkers = await db.transaction((tx) => {
+			tx.update(app.transactions, expenseTransactionId, { internalTransferId: null })
+			tx.update(app.transactions, incomeTransactionId, { internalTransferId: null })
+		})
+		await clearMarkers.wait({ tier: 'global' })
+
+		await db.expectDenied((writer) => writer.delete(app.transactions, expenseTransactionId))
+		expect(
+			(await db.one(app.transactions.where({ id: expenseTransactionId }), { tier: 'remote' }))?.id
+		).toBe(expenseTransactionId)
 	})
 
 	it('rejects an endpoint that does not match its transaction facts', async () => {

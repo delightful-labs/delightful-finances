@@ -21,6 +21,22 @@ transaction may atomically stage and settle multiple rows while the server polic
 predicate intended to validate those rows. Diagnose the exact policy expression and runtime error
 before changing the data model or proposing a different persistence authority.
 
+## Full-policy linked deletion in alpha.59
+
+The production transfer schema uses explicit `s.rel` references from a transfer to both endpoint
+transactions. A transaction endpoint must remain undeletable while a transfer row references it,
+even after its `internalTransferId` marker has been cleared. Keep the marker-clear write separate;
+then delete the transfer row and the selected transaction rows together in the final mergeable
+bundle. The full app policy suite verifies this bundle at global durability.
+
+The transfer deletion permission must preserve the same account security as write access to both
+endpoints. In the full app, expressing this as two nested `canWriteAccount` predicates did not
+settle the linked deletion globally. The equivalent transfer-specific expression—owner/admin or
+all-account write access, or a selected-account member with write grants to both endpoint
+accounts—settled successfully. Keep the existing insert predicate separate; applying that rewrite
+to inserts caused the transfer-link browser flow to be rejected. Reverify both policy paths against
+the installed Jazz version before changing either expression.
+
 Before relying on a new policy shape, validate it against the installed Jazz version and its actual
 policy test/runtime path. Include both accepted and rejected cases for the precise relationship and
 correlation being introduced.
