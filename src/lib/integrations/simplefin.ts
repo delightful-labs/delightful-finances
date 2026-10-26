@@ -4,6 +4,17 @@ import { providerResponseSchema, type ProviderAccount } from '../validation/inte
 
 export const simplefinDemo = PUBLIC_SIMPLEFIN_DEMO === 'true'
 
+export type ProviderBalanceSnapshot = { availableBalance: string; balanceDate: Date }
+
+export function providerBalanceSnapshot(
+	account: Pick<ProviderAccount, 'balance' | 'available-balance' | 'balance-date'>
+): ProviderBalanceSnapshot | undefined {
+	const availableBalance = account['available-balance'] ?? account.balance
+	const balanceDate = account['balance-date']
+	if (availableBalance === undefined || balanceDate === undefined) return undefined
+	return { availableBalance, balanceDate: new Date(balanceDate * 1000) }
+}
+
 // This reserved domain cannot be mistaken for a real Bridge credential.
 const demoClaimUrl = 'https://simplefin-demo.invalid/claim'
 const demoAccessUrl = 'https://demo:demo@simplefin-demo.invalid/simplefin'

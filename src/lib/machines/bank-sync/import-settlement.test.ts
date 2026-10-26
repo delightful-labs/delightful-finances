@@ -88,6 +88,17 @@ describe('operation/import/account/transaction ownership chain', () => {
 			settlement: 'settled'
 		})
 		expect(f.stored.size).toBe(3)
+		expect(f.saveBalanceSnapshot).toHaveBeenCalledTimes(2)
+		expect(f.saveBalanceSnapshot).toHaveBeenNthCalledWith(1, {
+			linkId: id(20),
+			availableBalance: '90.00',
+			balanceDate: new Date(1792000000 * 1000)
+		})
+		expect(f.saveBalanceSnapshot).toHaveBeenNthCalledWith(2, {
+			linkId: id(21),
+			availableBalance: '250.00',
+			balanceDate: new Date(1792000000 * 1000)
+		})
 		const second = f.start()
 		expect(await toPromise(second.operation)).toMatchObject({
 			kind: 'complete',

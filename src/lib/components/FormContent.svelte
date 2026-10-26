@@ -63,9 +63,11 @@
 		gap: var(--dui-spacing-xs);
 	}
 
-	.form-controls.fill :global(> button) {
-		flex: 1 1 calc((100% - var(--dui-spacing-xs)) / 2);
-		min-inline-size: 0;
+	.form-controls.fill :global {
+		> button {
+			flex: 1 1 calc((100% - var(--dui-spacing-xs)) / 2);
+			min-inline-size: 0;
+		}
 	}
 
 	.form-fields:empty,

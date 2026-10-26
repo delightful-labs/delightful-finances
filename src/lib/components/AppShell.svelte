@@ -1,5 +1,4 @@
 <script lang="ts">
-	import PageContent from './PageContent.svelte'
 	import AppTopMenu from './AppTopMenu.svelte'
 	import AppDrawer from './AppDrawer.svelte'
 	import type QueryContent from './QueryContent.svelte'
@@ -59,20 +58,10 @@
 	let drawerOpen = $state(false)
 	let mobileViewport = $state(false)
 	const mainInert = $derived(mobileViewport && drawerOpen)
-	let topNavigationHeight = $state(44)
 
 	onMount(() => {
 		mobileViewport = isMobile()
 		drawerOpen = !mobileViewport
-
-		const resizeObserver = new ResizeObserver(([entry]) => {
-			if (!entry) return
-			const borderBox = entry.borderBoxSize[0]
-			topNavigationHeight = borderBox?.blockSize ?? entry.contentRect.height
-		})
-		const siteHeader = document.querySelector<HTMLElement>('[data-top-navigation-root]')
-		if (siteHeader) resizeObserver.observe(siteHeader)
-		return () => resizeObserver.disconnect()
 	})
 
 	function dismissMobileDrawer() {
@@ -82,7 +71,7 @@
 
 <svelte:window onresize={() => (mobileViewport = isMobile())} />
 
-<div class="app-shell" style="--dui-top-navigation-height: {topNavigationHeight}px">
+<div class="app-shell">
 	<AppTopMenu {drawerId} {toggleId} {drawerOpen} onToggle={() => (drawerOpen = !drawerOpen)} />
 	<div class="workspace" data-drawer-open={drawerOpen}>
 		<AppDrawer
@@ -111,7 +100,7 @@
 			{onMoveAccount}
 		/>
 		<main inert={mainInert}>
-			<PageContent>{@render children()}</PageContent>
+			{@render children()}
 		</main>
 		{#if mainInert}
 			<button
@@ -129,24 +118,24 @@
 
 <style>
 	.app-shell {
-		display: flex;
-		flex-direction: column;
-		min-height: 100vh;
+		display: grid;
+		grid-template-rows: max-content auto;
+		height: 100dvh;
+		--dui-drawer-height: 100%;
 	}
 
 	.workspace {
 		display: flex;
 		align-items: flex-start;
 		min-block-size: 0;
-		flex: 1;
 	}
 
 	main {
-		display: grid;
-		align-content: start;
 		flex: 1 1 0%;
 		min-width: 0;
 		padding: var(--dui-space-sm, 1rem);
+		overflow: auto;
+		height: 100%;
 	}
 
 	.drawer-dismiss {

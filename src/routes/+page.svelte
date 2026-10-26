@@ -2,7 +2,7 @@
 	import { EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
-	import { getContext } from 'svelte'
+	import { getContext, onMount } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
@@ -10,7 +10,23 @@
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import ExpenseOverview from '#lib/components/ExpenseOverview.svelte'
+	import { browser } from '$app/env'
+	import {
+		loadOverviewFilters,
+		saveOverviewFilters,
+		type OverviewFilters
+	} from '#lib/overview-filters.js'
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+	const overviewFiltersKey = $derived(
+		`finance-overview-filters:${filters.activeOrganizationId ?? 'none'}`
+	)
+	let overviewFilters = $state<OverviewFilters | null>(null)
+	onMount(() => {
+		overviewFilters = loadOverviewFilters(overviewFiltersKey)
+	})
+	$effect(() => {
+		if (browser) saveOverviewFilters(overviewFiltersKey, overviewFilters)
+	})
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
@@ -70,6 +86,8 @@
 			{categoryNames}
 			{tagNamesByTransaction}
 			internalTransferResolution={transferResolution}
+			filters={overviewFilters}
+			onfilterschange={(value) => (overviewFilters = value)}
 		/>
 	{/key}
 </QueryContent>

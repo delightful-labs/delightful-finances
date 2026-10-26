@@ -15,12 +15,21 @@
 		transactions,
 		categoryNames,
 		tagNamesByTransaction,
-		internalTransferResolution
+		internalTransferResolution,
+		filters = null,
+		onfilterschange = () => {}
 	}: {
 		transactions: readonly TransactionRow[]
 		categoryNames: ReadonlyMap<string, string>
 		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
 		internalTransferResolution: InternalTransferResolution
+		filters?: { start: string; end: string; categoryId: string | null; currency: string } | null
+		onfilterschange?: (filters: {
+			start: string
+			end: string
+			categoryId: string | null
+			currency: string
+		}) => void
 	} = $props()
 	function daysAgo(days: number) {
 		const date = new Date()
@@ -31,6 +40,16 @@
 	let end = $state(todayDateOnly())
 	let selectedCategory = $state<string | null>(null)
 	let selectedCurrency = $state('USD')
+	$effect(() => {
+		if (!filters) return
+		start = filters.start
+		end = filters.end
+		selectedCategory = filters.categoryId
+		selectedCurrency = filters.currency
+	})
+	$effect(() =>
+		onfilterschange({ start, end, categoryId: selectedCategory, currency: selectedCurrency })
+	)
 	const validRange = $derived(Boolean(start && end && start <= end))
 	const unlinkedTransactions = $derived(
 		transactions.filter((row) => !internalTransferResolution.suppressedTransactionIds.has(row.id))

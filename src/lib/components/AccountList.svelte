@@ -1,18 +1,20 @@
 <script lang="ts">
 	import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
-	import Icon from './AppIcon.svelte'
 	import { Button, Table, StatusMessage } from 'delightful-ui'
 	import type { AccountArchiveView } from '#lib/machines/account-archive.js'
 	import type { AccountDeleteGrantView } from '#lib/machines/account-delete-grants.js'
 	import type { AccountMembership, OrganizationMember } from '#lib/schema.js'
 	import AccountActionsDialog from './AccountActionsDialog.svelte'
 	import { m } from '#lib/paraglide/messages.js'
+	import { formatSignedMoney } from '#lib/domain/money.js'
+	import { getLocale } from '#lib/paraglide/runtime.js'
 
 	let {
 		view,
 		onArchive,
 		deleteGrantView,
-		onDeleteGrant
+		onDeleteGrant,
+		balances
 	}: {
 		view: AccountArchiveView
 		onArchive: (accountId: string) => void
@@ -22,6 +24,7 @@
 			grants: readonly AccountMembership[]
 		}
 		onDeleteGrant: (accountId: string, userId: string, canDelete: boolean) => void
+		balances: ReadonlyMap<string, bigint> | null
 	} = $props()
 	const feedbackText = $derived(
 		view.feedback?.outcome === 'succeeded'
@@ -86,6 +89,7 @@
 						>{m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })}</th
 					>
 					<th scope="col">{m['labels.currency']()}</th>
+					<th scope="col">{m['labels.calculated_balance']()}</th>
 					<th scope="col">{m['labels.actions']()}</th>
 				</tr>
 			</thead>
@@ -102,6 +106,11 @@
 									: m['accounts.type.card']()}
 						</td>
 						<td>{account.currency}</td>
+						<td>
+							{balances === null
+								? '—'
+								: formatSignedMoney(balances.get(account.id) ?? 0n, account.currency, getLocale())}
+						</td>
 						<td>
 							<Button
 								type="button"

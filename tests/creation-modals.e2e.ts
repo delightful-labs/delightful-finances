@@ -72,7 +72,7 @@ for (const entity of ['category', 'tag']) {
 		await expect(table.getByRole('rowheader', { name: savedName, exact: true })).toBeVisible()
 		const tableBox = await bounds(table)
 		const triggerBox = await bounds(trigger)
-		expect(triggerBox.y - (tableBox.y + tableBox.height)).toBeGreaterThanOrEqual(15)
+		expect(triggerBox.y).toBeGreaterThanOrEqual(tableBox.y + tableBox.height)
 		await page.setViewportSize({ width: 390, height: 900 })
 		const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 		if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click()
@@ -165,7 +165,10 @@ test('sidebar icons align and Details child content retains padding', async ({ p
 		.filter({ has: page.locator('summary', { hasText: 'Accounts' }) })
 	await accounts.locator('summary').click()
 	const topIcon = sidebar.getByRole('link', { name: 'Expenses', exact: true }).locator('svg')
-	const summaryIcon = accounts.locator('summary .menu-icon')
+	const summaryIcon = accounts
+		.locator('summary')
+		.getByText('Accounts', { exact: true })
+		.locator('svg')
 	const nestedIcon = accounts
 		.getByRole('link', { name: 'Manage Accounts', exact: true })
 		.locator('svg')

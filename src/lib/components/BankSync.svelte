@@ -270,13 +270,11 @@
 	section {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
 		gap: var(--dui-space-sm, 1rem);
 	}
 
-	.bank-flow,
-	.setup-flow {
-		align-items: stretch;
+	section {
+		align-items: flex-start;
 	}
 
 	.connection-actions {

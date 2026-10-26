@@ -2,6 +2,7 @@
 	import { INCOME_PATH, EXPENSES_PATH } from '#lib/domain/transaction-kind.js'
 	import Icon from './AppIcon.svelte'
 	import AppNavigationLink from './AppNavigationLink.svelte'
+	import AppDrawerContentSection from './AppDrawerContentSection.svelte'
 	import { Button, Drawer, Details, Navigation, Checkbox, StatusMessage } from 'delightful-ui'
 	import OverviewIcon from 'tdesign-icons-svg/src/dashboard.svg?component'
 	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
@@ -79,6 +80,14 @@
 	const filtersHeadingId = `${drawerInstanceId}-filters`
 </script>
 
+{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
+	<Button type="button" {disabled} onclick={open}>
+		<Icon navigation icon={AddIcon} />{m['actions.add_subject']({
+			subject: m['nouns.account']({ count: 1 })
+		})}
+	</Button>
+{/snippet}
+
 <Drawer
 	class="site-drawer"
 	id={drawerId}
@@ -86,7 +95,6 @@
 	headingHidden
 	closeLabel={m['actions.close_subject']({ subject: m['navigation.label']() })}
 	showCloseButton={false}
-	style="--dui-drawer-height: calc(100vh - var(--dui-top-navigation-height)); --dui-drawer-top: var(--dui-top-navigation-height)"
 	bind:open={drawerOpen}
 >
 	<div class="sidebar-content">
@@ -150,178 +158,178 @@
 				<Details caretPosition="right">
 					{#snippet summary()}
 						<span id={filtersHeadingId}
-							><Icon class="menu-icon" icon={AccountsIcon} />{m['nouns.account']({
+							><Icon navigation icon={AccountsIcon} />{m['nouns.account']({
 								count: 2
 							})}</span
 						>
 					{/snippet}
-					<div class="details-content-group">
-						<section class="details-content-section" aria-labelledby={filtersHeadingId}>
-							<QueryContent
-								queries={accountQueries}
-								loadingMessage={m['status.loading_subject']({
-									subject: m['nouns.account']({ count: 2 })
-								})}
-								errorMessage={m['errors.load_subject']({
-									subject: m['nouns.account']({ count: 2 })
-								})}
-							>
-								{#if accounts.length > 0}
-									<fieldset class="account-filters">
-										<legend
-											>{m['actions.filter_subject']({
-												subject: m['nouns.account']({ count: 2 })
-											})}</legend
-										>
-										<ul>
-											<li class="account-filter">
-												<Checkbox
-													name="accountIds"
-													value="all"
-													checked={selectedAccountIds === null ||
-														accounts.every((account) => selectedAccountIds?.includes(account.id))}
-													label={m['labels.all_subjects']({
-														subjects: m['nouns.account']({ count: 2 })
-													})}
-													onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
-												/>
-											</li>
-											{#each accounts as account (account.id)}
+					{#snippet children()}
+						<div class="disclosure-content">
+							<AppDrawerContentSection element="section" aria-labelledby={filtersHeadingId}>
+								<QueryContent
+									queries={accountQueries}
+									loadingMessage={m['status.loading_subject']({
+										subject: m['nouns.account']({ count: 2 })
+									})}
+									errorMessage={m['errors.load_subject']({
+										subject: m['nouns.account']({ count: 2 })
+									})}
+								>
+									{#if accounts.length > 0}
+										<fieldset class="account-filters">
+											<legend
+												>{m['actions.filter_subject']({
+													subject: m['nouns.account']({ count: 2 })
+												})}</legend
+											>
+											<ul>
 												<li class="account-filter">
 													<Checkbox
 														name="accountIds"
-														value={account.id}
+														value="all"
 														checked={selectedAccountIds === null ||
-															selectedAccountIds.includes(account.id)}
-														label={account.name}
-														onchange={(event) =>
-															onAccountChange(account.id, event.currentTarget.checked)}
+															accounts.every((account) => selectedAccountIds?.includes(account.id))}
+														label={m['labels.all_subjects']({
+															subjects: m['nouns.account']({ count: 2 })
+														})}
+														onchange={(event) => onAllAccountsChange(event.currentTarget.checked)}
 													/>
-													{#if editingAccountOrder}
-														<span class="account-order-controls">
-															<Button
-																type="button"
-																appearance="flat"
-																disabled={!canMoveAccount(account.id, 'up')}
-																aria-label={m['actions.move_up_name']({ name: account.name })}
-																onclick={() => onMoveAccount(account.id, 'up')}
-																><Icon
-																	icon={ExpensesIcon}
-																	style="width: 1rem; height: 1rem;"
-																/></Button
-															>
-															<Button
-																type="button"
-																appearance="flat"
-																disabled={!canMoveAccount(account.id, 'down')}
-																aria-label={m['actions.move_down_name']({ name: account.name })}
-																onclick={() => onMoveAccount(account.id, 'down')}
-																><Icon
-																	icon={IncomeIcon}
-																	style="width: 1rem; height: 1rem;"
-																/></Button
-															>
-														</span>
-													{/if}
 												</li>
-											{/each}
-										</ul>
-									</fieldset>
-									{#if canToggleAccountOrder}
-										<Button
-											type="button"
-											appearance="flat"
-											aria-pressed={editingAccountOrder}
-											onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
-											>{editingAccountOrder
-												? m['actions.done']()
-												: m['actions.edit_subject']({
-														subject: m['nouns.order']({ count: 1 })
-													})}</Button
-										>
+												{#each accounts as account (account.id)}
+													<li class="account-filter">
+														<Checkbox
+															name="accountIds"
+															value={account.id}
+															checked={selectedAccountIds === null ||
+																selectedAccountIds.includes(account.id)}
+															label={account.name}
+															onchange={(event) =>
+																onAccountChange(account.id, event.currentTarget.checked)}
+														/>
+														{#if editingAccountOrder}
+															<span class="account-order-controls">
+																<Button
+																	type="button"
+																	appearance="flat"
+																	disabled={!canMoveAccount(account.id, 'up')}
+																	aria-label={m['actions.move_up_name']({ name: account.name })}
+																	onclick={() => onMoveAccount(account.id, 'up')}
+																	><Icon
+																		icon={ExpensesIcon}
+																		style="width: 1rem; height: 1rem;"
+																	/></Button
+																>
+																<Button
+																	type="button"
+																	appearance="flat"
+																	disabled={!canMoveAccount(account.id, 'down')}
+																	aria-label={m['actions.move_down_name']({ name: account.name })}
+																	onclick={() => onMoveAccount(account.id, 'down')}
+																	><Icon
+																		icon={IncomeIcon}
+																		style="width: 1rem; height: 1rem;"
+																	/></Button
+																>
+															</span>
+														{/if}
+													</li>
+												{/each}
+											</ul>
+										</fieldset>
+										{#if canToggleAccountOrder}
+											<Button
+												type="button"
+												appearance="flat"
+												aria-pressed={editingAccountOrder}
+												onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
+												>{editingAccountOrder
+													? m['actions.done']()
+													: m['actions.edit_subject']({
+															subject: m['nouns.order']({ count: 1 })
+														})}</Button
+											>
+										{/if}
+									{:else}
+										<p>
+											{m['labels.no_subjects_yet']({ subjects: m['nouns.account']({ count: 2 }) })}
+										</p>
 									{/if}
-								{:else}
-									<p>
-										{m['labels.no_subjects_yet']({ subjects: m['nouns.account']({ count: 2 }) })}
-									</p>
-								{/if}
-							</QueryContent>
-							{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
-								<Button type="button" {disabled} onclick={open}>
-									<Icon class="menu-icon" icon={AddIcon} />{m['actions.add_subject']({
-										subject: m['nouns.account']({ count: 1 })
-									})}
-								</Button>
-							{/snippet}
-							{@render accountCreation(accountCreationTrigger)}
-						</section>
-					</div>
-					<Navigation label={m['nouns.account']({ count: 2 })}>
-						<li>
-							<AppNavigationLink
-								href="/accounts"
-								{pathname}
-								icon={EditIcon}
-								label={m['actions.manage_subject']({ subject: m['nouns.account']({ count: 2 }) })}
-								onclick={onNavigate}
-							/>
-						</li>
-					</Navigation>
+								</QueryContent>
+
+								{@render accountCreation(accountCreationTrigger)}
+							</AppDrawerContentSection>
+							<Navigation label={m['nouns.account']({ count: 2 })}>
+								<li>
+									<AppNavigationLink
+										href="/accounts"
+										{pathname}
+										icon={EditIcon}
+										label={m['actions.manage_subject']({
+											subject: m['nouns.account']({ count: 2 })
+										})}
+										onclick={onNavigate}
+									/>
+								</li>
+							</Navigation>
+						</div>
+					{/snippet}
 				</Details>
 			</li>
 			<li>
 				<Details caretPosition="right">
 					{#snippet summary()}
-						<Icon class="menu-icon" icon={SettingsIcon} />{m['navigation.settings']()}
+						<Icon navigation icon={SettingsIcon} />{m['navigation.settings']()}
 					{/snippet}
-					<div class="details-content-group">
-						<div class="details-content-section">
-							<QueryContent
-								queries={organizationQueries}
-								loadingMessage={m['status.loading_subject']({
-									subject: m['nouns.workspace']({ count: 2 })
-								})}
-								errorMessage={m['errors.load_subject']({
-									subject: m['nouns.workspace']({ count: 2 })
-								})}
-							>
-								<WorkspaceSelector
-									{organizations}
-									{organizationId}
-									onchange={onOrganizationChange}
-								/>
-							</QueryContent>
+					{#snippet children()}
+						<div class="disclosure-content">
+							<AppDrawerContentSection>
+								<QueryContent
+									queries={organizationQueries}
+									loadingMessage={m['status.loading_subject']({
+										subject: m['nouns.workspace']({ count: 2 })
+									})}
+									errorMessage={m['errors.load_subject']({
+										subject: m['nouns.workspace']({ count: 2 })
+									})}
+								>
+									<WorkspaceSelector
+										{organizations}
+										{organizationId}
+										onchange={onOrganizationChange}
+									/>
+								</QueryContent>
+							</AppDrawerContentSection>
+							<Navigation label={m['navigation.settings']()}>
+								<li>
+									<AppNavigationLink
+										href="/settings/workspace"
+										{pathname}
+										icon={WorkspaceIcon}
+										label={m['nouns.workspace']({ count: 2 })}
+										onclick={onNavigate}
+									/>
+								</li>
+								<li>
+									<AppNavigationLink
+										href="/settings/banks"
+										{pathname}
+										icon={BanksIcon}
+										label={m['bank.title']()}
+										onclick={onNavigate}
+									/>
+								</li>
+								<li>
+									<AppNavigationLink
+										href="/account"
+										{pathname}
+										icon={AccountIcon}
+										label={m['nouns.account']({ count: 1 })}
+										onclick={onNavigate}
+									/>
+								</li>
+							</Navigation>
 						</div>
-					</div>
-					<Navigation label={m['navigation.settings']()}>
-						<li>
-							<AppNavigationLink
-								href="/settings/workspace"
-								{pathname}
-								icon={WorkspaceIcon}
-								label={m['nouns.workspace']({ count: 2 })}
-								onclick={onNavigate}
-							/>
-						</li>
-						<li>
-							<AppNavigationLink
-								href="/settings/banks"
-								{pathname}
-								icon={BanksIcon}
-								label={m['bank.title']()}
-								onclick={onNavigate}
-							/>
-						</li>
-						<li>
-							<AppNavigationLink
-								href="/account"
-								{pathname}
-								icon={AccountIcon}
-								label={m['nouns.account']({ count: 1 })}
-								onclick={onNavigate}
-							/>
-						</li>
-					</Navigation>
+					{/snippet}
 				</Details>
 			</li>
 			<li>
@@ -335,109 +343,79 @@
 			</li>
 		</Navigation>
 
-		{#if bankSync.visible}
-			<Button
-				disabled={browserOffline || bankSync.disabled}
-				aria-describedby={browserOffline ? 'sidebar-bank-sync-offline' : undefined}
-				onclick={() => {
-					onNavigate()
-					bankSync.sync()
-				}}><Icon class="menu-icon" icon={SyncIcon} />{m['bank.sync']()}</Button
-			>
-			{#if browserOffline}
-				<p id="sidebar-bank-sync-offline">{m['bank.sync_offline']()}</p>
+		<AppDrawerContentSection>
+			{#if bankSync.visible}
+				<Button
+					disabled={browserOffline || bankSync.disabled}
+					aria-describedby={browserOffline ? 'sidebar-bank-sync-offline' : undefined}
+					onclick={() => {
+						onNavigate()
+						bankSync.sync()
+					}}><Icon navigation icon={SyncIcon} />{m['bank.sync']()}</Button
+				>
+				{#if browserOffline}
+					<p id="sidebar-bank-sync-offline">{m['bank.sync_offline']()}</p>
+				{/if}
 			{/if}
-		{/if}
 
-		<div class="sidebar-status">
-			<PwaUpdateIntegration />
-			<StatusMessage
-				compact
-				text={!syncConfigured
-					? m['database.local']()
-					: browserOffline
-						? m['database.offline']()
-						: m['database.sync_enabled']()}
-			/>
-		</div>
+			<div class="sidebar-status">
+				<PwaUpdateIntegration />
+				<StatusMessage
+					compact
+					text={!syncConfigured
+						? m['database.local']()
+						: browserOffline
+							? m['database.offline']()
+							: m['database.sync_enabled']()}
+				/>
+			</div>
+		</AppDrawerContentSection>
 	</div>
 </Drawer>
 
 <style>
-	:global(aside.site-drawer) {
-		--dui-drawer-width: 20rem;
-		--dui-drawer-padding: 0;
-		--dui-navigation-gap: 0;
-		--dui-details-border-width: 0px;
-		--dui-details-content-border-width: 0px;
-		--dui-details-summary-padding: 0.5rem 1rem;
-		--dui-details-content-padding: 0;
-		flex: 0 0 var(--dui-drawer-width, 20rem);
-	}
+	:global {
+		.site-drawer {
+			--dui-drawer-width: 20rem;
+			--dui-drawer-padding: 0;
+			--dui-drawer-panel-border-inline-end: var(
+					--dui-dialog-border-width,
+					var(--dui-border-width, 2px)
+				)
+				solid var(--dui-dialog-border-color, var(--dui-color-foreground, currentColor));
+			--dui-navigation-gap: 0;
+			--dui-details-border-width: 0px;
+			--dui-details-summary-padding: 0.5rem 1rem;
+		}
 
-	:global(aside.site-drawer.inline-drawer) {
-		block-size: calc(100vh - var(--dui-top-navigation-height, 3.5rem));
-	}
-
-	:global(aside.site-drawer[data-open='false']) {
-		flex-basis: 0;
-	}
-
-	:global(aside.site-drawer[data-open='false'] .inline-panel) {
-		transform: translateX(-100%);
-	}
-
-	:global(aside.site-drawer[data-open='true'] .inline-panel) {
-		transform: translateX(0);
-	}
-
-	:global(aside.site-drawer .inline-panel) {
-		border: 0;
-		border-inline-end: var(--dui-dialog-border-width, var(--dui-border-width, 2px)) solid
-			var(--dui-dialog-border-color, var(--dui-color-foreground, currentColor));
+		@media (max-width: 48rem) {
+			.site-drawer {
+				--dui-drawer-width: calc(100% - 3.5rem);
+			}
+		}
 	}
 
 	.sidebar-content {
 		display: flex;
 		flex-direction: column;
-		min-block-size: 100%;
+		justify-content: space-between;
+		height: 100%;
 	}
 
-	.sidebar-content :global(.menu-icon) {
-		inline-size: 1.25rem;
-		block-size: 1.25rem;
-		flex-shrink: 0;
-		margin-inline-end: var(--dui-space-xs, 0.5rem);
-		vertical-align: middle;
-	}
-
-	.sidebar-content :global(details > .details-content) {
+	.disclosure-content {
 		display: grid;
 		gap: var(--dui-space-xs, 0.5rem);
-	}
-
-	.details-content-group {
-		display: grid;
-		gap: var(--dui-space-xs, 0.5rem);
-		min-width: 0;
-	}
-
-	.details-content-section {
-		display: grid;
-		gap: var(--dui-space-xs, 0.5rem);
-		min-width: 0;
-		padding: var(--dui-space-xs, 0.5rem) 1rem 0;
+		min-inline-size: 0;
 	}
 
 	.sidebar-status {
 		margin-block-start: auto;
 	}
 
-	.details-content-section ul {
+	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		gap: var(--dui-space-xs, 0.5rem);
 	}
 
 	p {
@@ -451,7 +429,7 @@
 		min-inline-size: 0;
 	}
 
-	.account-filters legend {
+	legend {
 		font-size: var(--dui-font-size-sm, 0.875rem);
 	}
 
@@ -464,11 +442,5 @@
 	.account-order-controls {
 		margin-inline-start: auto;
 		display: flex;
-	}
-
-	@media (max-width: 48rem) {
-		:global(aside.site-drawer) {
-			--dui-drawer-width: calc(100% - 3.5rem);
-		}
 	}
 </style>

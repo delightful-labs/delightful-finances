@@ -7,6 +7,7 @@
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
+	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext, onMount } from 'svelte'
@@ -57,6 +58,12 @@
 			? app.accountMemberships.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
+	const transactions = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+
 	function observe() {
 		return {
 			identityId: session.current.account?.id ?? null,
@@ -117,6 +124,14 @@
 	let deleteGrantSnapshot = $state.raw(deleteGrantActor.getSnapshot())
 	const view = $derived(selectAccountArchiveView(archiveSnapshot))
 	const deleteGrantView = $derived(selectAccountDeleteGrantView(deleteGrantSnapshot))
+	const balances = $derived(
+		transactions.isLoading || transactions.error
+			? null
+			: calculateAccountBalances(
+					view.rows.map((row) => row.account),
+					transactions.current ?? []
+				)
+	)
 	$effect(() => {
 		actor.send({ type: 'OBSERVE', observation: observe() })
 		deleteGrantActor.send({ type: 'OBSERVE', observation: observeDeleteGrants() })
@@ -167,6 +182,7 @@
 <AccountList
 	{view}
 	{onArchive}
+	{balances}
 	deleteGrantView={{
 		canManage:
 			membership.current?.role === ORGANIZATION_ROLE.OWNER ||

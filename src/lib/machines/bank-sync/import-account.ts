@@ -1,7 +1,7 @@
 import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
-import { providerAccountIdentity } from '#lib/integrations/simplefin.js'
+import { providerAccountIdentity, providerBalanceSnapshot } from '#lib/integrations/simplefin.js'
 import { createTransactionImportMachine, type TransactionResult } from './import-transaction.js'
 import { required } from './identity.js'
 import {
@@ -62,6 +62,19 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 					archivedAt: { isNull: true }
 				})
 			)
+		),
+		saveBalanceSnapshot: fromPromise(
+			async ({
+				input
+			}: {
+				input: { linkId: string; availableBalance: string; balanceDate: Date }
+			}) =>
+				dependencies.db
+					.update(app.simplefinAccountLinks, input.linkId, {
+						availableBalance: input.availableBalance,
+						balanceDate: input.balanceDate
+					})
+					.wait({ tier: 'local' })
 		),
 		transaction: createTransactionImportMachine(dependencies)
 	}
@@ -130,8 +143,48 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 			checkingAccount: {
 				always: [
 					{ guard: ({ context }) => !context.account, target: 'invalidMapping' },
-					{ target: 'nextTransaction' }
+					{ target: 'checkingBalanceSnapshot' }
 				]
+			},
+			checkingBalanceSnapshot: {
+				always: [
+					{
+						guard: ({ context }) => providerBalanceSnapshot(context.provider) === undefined,
+						target: 'nextTransaction'
+					},
+					{ target: 'savingBalanceSnapshot' }
+				]
+			},
+			savingBalanceSnapshot: {
+				initial: 'working',
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {} } }
+				},
+				on: { CANCEL: { target: '.cancelling' } },
+				invoke: {
+					src: 'saveBalanceSnapshot',
+					input: ({ context }) => {
+						const snapshot = providerBalanceSnapshot(context.provider)
+						if (!snapshot) throw new Error('missing-provider-balance')
+						return { linkId: required(context.matches[0]).id, ...snapshot }
+					},
+					onDone: [
+						{ guard: stateIn({ savingBalanceSnapshot: 'cancelling' }), target: 'cancelled' },
+						{ target: 'nextTransaction' }
+					],
+					onError: [
+						{
+							guard: stateIn({ savingBalanceSnapshot: 'cancelling' }),
+							target: 'cancelled',
+							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+						},
+						{
+							target: 'failed',
+							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+						}
+					]
+				}
 			},
 			nextTransaction: {
 				always: [

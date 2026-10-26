@@ -31,7 +31,9 @@ describe('mapping transaction policy and atomic writes', () => {
 				organizationId: id(2),
 				connectionId: request.work.current.id,
 				simplefinAccountId: provider.id,
-				accountId: account.id
+				accountId: account.id,
+				availableBalance: provider.availableBalance,
+				balanceDate: provider.balanceDate
 			},
 			{ id: link.id }
 		)

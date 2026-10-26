@@ -39,3 +39,22 @@ export function formatMoney(amountMinor: number, currency: string, locale = 'en-
 	}).format(fraction)
 	return parts.map((part) => (part.type === 'fraction' ? localizedFraction : part.value)).join('')
 }
+
+export function formatSignedMoney(amountMinor: bigint, currency: string, locale = 'en-US'): string {
+	const formatter = new Intl.NumberFormat(locale, { style: 'currency', currency })
+	const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2
+	const scale = 10n ** BigInt(fractionDigits)
+	const negative = amountMinor < 0n
+	const absolute = negative ? -amountMinor : amountMinor
+	const whole = absolute / scale
+	const fraction = absolute % scale
+	const wholeAmount = negative ? (whole === 0n ? -0 : -whole) : whole
+	const parts = formatter.formatToParts(wholeAmount)
+	if (fractionDigits === 0) return parts.map((part) => part.value).join('')
+	const localizedFraction = new Intl.NumberFormat(locale, {
+		useGrouping: false,
+		minimumIntegerDigits: fractionDigits,
+		maximumFractionDigits: 0
+	}).format(fraction)
+	return parts.map((part) => (part.type === 'fraction' ? localizedFraction : part.value)).join('')
+}

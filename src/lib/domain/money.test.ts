@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, parseAmountMinor } from './money.js'
+import { formatMoney, formatSignedMoney, parseAmountMinor } from './money.js'
 
 describe('parseAmountMinor', () => {
 	it.each([
@@ -53,5 +53,16 @@ describe('formatMoney', () => {
 	it('rejects negative or fractional minor units', () => {
 		expect(() => formatMoney(-1, 'USD')).toThrow(RangeError)
 		expect(() => formatMoney(1.5, 'USD')).toThrow(RangeError)
+	})
+})
+
+describe('formatSignedMoney', () => {
+	it.each([
+		[123456n, 'en-US', 'USD', '$1,234.56'],
+		[-1234n, 'en-US', 'USD', '-$12.34'],
+		[-1n, 'en-US', 'USD', '-$0.01'],
+		[1234n, 'en-US', 'JPY', '¥1,234']
+	] as const)('formats %s minor units for %s / %s', (amount, locale, currency, expected) => {
+		expect(formatSignedMoney(amount, currency, locale)).toBe(expected)
 	})
 })

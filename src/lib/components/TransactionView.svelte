@@ -15,7 +15,6 @@
 	import TransactionList from '#lib/components/TransactionList.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
-	import PageContent from './PageContent.svelte'
 	import FloatingActionLink from './FloatingActionLink.svelte'
 
 	let {
@@ -133,7 +132,7 @@
 	const groups = $derived(groupTransactionsByDate(visibleTransactions))
 </script>
 
-<PageContent>
+<div class="wrapper">
 	{#if showHeading}<PageHeader title={heading} />{/if}
 
 	<QueryContent
@@ -158,11 +157,18 @@
 			/>
 		{/key}
 	</QueryContent>
-</PageContent>
 
-<FloatingActionLink
-	href={newHref}
-	label={m['actions.add_subject']({
-		subject: heading
-	})}
-/>
+	<FloatingActionLink
+		href={newHref}
+		label={m['actions.add_subject']({
+			subject: heading
+		})}
+	/>
+</div>
+
+<style>
+	.wrapper {
+		display: grid;
+		gap: var(--dui-spacing-md);
+	}
+</style>
