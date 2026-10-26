@@ -9,15 +9,7 @@
 
 <p role="status" aria-live="polite" aria-atomic="true">
 	{#if notice}
-		{notice.kind === 'generic'
-			? m['sync.mutation_rejected']()
-			: notice.operation === 'create'
-				? m['sync.transfer_create_rejected']()
-				: notice.operation === 'delete'
-					? m['sync.transfer_delete_rejected']()
-					: notice.operation === 'link'
-						? m['sync.transfer_link_rejected']()
-						: m['sync.transfer_unlink_rejected']()}
+		{m['sync.mutation_rejected']()}
 		<Button type="button" onclick={onDismiss}>{m['actions.dismiss']()}</Button>
 	{/if}
 </p>

@@ -26,12 +26,10 @@
 				? m['transfers.delete_saved_both']()
 				: m['transfers.delete_saved_selected']()
 			: result?.outcome === 'recoveryRequired'
-				? m['transfers.delete_recovery_required']()
-				: result?.outcome === 'denied'
-					? m['transfers.delete_denied']()
-					: result && result.outcome !== 'cancelled' && result.outcome !== 'closed'
-						? m['transfers.delete_unavailable']()
-						: undefined
+				? m['transfers.recovery_required']()
+				: result && result.outcome !== 'cancelled' && result.outcome !== 'closed'
+					? m['transfers.operation_failed']()
+					: undefined
 	)
 	const feedbackVariant = $derived(
 		result?.outcome === 'succeeded' && result.settlement === 'locallyPersisted'

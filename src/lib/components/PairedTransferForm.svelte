@@ -58,7 +58,7 @@
 		if (result.outcome === 'invalid') return m['transfers.invalid']()
 		if (result.outcome === 'denied' || result.outcome === 'unavailable')
 			return reasonText(result.reason)
-		if (result.outcome === 'failed') return m['transfers.unavailable']()
+		if (result.outcome === 'failed') return m['transfers.operation_failed']()
 		return ''
 	}
 	function fieldInvalid(path: string) {

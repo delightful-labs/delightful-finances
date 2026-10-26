@@ -71,21 +71,15 @@
 			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (result.outcome === 'cancelled') return m['forms.cancelled']()
 		if (result.outcome === 'closed') return m['forms.closed']()
-		if (result.outcome === 'denied') return m['transfers.link_denied']()
-		if (result.outcome === 'incompatible') return m['transfers.link_incompatible']()
-		if (result.outcome === 'alreadyLinked') return m['transfers.link_already_linked']()
-		return m['transfers.link_unavailable']()
+		return m['transfers.operation_failed']()
 	})
 	const unlinkResultMessage = $derived.by(() => {
 		if (!unlinkResult) return ''
 		if (unlinkResult.outcome === 'succeeded') return m['transfers.unlink_saved']()
-		if (unlinkResult.outcome === 'recoveryRequired')
-			return m['transfers.unlink_recovery_required']()
+		if (unlinkResult.outcome === 'recoveryRequired') return m['transfers.recovery_required']()
 		if (unlinkResult.outcome === 'cancelled') return m['forms.cancelled']()
 		if (unlinkResult.outcome === 'closed') return m['forms.closed']()
-		if (unlinkResult.outcome === 'denied') return m['transfers.unlink_denied']()
-		if (unlinkResult.outcome === 'incompatible') return m['transfers.unlink_incompatible']()
-		return m['transfers.unlink_unavailable']()
+		return m['transfers.operation_failed']()
 	})
 	const statusMessage = $derived.by(() => {
 		if (editorState === 'searching') return m['transfers.searching']()
@@ -133,9 +127,9 @@
 			</Button>
 		{/if}
 		{#if unlinkAvailable && !unlinkWritable}<p>
-				{m['transfers.unlink_permission_required']()}
+				{m['transfers.permission_required']()}
 			</p>{/if}
-		{#if !unlinkAvailable && !unlinkPending}<p>{m['transfers.unlink_unavailable']()}</p>{/if}
+		{#if !unlinkAvailable && !unlinkPending}<p>{m['transfers.operation_failed']()}</p>{/if}
 	{/if}
 	{#if editorState === 'conflicted'}
 		<p>{m['transfers.conflict_notice']()}</p>
@@ -175,7 +169,7 @@
 			{m['actions.link_existing_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
 		</Button>
 		{#if !selectedSuggestionIsWritable}
-			<p>{m['transfers.link_permission_required']()}</p>
+			<p>{m['transfers.permission_required']()}</p>
 		{/if}
 	{/if}
 	<p>{statusMessage}</p>

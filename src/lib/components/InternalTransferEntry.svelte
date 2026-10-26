@@ -77,7 +77,7 @@
 		if (reason === 'insufficientAccounts') return m['transfers.insufficient_accounts']()
 		if (reason === 'permissionChanged') return m['transfers.permission_changed']()
 		if (reason === 'incompatible') return m['transfers.incompatible']()
-		if (reason === 'unavailable') return m['transfers.unavailable']()
+		if (reason === 'unavailable') return m['transfers.operation_failed']()
 		return formReasonText[reason]()
 	}
 </script>
