@@ -28,7 +28,7 @@
 			: result?.outcome === 'recoveryRequired'
 				? m['transfers.recovery_required']()
 				: result && result.outcome !== 'cancelled' && result.outcome !== 'closed'
-					? m['transfers.operation_failed']()
+					? m['errors.save_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
 					: undefined
 	)
 	const feedbackVariant = $derived(
@@ -49,19 +49,23 @@
 {/if}
 
 {#if pending}
-	<StatusMessage variant="loading" text={m['transfers.delete_pending']()} />
+	<StatusMessage variant="loading" text={m['forms.settling']()} />
 {:else if feedbackText}
 	<StatusMessage variant={feedbackVariant} text={feedbackText} />
 {/if}
 
-<Dialog heading={m['transfers.delete_heading']()} bind:open closedby="any">
+<Dialog
+	heading={m['actions.delete_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
+	bind:open
+	closedby="any"
+>
 	<p>{m['transfers.delete_effect_both']()}</p>
 	<Button type="button" onclick={() => choose({ kind: 'both' })}>
-		{m['transfers.delete_both']()}
+		{m['actions.delete_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
 	</Button>
 	<p>{m['transfers.delete_effect_selected']()}</p>
 	<Button type="button" onclick={() => choose({ kind: 'selected', transactionId })}>
-		{m['transfers.delete_selected']()}
+		{m['actions.delete_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
 	</Button>
 	<Button type="button" onclick={() => (open = false)}>{m['actions.cancel']()}</Button>
 </Dialog>

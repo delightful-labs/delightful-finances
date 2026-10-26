@@ -271,7 +271,7 @@ async function seedLinkedTransfer(page: Page, expenseId: string, incomeId: strin
 		{ expenseId, incomeId }
 	)
 	await page.goto(`/income/${incomeId}`)
-	await expect(page.getByText('This transaction is linked to an internal transfer.')).toBeVisible()
+	await expect(page.getByText('Linked to Transfer')).toBeVisible()
 }
 
 test('links and unlinks a matching synced transaction without changing either transaction', async ({
@@ -299,7 +299,7 @@ test('links and unlinks a matching synced transaction without changing either tr
 		.getByRole('button', { name: 'Link to existing Transaction', exact: true })
 		.click()
 	await expect(
-		suggestions.getByText('This transaction is linked to an internal transfer.')
+		suggestions.getByText('Linked to Transfer')
 	).toBeVisible()
 	await expect(suggestions.getByText('Transfer saved.', { exact: true })).toBeVisible()
 	await expect
@@ -335,7 +335,7 @@ test('links and unlinks a matching synced transaction without changing either tr
 	).toHaveAttribute('href', new RegExp(`/expenses/${seed.id}\\?workspace=`))
 	await linkedCounterpart.getByRole('button', { name: 'Unlink Transfer', exact: true }).click()
 	await expect(
-		linkedCounterpart.getByText('The transfer was unlinked on this device.')
+		linkedCounterpart.getByText('Transfer saved.')
 	).toBeVisible()
 	await expect
 		.poll(() => persisted(page, seed.id))
@@ -378,14 +378,14 @@ test('deletes both transactions from the linked-transaction choices', async ({ p
 	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
 	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
 	await page.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
-	const dialog = page.getByRole('dialog', { name: 'Delete linked transactions?' })
+	const dialog = page.getByRole('dialog', { name: 'Delete Transactions' })
 	await expect(
 		dialog.getByText('Both transactions and their transfer link will be deleted.')
 	).toBeVisible()
 	await expect(
 		dialog.getByText(/other transaction will remain as ordinary income or expense/)
 	).toBeVisible()
-	await dialog.getByRole('button', { name: 'Delete both transactions', exact: true }).click()
+	await dialog.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
 	await expect(
 		page.getByText('Both linked transactions were deleted on this device.')
 	).toBeVisible()
@@ -401,9 +401,9 @@ test('unlinks and deletes only the current transaction, restoring the counterpar
 	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
 	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
 	await page.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
-	const dialog = page.getByRole('dialog', { name: 'Delete linked transactions?' })
+	const dialog = page.getByRole('dialog', { name: 'Delete Transactions' })
 	await dialog
-		.getByRole('button', { name: 'Unlink and delete this transaction', exact: true })
+		.getByRole('button', { name: 'Delete Transaction', exact: true })
 		.click()
 	await expect(
 		page.getByText(

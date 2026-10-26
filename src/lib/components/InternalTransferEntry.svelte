@@ -75,9 +75,10 @@
 	const writableAccounts = $derived(selectInternalTransferEntryAccounts(observe()))
 	function reasonText(reason: InternalTransferEntryReason) {
 		if (reason === 'insufficientAccounts') return m['transfers.insufficient_accounts']()
-		if (reason === 'permissionChanged') return m['transfers.permission_changed']()
+		if (reason === 'permissionChanged') return m['forms.read_only']()
 		if (reason === 'incompatible') return m['transfers.incompatible']()
-		if (reason === 'unavailable') return m['transfers.operation_failed']()
+		if (reason === 'unavailable')
+			return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		return formReasonText[reason]()
 	}
 </script>

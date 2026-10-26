@@ -38,13 +38,14 @@
 		accounts.find((account) => account.id === expenseAccountId)?.currency ?? 'USD'
 	)
 	function statusText() {
-		if (view.activity.kind === 'settling') return m['transfers.pending']()
+		if (view.activity.kind === 'settling') return m['forms.settling']()
 		if (view.readiness.kind === 'observing')
 			return m['status.loading_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (view.readiness.kind === 'blocked') return reasonText(view.readiness.reason)
 		if (view.feedback.kind !== 'result') return ''
 		const result = view.feedback.result
-		if (result.outcome === 'succeeded') return m['transfers.created']()
+		if (result.outcome === 'succeeded')
+			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (result.outcome === 'cancelled') return m['forms.cancelled']()
 		if (result.outcome === 'closed') return m['forms.closed']()
 		if (result.outcome === 'scopeChanged') return m['forms.scope_changed']()
@@ -55,10 +56,11 @@
 			return m['errors.load_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (view.feedback.kind !== 'result') return ''
 		const result = view.feedback.result
-		if (result.outcome === 'invalid') return m['transfers.invalid']()
+		if (result.outcome === 'invalid') return m['transactions.validation_error']()
 		if (result.outcome === 'denied' || result.outcome === 'unavailable')
 			return reasonText(result.reason)
-		if (result.outcome === 'failed') return m['transfers.operation_failed']()
+		if (result.outcome === 'failed')
+			return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		return ''
 	}
 	function fieldInvalid(path: string) {

@@ -65,22 +65,25 @@
 			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (result.outcome === 'cancelled') return m['forms.cancelled']()
 		if (result.outcome === 'closed') return m['forms.closed']()
-		return m['transfers.operation_failed']()
+		return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 	})
 	const unlinkResultMessage = $derived.by(() => {
 		if (!unlinkResult) return ''
-		if (unlinkResult.outcome === 'succeeded') return m['transfers.unlink_saved']()
+		if (unlinkResult.outcome === 'succeeded')
+			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (unlinkResult.outcome === 'recoveryRequired') return m['transfers.recovery_required']()
 		if (unlinkResult.outcome === 'cancelled') return m['forms.cancelled']()
 		if (unlinkResult.outcome === 'closed') return m['forms.closed']()
-		return m['transfers.operation_failed']()
+		return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 	})
 	const statusMessage = $derived.by(() => {
-		if (editorState === 'searching') return m['transfers.searching']()
-		if (editorState === 'failed') return m['transfers.search_failed']()
-		if (unlinkPending) return m['transfers.unlink_pending']()
+		if (editorState === 'searching')
+			return m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
+		if (editorState === 'failed')
+			return m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
+		if (unlinkPending) return m['forms.settling']()
 		if (unlinkResultMessage) return unlinkResultMessage
-		if (pending) return m['transfers.link_pending']()
+		if (pending) return m['forms.settling']()
 		return resultMessage
 	})
 </script>
@@ -88,7 +91,7 @@
 <section aria-labelledby="transfer-suggestions-heading">
 	<h2 id="transfer-suggestions-heading">{m['transfers.suggestions_heading']()}</h2>
 	{#if editorState === 'linked'}
-		<p>{m['transfers.linked_status']()}</p>
+		<p>{m['labels.linked_name']({ name: m['nouns.transfer']({ count: 1 }) })}</p>
 		{#if linkedCounterpartHref}
 			<AppLink href={linkedCounterpartHref}
 				>{m['actions.open_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</AppLink
@@ -100,19 +103,19 @@
 			</Button>
 		{/if}
 		{#if unlinkAvailable && !unlinkWritable}<p>
-				{m['transfers.permission_required']()}
+				{m['forms.read_only']()}
 			</p>{/if}
-		{#if !unlinkAvailable && !unlinkPending}<p>{m['transfers.operation_failed']()}</p>{/if}
+		{#if !unlinkAvailable && !unlinkPending}<p>{m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}</p>{/if}
 	{/if}
 	{#if editorState === 'conflicted'}
 		<p>{m['transfers.conflict_notice']()}</p>
 	{/if}
 	{#if editorState === 'empty'}
-		<p>{m['transfers.no_matches']()}</p>
+		<p>{m['labels.no_subjects_yet']({ subjects: m['nouns.transaction']({ count: 2 }) })}</p>
 	{/if}
 	{#if editorState === 'matches'}
 		<fieldset>
-			<legend>{m['transfers.select_match']()}</legend>
+		<legend>{m['actions.select_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</legend>
 			{#each suggestions as suggestion (suggestion.id)}
 				<label>
 					<input
@@ -142,7 +145,7 @@
 			{m['actions.link_existing_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
 		</Button>
 		{#if !selectedSuggestionIsWritable}
-			<p>{m['transfers.permission_required']()}</p>
+			<p>{m['forms.read_only']()}</p>
 		{/if}
 	{/if}
 	<p>{statusMessage}</p>
