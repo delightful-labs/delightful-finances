@@ -3,9 +3,7 @@
 	import AppLink from '#lib/components/AppLink.svelte'
 	import { formatMoney } from '#lib/domain/money.js'
 	import type {
-		InternalTransferCandidate,
-		InternalTransferMatchChecks,
-		InternalTransferMatchDiagnostic
+		InternalTransferCandidate
 	} from '#lib/domain/internal-transfer.js'
 	import type { TransactionRow } from '#lib/schema.js'
 	import type {
@@ -22,7 +20,6 @@
 	}
 	let {
 		suggestions,
-		transferMatchDiagnostics = [],
 		writableSuggestionIds,
 		editorState,
 		selectedId,
@@ -38,9 +35,6 @@
 		onUnlink
 	}: {
 		suggestions: readonly Suggestion[]
-		transferMatchDiagnostics: readonly (InternalTransferMatchDiagnostic & {
-			candidate: Suggestion
-		})[]
 		writableSuggestionIds: ReadonlySet<string>
 		editorState: Exclude<TransactionEditTransferState, 'unselected'>
 		selectedId: string | null
@@ -89,27 +83,6 @@
 		if (pending) return m['transfers.link_pending']()
 		return resultMessage
 	})
-	const diagnosticCheckLabels = [
-		{ key: 'sameWorkspace', label: () => m['transfers.diagnostic_same_workspace']() },
-		{ key: 'differentAccount', label: () => m['transfers.diagnostic_different_account']() },
-		{ key: 'oppositeKind', label: () => m['transfers.diagnostic_opposite_kind']() },
-		{ key: 'sameAmount', label: () => m['transfers.diagnostic_same_amount']() },
-		{ key: 'sameCurrency', label: () => m['transfers.diagnostic_same_currency']() },
-		{ key: 'withinDateWindow', label: () => m['transfers.diagnostic_date_window']() },
-		{ key: 'sourceHasNoTransferMarker', label: () => m['transfers.diagnostic_source_marker']() },
-		{
-			key: 'sourceNotLinkedByTransferRecord',
-			label: () => m['transfers.diagnostic_source_link']()
-		},
-		{
-			key: 'candidateHasNoTransferMarker',
-			label: () => m['transfers.diagnostic_candidate_marker']()
-		},
-		{
-			key: 'candidateNotLinkedByTransferRecord',
-			label: () => m['transfers.diagnostic_candidate_link']()
-		}
-	] satisfies readonly { key: keyof InternalTransferMatchChecks; label: () => string }[]
 </script>
 
 <section aria-labelledby="transfer-suggestions-heading">
@@ -173,43 +146,4 @@
 		{/if}
 	{/if}
 	<p>{statusMessage}</p>
-	{#if import.meta.env.DEV && editorState !== 'linked'}
-		<details>
-			<summary>{m['transfers.diagnostics_heading']()}</summary>
-			{#if editorState === 'searching'}
-				<p>{m['transfers.diagnostics_loading']()}</p>
-			{:else if editorState === 'failed'}
-				<p>{m['transfers.diagnostics_failed']()}</p>
-			{:else if transferMatchDiagnostics.length === 0}
-				<p>{m['transfers.diagnostics_no_candidates']()}</p>
-			{:else}
-				<ol>
-					{#each transferMatchDiagnostics as diagnostic (diagnostic.candidate.id)}
-						<li>
-							<p>
-								{formatDate(diagnostic.candidate.bookedOn)} · {diagnostic.candidate.accountName ??
-									m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
-								· {formatMoney(
-									diagnostic.candidate.amountMinor,
-									diagnostic.candidate.currency,
-									getLocale()
-								)}
-							</p>
-							{#if diagnostic.eligible}
-								<p>{m['transfers.diagnostics_all_passed']()}</p>
-							{:else}
-								<ul>
-									{#each diagnosticCheckLabels as check (check.key)}
-										{#if !diagnostic.checks[check.key]}
-											<li>{check.label()}</li>
-										{/if}
-									{/each}
-								</ul>
-							{/if}
-						</li>
-					{/each}
-				</ol>
-			{/if}
-		</details>
-	{/if}
 </section>

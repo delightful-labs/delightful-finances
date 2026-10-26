@@ -445,7 +445,7 @@
         "column_type": {
           "type": "BigInt"
         },
-        "nullable": true
+        "nullable": false
       },
       {
         "name": "kind",
@@ -463,7 +463,7 @@
         "column_type": {
           "type": "Text"
         },
-        "nullable": true
+        "nullable": false
       },
       {
         "name": "categoryId",

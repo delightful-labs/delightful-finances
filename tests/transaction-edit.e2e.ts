@@ -434,8 +434,6 @@ test('suggests an exact amount match and filters out other amounts', async ({ pa
 		suggestions.getByRole('radio', { name: 'Oct 25, 2026 · Destination ledger $1.00', exact: true })
 	).toBeVisible()
 	await expect(suggestions.getByRole('radio')).toHaveCount(1)
-	await page.getByText('Development transfer match diagnostics', { exact: true }).click()
-	await expect(page.getByText('Transaction has the same amount', { exact: true })).toBeVisible()
 })
 
 test('always-visible form supports reverted drafts, repeated offline saves and retained archived tags', async ({

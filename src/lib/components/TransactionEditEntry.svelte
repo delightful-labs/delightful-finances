@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { EXPENSE, INCOME, transactionPages } from '#lib/domain/transaction-kind.js'
 	import {
-		inspectInternalTransferCounterparts,
 		resolveInternalTransferLinks
 	} from '#lib/domain/internal-transfer.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
@@ -360,23 +359,6 @@
 	)
 	const writableTransferSuggestionIds = $derived(editWorkflow.writableCandidateIds(editSnapshot))
 	const transferUnlinkWritable = $derived(editWorkflow.unlinkWritable(editSnapshot))
-	const transferMatchDiagnostics = $derived(
-		transaction && transferSearchEnabled
-			? inspectInternalTransferCounterparts(transaction, counterpartRows, linkedTransactionIds).map(
-					({ candidate, checks, eligible }) => ({
-						candidate: {
-							...candidate,
-							description: counterpartRows.find(({ id }) => id === candidate.id)?.description,
-							accountName: transferAccountsQuery.current?.find(
-								(account) => account.id === candidate.accountId
-							)?.name
-						},
-						checks,
-						eligible
-					})
-				)
-			: []
-	)
 	$effect(() => {
 		const searchEnabled = transferSearchEnabled
 		const linked = linkedTransfer !== null
@@ -403,40 +385,6 @@
 				transferAccountsQuery.error != null
 		}
 		untrack(() => editActor.send({ type: 'TRANSFER_OBSERVATION', observation }))
-	})
-	$effect(() => {
-		if (!import.meta.env.DEV || !transaction || !transferSearchEnabled) return
-		const diagnostics = inspectInternalTransferCounterparts(
-			transaction,
-			counterpartRows,
-			linkedTransactionIds
-		)
-		console.groupCollapsed('[transfer-match] eligibility checks')
-		console.info('Search status', {
-			activeWorkspaceAvailable: Boolean(filters.activeOrganizationId),
-			oppositeKindQuery: true,
-			counterpartsLoading: counterpartQuery.isLoading,
-			counterpartsFailed: counterpartQuery.error != null,
-			candidateCount: counterpartQuery.isLoading ? 'pending' : diagnostics.length,
-			transferLinksLoading: transferLinksQuery.isLoading,
-			transferLinksFailed: transferLinksQuery.error != null,
-			accountsLoading: transferAccountsQuery.isLoading,
-			accountsFailed: transferAccountsQuery.error != null
-		})
-		if (counterpartQuery.isLoading) {
-			console.info('Waiting for the workspace counterpart query to finish.')
-		} else if (diagnostics.length > 0) {
-			console.table(
-				diagnostics.map(({ checks, eligible }, index) => ({
-					candidate: index + 1,
-					...checks,
-					eligible
-				}))
-			)
-		} else {
-			console.info('No opposite-kind candidate rows were returned by the workspace query.')
-		}
-		console.groupEnd()
 	})
 	function linkCounterpart(transactionId: string) {
 		editActor.send({ type: 'LINK_COUNTERPART', candidateId: transactionId })
@@ -543,7 +491,6 @@
 						defaultCategoryId={initialTransaction.categoryId}
 						{tagSuggestions}
 						{transferSuggestions}
-						{transferMatchDiagnostics}
 						{transferEditorState}
 						{selectedTransferCandidateId}
 						onSelectTransferCandidate={selectTransferCandidate}

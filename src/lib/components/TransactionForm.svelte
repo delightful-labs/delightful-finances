@@ -16,7 +16,6 @@
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
 	import type {
 		InternalTransferCandidate,
-		InternalTransferMatchDiagnostic
 	} from '#lib/domain/internal-transfer.js'
 	import type {
 		InternalTransferLinkResult,
@@ -49,7 +48,6 @@
 		oncancel,
 		oninput,
 		transferSuggestions = [],
-		transferMatchDiagnostics = [],
 		transferSearchEnabled = false,
 		transferEditorState = 'unselected',
 		selectedTransferCandidateId = null,
@@ -93,12 +91,6 @@
 		transferSuggestions?: readonly (InternalTransferCandidate & {
 			accountName: Account['name'] | undefined
 			description: TransactionDetail['description'] | undefined
-		})[]
-		transferMatchDiagnostics?: readonly (InternalTransferMatchDiagnostic & {
-			candidate: InternalTransferMatchDiagnostic['candidate'] & {
-				accountName: Account['name'] | undefined
-				description: TransactionDetail['description'] | undefined
-			}
 		})[]
 		transferSearchEnabled?: boolean
 		transferEditorState?: TransactionEditTransferState
@@ -315,7 +307,6 @@
 				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'unselected'}
 					<InternalTransferSuggestions
 						suggestions={transferSuggestions}
-						{transferMatchDiagnostics}
 						writableSuggestionIds={writableTransferSuggestionIds}
 						editorState={transferEditorState}
 						selectedId={selectedTransferCandidateId}
