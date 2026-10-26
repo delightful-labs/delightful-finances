@@ -197,6 +197,33 @@ describe('application readiness supervision', () => {
 		expect(release).toHaveBeenCalledOnce()
 	})
 
+	it('uses a generic notice for evicted and post-restart transfer rejections', () => {
+		const current = session()
+		const actor = start(async () => current.value, current.value)
+		for (let index = 0; index < 65; index++)
+			actor.send({
+				type: 'TRANSFER_WRITE_TRACKED',
+				write: {
+					transactionId: `tracked-${index}`,
+					operation: 'link',
+					transferId: `transfer-${index}`
+				}
+			})
+
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'tracked-0' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'generic',
+			transactionId: 'tracked-0'
+		})
+
+		const restarted = start(async () => current.value, current.value)
+		restarted.send({ type: 'MUTATION_REJECTED', transactionId: 'tracked-64' })
+		expect(restarted.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'generic',
+			transactionId: 'tracked-64'
+		})
+	})
+
 	it('retries failed opening and reuses the resulting session', async () => {
 		const current = session()
 		const open = vi

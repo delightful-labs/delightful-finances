@@ -76,7 +76,13 @@ No setup tasks.
 
 - [x] T014a Serialize safety-sensitive transfer mutations within the active local workspace through an explicit domain owner; document that this does not serialize writes across independently offline devices.
 - [ ] T014b Implement app conflict detection for two independent clients linking one endpoint while offline; an alpha.59 probe showed both conflicting marker writes can be accepted after reconnect. Expose a deterministic effective-link view that prevents double counting, and provide a repair flow that still passes Jazz permissions. Keep this as recovery without weakening positive Jazz-enforced safety.
-- [ ] T014c Verify tracked link and unlink transaction IDs correlate late rejections to operation-specific rollback notices; retain generic reporting for unmatched, evicted, or post-restart rejections. Review and test this behavior before completion.
+- [x] T014c Verify tracked link and unlink transaction IDs correlate late rejections to operation-specific rollback notices; retain generic reporting for unmatched, evicted, or post-restart rejections. Review and test this behavior before completion.
+
+### T014c verification notes
+
+- The application-readiness machine owns Jazz's mutation-rejection observer for the active session. Operation write IDs are tracked before local settlement; matching late rejection notices retain the operation and transfer ID. The tracking list is bounded to 64 entries, and unmatched IDs use a generic notice.
+- Focused application-readiness tests verify tracked link correlation, both unlink/delete write correlations, unmatched IDs, eviction at the 64-entry bound, and generic fallback after a fresh actor starts without prior in-memory tracking.
+- Verification: `pnpm exec vitest run src/lib/machines/application-readiness.test.ts` passed (46 tests); `git diff --check` passed.
 
 **Review checkpoint**: Local durability, later server rejection, and cross-device safety conflicts are separate outcomes with separate owners.
 
