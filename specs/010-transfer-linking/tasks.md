@@ -105,8 +105,8 @@ No setup tasks.
 
 ### Implementation
 
-- [ ] T017 [US4] Design reciprocal unlink enforcement against alpha.59: stage marker clearing before relationship deletion on one offline replica; handle deletion arriving first from another replica (rejected without retry); make the pending-unlink relationship readable through a positive both-linked-or-both-clear predicate while retaining read access checks on both endpoint accounts; and model local durability, partial sync, cancellation, and shutdown before implementation.
-- [ ] T018 [US4] Observe the selected transaction's readable internal-transfer relationship in `src/lib/components/TransactionEditEntry.svelte` and expose explicit link status and unlink callbacks through `src/lib/components/TransactionForm.svelte`.
+- [x] T017 [US4] Design reciprocal unlink enforcement against alpha.59: stage marker clearing before relationship deletion on one offline replica; handle deletion arriving first from another replica (rejected without retry); make the pending-unlink relationship readable through a positive both-linked-or-both-clear predicate while retaining read access checks on both endpoint accounts; and model local durability, partial sync, cancellation, and shutdown before implementation.
+- [x] T018 [US4] Observe the selected transaction's readable internal-transfer relationship in `src/lib/components/TransactionEditEntry.svelte` and expose explicit link status and unlink callbacks through `src/lib/components/TransactionForm.svelte`.
 - [x] T019 [US4] Protect linked amount/account edits in `src/lib/machines/transaction-save.ts`; preserve compatible metadata edits and require explicit unlink before a one-sided change can invalidate the pair.
 - [ ] T020 [US4] Add machine-owned mergeable delete-both and unlink-and-delete operations with separate endpoint Jazz delete checks, local durability, and typed outcomes in `src/lib/machines/internal-transfer.ts`.
 - [ ] T021 [US4] Add the linked-transaction deletion choices and reporting-effect explanation to `src/lib/components/TransactionDetails.svelte` and `src/lib/components/TransactionEditEntry.svelte`.
