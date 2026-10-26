@@ -78,11 +78,8 @@
 	.transaction-workspace {
 		--dui-drawer-width: clamp(18rem, 35vw, 30rem);
 		--dui-drawer-padding: var(--dui-spacing-xs);
-		--dui-drawer-top: calc(var(--dui-top-navigation-height) + var(--dui-spacing-md));
-		--dui-drawer-height: calc(
-			100dvh - var(--dui-top-navigation-height) - 2 * var(--dui-spacing-md)
-		);
 		min-inline-size: 0;
+		height: 100%;
 	}
 
 	.transaction-workspace[data-desktop='true'] {

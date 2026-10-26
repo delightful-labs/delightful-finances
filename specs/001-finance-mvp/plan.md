@@ -544,3 +544,15 @@ variant color values through private variables consumed by common hover rules;
 keep disabled/focus/flat-active/motion handling explicit. Package and integrate
 one latest archive. Review before relevant behavior tests; temporary appearance
 checks need not become permanent tests.
+
+### Viewport shell and drawer content extraction
+
+Use a CSS grid shell sized to 100dvh with an intrinsic header row and a remaining
+workspace row; main owns scrolling. Remove header ResizeObserver measurement and
+explicit drawer offset calculations. Extract AppDrawerContentSection as a pure
+snippet wrapper with shared padding and optional labeled section semantics, reused
+for filters, workspace selection and the sync/status footer. Remove PageContent
+and render content directly, retaining a local TransactionView grid and sticky
+creation action. Component rendering unit tests now live directly under src/lib.
+Update existing browser coverage for removed wrappers and footer padding before
+running navigation, UI integration, creation, overview and transaction workspace checks.

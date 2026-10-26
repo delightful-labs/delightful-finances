@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'svelte/server'
-import ExpenseOverview from './ExpenseOverview.svelte'
-import CategoryLegend from './CategoryLegend.svelte'
+import ExpenseOverview from '#lib/components/ExpenseOverview.svelte'
+import CategoryLegend from '#lib/components/CategoryLegend.svelte'
 import type { TransactionRow } from '#lib/schema.js'
 
 function row(

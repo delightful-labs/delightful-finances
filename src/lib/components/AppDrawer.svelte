@@ -2,6 +2,7 @@
 	import { INCOME_PATH, EXPENSES_PATH } from '#lib/domain/transaction-kind.js'
 	import Icon from './AppIcon.svelte'
 	import AppNavigationLink from './AppNavigationLink.svelte'
+	import AppDrawerContentSection from './AppDrawerContentSection.svelte'
 	import { Button, Drawer, Details, Navigation, Checkbox, StatusMessage } from 'delightful-ui'
 	import OverviewIcon from 'tdesign-icons-svg/src/dashboard.svg?component'
 	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
@@ -78,6 +79,14 @@
 	const filtersHeadingId = `${drawerInstanceId}-filters`
 </script>
 
+{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
+	<Button type="button" {disabled} onclick={open}>
+		<Icon navigation icon={AddIcon} />{m['actions.add_subject']({
+			subject: m['nouns.account']({ count: 1 })
+		})}
+	</Button>
+{/snippet}
+
 <Drawer
 	class="site-drawer"
 	id={drawerId}
@@ -85,7 +94,6 @@
 	headingHidden
 	closeLabel={m['actions.close_subject']({ subject: m['navigation.label']() })}
 	showCloseButton={false}
-	style="--dui-drawer-height: calc(100vh - var(--dui-top-navigation-height)); --dui-drawer-top: var(--dui-top-navigation-height)"
 	bind:open={drawerOpen}
 >
 	<div class="sidebar-content">
@@ -147,7 +155,7 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="disclosure-content">
-							<section class="details-content-section" aria-labelledby={filtersHeadingId}>
+							<AppDrawerContentSection element="section" aria-labelledby={filtersHeadingId}>
 								<QueryContent
 									queries={accountQueries}
 									loadingMessage={m['status.loading_subject']({
@@ -237,15 +245,9 @@
 										</p>
 									{/if}
 								</QueryContent>
-								{#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
-									<Button type="button" {disabled} onclick={open}>
-										<Icon navigation icon={AddIcon} />{m['actions.add_subject']({
-											subject: m['nouns.account']({ count: 1 })
-										})}
-									</Button>
-								{/snippet}
+
 								{@render accountCreation(accountCreationTrigger)}
-							</section>
+							</AppDrawerContentSection>
 							<Navigation label={m['nouns.account']({ count: 2 })}>
 								<li>
 									<AppNavigationLink
@@ -270,7 +272,7 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="disclosure-content">
-							<div class="details-content-section">
+							<AppDrawerContentSection>
 								<QueryContent
 									queries={organizationQueries}
 									loadingMessage={m['status.loading_subject']({
@@ -286,7 +288,7 @@
 										onchange={onOrganizationChange}
 									/>
 								</QueryContent>
-							</div>
+							</AppDrawerContentSection>
 							<Navigation label={m['navigation.settings']()}>
 								<li>
 									<AppNavigationLink
@@ -331,31 +333,33 @@
 			</li>
 		</Navigation>
 
-		{#if bankSync.visible}
-			<Button
-				disabled={browserOffline || bankSync.disabled}
-				aria-describedby={browserOffline ? 'sidebar-bank-sync-offline' : undefined}
-				onclick={() => {
-					onNavigate()
-					bankSync.sync()
-				}}><Icon navigation icon={SyncIcon} />{m['bank.sync']()}</Button
-			>
-			{#if browserOffline}
-				<p id="sidebar-bank-sync-offline">{m['bank.sync_offline']()}</p>
+		<AppDrawerContentSection>
+			{#if bankSync.visible}
+				<Button
+					disabled={browserOffline || bankSync.disabled}
+					aria-describedby={browserOffline ? 'sidebar-bank-sync-offline' : undefined}
+					onclick={() => {
+						onNavigate()
+						bankSync.sync()
+					}}><Icon navigation icon={SyncIcon} />{m['bank.sync']()}</Button
+				>
+				{#if browserOffline}
+					<p id="sidebar-bank-sync-offline">{m['bank.sync_offline']()}</p>
+				{/if}
 			{/if}
-		{/if}
 
-		<div class="sidebar-status">
-			<PwaUpdateIntegration />
-			<StatusMessage
-				compact
-				text={!syncConfigured
-					? m['database.local']()
-					: browserOffline
-						? m['database.offline']()
-						: m['database.sync_enabled']()}
-			/>
-		</div>
+			<div class="sidebar-status">
+				<PwaUpdateIntegration />
+				<StatusMessage
+					compact
+					text={!syncConfigured
+						? m['database.local']()
+						: browserOffline
+							? m['database.offline']()
+							: m['database.sync_enabled']()}
+				/>
+			</div>
+		</AppDrawerContentSection>
 	</div>
 </Drawer>
 
@@ -384,20 +388,14 @@
 	.sidebar-content {
 		display: flex;
 		flex-direction: column;
-		min-block-size: 100%;
+		justify-content: space-between;
+		height: 100%;
 	}
 
 	.disclosure-content {
 		display: grid;
 		gap: var(--dui-space-xs, 0.5rem);
 		min-inline-size: 0;
-	}
-
-	.details-content-section {
-		display: grid;
-		gap: var(--dui-space-xs, 0.5rem);
-		min-width: 0;
-		padding: var(--dui-space-xs, 0.5rem) 1rem 0;
 	}
 
 	.sidebar-status {

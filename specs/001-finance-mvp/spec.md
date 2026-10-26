@@ -336,7 +336,7 @@ Shared page content separates sibling content blocks, including category tables 
 
 ### Tags table and creation modal
 
-Tags use the same responsive DUI Table and creation modal pattern as categories. Add tag opens the modal; Cancel precedes the primary Add tag action. Preserve category selection, validation and save feedback. After success, Close dismisses the modal; reopening starts a new entry. Dismissal retains drafts; workspace changes close and reset the form. Shared PageContent supplies spacing between table and trigger.
+Tags use the same responsive DUI Table and creation modal pattern as categories. Add tag opens the modal; Cancel precedes the primary Add tag action. Preserve category selection, validation and save feedback. After success, Close dismisses the modal; reopening starts a new entry. Dismissal retains drafts; workspace changes close and reset the form. The table and trigger render directly in the route; no shared PageContent spacing wrapper is used.
 
 ### Shared creation modal and transaction account setup
 
@@ -507,7 +507,8 @@ select private `.details-caret` or `.details-content` classes.
 Navigation link and drawer action/disclosure icons MUST share AppIcon's
 `navigation` presentation variant, preserving their current size, alignment,
 and spacing. Top-menu refactoring MUST preserve accessible toggle behavior,
-header/logo geometry and drawer offset measurement.
+header/logo geometry. The shell grid supplies the header row and remaining viewport
+height without JavaScript header measurement.
 
 ### Global CSS exceptions
 
@@ -538,3 +539,14 @@ alignment, caller inline styles and public font-size overrides while minimizing
 variant selectors. Button MUST retain public theme overrides, native/fieldset
 disabled behavior, ARIA-disabled activation handling, flat/raised combinations,
 keyboard focus, reduced motion and forced colors with shared interaction rules.
+
+### Viewport shell and shared drawer sections
+
+The application shell fills the dynamic viewport with a header row and a remaining
+workspace row. Main content scrolls within the workspace. Navigation and transaction
+drawers inherit their available height rather than calculating header offsets.
+AppDrawerContentSection owns the shared content grid and padding for account filters,
+workspace selection, and the navigation footer, preserving labeled-section semantics
+for account filters. The footer groups sync controls and connection/update status.
+Route and dialog content render directly without the generic PageContent wrapper;
+TransactionView owns its content grid and a sticky trailing creation action.
