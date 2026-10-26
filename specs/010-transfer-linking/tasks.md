@@ -22,7 +22,7 @@ No setup tasks.
 
 ## Phase 2: Foundational Relationship and Authorization
 
-**Purpose**: Establish the persisted pair and enforce cross-account authorization before any UI can create or reveal one.
+**Purpose**: Establish the persisted pair, enforce Jazz security and every safety invariant currently supported by its policy engine, and identify app-owned validation/recovery for capability gaps.
 
 - [ ] T001 Add the workspace-scoped `internalTransfers` table and policy-checkable endpoint account, amount, and currency facts in `src/lib/schema/transactions.ts`, the optional `canDelete` capability in `src/lib/schema/accounts.ts`, expose the transfer row type in `src/lib/schema.ts`, and add the workspace reverse relation in `src/lib/schema/identity.ts`.
 - [ ] T002 Add additive Jazz migrations and matching schema snapshots under `src/lib/migrations/` from the current schema heads, defaulting existing account grants to no delete authority and policy facts to null; do not reset local or remote data.
@@ -32,10 +32,10 @@ No setup tasks.
 ### Authorization slice
 
 - [ ] T003 Add account permission calculations in `src/lib/domain/organization-permissions.ts` so delete authority is checked independently and existing write grants do not imply delete.
-- [ ] T004 Enforce internal-transfer endpoint shape, same-workspace/different-account rules, same-currency/equal-amount rules, one-pair-per-transaction, both-account write access for mutations, both-account read access for relationship details, and per-endpoint delete authorization in `src/lib/permissions.ts`.
+- [ ] T004 Keep read/insert/update/delete authorization and positive Jazz safety checks for endpoint facts/markers, both-account write access, both-account read access for relationship details, and per-endpoint delete authorization in `src/lib/permissions.ts`. Add a positive `.whereNew` marker-transition guard so a linked transaction marker may be preserved or cleared, and a new marker may be set only when the old marker was null. Verify the guard using the deployed policy fixture. Do not add a null-marker relationship delete rule to the current atomic unlink: alpha.59 rejects it because its endpoint lookups observe pre-update values. Retain app validation/recovery for gaps; do not publish negative correlated existence checks in alpha.59 because the authority rejects them.
 - [ ] T005 Add administrator-facing management for workspace members' account delete grants, independent of read/write access, in `src/routes/accounts/+page.svelte` and `src/lib/components/AccountList.svelte`, with localized labels in `messages/en.json` and current account archive behavior preserved.
 
-**Review checkpoint**: Direct Jazz reads and writes cannot create an invalid or privacy-leaking transfer relationship; administrators can assign delete authority independently of write authority.
+**Review checkpoint**: Jazz policies enforce who may read or mutate transfer data and the proven endpoint/marker-transition safety rules; app safety logic covers preflight and any malformed/conflicting cases the current policy engine cannot prevent. Administrators can assign delete authority independently of write authority.
 
 ---
 
@@ -48,8 +48,8 @@ No setup tasks.
 ### Implementation
 
 - [ ] T006 [P] [US1] Implement pure counterpart eligibility and deterministic ordering in `src/lib/domain/internal-transfer.ts`: opposite kind, different account, same workspace, exact amount and currency, seven-day inclusive date range, and unlinked endpoints.
-- [ ] T007 [US1] Implement a machine-first link workflow in `src/lib/machines/internal-transfer.ts` using an exclusive Jazz transaction to read both current endpoints, recheck authority and compatibility, stage the relationship atomically, await authoritative settlement, and report success, cancellation, denial, or failure.
-- [ ] T008 [US1] Add active-workspace transfer and counterpart observations plus actor binding and shutdown to `src/lib/components/TransactionEditEntry.svelte`; keep Jazz subscriptions and lifecycle wiring in this integration component.
+- [ ] T007 [US1] Implement a machine-first link workflow in `src/lib/machines/internal-transfer.ts` using a mergeable Jazz transaction to read both current local endpoints, recheck permissions and compatibility, stage the relationship atomically, await local durability only, and report local success, cancellation, denial, or failure. Do not claim cross-device offline uniqueness.
+- [ ] T008 [US1] Add the transaction-edit parent machine in `src/lib/machines/transaction-edit.ts` to own the whole form workflow, invoke the scoped form and transfer operation children, publish a discriminated UI view, and accept typed intent events; keep Jazz subscriptions, dependency binding, observation adaptation, and parent actor lifecycle wiring in `src/lib/components/TransactionEditEntry.svelte`. Do not duplicate child lifecycle as parent context flags or have presentation inspect child-private state.
 - [ ] T009 [US1] Add the props-only suggestion list in `src/lib/components/InternalTransferSuggestions.svelte` and connect its selection and confirmation callbacks through `src/lib/components/TransactionForm.svelte`.
 - [ ] T010 [P] [US1] Add localized transfer suggestion, empty state, confirmation, and result messages in `messages/en.json` and compile Paraglide after implementation review.
 
@@ -61,16 +61,24 @@ No setup tasks.
 
 **Goal**: Let a user create a manual expense and income and their relationship with one submission and one user-visible completion.
 
-**Independent Test**: Submit a paired transfer between two writable accounts. Verify exactly two account entries and one relationship are accepted together; pending or rejected settlement never reports a completed transfer.
+**Independent Test**: Submit a paired transfer between two writable accounts while offline. Verify exactly two account entries and one relationship commit locally together; later Jazz permission rejection is shown as a separate sync outcome.
 
 ### Implementation
 
-- [ ] T011 [US2] Implement an `internal-transfer-create` statechart that owns account reads, workspace/currency/authority decisions, transaction and relationship staging, authoritative settlement, rollback, cancellation, and typed outcomes. Promise actors perform leaf reads/writes only.
+- [ ] T011 [US2] Implement an `internal-transfer-create` statechart that owns account reads, workspace/currency/permission/safety decisions, transaction and relationship staging in one mergeable transaction, local durability, rollback, cancellation, and typed outcomes. Promise actors perform leaf reads/writes only.
 - [ ] T012 [US2] Add a focused paired-transfer integration component and `/transfers/new` route that own Jazz observations and actor lifecycle, and collect source account, destination account, amount, and shared date for one submission.
 - [ ] T013 [US2] Add a props-only paired-transfer form using existing transaction form conventions, with clear source/destination account inputs and one completion/error result.
 - [ ] T014 [US2] Add localized paired-creation labels, validation, pending, success, and failure messages in `messages/en.json` and compile Paraglide after implementation review.
 
-**Checkpoint**: A user can record a transfer between manually maintained accounts with one submission, and no one-sided completed transfer can result.
+**Checkpoint**: A user can record a transfer between manually maintained accounts with one submission, and both sides are locally durable together. Later permission rejection remains a separately reported sync outcome.
+
+### Offline safety and sync outcomes
+
+- [ ] T014a Serialize safety-sensitive transfer mutations within the active local workspace through an explicit domain owner; document that this does not serialize writes across independently offline devices.
+- [ ] T014b Implement app conflict detection for two independent clients linking one endpoint while offline; an alpha.59 probe showed both conflicting marker writes can be accepted after reconnect. Expose a deterministic effective-link view that prevents double counting, and provide a repair flow that still passes Jazz permissions. Keep this as recovery without weakening positive Jazz-enforced safety.
+- [ ] T014c Verify tracked link and unlink transaction IDs correlate late rejections to operation-specific rollback notices; retain generic reporting for unmatched, evicted, or post-restart rejections. Review and test this behavior before completion.
+
+**Review checkpoint**: Local durability, later server rejection, and cross-device safety conflicts are separate outcomes with separate owners.
 
 ---
 
@@ -97,10 +105,10 @@ No setup tasks.
 
 ### Implementation
 
-- [ ] T017 [US4] Add an exclusive unlink workflow with both-account edit checks and explicit rollback/settlement states to `src/lib/machines/internal-transfer.ts`.
+- [ ] T017 [US4] Design reciprocal unlink enforcement against alpha.59: stage marker clearing before relationship deletion on one offline replica; handle deletion arriving first from another replica (rejected without retry); make the pending-unlink relationship readable through a positive both-linked-or-both-clear predicate while retaining read access checks on both endpoint accounts; and model local durability, partial sync, cancellation, and shutdown before implementation.
 - [ ] T018 [US4] Observe the selected transaction's readable internal-transfer relationship in `src/lib/components/TransactionEditEntry.svelte` and expose explicit link status and unlink callbacks through `src/lib/components/TransactionForm.svelte`.
 - [ ] T019 [US4] Protect linked amount/account edits in `src/lib/machines/transaction-save.ts`; preserve compatible metadata edits and require explicit unlink before a one-sided change can invalidate the pair.
-- [ ] T020 [US4] Add machine-owned exclusive delete-both and unlink-and-delete operations with separate endpoint delete checks and typed outcomes in `src/lib/machines/internal-transfer.ts`.
+- [ ] T020 [US4] Add machine-owned mergeable delete-both and unlink-and-delete operations with separate endpoint Jazz delete checks, local durability, and typed outcomes in `src/lib/machines/internal-transfer.ts`.
 - [ ] T021 [US4] Add the linked-transaction deletion choices and reporting-effect explanation to `src/lib/components/TransactionDetails.svelte` and `src/lib/components/TransactionEditEntry.svelte`.
 - [ ] T022 [US4] Add localized link-status, unlink, delete-choice, permission-denied, delete-grant, and totals-effect messages in `messages/en.json` and compile the catalog after implementation review.
 

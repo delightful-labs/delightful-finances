@@ -2,7 +2,6 @@ import { EXPENSE, INCOME } from '#lib/domain/transaction-kind.js'
 import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 import { findInternalTransferCounterparts } from '#lib/domain/internal-transfer.js'
 import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
-import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import {
 	app,
@@ -12,33 +11,56 @@ import {
 } from '#lib/schema.js'
 import { createJazzTransactionActors } from './jazz-transaction-actors.js'
 
-type JazzTransaction = ReturnType<ReturnType<typeof getDb>['beginExclusiveTransaction']>
-type Tx = Pick<JazzTransaction, 'one' | 'all' | 'insert' | 'update' | 'delete' | 'rollback'> & {
-	commit(): { wait(): Promise<void> }
+type LocalWrite = {
+	txId: Promise<string>
+	wait(options: { tier: 'local' }): Promise<void>
 }
-type Db = { beginExclusiveTransaction(): Tx }
+type JazzTransaction = ReturnType<ReturnType<typeof getDb>['beginTransaction']>
+type Tx = Pick<JazzTransaction, 'one' | 'all' | 'insert' | 'update' | 'delete' | 'rollback'> & {
+	commit(): LocalWrite
+}
+type Db = { beginTransaction(): Tx }
+type TransferWrite = LocalWrite & { txId: Promise<string> }
+type UnlinkDb = Pick<ReturnType<typeof getDb>, 'one' | 'all'> & {
+	transaction(callback: (tx: Pick<JazzTransaction, 'update'>) => void): Promise<TransferWrite>
+	delete(table: typeof app.internalTransfers, id: string): TransferWrite
+}
 type Grant = { accountId: string; access: 'read' | 'write' }
-type Input = {
+export type TransferWriteTracking = {
+	transactionId: string
+	operation: 'link' | 'unlink'
+	transferId: string
+}
+type TrackTransferWrite = (write: TransferWriteTracking) => void
+export type InternalTransferLinkInput = {
 	db: Db
 	organizationId: string
 	identityId: string
 	expenseTransactionId: string
 	incomeTransactionId: string
+	trackWrite: TrackTransferWrite
 }
 export type InternalTransferLinkEvent = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
 export type InternalTransferLinkResult =
-	| { outcome: 'succeeded'; transferId: string; settlement: 'authoritativelyAccepted' }
+	| { outcome: 'succeeded'; transferId: string; settlement: 'locallyPersisted' }
 	| {
 			outcome: 'cancelled' | 'closed' | 'denied' | 'incompatible' | 'alreadyLinked' | 'unavailable'
-			settlement: 'notStarted' | 'authoritativelyRejected' | 'unresolved'
+			settlement: 'notStarted' | 'unresolved'
+			phase?: 'commit' | 'localSettlement'
 			error?: unknown
 	  }
 
 export type InternalTransferUnlinkResult =
-	| { outcome: 'succeeded'; transferId: string; settlement: 'authoritativelyAccepted' }
+	| { outcome: 'succeeded'; transferId: string; settlement: 'locallyPersisted' }
+	| {
+			outcome: 'recoveryRequired'
+			transferId: string
+			settlement: 'locallyPersisted' | 'unresolved'
+			error?: unknown
+	  }
 	| {
 			outcome: 'cancelled' | 'closed' | 'denied' | 'incompatible' | 'unavailable'
-			settlement: 'notStarted' | 'authoritativelyRejected' | 'unresolved'
+			settlement: 'notStarted' | 'unresolved'
 			error?: unknown
 	  }
 
@@ -76,12 +98,17 @@ function eligibleAssessment(
 }
 
 const transactionActors = createJazzTransactionActors(
-	(db: Db) => db.beginExclusiveTransaction(),
-	(write: ReturnType<Tx['commit']>) => write.wait()
+	(db: Db) => db.beginTransaction(),
+	(write: ReturnType<Tx['commit']>) => write.wait({ tier: 'local' })
 )
 const { open, commit, settle, rollback } = transactionActors
+const identifyTransferWrite = fromPromise(({ input }: { input: TransferWrite }) => input.txId)
 const read = fromPromise(
-	async ({ input }: { input: { tx: Tx; request: Input } }): Promise<Records> => {
+	async ({
+		input
+	}: {
+		input: { tx: Tx; request: InternalTransferLinkInput }
+	}): Promise<Records> => {
 		const { tx, request } = input
 		const [
 			expense,
@@ -122,7 +149,7 @@ const read = fromPromise(
 	}
 )
 
-function assess(records: Records, request: Input): Assessment {
+function assess(records: Records, request: InternalTransferLinkInput): Assessment {
 	const { expense, income, membership, grants, links } = records
 	if (!expense || !income) return { outcome: 'unavailable' }
 	if (links.length > 0 || expense.internalTransferId || income.internalTransferId)
@@ -168,27 +195,36 @@ const stage = fromPromise(
 	}
 )
 
-type UnlinkInput = {
-	db: Db
+export type InternalTransferUnlinkInput = {
+	db: UnlinkDb
 	organizationId: string
 	identityId: string
 	transferId: string
+	expenseTransactionId: string
+	incomeTransactionId: string
+	trackWrite: TrackTransferWrite
 }
 type UnlinkRecords = {
 	transfer: InternalTransfer | null
-	endpoints: Endpoint[]
+	expense: Endpoint | null
+	income: Endpoint | null
 	membership: OrganizationMember | null
 	grants: Grant[]
 }
 type UnlinkAssessment =
-	| { outcome: 'eligible'; transfer: InternalTransfer; expense: Endpoint; income: Endpoint }
+	| {
+			outcome: 'eligible'
+			state: 'linked' | 'pending'
+			transfer: InternalTransfer
+			expense: Endpoint
+			income: Endpoint
+	  }
 	| { outcome: 'denied' | 'incompatible' | 'unavailable' }
 type UnlinkContext = {
-	request: UnlinkInput
-	tx: Tx | undefined
+	request: InternalTransferUnlinkInput
 	records: UnlinkRecords | undefined
 	assessment: UnlinkAssessment | undefined
-	write: OutputFrom<typeof commit> | undefined
+	write: TransferWrite | undefined
 	result: InternalTransferUnlinkResult | undefined
 }
 type EligibleUnlink = Extract<UnlinkAssessment, { outcome: 'eligible' }>
@@ -199,45 +235,46 @@ function eligibleUnlink(value: UnlinkAssessment | undefined): EligibleUnlink {
 }
 
 const readUnlink = fromPromise(
-	async ({ input }: { input: { tx: Tx; request: UnlinkInput } }): Promise<UnlinkRecords> => {
-		const { tx, request } = input
-		const [transfer, endpoints, membership, grants] = await Promise.all([
-			tx.one(app.internalTransfers.where({ id: request.transferId })),
-			tx.all(app.transactions.where({ internalTransferId: request.transferId })),
-			tx.one(
+	async ({ input }: { input: InternalTransferUnlinkInput }): Promise<UnlinkRecords> => {
+		const [transfer, expense, income, membership, grants] = await Promise.all([
+			input.db.one(app.internalTransfers.where({ id: input.transferId })),
+			input.db.one(app.transactions.where({ id: input.expenseTransactionId })),
+			input.db.one(app.transactions.where({ id: input.incomeTransactionId })),
+			input.db.one(
 				app.organizationMembers.where({
-					organizationId: request.organizationId,
-					userId: request.identityId
+					organizationId: input.organizationId,
+					userId: input.identityId
 				})
 			),
-			tx.all(
+			input.db.all(
 				app.accountMemberships.where({
-					organizationId: request.organizationId,
-					userId: request.identityId
+					organizationId: input.organizationId,
+					userId: input.identityId
 				})
 			)
 		])
 		return {
 			transfer,
-			endpoints,
+			expense,
+			income,
 			membership,
 			grants: grants.map(({ accountId, access }) => ({ accountId, access }))
 		}
 	}
 )
 
-function assessUnlink(records: UnlinkRecords, request: UnlinkInput): UnlinkAssessment {
-	const { transfer, endpoints, membership, grants } = records
+function assessUnlink(
+	records: UnlinkRecords,
+	request: InternalTransferUnlinkInput
+): UnlinkAssessment {
+	const { transfer, expense, income, membership, grants } = records
 	if (!transfer) return { outcome: 'unavailable' }
 	if (transfer.organizationId !== request.organizationId) return { outcome: 'incompatible' }
-	const expense = endpoints.find(({ id }) => id === transfer.expenseTransactionId)
-	const income = endpoints.find(({ id }) => id === transfer.incomeTransactionId)
 	if (
 		!expense ||
 		!income ||
-		endpoints.length !== 2 ||
-		expense.internalTransferId !== transfer.id ||
-		income.internalTransferId !== transfer.id ||
+		expense.id !== transfer.expenseTransactionId ||
+		income.id !== transfer.incomeTransactionId ||
 		expense.organizationId !== request.organizationId ||
 		income.organizationId !== request.organizationId ||
 		expense.accountId !== transfer.expenseAccountId ||
@@ -256,38 +293,63 @@ function assessUnlink(records: UnlinkRecords, request: UnlinkInput): UnlinkAsses
 		!canWriteAccount(membership, request.organizationId, income.accountId, grants)
 	)
 		return { outcome: 'denied' }
-	return { outcome: 'eligible', transfer, expense, income }
+	const linked =
+		expense.internalTransferId === transfer.id && income.internalTransferId === transfer.id
+	const pending = expense.internalTransferId == null && income.internalTransferId == null
+	if (!linked && !pending) return { outcome: 'incompatible' }
+	return { outcome: 'eligible', state: pending ? 'pending' : 'linked', transfer, expense, income }
 }
 
-const stageUnlink = fromPromise(({ input }: { input: { tx: Tx; assessment: EligibleUnlink } }) => {
-	const { tx, assessment } = input
-	tx.update(app.transactions, assessment.expense.id, { internalTransferId: null })
-	tx.update(app.transactions, assessment.income.id, { internalTransferId: null })
-	tx.delete(app.internalTransfers, assessment.transfer.id)
-	return Promise.resolve(assessment.transfer.id)
-})
+const clearUnlinkMarkers = fromPromise(
+	({
+		input
+	}: {
+		input: { request: InternalTransferUnlinkInput; assessment: EligibleUnlink }
+	}): Promise<TransferWrite> => {
+		return input.request.db.transaction((tx) => {
+			tx.update(app.transactions, input.assessment.expense.id, { internalTransferId: null })
+			tx.update(app.transactions, input.assessment.income.id, { internalTransferId: null })
+		})
+	}
+)
+const deleteUnlinkRelationship = fromPromise(
+	({
+		input
+	}: {
+		input: { request: InternalTransferUnlinkInput; assessment: EligibleUnlink }
+	}): Promise<TransferWrite> =>
+		Promise.resolve(input.request.db.delete(app.internalTransfers, input.assessment.transfer.id))
+)
+const settleUnlinkWrite = fromPromise(({ input }: { input: TransferWrite }) =>
+	input.wait({ tier: 'local' })
+)
 
-/** Owns one exclusive Jazz transaction while removing a transfer relationship. */
+/** Owns ordered local-first unlink writes and exposes partial completion for recovery. */
 export const internalTransferUnlinkMachine = setup<
 	UnlinkContext,
 	InternalTransferLinkEvent,
 	{
-		open: typeof transactionActors.open
 		read: typeof readUnlink
-		stage: typeof stageUnlink
-		commit: typeof transactionActors.commit
-		settle: typeof transactionActors.settle
-		rollback: typeof transactionActors.rollback
+		clearMarkers: typeof clearUnlinkMarkers
+		deleteRelationship: typeof deleteUnlinkRelationship
+		identifyTransferWrite: typeof identifyTransferWrite
+		settleWrite: typeof settleUnlinkWrite
 	},
 	{},
 	{},
 	{ closing: undefined; cancelling: undefined },
 	never,
 	string,
-	UnlinkInput,
+	InternalTransferUnlinkInput,
 	InternalTransferUnlinkResult
 >({
-	actors: { open, read: readUnlink, stage: stageUnlink, commit, settle, rollback },
+	actors: {
+		read: readUnlink,
+		clearMarkers: clearUnlinkMarkers,
+		deleteRelationship: deleteUnlinkRelationship,
+		identifyTransferWrite,
+		settleWrite: settleUnlinkWrite
+	},
 	guards: {
 		closing: stateIn({ running: { control: 'closing' } }),
 		cancelling: stateIn({ running: { control: 'cancelling' } })
@@ -296,7 +358,6 @@ export const internalTransferUnlinkMachine = setup<
 	id: 'internal-transfer-unlink',
 	context: ({ input }) => ({
 		request: input,
-		tx: undefined,
 		records: undefined,
 		assessment: undefined,
 		write: undefined,
@@ -317,15 +378,15 @@ export const internalTransferUnlinkMachine = setup<
 					}
 				},
 				work: {
-					initial: 'opening',
+					initial: 'reading',
 					states: {
-						opening: {
+						reading: {
 							invoke: {
-								src: 'open',
-								input: ({ context }) => context.request.db,
+								src: 'read',
+								input: ({ context }) => context.request,
 								onDone: {
-									target: 'checkingAfterOpen',
-									actions: assign({ tx: ({ event }) => event.output })
+									target: 'checkingAfterRead',
+									actions: assign({ records: ({ event }) => event.output })
 								},
 								onError: {
 									target: 'finishing',
@@ -339,37 +400,18 @@ export const internalTransferUnlinkMachine = setup<
 								}
 							}
 						},
-						checkingAfterOpen: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'reading' }
-							]
-						},
-						reading: {
-							invoke: {
-								src: 'read',
-								input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-								onDone: {
-									target: 'checkingAfterRead',
-									actions: assign({ records: ({ event }) => event.output })
-								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): InternalTransferUnlinkResult => ({
-											outcome: 'unavailable',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
-								}
-							}
-						},
 						checkingAfterRead: {
 							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
+								{
+									guard: 'closing',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'closed', settlement: 'notStarted' } })
+								},
+								{
+									guard: 'cancelling',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'cancelled', settlement: 'notStarted' } })
+								},
 								{ target: 'assessing' }
 							]
 						},
@@ -384,11 +426,19 @@ export const internalTransferUnlinkMachine = setup<
 						},
 						checkingAssessment: {
 							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
+								{
+									guard: 'closing',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'closed', settlement: 'notStarted' } })
+								},
+								{
+									guard: 'cancelling',
+									target: 'finishing',
+									actions: assign({ result: { outcome: 'cancelled', settlement: 'notStarted' } })
+								},
 								{
 									guard: ({ context }) => required(context.assessment).outcome !== 'eligible',
-									target: 'rollingBack',
+									target: 'finishing',
 									actions: assign({
 										result: ({ context }): InternalTransferUnlinkResult => {
 											const assessment = required(context.assessment)
@@ -398,49 +448,32 @@ export const internalTransferUnlinkMachine = setup<
 										}
 									})
 								},
-								{ target: 'staging' }
+								{
+									guard: ({ context }) =>
+										context.assessment?.outcome === 'eligible' &&
+										context.assessment.state === 'pending',
+									target: 'deleting'
+								},
+								{ target: 'clearingMarkers' }
 							]
 						},
-						staging: {
+						clearingMarkers: {
 							invoke: {
-								src: 'stage',
+								src: 'clearMarkers',
 								input: ({ context }) => ({
-									tx: required(context.tx),
+									request: context.request,
 									assessment: eligibleUnlink(context.assessment)
 								}),
-								onDone: { target: 'checkingAfterStage' },
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): InternalTransferUnlinkResult => ({
-											outcome: 'unavailable',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
-								}
-							}
-						},
-						checkingAfterStage: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'committing' }
-							]
-						},
-						committing: {
-							invoke: {
-								src: 'commit',
-								input: ({ context }) => required(context.tx),
 								onDone: {
-									target: 'checkingAfterCommit',
+									target: 'identifyingClearWrite',
 									actions: assign({ write: ({ event }) => event.output })
 								},
 								onError: {
 									target: 'finishing',
 									actions: assign({
-										result: ({ event }): InternalTransferUnlinkResult => ({
-											outcome: 'unavailable',
+										result: ({ context, event }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
 											settlement: 'unresolved',
 											error: event.error
 										})
@@ -448,20 +481,130 @@ export const internalTransferUnlinkMachine = setup<
 								}
 							}
 						},
-						checkingAfterCommit: {
-							always: {
-								target: 'settling',
-								actions: assign({
-									result: (): InternalTransferUnlinkResult => ({
-										outcome: 'unavailable',
-										settlement: 'unresolved'
+						identifyingClearWrite: {
+							invoke: {
+								src: 'identifyTransferWrite',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'settlingClearWrite',
+									actions: ({ context, event }) =>
+										context.request.trackWrite({
+											transactionId: event.output,
+											operation: 'unlink',
+											transferId: eligibleUnlink(context.assessment).transfer.id
+										})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'unresolved',
+											error: event.error
+										})
 									})
-								})
+								}
 							}
 						},
-						settling: {
+						settlingClearWrite: {
 							invoke: {
-								src: 'settle',
+								src: 'settleWrite',
+								input: ({ context }) => required(context.write),
+								onDone: { target: 'checkingAfterClear' },
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'unresolved',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						checkingAfterClear: {
+							always: [
+								{
+									guard: 'closing',
+									target: 'finishing',
+									actions: assign({
+										result: ({ context }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'locallyPersisted'
+										})
+									})
+								},
+								{
+									guard: 'cancelling',
+									target: 'finishing',
+									actions: assign({
+										result: ({ context }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'locallyPersisted'
+										})
+									})
+								},
+								{ target: 'deleting' }
+							]
+						},
+						deleting: {
+							invoke: {
+								src: 'deleteRelationship',
+								input: ({ context }) => ({
+									request: context.request,
+									assessment: eligibleUnlink(context.assessment)
+								}),
+								onDone: {
+									target: 'identifyingDeleteWrite',
+									actions: assign({ write: ({ event }) => event.output })
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'locallyPersisted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						identifyingDeleteWrite: {
+							invoke: {
+								src: 'identifyTransferWrite',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'settlingDeleteWrite',
+									actions: ({ context, event }) =>
+										context.request.trackWrite({
+											transactionId: event.output,
+											operation: 'unlink',
+											transferId: eligibleUnlink(context.assessment).transfer.id
+										})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ context, event }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'locallyPersisted',
+											error: event.error
+										})
+									})
+								}
+							}
+						},
+						settlingDeleteWrite: {
+							invoke: {
+								src: 'settleWrite',
 								input: ({ context }) => required(context.write),
 								onDone: {
 									target: 'finishing',
@@ -469,64 +612,17 @@ export const internalTransferUnlinkMachine = setup<
 										result: ({ context }): InternalTransferUnlinkResult => ({
 											outcome: 'succeeded',
 											transferId: eligibleUnlink(context.assessment).transfer.id,
-											settlement: 'authoritativelyAccepted'
+											settlement: 'locallyPersisted'
 										})
 									})
 								},
 								onError: {
 									target: 'finishing',
 									actions: assign({
-										result: ({ event }): InternalTransferUnlinkResult =>
-											event.error instanceof PersistedWriteRejectedError
-												? {
-														outcome: 'denied',
-														settlement: 'authoritativelyRejected',
-														error: event.error
-													}
-												: {
-														outcome: 'unavailable',
-														settlement: 'unresolved',
-														error: event.error
-													}
-									})
-								}
-							}
-						},
-						rollingBack: {
-							invoke: {
-								src: 'rollback',
-								input: ({ context }) => required(context.tx),
-								onDone: [
-									{
-										guard: 'closing',
-										target: 'finishing',
-										actions: assign({
-											result: ({ context }): InternalTransferUnlinkResult =>
-												context.result ?? { outcome: 'closed', settlement: 'notStarted' }
-										})
-									},
-									{
-										guard: 'cancelling',
-										target: 'finishing',
-										actions: assign({
-											result: ({ context }): InternalTransferUnlinkResult =>
-												context.result ?? { outcome: 'cancelled', settlement: 'notStarted' }
-										})
-									},
-									{
-										target: 'finishing',
-										actions: assign({
-											result: ({ context }): InternalTransferUnlinkResult =>
-												context.result ?? { outcome: 'unavailable', settlement: 'notStarted' }
-										})
-									}
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): InternalTransferUnlinkResult => ({
-											outcome: 'unavailable',
-											settlement: 'unresolved',
+										result: ({ context, event }): InternalTransferUnlinkResult => ({
+											outcome: 'recoveryRequired',
+											transferId: eligibleUnlink(context.assessment).transfer.id,
+											settlement: 'locallyPersisted',
 											error: event.error
 										})
 									})
@@ -542,7 +638,7 @@ export const internalTransferUnlinkMachine = setup<
 	}
 })
 type Context = {
-	request: Input
+	request: InternalTransferLinkInput
 	tx: Tx | undefined
 	records: Records | undefined
 	assessment: Assessment | undefined
@@ -551,7 +647,7 @@ type Context = {
 	result: InternalTransferLinkResult | undefined
 }
 
-/** Owns one exclusive Jazz transaction from endpoint read through authoritative settlement. */
+/** Owns one mergeable Jazz transaction from endpoint read through local persistence. */
 export const internalTransferLinkMachine = setup<
 	Context,
 	InternalTransferLinkEvent,
@@ -562,16 +658,17 @@ export const internalTransferLinkMachine = setup<
 		commit: typeof transactionActors.commit
 		settle: typeof transactionActors.settle
 		rollback: typeof transactionActors.rollback
+		identifyTransferWrite: typeof identifyTransferWrite
 	},
 	{},
 	{},
 	{ closing: undefined; cancelling: undefined },
 	never,
 	string,
-	Input,
+	InternalTransferLinkInput,
 	InternalTransferLinkResult
 >({
-	actors: { open, read, stage, commit, settle, rollback },
+	actors: { open, read, stage, commit, settle, rollback, identifyTransferWrite },
 	guards: {
 		closing: stateIn({ running: { control: 'closing' } }),
 		cancelling: stateIn({ running: { control: 'cancelling' } })
@@ -729,6 +826,7 @@ export const internalTransferLinkMachine = setup<
 										result: ({ event }): InternalTransferLinkResult => ({
 											outcome: 'unavailable',
 											settlement: 'unresolved',
+											phase: 'commit',
 											error: event.error
 										})
 									})
@@ -737,7 +835,7 @@ export const internalTransferLinkMachine = setup<
 						},
 						checkingAfterCommit: {
 							always: {
-								target: 'settling',
+								target: 'identifyingWrite',
 								actions: assign({
 									result: ({ context }): InternalTransferLinkResult => ({
 										outcome: 'unavailable',
@@ -745,6 +843,32 @@ export const internalTransferLinkMachine = setup<
 										error: undefined
 									})
 								})
+							}
+						},
+						identifyingWrite: {
+							invoke: {
+								src: 'identifyTransferWrite',
+								input: ({ context }) => required(context.write),
+								onDone: {
+									target: 'settling',
+									actions: ({ context, event }) =>
+										context.request.trackWrite({
+											transactionId: event.output,
+											operation: 'link',
+											transferId: required(context.transferId)
+										})
+								},
+								onError: {
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }): InternalTransferLinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'unresolved',
+											phase: 'commit',
+											error: event.error
+										})
+									})
+								}
 							}
 						},
 						settling: {
@@ -757,25 +881,19 @@ export const internalTransferLinkMachine = setup<
 										result: ({ context }): InternalTransferLinkResult => ({
 											outcome: 'succeeded',
 											transferId: required(context.transferId),
-											settlement: 'authoritativelyAccepted'
+											settlement: 'locallyPersisted'
 										})
 									})
 								},
 								onError: {
 									target: 'finishing',
 									actions: assign({
-										result: ({ event }): InternalTransferLinkResult =>
-											event.error instanceof PersistedWriteRejectedError
-												? {
-														outcome: 'denied',
-														settlement: 'authoritativelyRejected',
-														error: event.error
-													}
-												: {
-														outcome: 'unavailable',
-														settlement: 'unresolved',
-														error: event.error
-													}
+										result: ({ event }): InternalTransferLinkResult => ({
+											outcome: 'unavailable',
+											settlement: 'unresolved',
+											phase: 'localSettlement',
+											error: event.error
+										})
 									})
 								}
 							}

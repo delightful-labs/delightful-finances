@@ -182,6 +182,20 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			})
 		])
 
+	const transferEndpointsAreUnlinked = (transfer: InternalTransferContext) =>
+		allOf([
+			policy.transactions.exists.where({
+				id: transfer.expenseTransactionId,
+				organizationId: transfer.organizationId,
+				internalTransferId: { isNull: true }
+			}),
+			policy.transactions.exists.where({
+				id: transfer.incomeTransactionId,
+				organizationId: transfer.organizationId,
+				internalTransferId: { isNull: true }
+			})
+		])
+
 	const transactionTransferFactsMatch = (transaction: TransactionContext) =>
 		anyOf([
 			policy.internalTransfers.exists.where({
@@ -384,7 +398,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		allOf([
 			allowedTo.read('expenseTransaction'),
 			allowedTo.read('incomeTransaction'),
-			transferEndpointFactsMatch(transfer)
+			anyOf([transferEndpointFactsMatch(transfer), transferEndpointsAreUnlinked(transfer)])
 		])
 	)
 	policy.internalTransfers.allowInsert.where((transfer) =>

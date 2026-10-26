@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { EXPENSE, INCOME } from './transaction-kind.js'
 import type { TransactionRow } from '#lib/schema.js'
-import { findInternalTransferCounterparts } from './internal-transfer.js'
+import {
+	findInternalTransferCounterparts,
+	inspectInternalTransferCounterparts
+} from './internal-transfer.js'
 
 type Candidate = Pick<
 	TransactionRow,
-	'id' | 'organizationId' | 'accountId' | 'kind' | 'amountMinor' | 'currency' | 'bookedOn'
+	| 'id'
+	| 'organizationId'
+	| 'accountId'
+	| 'kind'
+	| 'amountMinor'
+	| 'currency'
+	| 'bookedOn'
+	| 'internalTransferId'
 >
 
 function candidate(id: string, overrides: Partial<Candidate> = {}): Candidate {
@@ -17,6 +27,7 @@ function candidate(id: string, overrides: Partial<Candidate> = {}): Candidate {
 		amountMinor: 1250,
 		currency: 'USD',
 		bookedOn: '2026-10-23',
+		internalTransferId: null,
 		...overrides
 	}
 }
@@ -24,6 +35,38 @@ function candidate(id: string, overrides: Partial<Candidate> = {}): Candidate {
 const source = candidate('source', { accountId: 'source', kind: EXPENSE })
 
 describe('internal transfer counterparts', () => {
+	it('reports each eligibility check for a rejected candidate', () => {
+		const rejected = candidate('rejected', {
+			accountId: source.accountId,
+			kind: EXPENSE,
+			amountMinor: 1251,
+			currency: 'EUR',
+			bookedOn: '2026-10-31',
+			internalTransferId: 'existing-transfer'
+		})
+
+		expect(inspectInternalTransferCounterparts(source, [rejected], new Set([rejected.id]))).toEqual(
+			[
+				{
+					candidate: rejected,
+					checks: {
+						sameWorkspace: true,
+						differentAccount: false,
+						oppositeKind: false,
+						sameAmount: false,
+						sameCurrency: false,
+						withinDateWindow: false,
+						sourceHasNoTransferMarker: true,
+						sourceNotLinkedByTransferRecord: true,
+						candidateHasNoTransferMarker: false,
+						candidateNotLinkedByTransferRecord: false
+					},
+					eligible: false
+				}
+			]
+		)
+	})
+
 	it('returns only opposite-kind transactions in another account with matching workspace, amount, and currency', () => {
 		const eligible = candidate('eligible')
 		const candidates = [

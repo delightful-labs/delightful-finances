@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { schema as s } from 'jazz-tools'
 import { createPolicyTestApp, type PolicyTestApp, type TestDb } from 'jazz-tools/testing'
 
@@ -55,10 +55,29 @@ const permissions = s.definePermissions(app, ({ policy, allOf }) => {
 				internalTransferId: transfer.id
 			})
 		])
+	const transferEndpointsAreUnlinked = (
+		transfer: import('jazz-tools/permissions').RowContext<s.RowOf<typeof app.internalTransfers>>
+	) =>
+		allOf([
+			policy.transactions.exists.where({
+				id: transfer.expenseTransactionId,
+				organizationId: transfer.organizationId,
+				accountId: transfer.expenseAccountId,
+				internalTransferId: { isNull: true }
+			}),
+			policy.transactions.exists.where({
+				id: transfer.incomeTransactionId,
+				organizationId: transfer.organizationId,
+				accountId: transfer.incomeAccountId,
+				internalTransferId: { isNull: true }
+			})
+		])
 	policy.transactions.allowRead.always()
 	policy.transactions.allowInsert.always()
+	policy.transactions.allowUpdate.always()
 	policy.internalTransfers.allowRead.where(transferEndpointsMatch)
 	policy.internalTransfers.allowInsert.where(transferEndpointsMatch)
+	policy.internalTransfers.allowDelete.where(transferEndpointsAreUnlinked)
 })
 
 const organizationId = crypto.randomUUID()
@@ -91,7 +110,7 @@ function transfer(
 	} satisfies import('jazz-tools').schema.InsertOf<typeof app.internalTransfers>
 }
 
-beforeAll(async () => {
+beforeEach(async () => {
 	fixture = await createPolicyTestApp(app, permissions, expect)
 	db = fixture.as(session)
 	await fixture.seed((seed) =>
@@ -124,16 +143,43 @@ beforeAll(async () => {
 	)
 }, 30_000)
 
-afterAll(async () => {
+afterEach(async () => {
 	await fixture?.shutdown()
 })
 
 describe('positive Check-style transfer endpoint lookups', () => {
-	it('accepts a link whose expense and income match the relationship facts', async () => {
+	it('rejects deleting the relationship while endpoint markers remain set', async () => {
 		const saved = await db
 			.insert(app.internalTransfers, transfer(), { id: transferId })
 			.wait({ tier: 'global' })
 		expect(saved.expenseTransactionId).toBe(expenseTransactionId)
+
+		await db.expectDenied((writer) => writer.delete(app.internalTransfers, transferId))
+	})
+
+	it('rejects clearing both markers and deleting the relationship in one transaction', async () => {
+		await db
+			.insert(app.internalTransfers, transfer(), { id: transferId })
+			.wait({ tier: 'global' })
+		const unlink = await db.transaction((tx) => {
+			tx.update(app.transactions, expenseTransactionId, { internalTransferId: null })
+			tx.update(app.transactions, incomeTransactionId, { internalTransferId: null })
+			tx.delete(app.internalTransfers, transferId)
+		})
+		await expect(unlink.wait({ tier: 'global' })).rejects.toThrow()
+	})
+
+	it('accepts clearing both endpoint markers before deleting the relationship', async () => {
+		await db
+			.insert(app.internalTransfers, transfer(), { id: transferId })
+			.wait({ tier: 'global' })
+		const clearMarkers = await db.transaction((tx) => {
+			tx.update(app.transactions, expenseTransactionId, { internalTransferId: null })
+			tx.update(app.transactions, incomeTransactionId, { internalTransferId: null })
+		})
+		await clearMarkers.wait({ tier: 'global' })
+		await db.delete(app.internalTransfers, transferId).wait({ tier: 'global' })
+		expect(await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' })).toBeNull()
 	})
 
 	it('rejects an endpoint that does not match its transaction facts', async () => {

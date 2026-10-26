@@ -40,4 +40,4 @@ export type TransactionEntryObservation = TransactionEntryScope & {
 	intent?: TransactionSaveValues
 	transaction?: TransactionDetail | null
 }
-export type TransactionEntryView = ScopedFormView<void, TransactionEntryReason>
+export type TransactionEntryView = ScopedFormView<unknown, TransactionEntryReason>

@@ -27,8 +27,8 @@ When a user edits an expense or income, they can mark it as an internal transfer
 3. **Given** a selected compatible counterpart and edit access to both accounts, **When** the user confirms linking, **Then** the two existing transactions are linked without changing their IDs, source identities, amounts, dates, categories, descriptions, memos, tags, checks, or attachments.
 4. **Given** an amount, currency, direction, date, account, workspace, or link-state mismatch, **When** candidates are calculated, **Then** that transaction is not suggested.
 5. **Given** no eligible counterpart, **When** the user starts linking, **Then** the user is told there are no suggestions and can leave the transaction unlinked.
-6. **Given** two devices attempt to link the same transaction to different counterparts, **When** both operations settle, **Then** at most one link is accepted and the rejected attempt is reported accurately.
-7. **Given** the Jazz authority is unavailable, **When** the user views suggestions, **Then** suggestions remain available but no link is reported complete before authoritative acceptance.
+6. **Given** two devices attempt to link the same transaction to different counterparts while offline, **When** their changes synchronize, **Then** the app detects the safety conflict, never counts a transaction more than once, and gives the user a clear way to resolve it.
+7. **Given** the Jazz authority is unavailable, **When** the user links two eligible transactions, **Then** the link is committed to the local database and reported as saved locally without waiting for network confirmation.
 
 ### User Story 2 - Record both sides together (Priority: P1)
 
@@ -41,9 +41,10 @@ When a user moves money between two accounts that are not represented by a match
 **Acceptance Scenarios**:
 
 1. **Given** two writable accounts in the same workspace, **When** the user records a transfer and submits once, **Then** one expense and one income with equal amount and currency and a shared date are created and linked, and the user sees one completion result.
-2. **Given** the paired write is pending or rejected by the Jazz authority, **When** the user submits, **Then** the UI does not report success until the pair is accepted and reports rejection without leaving a one-sided completed transfer.
-3. **Given** the selected accounts are the same, in different workspaces, or not both writable, **When** the user submits, **Then** the operation is rejected and no transfer is created.
-4. **Given** a transfer created together, **When** the user views account histories and workspace totals, **Then** both entries remain in their respective account histories and are excluded from workspace income and expense totals.
+2. **Given** the Jazz authority is unavailable, **When** the user submits, **Then** the pair is committed atomically to the local database and reported as saved locally without waiting for network confirmation.
+3. **Given** Jazz later rejects the locally committed pair under its current permissions, **When** the rejection is synchronized, **Then** Jazz's rollback is reflected in the UI and the user receives an accurate recovery message.
+4. **Given** the selected accounts are the same, in different workspaces, or not both writable, **When** the user submits, **Then** the operation is rejected and no transfer is created.
+5. **Given** a transfer created together, **When** the user views account histories and workspace totals, **Then** both entries remain in their respective account histories and are excluded from workspace income and expense totals.
 
 ### User Story 3 - See correct totals for linked movements (Priority: P1)
 
@@ -72,8 +73,9 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 1. **Given** a linked pair, **When** a user changes dates, descriptions, categories, or tags, **Then** the link remains.
 2. **Given** a linked pair, **When** a user changes one side's amount, account, or currency so the pairing rules fail, **Then** the change cannot leave an invalid pair; the user must update both sides consistently or explicitly unlink.
 3. **Given** a linked pair, **When** the user explicitly unlinks it, **Then** both entries remain as ordinary transactions and regain their normal total treatment.
-4. **Given** a linked transaction is deleted, **When** deletion choices are presented, **Then** the user can choose to delete both sides or unlink and delete only the selected side, and the effect on totals is explained before proceeding.
-5. **Given** an account grant, **When** an administrator manages it, **Then** delete authority can be granted or revoked separately from read and write authority.
+4. **Given** a linked pair, **When** the user views either transaction, **Then** the user can open the other transaction from its detail page.
+5. **Given** a linked transaction is deleted, **When** deletion choices are presented, **Then** the user can choose to delete both sides or unlink and delete only the selected side, and the effect on totals is explained before proceeding.
+6. **Given** an account grant, **When** an administrator manages it, **Then** delete authority can be granted or revoked separately from read and write authority.
 
 ### Edge Cases
 
@@ -83,7 +85,8 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 - Already linked transactions are not suggested as new counterparts.
 - A candidate the user cannot read is never exposed; linking requires edit permission for both accounts.
 - If access to either account changes before linking is saved, the relationship is not created.
-- If the Jazz authority cannot validate a link or unlink, the app does not report it as complete; the editor shows pending or failure feedback until the authority accepts or rejects the change.
+- A locally committed link or unlink is complete for the user's offline workflow. Jazz remains responsible for enforcing security permissions when synchronized writes reach the authority; a later rejection and rollback is reported as a separate synchronization outcome.
+- Mergeable writes from multiple offline devices may conflict on transfer safety invariants that Jazz cannot currently serialize. The app detects and resolves these as safety conflicts without weakening Jazz read, write, or delete permissions.
 - A transfer fee remains a separate ordinary expense and is not linked as an unequal third movement.
 - The existing `transfer` payment method without a counterpart link remains an ordinary transaction for reporting.
 - Imported counterpart transactions retain their provider identity and are not duplicated.
@@ -93,7 +96,7 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 ### Functional Requirements
 
 - **FR-001**: Users MUST be able to link two existing transactions in different accounts of the same workspace as one internal transfer: one expense and one income.
-- **FR-001a**: Users MUST be able to create both sides of an internal transfer in one user action. The system MUST persist one expense, one income, and their relationship as one authoritative operation; the UI MUST report one completion result and MUST NOT report success while only one side is accepted.
+- **FR-001a**: Users MUST be able to create both sides of an internal transfer in one user action. The system MUST persist one expense, one income, and their relationship in one locally atomic mergeable transaction; the UI MUST report one local completion result and MUST NOT report completion while only part of the pair is committed locally.
 - **FR-002**: This feature MUST link only same-currency transactions with equal amounts in minor units. Cross-currency transfer linking remains deferred; the app MUST NOT calculate a conversion.
 - **FR-003**: Each linked side MUST retain its own business date, account currency, and account history entry.
 - **FR-004**: When a user chooses to link a transaction, the system MUST suggest unlinked transactions in the same workspace that have the opposite direction, a different account, the same currency and amount, and a date no more than seven calendar days before or after the current transaction.
@@ -106,7 +109,10 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 - **FR-011**: A user who can read only one account MUST NOT learn details about a hidden counterpart through a transfer relationship.
 - **FR-012**: A transaction's `transfer` payment-method value alone MUST NOT establish a link or change reporting totals.
 - **FR-013**: Transactions across workspaces and movements to or from external accounts MUST remain ordinary income or expense entries.
-- **FR-014**: The system MUST validate link and unlink operations against an authoritative, serializable view before reporting success, so concurrent attempts cannot link one transaction to multiple counterparts. Suggestions MAY remain visible from local data while offline, but a link MUST NOT be reported complete until accepted.
+- **FR-014**: Link, unlink, paired creation, and linked deletion MUST commit locally and complete without waiting for network access. Use a Jazz mergeable transaction and report local durability as the operation's completion boundary.
+- **FR-015**: A linked transaction's detail page MUST provide a link to the other transaction's detail page when that counterpart is available.
+- **FR-014a**: Jazz permissions MUST remain the security boundary for every read, insert, update, and delete. Local UI checks improve feedback but MUST NOT replace Jazz policies. If the authority later rejects a locally committed operation, the app MUST report that rollback as a separate synchronization outcome.
+- **FR-014b**: The system MUST enforce transfer safety rules in Jazz wherever the deployed Jazz policy engine supports them, including compatible endpoints and reciprocal relationship facts; app state machines MUST validate before writes and detect or repair any conflicts Jazz cannot prevent. Concurrent offline conflicts MUST resolve display and reporting deterministically so no transaction is counted more than once, and repair MUST preserve Jazz permissions. Reassess app-side safety fallbacks as Jazz adds policy or uniqueness capabilities.
 - **FR-015**: Administrators MUST be able to grant or revoke account-level delete authority separately from read and write access. Existing write access MUST NOT imply delete authority.
 
 ### Key Entities
@@ -130,6 +136,6 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 
 - The initial matching window is seven calendar days on either side of the transaction date. This is a product default for the first implementation and can be revised after using the feature.
 - Suggestions and links in this iteration match the full amount and currency exactly. Cross-currency linking remains deferred; no automatic conversion is permitted.
-- Link and unlink operations require an available Jazz authority for the concurrency check; local suggestions remain available offline, and the UI communicates unsettled or rejected operations accurately.
+- Link, unlink, paired creation, and linked deletion use local mergeable transactions so they remain useful offline. Jazz authority checks security permissions during synchronization; app state machines own safety validation, local conflict serialization, conflict detection, and repair feedback.
 - Existing-transaction linking supports imported and manual records. Paired creation creates two ordinary manual transactions with the same amount, currency, date, and user-entered description, then links them as one transfer action.
 - Existing approved transfer requirements in `001-finance-mvp` remain authoritative for deletion, authorization, reporting, workspace boundaries, fees, and currency behavior.

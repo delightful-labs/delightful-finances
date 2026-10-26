@@ -14,8 +14,15 @@
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
-	import type { InternalTransferCandidate } from '#lib/domain/internal-transfer.js'
-	import type { InternalTransferLinkResult } from '#lib/machines/internal-transfer.js'
+	import type {
+		InternalTransferCandidate,
+		InternalTransferMatchDiagnostic
+	} from '#lib/domain/internal-transfer.js'
+	import type {
+		InternalTransferLinkResult,
+		InternalTransferUnlinkResult
+	} from '#lib/machines/internal-transfer.js'
+	import type { TransactionEditTransferState } from '#lib/machines/transaction-edit.js'
 	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -42,12 +49,22 @@
 		oncancel,
 		oninput,
 		transferSuggestions = [],
+		transferMatchDiagnostics = [],
+		transferSearchEnabled = false,
+		transferEditorState = 'unselected',
+		selectedTransferCandidateId = null,
 		writableTransferSuggestionIds = new Set<string>(),
-		transferSuggestionsLoading = false,
-		transferSuggestionsFailed = false,
 		transferLinkPending = false,
 		transferLinkResult = null,
-		onLinkCounterpart
+		transferUnlinkAvailable = false,
+		transferUnlinkWritable = false,
+		transferUnlinkPending = false,
+		transferUnlinkResult = null,
+		linkedCounterpartHref = null,
+		onLinkCounterpart,
+		onTransferSearchEnabledChange,
+		onSelectTransferCandidate,
+		onUnlinkTransfer
 	}: {
 		kind: TransactionKind
 		paymentEntry: TransactionPaymentEntry
@@ -77,12 +94,27 @@
 			accountName: Account['name'] | undefined
 			description: TransactionDetail['description'] | undefined
 		})[]
+		transferMatchDiagnostics?: readonly (InternalTransferMatchDiagnostic & {
+			candidate: InternalTransferMatchDiagnostic['candidate'] & {
+				accountName: Account['name'] | undefined
+				description: TransactionDetail['description'] | undefined
+			}
+		})[]
+		transferSearchEnabled?: boolean
+		transferEditorState?: TransactionEditTransferState
+		selectedTransferCandidateId?: string | null
+		onTransferSearchEnabledChange?: (enabled: boolean) => void
+		onSelectTransferCandidate?: (transactionId: string) => void
 		writableTransferSuggestionIds?: ReadonlySet<string>
-		transferSuggestionsLoading?: boolean
-		transferSuggestionsFailed?: boolean
 		transferLinkPending?: boolean
 		transferLinkResult?: InternalTransferLinkResult | null
+		transferUnlinkAvailable?: boolean
+		transferUnlinkWritable?: boolean
+		transferUnlinkPending?: boolean
+		transferUnlinkResult?: InternalTransferUnlinkResult | null
+		linkedCounterpartHref?: string | null
 		onLinkCounterpart?: (transactionId: string) => void
+		onUnlinkTransfer?: () => void
 	} = $props()
 
 	const resetRevision = $derived(view.draftRevision)
@@ -270,15 +302,33 @@
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
-				{#if mode === 'edit' && onLinkCounterpart}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked'}
+					<label>
+						<input
+							type="checkbox"
+							checked={transferSearchEnabled}
+							onchange={(event) => onTransferSearchEnabledChange?.(event.currentTarget.checked)}
+						/>
+						{m['transfers.convert_to_transfer']()}
+					</label>
+				{/if}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'unselected'}
 					<InternalTransferSuggestions
 						suggestions={transferSuggestions}
+						{transferMatchDiagnostics}
 						writableSuggestionIds={writableTransferSuggestionIds}
-						loading={transferSuggestionsLoading}
-						failed={transferSuggestionsFailed}
+						editorState={transferEditorState}
+						selectedId={selectedTransferCandidateId}
+						onSelect={onSelectTransferCandidate}
 						pending={transferLinkPending}
 						result={transferLinkResult}
+						unlinkAvailable={transferUnlinkAvailable}
+						unlinkWritable={transferUnlinkWritable}
+						unlinkPending={transferUnlinkPending}
+						unlinkResult={transferUnlinkResult}
+						{linkedCounterpartHref}
 						onLink={onLinkCounterpart}
+						onUnlink={onUnlinkTransfer}
 					/>
 				{/if}
 				<InputText

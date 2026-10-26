@@ -6,13 +6,13 @@ This guide describes the focused validation to run after implementation review a
 
 1. Create an expense and an income with the same currency and amount in separate accounts, dated within seven days. Edit either transaction and confirm the other appears as a suggestion with date, account, description, and amount.
 2. Confirm a suggestion. Verify the two original IDs and transaction details remain and no third transaction is created.
-3. Record a transfer between two manually maintained accounts in one submission. Verify exactly one expense, one income, and one relationship are accepted together, with one completion result; verify a rejected or pending authoritative operation is never shown as complete or left as a one-sided completed transfer.
+3. Record a transfer between two manually maintained accounts in one submission while offline. Verify exactly one expense, one income, and one relationship become locally durable together and the UI reports local completion. Separately verify a later Jazz policy rejection rolls back and reports a sync issue.
 4. Confirm same-account, different-workspace, already-linked, different-amount, different-currency, same-direction, and out-of-window transactions are not suggested. Confirm paired creation rejects same-account, cross-workspace, or non-writable account selections.
 5. Verify linked entries remain in account history but leave workspace and categorized totals. Unlink and verify they return to those totals.
 6. Attempt link/unlink with write access to only one account and confirm the operation is rejected. Read one linked account only and confirm no counterpart details are available.
 7. Attempt amount/account changes that invalidate a pair and verify the pair cannot be left invalid.
 8. Exercise delete-both and unlink-and-delete with the required per-account delete permissions; verify denied and permitted outcomes and resulting totals.
-9. Start two concurrent link attempts for the same transaction and verify at most one is accepted. Disconnect from the Jazz authority and verify suggestions remain available while no link is reported complete.
+9. Disconnect from the Jazz authority and verify link, unlink, and paired creation still complete locally. Simulate two devices independently linking the same transaction while offline; verify the conflict is detected after sync, totals count neither transaction twice, and the repair flow preserves Jazz authorization.
 
 ## Focused checks (after implementation approval)
 

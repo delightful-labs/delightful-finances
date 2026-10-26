@@ -12,6 +12,8 @@ import {
 } from 'xstate'
 import type { ActorRefFrom, SnapshotFrom } from 'xstate'
 import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
+import type { MutationErrorEvent } from 'jazz-tools'
+import type { TransferWriteTracking } from './internal-transfer.js'
 import { createSessionStartupMachine } from './session-startup.js'
 import { createWorkspaceReadinessMachine, type WorkspaceAttachment } from './readiness.js'
 import { required } from './bank-sync/identity.js'
@@ -25,6 +27,14 @@ import {
 type Session = JazzSession<JazzClient>
 type Workspace = ActorRefFrom<ReturnType<typeof createWorkspaceReadinessMachine>>
 type Status = ReturnType<Session['getSnapshot']>['status']
+export type MutationNotice =
+	| { kind: 'generic'; transactionId: string }
+	| {
+			kind: 'transfer'
+			operation: TransferWriteTracking['operation']
+			transactionId: string
+			transferId: string
+	  }
 type Context = {
 	attachmentRevision: number
 	recoveryDraftRevision: number
@@ -36,6 +46,8 @@ type Context = {
 	workspace: Workspace | undefined
 	attachment: WorkspaceAttachment | undefined
 	pending: WorkspaceAttachment | undefined
+	trackedTransferWrites: TransferWriteTracking[]
+	mutationNotice: MutationNotice | undefined
 }
 type Event =
 	| RecoveryNotice
@@ -45,6 +57,9 @@ type Event =
 	| { type: 'RETRY' }
 	| { type: 'SESSION_OBSERVED'; status: Status }
 	| { type: 'SESSION_OBSERVER_FAILED' }
+	| { type: 'MUTATION_REJECTED'; transactionId: string }
+	| { type: 'TRANSFER_WRITE_TRACKED'; write: TransferWriteTracking }
+	| { type: 'DISMISS_MUTATION_REJECTION' }
 	| { type: 'ATTACH_WORKSPACE'; attachment: WorkspaceAttachment }
 	| { type: 'DETACH_WORKSPACE'; attachment: WorkspaceAttachment }
 	| { type: 'WORKSPACE_CLOSED'; actor: unknown }
@@ -76,6 +91,16 @@ export function createApplicationReadinessMachine(
 			}
 			publish()
 			return input.subscribe(publish)
+		}),
+		observeMutationRejections: fromCallback<Event, Session>(({ input, sendBack }) => {
+			const db = input.getSnapshot().client?.db
+			if (!db) return
+			return db.onMutationError((rejection) => {
+				sendBack({
+					type: 'MUTATION_REJECTED',
+					transactionId: rejection.transaction.transactionId
+				})
+			})
 		}),
 		retrySession: fromPromise(({ input }: { input: Session }) => input.retry())
 	}
@@ -189,7 +214,9 @@ export function createApplicationReadinessMachine(
 			status: 'transitioning',
 			workspace: undefined,
 			attachment: undefined,
-			pending: undefined
+			pending: undefined,
+			trackedTransferWrites: [],
+			mutationNotice: undefined
 		},
 		invoke: {
 			id: 'startup',
@@ -285,13 +312,57 @@ export function createApplicationReadinessMachine(
 			},
 			running: {
 				initial: 'checking',
-				invoke: {
-					id: 'sessionObserver',
-					src: 'observeSession',
-					input: ({ context }) => required(context.session),
-					onError: '#application-readiness.settlingObserverFailure'
-				},
+				invoke: [
+					{
+						id: 'sessionObserver',
+						src: 'observeSession',
+						input: ({ context }) => required(context.session),
+						onError: '#application-readiness.settlingObserverFailure'
+					},
+					{
+						id: 'mutationRejectionObserver',
+						src: 'observeMutationRejections',
+						input: ({ context }) => required(context.session)
+					}
+				],
 				on: {
+					MUTATION_REJECTED: {
+						actions: assign(({ context, event }) => {
+							const { transactionId } = event
+							const tracked = context.trackedTransferWrites.find(
+								(write) => write.transactionId === transactionId
+							)
+							return {
+								trackedTransferWrites: context.trackedTransferWrites.filter(
+									(write) => write.transactionId !== transactionId
+								),
+								mutationNotice: tracked
+									? { kind: 'transfer', ...tracked }
+									: { kind: 'generic', transactionId }
+							}
+						})
+					},
+					TRANSFER_WRITE_TRACKED: {
+						actions: assign(({ context, event }) => {
+							const trackedTransferWrites = [
+								...context.trackedTransferWrites.filter(
+									(write) => write.transactionId !== event.write.transactionId
+								),
+								event.write
+							].slice(-64)
+							const notice = context.mutationNotice
+							return {
+								trackedTransferWrites,
+								mutationNotice:
+									notice?.kind === 'generic' && notice.transactionId === event.write.transactionId
+										? { kind: 'transfer', ...event.write }
+										: notice
+							}
+						})
+					},
+					DISMISS_MUTATION_REJECTION: {
+						actions: assign({ mutationNotice: undefined })
+					},
 					SESSION_OBSERVER_FAILED: '#application-readiness.settlingObserverFailure',
 					SESSION_OBSERVED: {
 						target: '.checking',

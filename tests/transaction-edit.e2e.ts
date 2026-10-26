@@ -59,9 +59,9 @@ async function seedTransaction(
 			organizationId: organization.id,
 			accountId: account.id,
 			categoryId: category.id,
-			amountMinor: 1234,
+			amountMinor: scenario === 'transfer' ? 100 : 1234,
 			currency: 'USD',
-			bookedOn: '2026-10-18',
+			bookedOn: scenario === 'transfer' ? '2026-10-25' : '2026-10-18',
 			memo: 'Original memo'
 		}
 		const isIncome = scenario === 'check' || scenario === 'imported-income'
@@ -114,6 +114,18 @@ async function seedTransaction(
 						})
 						.wait({ tier: 'local' })
 				: null
+		if (scenario === 'transfer' && destination && destinationCategory) {
+			await db
+				.insert(app.transactions, {
+					...base,
+					amountMinor: 101,
+					accountId: destination.id,
+					categoryId: destinationCategory.id,
+					kind: 'income',
+					source: 'manual'
+				})
+				.wait({ tier: 'local' })
+		}
 		const tag = await db
 			.insert(app.tags, {
 				organizationId: organization.id,
@@ -175,6 +187,7 @@ async function persisted(page: Page, id: string) {
 		return {
 			accountId: row?.accountId,
 			amountMinor: row?.amountMinor,
+			internalTransferId: row?.internalTransferId,
 			memo: row?.memo,
 			description: row?.description,
 			categoryId: row?.categoryId,
@@ -193,18 +206,33 @@ async function persisted(page: Page, id: string) {
 	}, id)
 }
 
-test('suggests and links a matching synced transaction without changing either transaction', async ({
+test('links and unlinks a matching synced transaction without changing either transaction', async ({
 	page
 }) => {
 	const seed = await seedTransaction(page, 'transfer')
 	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
 	await page.goto(`/expenses/${seed.id}`)
+	const convertToTransfer = page.getByRole('checkbox', {
+		name: 'Convert this transaction to a transfer',
+		exact: true
+	})
+	await expect(convertToTransfer).not.toBeChecked()
+	await expect(page.getByRole('region', { name: 'Matching transactions' })).toHaveCount(0)
+	await convertToTransfer.check()
 	const suggestions = page.getByRole('region', { name: 'Matching transactions' })
-	await expect(suggestions.getByText('Destination ledger', { exact: true })).toBeVisible()
-	await suggestions.getByText('Destination ledger', { exact: true }).click()
+	const counterpart = suggestions.getByRole('radio', {
+		name: 'Oct 25, 2026 · Destination ledger $1.00',
+		exact: true
+	})
+	await expect(counterpart).toBeVisible()
+	await expect(suggestions.getByRole('radio')).toHaveCount(1)
+	await counterpart.check()
 	await suggestions
-		.getByRole('button', { name: 'Link to existing transaction', exact: true })
+		.getByRole('button', { name: 'Link to existing Transaction', exact: true })
 		.click()
+	await expect(
+		suggestions.getByText('This transaction is linked to an internal transfer.')
+	).toBeVisible()
 	await expect(suggestions.getByText('Transfer saved.', { exact: true })).toBeVisible()
 	await expect
 		.poll(() => persisted(page, seed.id))
@@ -222,6 +250,49 @@ test('suggests and links a matching synced transaction without changing either t
 			externalId: 'imported-transfer-counterpart',
 			transfers: []
 		})
+	const openCounterpart = suggestions.getByRole('link', { name: 'Open Transaction', exact: true })
+	await expect(openCounterpart).toHaveAttribute(
+		'href',
+		new RegExp(`/income/${counterpartId}\\?workspace=`)
+	)
+	await openCounterpart.click()
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === `/income/${counterpartId}` && Boolean(url.searchParams.get('workspace'))
+	)
+	await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
+	const linkedCounterpart = page.getByRole('region', { name: 'Matching transactions' })
+	await expect(
+		linkedCounterpart.getByRole('link', { name: 'Open Transaction', exact: true })
+	).toHaveAttribute('href', new RegExp(`/expenses/${seed.id}\\?workspace=`))
+	await linkedCounterpart.getByRole('button', { name: 'Unlink Transfer', exact: true }).click()
+	await expect(
+		linkedCounterpart.getByText('The transfer was unlinked on this device.')
+	).toBeVisible()
+	await expect
+		.poll(() => persisted(page, seed.id))
+		.toMatchObject({ internalTransferId: null, transfers: [] })
+	await expect
+		.poll(() => persisted(page, counterpartId))
+		.toMatchObject({ internalTransferId: null, transfers: [] })
+})
+
+test('suggests an exact amount match and filters out other amounts', async ({ page }) => {
+	const seed = await seedTransaction(page, 'transfer')
+	await page.goto(`/expenses/${seed.id}`)
+	const convertToTransfer = page.getByRole('checkbox', {
+		name: 'Convert this transaction to a transfer',
+		exact: true
+	})
+	await expect(page.getByRole('region', { name: 'Matching transactions' })).toHaveCount(0)
+	await convertToTransfer.check()
+	const suggestions = page.getByRole('region', { name: 'Matching transactions' })
+	await expect(
+		suggestions.getByRole('radio', { name: 'Oct 25, 2026 · Destination ledger $1.00', exact: true })
+	).toBeVisible()
+	await expect(suggestions.getByRole('radio')).toHaveCount(1)
+	await page.getByText('Development transfer match diagnostics', { exact: true }).click()
+	await expect(page.getByText('Transaction has the same amount', { exact: true })).toBeVisible()
 })
 
 test('always-visible form supports reverted drafts, repeated offline saves and retained archived tags', async ({

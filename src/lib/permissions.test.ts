@@ -480,6 +480,59 @@ describe('immutable transaction provenance', () => {
 	})
 })
 
+describe('internal transfer read safety during unlink recovery', () => {
+	it('reveals a pending unlink only to a user who can read both endpoint accounts', async () => {
+		const transferId = crypto.randomUUID()
+		const pendingExpenseId = crypto.randomUUID()
+		const pendingIncomeId = crypto.randomUUID()
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{ ...transaction('expense'), internalTransferId: transferId },
+				{ id: pendingExpenseId }
+			)
+		)
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{
+					...transaction('income'),
+					accountId: otherAccountId,
+					internalTransferId: transferId
+				},
+				{ id: pendingIncomeId }
+			)
+		)
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.internalTransfers,
+				{
+					organizationId,
+					expenseTransactionId: pendingExpenseId,
+					incomeTransactionId: pendingIncomeId,
+					expenseAccountId: accountId,
+					incomeAccountId: otherAccountId,
+					amountMinor: 100,
+					currency: 'USD'
+				},
+				{ id: transferId }
+			)
+		)
+		const linked = app.internalTransfers.where({ id: transferId })
+		expect((await db.one(linked, { tier: 'remote' }))?.id).toBe(transferId)
+		expect(await selectedMemberDb.one(linked, { tier: 'remote' })).toBeNull()
+
+		const clearMarkers = await db.transaction((tx) => {
+			tx.update(app.transactions, pendingExpenseId, { internalTransferId: null })
+			tx.update(app.transactions, pendingIncomeId, { internalTransferId: null })
+		})
+		await clearMarkers.wait({ tier: 'global' })
+
+		expect((await db.one(linked, { tier: 'remote' }))?.id).toBe(transferId)
+		expect(await selectedMemberDb.one(linked, { tier: 'remote' })).toBeNull()
+	})
+})
+
 const moveCases = [
 	{
 		label: 'owner',
