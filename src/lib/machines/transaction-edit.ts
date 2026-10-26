@@ -33,6 +33,9 @@ import {
 	type InternalTransferLinkResult,
 	type InternalTransferUnlinkInput,
 	type InternalTransferUnlinkResult,
+	type InternalTransferDeleteChoice,
+	type InternalTransferDeleteInput,
+	type InternalTransferDeleteResult,
 	type TransferWriteTracking
 } from './internal-transfer.js'
 import {
@@ -92,6 +95,12 @@ function unlinkResult(result: TransferMutationResult): InternalTransferUnlinkRes
 		: { outcome: 'unavailable', settlement: 'unresolved' }
 }
 
+function deleteResult(result: TransferMutationResult): InternalTransferDeleteResult {
+	return result.operation === 'delete'
+		? result.result
+		: { outcome: 'unavailable', settlement: 'unresolved' }
+}
+
 export function createTransactionEditMachine(
 	options: TransactionEditOptions,
 	db: ReturnType<typeof getDb>,
@@ -116,6 +125,8 @@ export function createTransactionEditMachine(
 		linkResult: InternalTransferLinkResult | null
 		unlinkInput: UnlinkActorInput | undefined
 		unlinkResult: InternalTransferUnlinkResult | null
+		deleteInput: InternalTransferDeleteInput | undefined
+		deleteResult: InternalTransferDeleteResult | null
 	}
 	type Event =
 		| { type: 'OBSERVE'; observation: TransactionEntryObservation }
@@ -126,6 +137,7 @@ export function createTransactionEditMachine(
 		| { type: 'SELECT_COUNTERPART'; candidateId: string }
 		| { type: 'LINK_COUNTERPART'; candidateId: string }
 		| { type: 'UNLINK_TRANSFER' }
+		| { type: 'DELETE_LINKED_TRANSFER'; choice: InternalTransferDeleteChoice }
 		| { type: 'SCOPE_CHANGED' }
 		| { type: 'LINK_SUCCEEDED' }
 		| { type: 'UNLINK_SUCCEEDED' }
@@ -134,7 +146,8 @@ export function createTransactionEditMachine(
 	const actors = {
 		form: formMachine,
 		linkOperation: mutationRequest,
-		unlinkOperation: mutationRequest
+		unlinkOperation: mutationRequest,
+		deleteOperation: mutationRequest
 	}
 	const workflow = setup<
 		Context,
@@ -144,6 +157,7 @@ export function createTransactionEditMachine(
 			scopedForm: 'form'
 			linkOperation: 'linkOperation'
 			unlinkOperation: 'unlinkOperation'
+			deleteOperation: 'deleteOperation'
 		},
 		{},
 		{
@@ -159,6 +173,7 @@ export function createTransactionEditMachine(
 			hasCandidates: undefined
 			canLink: undefined
 			canUnlink: undefined
+			canDelete: undefined
 			selectCounterpart: undefined
 			transferMatches: undefined
 			transferLinked: undefined
@@ -166,6 +181,8 @@ export function createTransactionEditMachine(
 			linkIsReplacing: undefined
 			unlinkIsClosing: undefined
 			unlinkIsReplacing: undefined
+			deleteIsClosing: undefined
+			deleteIsReplacing: undefined
 		},
 		never,
 		string,
@@ -194,9 +211,13 @@ export function createTransactionEditMachine(
 				stateIn({ running: { transfer: 'failed' } })
 			]),
 			canDisableSearch: ({ context }) =>
-				context.linkInput === undefined && context.unlinkInput === undefined,
+				context.linkInput === undefined &&
+				context.unlinkInput === undefined &&
+				context.deleteInput === undefined,
 			canForwardForm: ({ context }) =>
-				context.linkInput === undefined && context.unlinkInput === undefined,
+				context.linkInput === undefined &&
+				context.unlinkInput === undefined &&
+				context.deleteInput === undefined,
 			formSubmit: ({ event }) => event.type === 'FORM' && event.event.type === 'SUBMIT',
 			hasCandidates: ({ context, event }) =>
 				event.type === 'TRANSFER_OBSERVATION' &&
@@ -223,17 +244,39 @@ export function createTransactionEditMachine(
 					context.observation.facts.organizationId &&
 					context.observation.facts.binding
 				),
+			canDelete: ({ context, event }) =>
+				event.type === 'DELETE_LINKED_TRANSFER' &&
+				Boolean(
+					context.linkedTransfer &&
+					context.formView.fieldsEditable &&
+					context.observation.facts.transaction &&
+					(context.observation.facts.transaction.id ===
+						context.linkedTransfer.expenseTransactionId ||
+						context.observation.facts.transaction.id ===
+							context.linkedTransfer.incomeTransactionId) &&
+					(event.choice.kind === 'both' ||
+						event.choice.transactionId === context.observation.facts.transaction.id) &&
+					context.observation.facts.identityId &&
+					context.observation.facts.organizationId &&
+					context.observation.facts.binding &&
+					context.deleteInput === undefined &&
+					context.linkInput === undefined &&
+					context.unlinkInput === undefined
+				),
 			selectCounterpart: ({ context, event }) =>
 				event.type === 'SELECT_COUNTERPART' &&
 				context.candidates.some(({ id }) => id === event.candidateId) &&
 				context.linkInput === undefined &&
-				context.unlinkInput === undefined,
+				context.unlinkInput === undefined &&
+				context.deleteInput === undefined,
 			transferMatches: stateIn({ running: { transfer: 'matches' } }),
 			transferLinked: stateIn({ running: { transfer: 'linked' } }),
 			linkIsClosing: stateIn({ running: { link: { operating: 'closing' } } }),
 			linkIsReplacing: stateIn({ running: { link: { operating: 'replacing' } } }),
 			unlinkIsClosing: stateIn({ running: { unlink: { operating: 'closing' } } }),
-			unlinkIsReplacing: stateIn({ running: { unlink: { operating: 'replacing' } } })
+			unlinkIsReplacing: stateIn({ running: { unlink: { operating: 'replacing' } } }),
+			deleteIsClosing: stateIn({ running: { deletion: { operating: 'closing' } } }),
+			deleteIsReplacing: stateIn({ running: { deletion: { operating: 'replacing' } } })
 		}
 	})
 	const updateTransferObservation = workflow.assign(({ context, event }) => {
@@ -272,7 +315,9 @@ export function createTransactionEditMachine(
 		linkedTransfer: null,
 		unlinkWritable: false,
 		linkResult: null,
-		unlinkResult: null
+		unlinkResult: null,
+		deleteInput: undefined,
+		deleteResult: null
 	})
 	const storeObservation = workflow.enqueueActions(({ context, event, enqueue }) => {
 		if (event.type !== 'OBSERVE') return
@@ -302,7 +347,7 @@ export function createTransactionEditMachine(
 					event.observation,
 					transferObservation?.linkedTransfer ?? null
 				),
-				...(changed ? { linkResult: null, unlinkResult: null } : {})
+				...(changed ? { linkResult: null, unlinkResult: null, deleteResult: null } : {})
 			}
 		})
 		enqueue.sendTo('scopedForm', { type: 'OBSERVE', observation: event.observation })
@@ -345,6 +390,25 @@ export function createTransactionEditMachine(
 			unlinkResult: null
 		}
 	})
+	const resetDeleteRequest = workflow.assign(({ context, event }) => {
+		if (event.type !== 'DELETE_LINKED_TRANSFER' || !context.linkedTransfer) return {}
+		const identityId = context.observation.facts.identityId
+		const organizationId = context.observation.facts.organizationId
+		if (!identityId || !organizationId) return {}
+		return {
+			deleteInput: {
+				db,
+				identityId,
+				organizationId,
+				transferId: context.linkedTransfer.id,
+				expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+				incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+				choice: event.choice,
+				trackWrite: trackTransferWrite
+			},
+			deleteResult: null
+		}
+	})
 	const stopForm = workflow.enqueueActions(({ self, enqueue }) => {
 		const child = self.getSnapshot().children.scopedForm
 		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
@@ -355,6 +419,10 @@ export function createTransactionEditMachine(
 	})
 	const stopUnlinkOperation = workflow.enqueueActions(({ self, enqueue }) => {
 		const child = self.getSnapshot().children.unlinkOperation
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
+	})
+	const stopDeleteOperation = workflow.enqueueActions(({ self, enqueue }) => {
+		const child = self.getSnapshot().children.deleteOperation
 		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
 	})
 	const logic = workflow.createMachine({
@@ -372,7 +440,9 @@ export function createTransactionEditMachine(
 			linkInput: undefined,
 			linkResult: null,
 			unlinkInput: undefined,
-			unlinkResult: null
+			unlinkResult: null,
+			deleteInput: undefined,
+			deleteResult: null
 		}),
 		initial: 'running',
 		states: {
@@ -746,6 +816,121 @@ export function createTransactionEditMachine(
 							},
 							unlinkClosed: { type: 'final' }
 						}
+					},
+					deletion: {
+						initial: 'idle',
+						states: {
+							idle: {
+								on: {
+									DELETE_LINKED_TRANSFER: {
+										guard: 'canDelete',
+										target: 'operating.active',
+										actions: resetDeleteRequest
+									},
+									SCOPE_CHANGED: { actions: clearTransferResults },
+									SHUTDOWN: 'deletionClosed'
+								}
+							},
+							operating: {
+								initial: 'active',
+								invoke: {
+									id: 'deleteOperation',
+									src: 'deleteOperation',
+									input: ({
+										context
+									}): Extract<TransferMutationRequestInput, { operation: 'delete' }> => ({
+										workspaceId: required(context.deleteInput).organizationId,
+										operation: 'delete',
+										input: required(context.deleteInput)
+									}),
+									onDone: [
+										{
+											guard: 'deleteIsClosing',
+											target: '#transaction-edit-form.running.deletion.deletionClosed'
+										},
+										{
+											guard: 'deleteIsReplacing',
+											target: '#transaction-edit-form.running.deletion.idle',
+											actions: assign({ deleteInput: undefined, deleteResult: null })
+										},
+										{
+											guard: ({ event }) =>
+												event.output.operation === 'delete' &&
+												event.output.result.outcome === 'succeeded',
+											target: '#transaction-edit-form.running.deletion.succeeded',
+											actions: assign({
+												deleteResult: ({ event }) => deleteResult(event.output),
+												deleteInput: undefined
+											})
+										},
+										{
+											target: '#transaction-edit-form.running.deletion.rejected',
+											actions: assign({
+												deleteResult: ({ event }) => deleteResult(event.output),
+												deleteInput: undefined
+											})
+										}
+									],
+									onError: [
+										{
+											guard: 'deleteIsClosing',
+											target: '#transaction-edit-form.running.deletion.deletionClosed'
+										},
+										{
+											guard: 'deleteIsReplacing',
+											target: '#transaction-edit-form.running.deletion.idle',
+											actions: assign({ deleteInput: undefined, deleteResult: null })
+										},
+										{
+											target: '#transaction-edit-form.running.deletion.rejected',
+											actions: assign({
+												deleteResult: ({ event }): InternalTransferDeleteResult => ({
+													outcome: 'unavailable',
+													settlement: 'unresolved',
+													error: event.error
+												}),
+												deleteInput: undefined
+											})
+										}
+									]
+								},
+								states: {
+									active: {
+										on: {
+											SCOPE_CHANGED: { target: 'replacing', actions: stopDeleteOperation },
+											SHUTDOWN: { target: 'closing', actions: stopDeleteOperation }
+										}
+									},
+									closing: {},
+									replacing: {
+										on: { SHUTDOWN: { target: 'closing', actions: stopDeleteOperation } }
+									}
+								}
+							},
+							succeeded: {
+								on: {
+									DELETE_LINKED_TRANSFER: {
+										guard: 'canDelete',
+										target: 'operating.active',
+										actions: resetDeleteRequest
+									},
+									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
+									SHUTDOWN: 'deletionClosed'
+								}
+							},
+							rejected: {
+								on: {
+									DELETE_LINKED_TRANSFER: {
+										guard: 'canDelete',
+										target: 'operating.active',
+										actions: resetDeleteRequest
+									},
+									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
+									SHUTDOWN: 'deletionClosed'
+								}
+							},
+							deletionClosed: { type: 'final' }
+						}
 					}
 				}
 			}
@@ -754,7 +939,9 @@ export function createTransactionEditMachine(
 	type EditSnapshot = SnapshotFrom<typeof logic>
 	const selectFormView = (snapshot: EditSnapshot): TransactionEntryView => {
 		const operationPending =
-			snapshot.context.linkInput !== undefined || snapshot.context.unlinkInput !== undefined
+			snapshot.context.linkInput !== undefined ||
+			snapshot.context.unlinkInput !== undefined ||
+			snapshot.context.deleteInput !== undefined
 		return operationPending
 			? {
 					...snapshot.context.formView,
@@ -782,6 +969,7 @@ export function createTransactionEditMachine(
 		selectTransferState,
 		isLinkPending: (snapshot: EditSnapshot) => snapshot.context.linkInput !== undefined,
 		isUnlinkPending: (snapshot: EditSnapshot) => snapshot.context.unlinkInput !== undefined,
+		isDeletePending: (snapshot: EditSnapshot) => snapshot.context.deleteInput !== undefined,
 		writableCandidateIds: (snapshot: EditSnapshot) =>
 			selectFormView(snapshot).fieldsEditable && snapshot.context.linkInput === undefined
 				? snapshot.context.writableCandidateIds

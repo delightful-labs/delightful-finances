@@ -4,7 +4,7 @@ export default defineConfig({
 	webServer: {
 		command: 'pnpm dev:agent --host 127.0.0.1 --port 5182',
 		url: 'http://127.0.0.1:5182',
-		reuseExistingServer: false
+		reuseExistingServer: true
 	},
 	testMatch: ['transaction-edit.e2e.ts'],
 	workers: 1,

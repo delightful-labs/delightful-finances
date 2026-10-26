@@ -473,7 +473,18 @@
 		"unlink_recovery_required": "This transfer is partway through unlinking. Retry to finish.",
 		"unlink_denied": "The transfer unlink was rejected. Your access may have changed.",
 		"unlink_incompatible": "The transfer no longer matches its transaction details.",
-		"unlink_unavailable": "The transfer unlink could not be confirmed. Check the transactions before trying again."
+		"unlink_unavailable": "The transfer unlink could not be confirmed. Check the transactions before trying again.",
+		"delete_heading": "Delete linked transactions?",
+		"delete_effect_both": "Both transactions and their transfer link will be deleted. The transfer will no longer appear in your records.",
+		"delete_both": "Delete both transactions",
+		"delete_effect_selected": "This transaction will be unlinked and deleted. The other transaction will remain as ordinary income or expense and count toward totals.",
+		"delete_selected": "Unlink and delete this transaction",
+		"delete_pending": "Deleting linked transactions on this device…",
+		"delete_saved_both": "Both linked transactions were deleted on this device.",
+		"delete_saved_selected": "This transaction was unlinked and deleted on this device. The other transaction remains.",
+		"delete_recovery_required": "The transfer deletion is partway complete. Review the transactions and retry if needed.",
+		"delete_denied": "The transfer deletion was rejected. You may not have delete access to every selected transaction.",
+		"delete_unavailable": "The transfer deletion could not be completed. Check the transactions before trying again."
 	},
 	"sync": {
 		"mutation_rejected": "A change saved on this device was rejected while syncing. Your data has been updated to match the latest accepted changes.",

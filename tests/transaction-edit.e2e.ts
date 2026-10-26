@@ -206,6 +206,74 @@ async function persisted(page: Page, id: string) {
 	}, id)
 }
 
+async function transactionExists(page: Page, id: string) {
+	return page.evaluate(async (id) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		return (await db.all(app.transactions.where({ id }))).length > 0
+	}, id)
+}
+
+async function transferExists(page: Page, expenseTransactionId: string) {
+	return page.evaluate(async (expenseTransactionId) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		return (await db.all(app.internalTransfers.where({ expenseTransactionId }))).length > 0
+	}, expenseTransactionId)
+}
+
+async function seedLinkedTransfer(page: Page, expenseId: string, incomeId: string) {
+	await page.evaluate(
+		async ({ expenseId, incomeId }) => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+				sessionPath
+			)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			const [expense] = await db.all(app.transactions.where({ id: expenseId }))
+			const [income] = await db.all(app.transactions.where({ id: incomeId }))
+			if (!expense || !income) throw new Error('Missing transfer transactions')
+			const transferId = crypto.randomUUID()
+			const write = await db.transaction((tx) => {
+				tx.update(app.transactions, expenseId, { internalTransferId: transferId })
+				tx.update(app.transactions, incomeId, { internalTransferId: transferId })
+				tx.insert(
+					app.internalTransfers,
+					{
+						organizationId: expense.organizationId,
+						expenseTransactionId: expense.id,
+						incomeTransactionId: income.id,
+						expenseAccountId: expense.accountId,
+						incomeAccountId: income.accountId,
+						amountMinor: expense.amountMinor,
+						currency: expense.currency
+					},
+					{ id: transferId }
+				)
+			})
+			await write.wait({ tier: 'local' })
+		},
+		{ expenseId, incomeId }
+	)
+	await page.goto(`/income/${incomeId}`)
+	await expect(page.getByText('This transaction is linked to an internal transfer.')).toBeVisible()
+}
+
 test('links and unlinks a matching synced transaction without changing either transaction', async ({
 	page
 }) => {
@@ -275,6 +343,53 @@ test('links and unlinks a matching synced transaction without changing either tr
 	await expect
 		.poll(() => persisted(page, counterpartId))
 		.toMatchObject({ internalTransferId: null, transfers: [] })
+})
+
+test('deletes both transactions from the linked-transaction choices', async ({ page }) => {
+	const seed = await seedTransaction(page, 'transfer')
+	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
+	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
+	await page.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: 'Delete linked transactions?' })
+	await expect(
+		dialog.getByText('Both transactions and their transfer link will be deleted.')
+	).toBeVisible()
+	await expect(
+		dialog.getByText(/other transaction will remain as ordinary income or expense/)
+	).toBeVisible()
+	await dialog.getByRole('button', { name: 'Delete both transactions', exact: true }).click()
+	await expect(
+		page.getByText('Both linked transactions were deleted on this device.')
+	).toBeVisible()
+	await expect.poll(() => transactionExists(page, seed.id)).toBe(false)
+	await expect.poll(() => transactionExists(page, seed.counterpartId!)).toBe(false)
+	await expect.poll(() => transferExists(page, seed.id)).toBe(false)
+})
+
+test('unlinks and deletes only the current transaction, restoring the counterpart to totals', async ({
+	page
+}) => {
+	const seed = await seedTransaction(page, 'transfer')
+	if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
+	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
+	await page.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: 'Delete linked transactions?' })
+	await dialog
+		.getByRole('button', { name: 'Unlink and delete this transaction', exact: true })
+		.click()
+	await expect(
+		page.getByText(
+			'This transaction was unlinked and deleted on this device. The other transaction remains.'
+		)
+	).toBeVisible()
+	await expect.poll(() => transactionExists(page, seed.counterpartId!)).toBe(false)
+	await expect.poll(() => transactionExists(page, seed.id)).toBe(true)
+	await expect.poll(() => transferExists(page, seed.id)).toBe(false)
+	await expect
+		.poll(() => persisted(page, seed.id))
+		.toMatchObject({ internalTransferId: null, amountMinor: 100, source: 'simplefin' })
+	await page.goto('/')
+	await expect(page.getByText('Total Expenses: $1.00', { exact: true })).toBeVisible()
 })
 
 test('suggests an exact amount match and filters out other amounts', async ({ page }) => {

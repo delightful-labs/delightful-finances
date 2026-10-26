@@ -34,6 +34,7 @@
 	import QueryContent from './QueryContent.svelte'
 	import TransactionDetails from './TransactionDetails.svelte'
 	import TransactionForm from './TransactionForm.svelte'
+	import InternalTransferDeleteActions from './InternalTransferDeleteActions.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accountOrder = getContext<AccountOrder>(accountOrderKey)
@@ -42,6 +43,9 @@
 	const trackTransferWrite = (write: TransferWriteTracking) =>
 		readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write })
 	const session = fromStore(getJazzSession())
+	const routeKind = untrack(() =>
+		page.url.pathname.startsWith(transactionPages[INCOME].path) ? INCOME : EXPENSE
+	)
 	const entryForm = createTransactionEditFormOptions({ binding: db, observe, db })
 	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite, {
 		send: (event) => readiness.actor.send(event)
@@ -51,7 +55,7 @@
 			identityId: session.current.account?.id ?? null,
 			organizationId: filters.activeOrganizationId,
 			binding: db,
-			kind: EXPENSE,
+			kind: routeKind,
 			transactionId: page.params.id ?? null,
 			sessionReady: session.current.status === 'ready',
 			loading: true,
@@ -75,8 +79,10 @@
 	)
 	const transferLinkPending = $derived(editWorkflow.isLinkPending(editSnapshot))
 	const transferUnlinkPending = $derived(editWorkflow.isUnlinkPending(editSnapshot))
+	const transferDeletePending = $derived(editWorkflow.isDeletePending(editSnapshot))
 	const transferLinkResult = $derived(editSnapshot.context.linkResult)
 	const transferUnlinkResult = $derived(editSnapshot.context.unlinkResult)
+	const transferDeleteResult = $derived(editSnapshot.context.deleteResult)
 	const selectedTransferCandidateId = $derived(editSnapshot.context.selectedCandidateId)
 	$effect(() => {
 		const result = transferLinkResult
@@ -178,7 +184,7 @@
 			organizationId,
 			binding: session.current.client?.db ?? null,
 			sessionReady: session.current.status === 'ready',
-			kind: current?.kind ?? EXPENSE,
+			kind: current?.kind ?? routeKind,
 			transactionId,
 			membership: observeRow(membershipQuery.current),
 			grants: observeRows(grantsQuery.current),
@@ -372,6 +378,11 @@
 	function unlinkTransfer() {
 		editActor.send({ type: 'UNLINK_TRANSFER' })
 	}
+	function deleteLinkedTransfer(
+		choice: import('#lib/machines/internal-transfer.js').InternalTransferDeleteChoice
+	) {
+		editActor.send({ type: 'DELETE_LINKED_TRANSFER', choice })
+	}
 	const creatorQuery = new QuerySubscriptionOne(() =>
 		transaction ? app.profiles.where({ userId: transaction.$createdBy.account }) : undefined
 	)
@@ -427,6 +438,19 @@
 			creatorProfile={creatorQuery.current}
 			editorProfile={editorQuery.current}
 		>
+			{#snippet actions()}
+				<InternalTransferDeleteActions
+					transactionId={transaction?.id ?? page.params.id ?? ''}
+					available={Boolean(
+						linkedTransfer &&
+						formView.fieldsEditable &&
+						transferDeleteResult?.outcome !== 'succeeded'
+					)}
+					pending={transferDeletePending}
+					result={transferDeleteResult}
+					onDelete={deleteLinkedTransfer}
+				/>
+			{/snippet}
 			{#snippet form()}
 				<FormFeedback
 					view={formView}

@@ -133,6 +133,19 @@ function attach(actor: ReturnType<typeof start>) {
 }
 
 describe('application readiness supervision', () => {
+	it('forwards active workspace observations to the transfer mutation owner', () => {
+		const current = session()
+		const actor = start(async () => current.value, current.value)
+		const mutationOwner = actor.getSnapshot().children.transferMutationOwner
+		if (!mutationOwner) throw new Error('Expected transfer mutation owner')
+
+		actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId: 'workspace-a' })
+		expect(mutationOwner.getSnapshot().context.workspaceId).toBe('workspace-a')
+
+		actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId: undefined })
+		expect(mutationOwner.getSnapshot().context.workspaceId).toBeUndefined()
+	})
+
 	it('correlates late transfer rejections and releases the Jazz observer on shutdown', () => {
 		const release = vi.fn()
 		const onMutationError = vi.fn<MutationErrorDb['onMutationError']>(() => release)

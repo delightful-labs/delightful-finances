@@ -11,11 +11,13 @@
 	let {
 		transaction,
 		form,
+		actions,
 		creatorProfile,
 		editorProfile
 	}: {
 		transaction: TransactionDetail | undefined | null
 		form: Snippet
+		actions?: Snippet
 		creatorProfile: AttributionProfile | null | undefined
 		editorProfile: AttributionProfile | null | undefined
 	} = $props()
@@ -26,6 +28,7 @@
 
 {#if transaction}
 	{@render form()}
+	{#if actions}{@render actions()}{/if}
 	<Details summary={m['transactions.metadata']()}>
 		<dl>
 			<dt>{m['transactions.created_by']()}</dt>
@@ -62,6 +65,7 @@
 	</Details>
 {:else}
 	<p>{m['transactions.unavailable']()}</p>
+	{#if actions}{@render actions()}{/if}
 {/if}
 
 <style>

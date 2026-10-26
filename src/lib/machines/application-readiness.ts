@@ -66,6 +66,7 @@ type Event =
 	| { type: 'TRANSFER_WRITE_TRACKED'; write: TransferWriteTracking }
 	| { type: 'TRANSFER_MUTATION_REQUEST'; request: TransferMutationRequest }
 	| { type: 'CANCEL_TRANSFER_MUTATION'; requestId: string }
+	| { type: 'WORKSPACE_SCOPE_OBSERVED'; workspaceId: string | undefined }
 	| { type: 'TRANSFER_MUTATION_OWNER_CLOSED' }
 	| { type: 'DISMISS_MUTATION_REJECTION' }
 	| { type: 'ATTACH_WORKSPACE'; attachment: WorkspaceAttachment }
@@ -271,6 +272,12 @@ export function createApplicationReadinessMachine(
 			},
 			CANCEL_TRANSFER_MUTATION: {
 				actions: sendTo('transferMutationOwner', ({ event }) => event)
+			},
+			WORKSPACE_SCOPE_OBSERVED: {
+				actions: sendTo('transferMutationOwner', ({ event }) => ({
+					type: 'TRANSFER_SCOPE_CHANGED',
+					workspaceId: event.workspaceId
+				}))
 			},
 			TRANSFER_MUTATION_OWNER_CLOSED: {
 				actions: assign({ transferMutationOwnerClosed: true })
