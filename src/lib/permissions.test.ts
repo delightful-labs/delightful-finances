@@ -482,6 +482,68 @@ describe('immutable transaction provenance', () => {
 })
 
 describe('internal transfer read safety during unlink recovery', () => {
+	it('reveals conflicting links only when the user can read both endpoint accounts', async () => {
+		const effectiveTransferId = crypto.randomUUID()
+		const conflictingTransferId = crypto.randomUUID()
+		const expenseTransactionId = crypto.randomUUID()
+		const effectiveIncomeId = crypto.randomUUID()
+		const conflictingIncomeId = crypto.randomUUID()
+
+		await fixture.seed((seed) =>
+			seed.insert(
+				app.transactions,
+				{ ...transaction('expense'), internalTransferId: effectiveTransferId },
+				{ id: expenseTransactionId }
+			)
+		)
+		for (const [id, transferId] of [
+			[effectiveIncomeId, effectiveTransferId],
+			[conflictingIncomeId, conflictingTransferId]
+		] satisfies [string, string][]) {
+			await fixture.seed((seed) =>
+				seed.insert(
+					app.transactions,
+					{
+						...transaction('income'),
+						accountId: otherAccountId,
+						internalTransferId: transferId
+					},
+					{ id }
+				)
+			)
+		}
+		for (const [id, incomeTransactionId] of [
+			[effectiveTransferId, effectiveIncomeId],
+			[conflictingTransferId, conflictingIncomeId]
+		] satisfies [string, string][]) {
+			await fixture.seed((seed) =>
+				seed.insert(
+					app.internalTransfers,
+					{
+						organizationId,
+						expenseTransactionId,
+						incomeTransactionId,
+						expenseAccountId: accountId,
+						incomeAccountId: otherAccountId,
+						amountMinor: 100,
+						currency: 'USD'
+					},
+					{ id }
+				)
+			)
+		}
+
+		expect(
+			(await db.one(app.internalTransfers.where({ id: conflictingTransferId }), { tier: 'remote' }))
+				?.id
+		).toBe(conflictingTransferId)
+		expect(
+			await selectedMemberDb.one(app.internalTransfers.where({ id: conflictingTransferId }), {
+				tier: 'remote'
+			})
+		).toBeNull()
+	})
+
 	it('reveals a pending unlink only to a user who can read both endpoint accounts', async () => {
 		const transferId = crypto.randomUUID()
 		const pendingExpenseId = crypto.randomUUID()

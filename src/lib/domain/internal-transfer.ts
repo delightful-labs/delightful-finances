@@ -1,8 +1,50 @@
 import { EXPENSE, INCOME } from './transaction-kind.js'
-import type { TransactionRow } from '#lib/schema.js'
+import type { InternalTransfer, TransactionRow } from '#lib/schema.js'
 
 const MATCH_WINDOW_DAYS = 7
 const MILLISECONDS_PER_DAY = 86_400_000
+
+type TransferLink = Pick<InternalTransfer, 'id' | 'expenseTransactionId' | 'incomeTransactionId'>
+type TransferMarker = Pick<TransactionRow, 'id' | 'internalTransferId'>
+
+export type InternalTransferResolution = {
+	effectiveLinks: readonly TransferLink[]
+	conflictedLinks: readonly TransferLink[]
+	suppressedTransactionIds: ReadonlySet<string>
+}
+
+/**
+ * A relationship is effective only while both endpoint markers agree with it.
+ * Keep every referenced or marked transaction out of totals until conflicts are repaired.
+ */
+export function resolveInternalTransferLinks(
+	links: readonly TransferLink[],
+	transactions: readonly TransferMarker[]
+): InternalTransferResolution {
+	const transferIdByTransactionId = new Map(
+		transactions.map(({ id, internalTransferId }) => [id, internalTransferId])
+	)
+	const effectiveLinks = links
+		.filter(
+			({ id, expenseTransactionId, incomeTransactionId }) =>
+				transferIdByTransactionId.get(expenseTransactionId) === id &&
+				transferIdByTransactionId.get(incomeTransactionId) === id
+		)
+		.sort((first, second) => compareText(first.id, second.id))
+	const effectiveIds = new Set(effectiveLinks.map(({ id }) => id))
+	const conflictedLinks = links
+		.filter(({ id }) => !effectiveIds.has(id))
+		.slice()
+		.sort((first, second) => compareText(first.id, second.id))
+	const suppressedTransactionIds = new Set<string>()
+	for (const link of links) {
+		suppressedTransactionIds.add(link.expenseTransactionId)
+		suppressedTransactionIds.add(link.incomeTransactionId)
+	}
+	for (const transaction of transactions)
+		if (transaction.internalTransferId != null) suppressedTransactionIds.add(transaction.id)
+	return { effectiveLinks, conflictedLinks, suppressedTransactionIds }
+}
 
 export type InternalTransferCandidate = Pick<
 	TransactionRow,

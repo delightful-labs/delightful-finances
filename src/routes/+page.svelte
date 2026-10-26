@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { EXPENSE } from '#lib/domain/transaction-kind.js'
+	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import { getContext } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
@@ -13,7 +14,7 @@
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
-					.where({ organizationId: filters.activeOrganizationId, kind: EXPENSE })
+					.where({ organizationId: filters.activeOrganizationId })
 					.orderBy('bookedOn', 'desc')
 			: undefined
 	)
@@ -37,14 +38,15 @@
 			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const linkedExpenseIds = $derived(
-		new Set((transfers.current ?? []).map((transfer) => transfer.expenseTransactionId))
+	const transferResolution = $derived(
+		resolveInternalTransferLinks(transfers.current ?? [], transactions.current ?? [])
 	)
 	const visibleTransactions = $derived(
 		(transactions.current ?? []).filter(
 			(transaction) =>
-				filters.selectedAccountIds === null ||
-				filters.selectedAccountIds.includes(transaction.accountId)
+				transaction.kind === EXPENSE &&
+				(filters.selectedAccountIds === null ||
+					filters.selectedAccountIds.includes(transaction.accountId))
 		)
 	)
 	const categoryNames = $derived(
@@ -67,7 +69,7 @@
 			transactions={visibleTransactions}
 			{categoryNames}
 			{tagNamesByTransaction}
-			{linkedExpenseIds}
+			internalTransferResolution={transferResolution}
 		/>
 	{/key}
 </QueryContent>

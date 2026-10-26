@@ -3,6 +3,7 @@ import { render } from 'svelte/server'
 import ExpenseOverview from './ExpenseOverview.svelte'
 import CategoryLegend from './CategoryLegend.svelte'
 import type { TransactionRow } from '#lib/schema.js'
+import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 
 function row(
 	id: string,
@@ -33,12 +34,12 @@ function row(
 }
 function overview(
 	transactions: TransactionRow[],
-	linkedExpenseIds: ReadonlySet<string> = new Set()
+	internalTransferResolution = resolveInternalTransferLinks([], transactions)
 ) {
 	return render(ExpenseOverview, {
 		props: {
 			transactions,
-			linkedExpenseIds,
+			internalTransferResolution,
 			categoryNames: new Map([
 				['food', 'Food'],
 				['travel', 'Travel']
@@ -82,15 +83,35 @@ describe('expense overview presentation', () => {
 		expect(html).not.toContain('$5.30')
 	})
 	it('excludes linked movements from totals, categories, and transaction rows', () => {
-		const html = overview(
-			[
-				row('ordinary-food', '2026-10-23', 500),
-				{ ...row('linked-marker', '2026-10-23', 100), internalTransferId: 'transfer-id' },
-				row('linked-food', '2026-10-23', 200),
-				row('linked-travel', '2026-10-23', 300, 'travel')
-			],
-			new Set(['linked-food', 'linked-travel'])
-		)
+		const transactions = [
+			row('ordinary-food', '2026-10-23', 500),
+			{ ...row('linked-marker', '2026-10-23', 100), internalTransferId: 'transfer-a' },
+			{ ...row('linked-food', '2026-10-23', 200), internalTransferId: 'transfer-b' },
+			row('linked-travel', '2026-10-23', 300, 'travel')
+		]
+		const links = [
+			{
+				id: 'transfer-a',
+				expenseTransactionId: 'linked-marker',
+				incomeTransactionId: 'shared-income'
+			},
+			{
+				id: 'transfer-b',
+				expenseTransactionId: 'linked-food',
+				incomeTransactionId: 'shared-income'
+			},
+			{
+				id: 'transfer-pending',
+				expenseTransactionId: 'linked-travel',
+				incomeTransactionId: 'pending-income'
+			}
+		]
+		const markers = [
+			...transactions.map(({ id, internalTransferId }) => ({ id, internalTransferId })),
+			{ id: 'shared-income', internalTransferId: 'transfer-a' },
+			{ id: 'pending-income', internalTransferId: null }
+		]
+		const html = overview(transactions, resolveInternalTransferLinks(links, markers))
 		expect(html).toContain('$5.00')
 		expect(html).not.toContain('$10.00')
 		expect(html).toContain('ordinary-food')

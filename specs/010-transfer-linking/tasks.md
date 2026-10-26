@@ -75,7 +75,10 @@ No setup tasks.
 ### Offline safety and sync outcomes
 
 - [x] T014a Serialize safety-sensitive transfer mutations within the active local workspace through an explicit domain owner; document that this does not serialize writes across independently offline devices.
-- [ ] T014b Implement app conflict detection for two independent clients linking one endpoint while offline; an alpha.59 probe showed both conflicting marker writes can be accepted after reconnect. Expose a deterministic effective-link view that prevents double counting, and provide a repair flow that still passes Jazz permissions. Keep this as recovery without weakening positive Jazz-enforced safety.
+- [ ] T014b Complete conflict handling for two independent clients linking one endpoint while offline; an alpha.59 probe showed both conflicting marker writes can be accepted after reconnect. Keep a deterministic effective-link view and provide a repair flow that passes Jazz permissions.
+- [x] T014b1 Resolve a relationship as effective only when both endpoint markers name it; keep every relationship-referenced or marked transaction out of totals while conflicts remain.
+- [x] T014b2 Allow users who can read both endpoints to observe structurally matching conflict relationships, without revealing relationships across accounts they cannot both read.
+- [ ] T014b3 Add a user-facing conflict notice and a permission-preserving repair workflow; retry safely after partial local completion.
 - [x] T014c Verify tracked link and unlink transaction IDs correlate late rejections to operation-specific rollback notices; retain generic reporting for unmatched, evicted, or post-restart rejections. Review and test this behavior before completion.
 
 ### T014c verification notes
@@ -85,6 +88,14 @@ No setup tasks.
 - Verification: `pnpm exec vitest run src/lib/machines/application-readiness.test.ts` passed (46 tests); `git diff --check` passed.
 
 **Review checkpoint**: Local durability, later server rejection, and cross-device safety conflicts are separate outcomes with separate owners.
+
+### T014b1–T014b2 implementation review notes
+
+- `resolveInternalTransferLinks` treats a relationship as effective only when both observed endpoint markers equal its ID. Other relationship rows remain classified as conflicted. For reporting safety, it returns all relationship endpoint IDs plus every non-null transfer-marked transaction ID as suppressed, including unresolved and pending rows.
+- The overview now observes all readable transactions and transfer relationships to calculate this result; it displays expense rows only and excludes the suppression set from totals, categories, and rows.
+- Jazz relationship reads still require read access to both endpoint transactions. A conflict row is additionally readable when both endpoints retain the relationship's workspace, account, kind, amount, and currency facts and both carry a non-null marker. Insert, update, and delete security rules are unchanged.
+- Repair remains deferred. The current slice prevents conflicted movements from entering totals and distinguishes effective from conflicted links in the domain result, but it does not display a repair notice or mutate conflict records.
+- Verification: focused domain and overview tests passed (12 tests); production permission tests passed (56 tests), including conflict visibility for an owner and denial for a member who can read only one endpoint account. `pnpm check`, `pnpm check:tests`, and `git diff --check` passed.
 
 ---
 

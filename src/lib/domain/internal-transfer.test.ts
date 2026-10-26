@@ -3,7 +3,8 @@ import { EXPENSE, INCOME } from './transaction-kind.js'
 import type { TransactionRow } from '#lib/schema.js'
 import {
 	findInternalTransferCounterparts,
-	inspectInternalTransferCounterparts
+	inspectInternalTransferCounterparts,
+	resolveInternalTransferLinks
 } from './internal-transfer.js'
 
 type Candidate = Pick<
@@ -35,6 +36,47 @@ function candidate(id: string, overrides: Partial<Candidate> = {}): Candidate {
 const source = candidate('source', { accountId: 'source', kind: EXPENSE })
 
 describe('internal transfer counterparts', () => {
+	it('resolves only reciprocal links and suppresses every endpoint involved in a conflict', () => {
+		const links = [
+			{ id: 'transfer-b', expenseTransactionId: 'expense-b', incomeTransactionId: 'income' },
+			{ id: 'transfer-a', expenseTransactionId: 'expense-a', incomeTransactionId: 'income' }
+		]
+		const transactions = [
+			{ id: 'expense-a', internalTransferId: 'transfer-a' },
+			{ id: 'expense-b', internalTransferId: 'transfer-b' },
+			{ id: 'income', internalTransferId: 'transfer-a' },
+			{ id: 'orphan-marker', internalTransferId: 'missing-transfer' },
+			{ id: 'ordinary', internalTransferId: null }
+		]
+
+		const result = resolveInternalTransferLinks(links, transactions)
+
+		expect(result.effectiveLinks).toEqual([links[1]])
+		expect(result.conflictedLinks).toEqual([links[0]])
+		expect(result.suppressedTransactionIds).toEqual(
+			new Set(['expense-a', 'expense-b', 'income', 'orphan-marker'])
+		)
+	})
+
+	it('returns effective and conflicted relationships in stable ID order', () => {
+		const links = [
+			{ id: 'transfer-z', expenseTransactionId: 'expense-z', incomeTransactionId: 'income-z' },
+			{ id: 'transfer-a', expenseTransactionId: 'expense-a', incomeTransactionId: 'income-a' }
+		]
+		const transactions = links.flatMap(({ id, expenseTransactionId, incomeTransactionId }) => [
+			{ id: expenseTransactionId, internalTransferId: id },
+			{ id: incomeTransactionId, internalTransferId: id }
+		])
+
+		expect(resolveInternalTransferLinks(links, transactions).effectiveLinks).toEqual([
+			links[1],
+			links[0]
+		])
+		expect(
+			resolveInternalTransferLinks(links.slice().reverse(), transactions).effectiveLinks
+		).toEqual([links[1], links[0]])
+	})
+
 	it('reports each eligibility check for a rejected candidate', () => {
 		const rejected = candidate('rejected', {
 			accountId: source.accountId,

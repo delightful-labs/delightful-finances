@@ -6,6 +6,7 @@
 	import CategoryLegend from './CategoryLegend.svelte'
 	import TransactionItems from './TransactionItems.svelte'
 	import type { TransactionRow } from '#lib/schema.js'
+	import type { InternalTransferResolution } from '#lib/domain/internal-transfer.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import { formatMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -14,12 +15,12 @@
 		transactions,
 		categoryNames,
 		tagNamesByTransaction,
-		linkedExpenseIds
+		internalTransferResolution
 	}: {
 		transactions: readonly TransactionRow[]
 		categoryNames: ReadonlyMap<string, string>
 		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
-		linkedExpenseIds: ReadonlySet<string>
+		internalTransferResolution: InternalTransferResolution
 	} = $props()
 	function daysAgo(days: number) {
 		const date = new Date()
@@ -32,7 +33,7 @@
 	let selectedCurrency = $state('USD')
 	const validRange = $derived(Boolean(start && end && start <= end))
 	const unlinkedTransactions = $derived(
-		transactions.filter((row) => row.internalTransferId == null && !linkedExpenseIds.has(row.id))
+		transactions.filter((row) => !internalTransferResolution.suppressedTransactionIds.has(row.id))
 	)
 	const period = $derived(
 		validRange
