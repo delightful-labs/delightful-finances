@@ -37,7 +37,10 @@
 		onsubmit,
 		onreset,
 		oncancel,
-		oninput
+		oninput,
+		onaddcategory,
+		canAddCategory = false,
+		createdCategory
 	}: {
 		kind: TransactionKind
 		paymentEntry: TransactionPaymentEntry
@@ -62,12 +65,33 @@
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
 		oncancel?: () => void
+		onaddcategory?: () => void
+		canAddCategory?: boolean
+		createdCategory?: Category | undefined
 		oninput?: (event: Event) => void
 	} = $props()
 
 	const resetRevision = $derived(view.draftRevision)
 	let activeCheckFieldsKey = $state('')
 	let selectedAccountId = $state('')
+	let appliedCategoryId = $state<string>()
+	let categorySelect: HTMLSelectElement | undefined = $state()
+	$effect(() => {
+		const category = createdCategory
+		const element = categorySelect
+		if (
+			!category ||
+			!element ||
+			appliedCategoryId === category.id ||
+			!categories.some((row) => row.id === category.id)
+		)
+			return
+		untrack(() => {
+			appliedCategoryId = category.id
+			element.value = category.id
+			element.dispatchEvent(new Event('input', { bubbles: true }))
+		})
+	})
 	$effect(() => {
 		void resetRevision
 		untrack(() => {
@@ -135,6 +159,12 @@
 				<Select
 					label={m['nouns.category']({ count: 1 })}
 					id="transaction-category"
+					{@attach (element) => {
+						categorySelect = element
+						return () => {
+							categorySelect = undefined
+						}
+					}}
 					aria-describedby="transaction-category-feedback"
 					aria-invalid={fieldInvalid(issues, 'categoryId') || undefined}
 					name="categoryId"
@@ -158,6 +188,11 @@
 						</option>
 					{/each}
 				</Select>
+				{#if onaddcategory}
+					<Button type="button" disabled={!canAddCategory} onclick={onaddcategory}>
+						{m['actions.add_subject']({ subject: m['nouns.category']({ count: 1 }) })}
+					</Button>
+				{/if}
 				<FieldFeedback
 					id="transaction-category-feedback"
 					errorMessage={fieldInvalid(issues, 'categoryId')

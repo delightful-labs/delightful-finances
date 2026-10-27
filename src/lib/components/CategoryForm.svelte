@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte'
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { InputText, Select } from 'delightful-ui'
 	import type { Category } from '#lib/schema.js'
@@ -13,7 +14,9 @@
 		onopen,
 		onsubmit,
 		onreset,
-		onRetryReadiness
+		onRetryReadiness,
+		fixedKind,
+		trigger
 	}: {
 		scope: ManagementScope
 		view: ManagementView<Category>
@@ -21,7 +24,13 @@
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
 		onRetryReadiness: () => void
+		fixedKind?: Category['kind']
+		trigger?: Snippet<[() => void, boolean]>
 	} = $props()
+	let modal: { openModal: () => void } | undefined = $state()
+	export function open() {
+		modal?.openModal()
+	}
 </script>
 
 <FormFeedback
@@ -33,6 +42,8 @@
 	{onRetryReadiness}
 />
 <FormModal
+	bind:this={modal}
+	{trigger}
 	{scope}
 	label={m['actions.add_subject']({ subject: m['nouns.category']({ count: 1 }) })}
 	{view}
@@ -48,17 +59,21 @@
 			required
 			disabled={!form.fieldsEditable}
 		/>
-		<Select
-			label={m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })}
-			id="category-kind"
-			name="kind"
-			required
-			disabled={!form.fieldsEditable}
-			defaultValue={EXPENSE}
-		>
-			<option value={EXPENSE}>{m['nouns.expense']({ count: 2 })}</option>
-			<option value={INCOME}>{m['nouns.income']({ count: 1 })}</option>
-		</Select>
+		{#if fixedKind}
+			<input type="hidden" name="kind" value={fixedKind} />
+		{:else}
+			<Select
+				label={m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })}
+				id="category-kind"
+				name="kind"
+				required
+				disabled={!form.fieldsEditable}
+				defaultValue={EXPENSE}
+			>
+				<option value={EXPENSE}>{m['nouns.expense']({ count: 2 })}</option>
+				<option value={INCOME}>{m['nouns.income']({ count: 1 })}</option>
+			</Select>
+		{/if}
 	{/snippet}
 	{#snippet feedback(view)}
 		<FormFeedback

@@ -34,3 +34,11 @@ unmapped. The existing machine handles cancellation, failure, and the subsequent
 
 Implementation review precedes test edits and execution. Expected coverage includes unit cases for
 signed sums and provider value parsing, plus an account-list browser case using saved transactions.
+
+## Sidebar extension
+
+WorkspaceBootstrap subscribes to all readable transactions in the active workspace,
+reuses the existing balance aggregation, and passes nullable balances through AppShell
+to AppDrawer. Render a formatted value beside each account and a dash when the balance
+query is loading or failed. Keep account filtering usable independently. This adds no
+async workflow or writes. Review before updating or running sidebar browser coverage.

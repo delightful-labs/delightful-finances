@@ -199,3 +199,24 @@ No production fixes were needed during verification. Prettier and `git diff --ch
 focused results, not a full application/PWA rerun. Application tests gate an explicit workspace cleanup
 acknowledgement; existing workspace regression tests cover descendant drain behavior. No claim is
 made that this adds a global barrier for unrelated former route actors or controls external SDK calls.
+
+## Sign-in workspace selection correction
+
+Sign-in must not carry the previous identity's selected workspace into the restored
+identity's destination. Redirect successful login to the unscoped root. The existing
+workspace navigation machine waits for readiness and the organization query, selects
+an available workspace automatically when exactly one exists, and opens workspace
+management when there are zero or multiple choices. Explicit unavailable workspace
+links outside login retain their existing unavailable outcome.
+
+This is a synchronous destination correction in the login integration, not a new
+workflow. Recovery still owns validation → workspace drain → SDK restoration → identity
+read → guarded navigation; issued restoration/navigation settlement, shutdown priority,
+stale-origin checks and navigation-only retry remain unchanged. No actors or helpers
+add hidden orchestration, and no new resource is acquired.
+
+- [x] Remove the old identity's workspace from the login destination.
+- [ ] User implementation review.
+- [ ] After approval, inspect application-readiness/workspace-navigation unit tests and
+      login recovery browser scenarios; verify old workspace → different restored
+      workspace, multiple-workspace chooser, failed restore and navigation-only retry.

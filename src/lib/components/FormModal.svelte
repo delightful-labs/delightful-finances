@@ -35,7 +35,7 @@
 
 	const triggerDisabled = $derived(!view.canOpen)
 
-	function openModal() {
+	export function openModal() {
 		if (triggerDisabled) return
 		onopen()
 		open = true

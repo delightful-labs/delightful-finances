@@ -22,6 +22,8 @@
 	import type { BankSyncControls } from '#lib/bank-sync.js'
 	import type { Account, Organization } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { formatSignedMoney } from '#lib/domain/money.js'
+	import { getLocale } from '#lib/paraglide/runtime.js'
 	import WorkspaceSelector from './WorkspaceSelector.svelte'
 	import QueryContent from './QueryContent.svelte'
 	import PwaUpdateIntegration from './PwaUpdateIntegration.svelte'
@@ -37,6 +39,7 @@
 		browserOffline,
 		organizations,
 		accounts,
+		accountBalances = null,
 		organizationId,
 		selectedAccountIds,
 		organizationQueries,
@@ -60,6 +63,7 @@
 		syncConfigured: boolean
 		browserOffline: boolean
 		organizations: readonly Organization[]
+		accountBalances?: ReadonlyMap<string, bigint> | null
 		accounts: readonly Account[]
 		organizationId: string | null
 		selectedAccountIds: readonly string[] | null
@@ -196,6 +200,15 @@
 															onchange={(event) =>
 																onAccountChange(account.id, event.currentTarget.checked)}
 														/>
+														<span class="account-balance" title={m['labels.calculated_balance']()}>
+															{accountBalances === null
+																? '—'
+																: formatSignedMoney(
+																		accountBalances.get(account.id) ?? 0n,
+																		account.currency,
+																		getLocale()
+																	)}
+														</span>
 														{#if editingAccountOrder}
 															<span class="account-order-controls">
 																<Button
@@ -427,6 +440,10 @@
 		display: flex;
 		align-items: center;
 		gap: var(--dui-space-xs, 0.5rem);
+	}
+
+	.account-balance {
+		font-size: var(--dui-font-size-xs, 0.75rem);
 	}
 
 	.account-order-controls {

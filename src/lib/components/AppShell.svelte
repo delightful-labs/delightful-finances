@@ -17,6 +17,7 @@
 		browserOffline,
 		organizations,
 		accounts,
+		accountBalances = null,
 		organizationId,
 		selectedAccountIds,
 		organizationQueries,
@@ -37,6 +38,7 @@
 		syncConfigured: boolean
 		browserOffline: boolean
 		organizations: readonly Organization[]
+		accountBalances?: ReadonlyMap<string, bigint> | null
 		accounts: readonly Account[]
 		organizationId: string | null
 		selectedAccountIds: readonly string[] | null
@@ -85,6 +87,7 @@
 			{browserOffline}
 			{organizations}
 			{accounts}
+			{accountBalances}
 			{organizationId}
 			{selectedAccountIds}
 			{organizationQueries}
