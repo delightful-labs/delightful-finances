@@ -1,7 +1,4 @@
 <script lang="ts">
-	import { getContext } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
-	import { workspaceHref } from '#lib/domain/workspace-routes.js'
 	import { getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { page } from '$app/state'
@@ -11,7 +8,6 @@
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	import LoginForm from '#lib/components/LoginForm.svelte'
 
-	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const session = getJazzSession()
 	const snapshot = fromStore(session)
 
@@ -25,7 +21,7 @@
 			type: 'RECOVER',
 			phrase: String(new FormData(event.currentTarget).get('recoveryPhrase') ?? ''),
 			origin: `${page.url.pathname}${page.url.search}${page.url.hash}`,
-			destination: workspaceHref(filters.activeOrganizationId)
+			destination: '/'
 		})
 	}
 </script>

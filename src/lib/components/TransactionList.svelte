@@ -59,7 +59,7 @@
 		new Intl.DateTimeFormat(getLocale(), {
 			weekday: 'short',
 			year: 'numeric',
-			month: 'long',
+			month: 'short',
 			day: 'numeric',
 			timeZone: 'UTC'
 		})

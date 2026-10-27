@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from '#lib/schema.js'
+	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
@@ -108,6 +109,16 @@
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
 					.orderBy('name')
 			: undefined
+	)
+	const balanceTransactions = new QuerySubscription(() =>
+		ready && filters.activeOrganizationId
+			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+	const accountBalances = $derived(
+		balanceTransactions.isLoading || balanceTransactions.error
+			? null
+			: calculateAccountBalances(accountQuery.current ?? [], balanceTransactions.current ?? [])
 	)
 	const organizations = $derived(organizationQuery.current ?? [])
 	const activeAccounts = $derived(orderAccounts(accountQuery.current ?? [], preferredOrder))
@@ -245,6 +256,7 @@
 						{syncConfigured}
 						{browserOffline}
 						accounts={activeAccounts}
+						{accountBalances}
 						editingAccountOrder={$orderSnapshot.matches('editing')}
 						canToggleAccountOrder={$orderSnapshot.can({ type: 'EDIT' }) ||
 							$orderSnapshot.can({ type: 'DONE' })}
