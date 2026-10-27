@@ -127,6 +127,10 @@
 		{/if}
 	{/snippet}
 	{#snippet feedback()}
-		<p role="alert" aria-live="assertive" aria-atomic="true">{alertText()}</p>
+		{#if view.feedback.kind === 'result' && view.feedback.result.outcome === 'succeeded'}
+			<p role="status">
+				{m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
+			</p>
+		{:else}<p role="alert" aria-live="assertive" aria-atomic="true">{alertText()}</p>{/if}
 	{/snippet}
 </FormContent>

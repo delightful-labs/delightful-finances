@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openCreationModal } from './helpers/ui.js'
 
 const fixture = '/__form-presentation'
 
@@ -143,10 +144,19 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 }) => {
 	test.setTimeout(60_000)
 	await page.goto('/settings/workspace')
-	const workspace = page.getByRole('combobox', { name: 'Select Workspace', exact: true })
-	await expect(workspace).toBeEnabled({ timeout: 30_000 })
-	await workspace.selectOption({ label: 'Personal workspace' })
+	const creation = await openCreationModal(page, 'Create Workspace')
+	await creation.getByLabel('Workspace name', { exact: true }).fill('Form presentation workspace')
+	await creation.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+	await expect(creation.getByRole('status')).toHaveText('Workspace saved.')
+	const workspaceHref = await page
+		.getByRole('link', { name: 'Open Workspace: Form presentation workspace', exact: true })
+		.getAttribute('href')
+	if (!workspaceHref) throw new Error('Missing created workspace link')
+	const workspaceId = new URL(workspaceHref, 'http://localhost').searchParams.get('workspace')
+	if (!workspaceId) throw new Error('Missing created workspace ID')
+	await page.goto(`/settings/workspace?workspace=${workspaceId}`)
 	const name = page.getByRole('main').getByRole('textbox', { name: 'Workspace name', exact: true })
+	await expect(name).toBeEditable({ timeout: 30_000 })
 	const save = page.getByRole('main').getByRole('button', { name: 'Save', exact: true })
 	await expect(name).toBeEditable({ timeout: 30_000 })
 	const original = await name.inputValue()
@@ -161,8 +171,8 @@ test('shared edit mode disables unchanged workspace saves, preserves stable labe
 	await expect(save).toBeEnabled()
 	await save.click()
 	await expect(
-		page.getByRole('main').getByRole('alert').filter({ hasText: 'Enter a workspace name.' })
-	).toHaveText('Enter a workspace name.')
+		page.getByRole('main').getByRole('alert').filter({ hasText: 'Enter Workspace name' })
+	).toHaveText('Enter Workspace name')
 	await name.fill('Offline edit mode workspace')
 	await expect(save).toBeEnabled()
 	await context.setOffline(true)

@@ -68,11 +68,11 @@
 		</p>
 	{:else if result.outcome === 'failed' && result.code === 'completionFailed'}
 		<p role="alert">{m['forms.completion_failed']()}</p>
-	{:else if result.outcome === 'invalid' || (result.outcome === 'failed' && result.code === 'validationFailed')}<p
+	{:else if result.outcome === 'invalid' || (result.outcome === 'failed' && result.code === 'validationFailed')}<div
 			role="alert"
 		>
-			{#each validationMessages as message}<span>{message}</span>{/each}
-		</p>
+			{#each validationMessages as message}<p>{message}</p>{/each}
+		</div>
 	{:else if result.outcome === 'denied' || result.outcome === 'unavailable'}<p role="alert">
 			{reasonText(result.reason)}
 		</p>

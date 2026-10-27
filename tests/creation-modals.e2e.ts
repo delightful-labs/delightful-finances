@@ -22,9 +22,9 @@ for (const entity of ['category', 'tag']) {
 	const route = category ? '/settings/categories' : '/settings/tags'
 	const field = category ? 'Category name' : 'Tag name'
 	const caption = category ? 'Categories' : 'Tags'
-	const error = category
-		? 'Enter a category name and select income or expense.'
-		: 'Enter a tag name and select an available category or no category.'
+	const errors = category
+		? ['Enter Category name', 'Select an option for Transaction type']
+		: ['Enter Tag name']
 
 	test(`${entity} modal validates, retains drafts, saves and keeps its table scrollable`, async ({
 		page
@@ -44,7 +44,7 @@ for (const entity of ['category', 'tag']) {
 		const name = dialog.getByLabel(field, { exact: true })
 		await name.fill('   ')
 		await dialog.getByRole('button', { name: label, exact: true }).click()
-		await expect(dialog.getByRole('alert')).toHaveText(error)
+		await expect(dialog.getByRole('alert').locator('p')).toHaveText(errors)
 		await name.fill('Unsaved draft')
 		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 		await expect(dialog).not.toBeVisible()

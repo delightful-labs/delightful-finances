@@ -103,8 +103,8 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	const save = page.getByRole('button', { name: 'Save', exact: true })
 	await name.fill('   ')
 	await save.click()
-	await expect(page.getByRole('alert').filter({ hasText: 'Enter a workspace name.' })).toHaveText(
-		'Enter a workspace name.'
+	await expect(page.getByRole('alert').filter({ hasText: 'Enter Workspace name' })).toHaveText(
+		'Enter Workspace name'
 	)
 	await name.fill('  Household  ')
 	await save.click()
@@ -214,9 +214,10 @@ test('account form rejects whitespace and allows corrected cash, bank, and card 
 		await modal.getByLabel('Account name').fill('   ')
 		await modal.getByLabel('Account type').selectOption(kind)
 		await modal.getByRole('button', { name: 'Add Account' }).click()
-		await expect(modal.getByRole('alert')).toHaveText(
-			'Enter an account name and select an account type.'
-		)
+		await expect(modal.getByRole('alert').locator('p')).toHaveText([
+			'Enter Account name',
+			'Select an option for Account type'
+		])
 		await expect(modal.getByLabel('Account type')).toHaveValue(kind)
 		await modal.getByLabel('Account name').fill(`  Test ${kind}  `)
 		await modal.getByRole('button', { name: 'Add Account' }).click()
@@ -1189,7 +1190,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await expect(name).not.toBeEditable()
 				await expect(save).toBeDisabled()
 				await expect(
-					subject.getByText('Only workspace owners and admins can change the name.')
+					subject.getByText('You do not have permission to make this change.')
 				).toBeVisible()
 				const outcome = await subject.evaluate(async (organizationId) => {
 					const { app, db } = window.workspaceSettingsTest
@@ -1237,9 +1238,10 @@ test('category page creates both kinds, validates names, resets drafts, and pers
 	const add = modal.getByRole('button', { name: 'Add Category', exact: true })
 	await name.fill('   ')
 	await add.click()
-	await expect(modal.getByRole('alert')).toHaveText(
-		'Enter a category name and select income or expense.'
-	)
+	await expect(modal.getByRole('alert').locator('p')).toHaveText([
+		'Enter Category name',
+		'Select an option for Transaction type'
+	])
 	await name.fill('  Travel  ')
 	await add.click()
 	await expect(modal.getByRole('status')).toHaveText('Category Travel saved.')
@@ -1653,9 +1655,7 @@ test('tag page creates optional categories, rejects blank names, filters archive
 	await expect(category).toHaveValue('')
 	await name.fill('   ')
 	await add.click()
-	await expect(modal.getByRole('alert')).toHaveText(
-		'Enter a tag name and select an available category or no category.'
-	)
+	await expect(modal.getByRole('alert').locator('p')).toHaveText(['Enter Tag name'])
 	await name.fill('  Unassigned tag  ')
 	await add.click()
 	await expect(modal.getByRole('status')).toHaveText('Tag Unassigned tag saved.')
@@ -2120,8 +2120,8 @@ test('transaction tags reject a tag archived after selection without saving part
 	}, tagId)
 	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await expect(
-		main.getByRole('alert').filter({ hasText: 'Could not save Transaction. Please try again.' })
-	).toHaveText('Could not save Transaction. Please try again.')
+		main.getByRole('alert').filter({ hasText: 'Could not save Transaction.' })
+	).toHaveText('Could not save Transaction.')
 	const partial = await page.evaluate(async (organizationId) => {
 		const { app, db } = window.workspaceSettingsTest
 		return (

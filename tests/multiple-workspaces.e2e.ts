@@ -728,6 +728,8 @@ test('has one management link and preserves workspace scope in copyable sidebar 
 	context
 }) => {
 	await start(page)
+	await create(page, 'Scoped link workspace')
+	await closeCreationModal(page)
 	await prepareSidebar(page)
 	const sidebar = page.getByRole('complementary')
 	await expect(sidebar.getByRole('link', { name: 'Workspaces', exact: true })).toHaveCount(1)

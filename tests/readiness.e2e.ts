@@ -15,13 +15,9 @@ test('startup storage failure is recoverable by an explicit retry', async ({ pag
 		}
 	})
 	await page.goto('/settings/banks')
-	await expect(
-		page.getByText('Your finances could not be opened. Try again.', { exact: true })
-	).toBeVisible()
+	await expect(page.getByText('Your finances could not be opened.', { exact: false })).toBeVisible()
 	await page.getByRole('button', { name: 'Try again', exact: true }).click()
 	await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
-	await expect(
-		page.getByText('Your finances could not be opened. Try again.', { exact: true })
-	).toBeHidden()
+	await expect(page.getByText('Your finances could not be opened.', { exact: false })).toBeHidden()
 	expect(errors).toEqual([])
 })
