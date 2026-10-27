@@ -39,7 +39,7 @@
 		<StatusMessage
 			compact
 			text={!syncConfigured
-				? m['database.local']()
+				? m['database.online']()
 				: browserOffline
 					? m['database.offline']()
 					: m['database.online']()}

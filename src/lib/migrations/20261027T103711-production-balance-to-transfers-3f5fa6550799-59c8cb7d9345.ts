@@ -14,7 +14,7 @@ export default s.defineMigration({
 		}
 	},
 	fromHash: '3f5fa6550799',
-	toHash: 'fa41f3f97fa1',
+	toHash: '59c8cb7d9345',
 	from: {
 		accountMemberships: s.table(
 			{
@@ -441,9 +441,9 @@ export default s.defineMigration({
 		),
 		transactions: s.table(
 			{
-				amountMinor: s.bigint().optional(),
+				amountMinor: s.bigint(),
 				kind: s.enum('expense', 'income'),
-				currency: s.string().optional(),
+				currency: s.string(),
 				categoryId: s.uuid(),
 				accountId: s.uuid(),
 				organizationId: s.uuid(),

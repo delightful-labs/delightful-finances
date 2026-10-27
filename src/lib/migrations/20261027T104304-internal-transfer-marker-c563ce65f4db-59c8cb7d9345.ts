@@ -4,10 +4,15 @@ export default s.defineMigration({
 	migrate: {
 		transactions: {
 			internalTransferId: s.add.ref('internalTransfers', { default: null })
+		},
+
+		simplefinAccountLinks: {
+			availableBalance: s.add.string({ default: null }),
+			balanceDate: s.add.timestamp({ default: null })
 		}
 	},
 	fromHash: 'c563ce65f4db',
-	toHash: 'fbf87c3367d9',
+	toHash: '59c8cb7d9345',
 	from: {
 		accountMemberships: s.table(
 			{
@@ -152,6 +157,20 @@ export default s.defineMigration({
 			},
 			{
 				memberships: s.reverse('organizationMembers', 'profile')
+			}
+		),
+		simplefinAccountLinks: s.table(
+			{
+				organizationId: s.uuid(),
+				accountId: s.uuid(),
+				connectionId: s.uuid().optional(),
+				simplefinAccountId: s.string(),
+				simplefinOrgId: s.string().optional()
+			},
+			{
+				organization: s.rel('organizations', 'organizationId'),
+				account: s.rel('accounts', 'accountId'),
+				connection: s.rel('simplefinConnections', 'connectionId')
 			}
 		),
 		simplefinConnections: s.table(
@@ -397,6 +416,22 @@ export default s.defineMigration({
 				memberships: s.reverse('organizationMembers', 'profile')
 			}
 		),
+		simplefinAccountLinks: s.table(
+			{
+				organizationId: s.uuid(),
+				accountId: s.uuid(),
+				connectionId: s.uuid().optional(),
+				simplefinAccountId: s.string(),
+				simplefinOrgId: s.string().optional(),
+				availableBalance: s.string().optional(),
+				balanceDate: s.timestamp().optional()
+			},
+			{
+				organization: s.rel('organizations', 'organizationId'),
+				account: s.rel('accounts', 'accountId'),
+				connection: s.rel('simplefinConnections', 'connectionId')
+			}
+		),
 		simplefinConnections: s.table(
 			{
 				organizationId: s.uuid(),
@@ -454,9 +489,9 @@ export default s.defineMigration({
 		),
 		transactions: s.table(
 			{
-				amountMinor: s.bigint().optional(),
+				amountMinor: s.bigint(),
 				kind: s.enum('expense', 'income'),
-				currency: s.string().optional(),
+				currency: s.string(),
 				categoryId: s.uuid(),
 				accountId: s.uuid(),
 				organizationId: s.uuid(),
