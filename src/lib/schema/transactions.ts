@@ -17,14 +17,15 @@ const bookedOnColumn = validatedTextColumn(dateOnlyText)
 const checkDateColumn = validatedTextColumn(dateOnlyText)
 const checkNumberColumn = validatedTextColumn(checkNumberText)
 const externalIdColumn = validatedTextColumn(externalIdText)
+const amountMinorColumn = s.bigint().transform<number>({
+	from: (value) => amountMinorValue.parse(Number(value)),
+	to: (value) => BigInt(amountMinorValue.parse(value))
+})
 
 export const transactionsSchema = {
 	transactions: s.table(
 		{
-			amountMinor: s.bigint().transform<number>({
-				from: (value) => amountMinorValue.parse(Number(value)),
-				to: (value) => BigInt(amountMinorValue.parse(value))
-			}),
+			amountMinor: amountMinorColumn,
 			kind: s.enum(EXPENSE, INCOME),
 			currency: currencyColumn.column,
 			categoryId: s.uuid(),
@@ -44,6 +45,7 @@ export const transactionsSchema = {
 				.optional(),
 			checkDetailsId: s.uuid().optional(),
 			...transactionCheckColumns,
+			internalTransferId: s.uuid().optional(),
 			source: s.enum(TRANSACTION_SOURCE.MANUAL, TRANSACTION_SOURCE.SIMPLEFIN),
 			externalId: externalIdColumn.column.optional(),
 			batchId: s.uuid().optional()
@@ -55,6 +57,7 @@ export const transactionsSchema = {
 			batch: s.rel('transactionBatches', 'batchId'),
 			tags: s.reverse('transactionTags', 'transaction'),
 			checkDetails: s.rel('checkDetails', 'checkDetailsId'),
+			internalTransfer: s.rel('internalTransfers', 'internalTransferId'),
 			...transactionCheckRelations,
 			attachments: s.reverse('transactionAttachments', 'transaction')
 		}
@@ -86,6 +89,24 @@ export const transactionsSchema = {
 			transaction: s.rel('transactions', 'transactionId'),
 			organization: s.rel('organizations', 'organizationId'),
 			account: s.rel('accounts', 'accountId')
+		}
+	),
+	internalTransfers: s.table(
+		{
+			organizationId: s.uuid(),
+			expenseTransactionId: s.uuid(),
+			incomeTransactionId: s.uuid(),
+			expenseAccountId: s.uuid().optional(),
+			incomeAccountId: s.uuid().optional(),
+			amountMinor: amountMinorColumn.optional(),
+			currency: currencyColumn.column.optional()
+		},
+		{
+			organization: s.rel('organizations', 'organizationId'),
+			expenseTransaction: s.rel('transactions', 'expenseTransactionId'),
+			incomeTransaction: s.rel('transactions', 'incomeTransactionId'),
+			expenseAccount: s.rel('accounts', 'expenseAccountId'),
+			incomeAccount: s.rel('accounts', 'incomeAccountId')
 		}
 	)
 }

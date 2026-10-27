@@ -163,6 +163,10 @@
 		}
 	}
 	readiness.actor.send({ type: 'ATTACH_WORKSPACE', attachment })
+	$effect(() => {
+		const workspaceId = organizationId ?? undefined
+		untrack(() => readiness.actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId }))
+	})
 	const workspaceActor = $derived(selectAttachedWorkspace(applicationState.current, attachment))
 	setContext<WorkspaceContext>(workspaceKey, {
 		get actor() {

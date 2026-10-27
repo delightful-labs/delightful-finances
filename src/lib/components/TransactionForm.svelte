@@ -14,6 +14,14 @@
 	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
+	import type {
+		InternalTransferCandidate,
+	} from '#lib/domain/internal-transfer.js'
+	import type {
+		InternalTransferLinkResult,
+		InternalTransferUnlinkResult
+	} from '#lib/machines/internal-transfer.js'
+	import type { TransactionEditTransferState } from '#lib/machines/transaction-edit.js'
 	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -21,6 +29,7 @@
 	import FormContent from './FormContent.svelte'
 	import TransactionCheckFields from './TransactionCheckFields.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'
+	import InternalTransferSuggestions from './InternalTransferSuggestions.svelte'
 
 	let {
 		kind,
@@ -37,7 +46,23 @@
 		onsubmit,
 		onreset,
 		oncancel,
-		oninput
+		oninput,
+		transferSuggestions = [],
+		transferSearchEnabled = false,
+		transferEditorState = 'unselected',
+		selectedTransferCandidateId = null,
+		writableTransferSuggestionIds = new Set<string>(),
+		transferLinkPending = false,
+		transferLinkResult = null,
+		transferUnlinkAvailable = false,
+		transferUnlinkWritable = false,
+		transferUnlinkPending = false,
+		transferUnlinkResult = null,
+		linkedCounterpartHref = null,
+		onLinkCounterpart,
+		onTransferSearchEnabledChange,
+		onSelectTransferCandidate,
+		onUnlinkTransfer
 	}: {
 		kind: TransactionKind
 		paymentEntry: TransactionPaymentEntry
@@ -63,6 +88,25 @@
 		onreset: (event: Event) => void
 		oncancel?: () => void
 		oninput?: (event: Event) => void
+		transferSuggestions?: readonly (InternalTransferCandidate & {
+			accountName: Account['name'] | undefined
+			description: TransactionDetail['description'] | undefined
+		})[]
+		transferSearchEnabled?: boolean
+		transferEditorState?: TransactionEditTransferState
+		selectedTransferCandidateId?: string | null
+		onTransferSearchEnabledChange?: (enabled: boolean) => void
+		onSelectTransferCandidate?: (transactionId: string) => void
+		writableTransferSuggestionIds?: ReadonlySet<string>
+		transferLinkPending?: boolean
+		transferLinkResult?: InternalTransferLinkResult | null
+		transferUnlinkAvailable?: boolean
+		transferUnlinkWritable?: boolean
+		transferUnlinkPending?: boolean
+		transferUnlinkResult?: InternalTransferUnlinkResult | null
+		linkedCounterpartHref?: string | null
+		onLinkCounterpart?: (transactionId: string) => void
+		onUnlinkTransfer?: () => void
 	} = $props()
 
 	const resetRevision = $derived(view.draftRevision)
@@ -248,6 +292,34 @@
 						suggestions={tagSuggestions}
 						initialTags={initialTransaction?.tags ?? []}
 						disabled={!form.fieldsEditable}
+					/>
+				{/if}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked' && transferEditorState !== 'conflicted'}
+					<label>
+						<input
+							type="checkbox"
+							checked={transferSearchEnabled}
+							onchange={(event) => onTransferSearchEnabledChange?.(event.currentTarget.checked)}
+						/>
+						{m['transfers.convert_to_transfer']()}
+					</label>
+				{/if}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'unselected'}
+					<InternalTransferSuggestions
+						suggestions={transferSuggestions}
+						writableSuggestionIds={writableTransferSuggestionIds}
+						editorState={transferEditorState}
+						selectedId={selectedTransferCandidateId}
+						onSelect={onSelectTransferCandidate}
+						pending={transferLinkPending}
+						result={transferLinkResult}
+						unlinkAvailable={transferUnlinkAvailable}
+						unlinkWritable={transferUnlinkWritable}
+						unlinkPending={transferUnlinkPending}
+						unlinkResult={transferUnlinkResult}
+						{linkedCounterpartHref}
+						onLink={onLinkCounterpart}
+						onUnlink={onUnlinkTransfer}
 					/>
 				{/if}
 				<InputText

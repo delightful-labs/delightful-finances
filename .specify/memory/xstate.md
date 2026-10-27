@@ -92,6 +92,30 @@ subtree once dependencies become available. Keep identity, workspace, membership
 readiness distinct. Model supported observations only: browser online status is not proof of Jazz
 sync connectivity, and a missing SDK observer is a reason to omit that state.
 
+## State-first UI and form ownership
+
+- A complex form is one UI workflow with a parent machine owning the form lifecycle, editable/locked
+  capabilities, validation readiness, submission, and child operation coordination. Do not split
+  unrelated pieces into component-local state and infer an overall workflow in Svelte effects.
+- The integration component owns subscriptions and dependency binding, translates Jazz observations
+  into typed parent events, creates/attaches the root actor, and coordinates graceful shutdown.
+  Presentation receives a discriminated view model derived from the parent snapshot and emits typed
+  user-intent callbacks. It does not reimplement multi-fact eligibility or keep duplicate pending,
+  permission, or linked-state flags.
+- Parent and child boundaries follow responsibility, data ownership, and lifetime. Invoke a fixed
+  child when its lifetime follows a parent state; spawn only dynamic populations or lifetimes that
+  genuinely do not fit invocation. The parent coordinates through typed events and finite invoke
+  outputs or explicit long-lived reports; it does not inspect private child state to reconstruct
+  policy. Parallel regions are independent dimensions inside one machine, not substitute actors.
+- Actor input is initialization, not a reactive binding. Later observation changes use typed events
+  with scope/generation correlation. Avoid Svelte effects that read reactive observation state and
+  synchronously write back into that same dependency cycle; render selected actor state through
+  subscriptions/selectors.
+- Convenience lifecycle hooks must preserve the designed drain protocol. In installed
+  `@xstate/svelte@5`, `useActorRef` starts the actor and calls `stop()` on component destruction;
+  use it only when immediate stop is the intended lifecycle. A root with graceful child cleanup needs
+  explicit ownership and shutdown handling.
+
 ## Design orchestration boundaries before adding machines
 
 A collection of machines is not yet a well-designed actor system. Before implementation, draw the

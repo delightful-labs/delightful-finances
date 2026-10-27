@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { EXPENSE } from '#lib/domain/transaction-kind.js'
+	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import { getContext, onMount } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
@@ -29,7 +30,7 @@
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
-					.where({ organizationId: filters.activeOrganizationId, kind: EXPENSE })
+					.where({ organizationId: filters.activeOrganizationId })
 					.orderBy('bookedOn', 'desc')
 			: undefined
 	)
@@ -48,11 +49,20 @@
 			? app.transactionTags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
+	const transfers = new QuerySubscription(() =>
+		filters.activeOrganizationId
+			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+	const transferResolution = $derived(
+		resolveInternalTransferLinks(transfers.current ?? [], transactions.current ?? [])
+	)
 	const visibleTransactions = $derived(
 		(transactions.current ?? []).filter(
 			(transaction) =>
-				filters.selectedAccountIds === null ||
-				filters.selectedAccountIds.includes(transaction.accountId)
+				transaction.kind === EXPENSE &&
+				(filters.selectedAccountIds === null ||
+					filters.selectedAccountIds.includes(transaction.accountId))
 		)
 	)
 	const categoryNames = $derived(
@@ -66,7 +76,7 @@
 <svelte:head><title>{m['navigation.overview']()} · {m['app.name']()}</title></svelte:head>
 <PageHeader title={m['navigation.overview']()} />
 <QueryContent
-	queries={[transactions, categories, tags, links]}
+	queries={[transactions, categories, tags, links, transfers]}
 	loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
 	errorMessage={m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
 >
@@ -75,6 +85,7 @@
 			transactions={visibleTransactions}
 			{categoryNames}
 			{tagNamesByTransaction}
+			internalTransferResolution={transferResolution}
 			filters={overviewFilters}
 			onfilterschange={(value) => (overviewFilters = value)}
 		/>

@@ -36,10 +36,11 @@
 		"load_failed": "Editing information could not be loaded.",
 		"read_only": "You do not have permission to make this change.",
 		"unavailable_reference": "A selected record is no longer available in this workspace. Select an available record and try again.",
+		"linked_transfer_requires_unlink": "Unlink this transfer before changing its amount, account, or currency.",
 		"protected_record": "System categories cannot be archived.",
 		"profile_unavailable": "Your profile is unavailable for editing.",
 		"no_categories": "No applicable category is available for this transaction.",
-		"settling": "Finishing an issued save before ending this request.",
+		"settling": "Finishing your change…",
 		"scope_changed": "The workspace, identity, record or your access changed before this request completed.",
 		"cancelled": "The request was cancelled.",
 		"closed": "The form was closed.",
@@ -108,6 +109,16 @@
 				"match": {
 					"countPlural=one": "Transaction",
 					"countPlural=*": "Transactions"
+				}
+			}
+		],
+		"transfer": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Transfer",
+					"countPlural=*": "Transfers"
 				}
 			}
 		],
@@ -324,6 +335,7 @@
 	"actions": {
 		"save_subject": "Save {subject}",
 		"close": "Close",
+		"dismiss": "Dismiss",
 		"cancel": "Cancel",
 		"archive_button": "Archive",
 		"save": "Save",
@@ -335,6 +347,7 @@
 		"move_up_name": "Move {name} up",
 		"move_down_name": "Move {name} down",
 		"add_subject": "Add {subject}",
+		"delete_subject": "Delete {subject}",
 		"archive_subject": "Archive {subject}",
 		"select_subject": "Select {subject}",
 		"select_existing_subject": "Select existing {subject}",
@@ -346,6 +359,7 @@
 		"toggle_subject": "Toggle {subject}",
 		"clear_selected_subject": "Clear selected {subject}",
 		"link_existing_subject": "Link to existing {subject}",
+		"unlink_subject": "Unlink {subject}",
 		"add_subject_name": "Add {subject} “{name}”",
 		"restore_subject": "Restore {subject}",
 		"show_subject": "Show {subject}",
@@ -355,6 +369,11 @@
 		"edit_subject": "Edit {subject}",
 		"done": "Done",
 		"back_to_subject": "Back to {subject}"
+	},
+	"permissions": {
+		"updated": "Permissions were updated.",
+		"update_failed": "Permissions could not be updated. Please try again.",
+		"manage_restricted": "Only workspace owners and admins can manage this permission."
 	},
 	"accounts": {
 		"type": {
@@ -370,7 +389,9 @@
 		"archive_restricted": "You do not have permission to archive this account.",
 		"archive_scope_changed": "The workspace or access changed before archiving completed.",
 		"archive_interrupted_saved": "The archive was saved locally before the operation ended.",
-		"archive_session_unavailable": "Account actions are unavailable until your session is ready."
+		"archive_session_unavailable": "Account actions are unavailable until your session is ready.",
+		"delete_access_description": "Delete access is granted separately from account write access.",
+		"delete_access_for_name": "Allow {name} to delete transactions"
 	},
 	"transactions": {
 		"samples": {
@@ -408,6 +429,23 @@
 		"daily_total_amount": "Daily total: {amount}",
 		"check_retained": "The Check was saved, but the transaction was not. Save again to reuse the same Check.",
 		"save_unresolved": "The save result is uncertain. Save again to verify the same records when connected before issuing another write. Keep this form open until the result is resolved."
+	},
+	"transfers": {
+		"source_subject": "Source {subject}",
+		"destination_subject": "Destination {subject}",
+		"insufficient_accounts": "Add a second writable account to record a transfer.",
+		"incompatible": "Choose different accounts with the same currency.",
+		"recovery_required": "The transfer is incomplete. Review the transactions before retrying.",
+		"suggestions_heading": "Matching transactions",
+		"convert_to_transfer": "Convert this transaction to a transfer",
+		"conflict_notice": "This transfer link is inconsistent. Related transactions are excluded from totals until it is repaired.",
+		"delete_effect_both": "Both transactions and their transfer link will be deleted. The transfer will no longer appear in your records.",
+		"delete_effect_selected": "This transaction will be unlinked and deleted. The other transaction will remain as ordinary income or expense and count toward totals.",
+		"delete_saved_both": "Both linked transactions were deleted on this device.",
+		"delete_saved_selected": "This transaction was unlinked and deleted on this device. The other transaction remains."
+	},
+	"sync": {
+		"mutation_rejected": "A change was rejected while syncing. Your data reflects the latest accepted changes."
 	},
 	"login": {
 		"description": "Enter the recovery phrase for an existing local-first account.",

@@ -11,6 +11,7 @@ import { appTagSchema } from '#lib/validation/tags.js'
 import { independentTransactionSchema } from '#lib/validation/transactions.js'
 import type { IndependentTransaction } from '#lib/domain/transaction.js'
 import type { FormInterruption, FormSettlement } from '#lib/form-contract.js'
+import { transferEditRequiresUnlink } from '#lib/transaction-save-contract.js'
 
 type TransactionDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<TransactionDb['beginTransaction']>
@@ -22,11 +23,14 @@ const inputSchema = z.strictObject({
 })
 export type IndependentTransactionInput = z.output<typeof inputSchema>
 export type IndependentTransactionEvent = { type: 'CANCEL' | 'INVALIDATE' | 'SHUTDOWN' }
-export type IndependentTransactionResult = {
-	outcome: 'succeeded' | 'failed' | FormInterruption
-	transactionId: string
-	settlement: FormSettlement
-}
+export type IndependentTransactionResult =
+	| { outcome: 'succeeded' | FormInterruption; transactionId: string; settlement: FormSettlement }
+	| {
+			outcome: 'failed'
+			transactionId: string
+			settlement: FormSettlement
+			reason?: 'linkedTransferRequiresUnlink'
+	  }
 type Plan = {
 	moveCheck?: { id: string; accountId: string } | undefined
 	row: {
@@ -145,12 +149,24 @@ const readEdit = fromPromise(async ({ input }: { input: { tx: Transaction; id: s
 		Promise.resolve().then(() => input.tx.all(app.transactions.where({ id: input.id }))),
 		Promise.resolve().then(() =>
 			input.tx.all(app.transactionTags.where({ transactionId: input.id }))
+		),
+		Promise.resolve().then(() =>
+			input.tx.all(app.internalTransfers.where({ expenseTransactionId: input.id }))
+		),
+		Promise.resolve().then(() =>
+			input.tx.all(app.internalTransfers.where({ incomeTransactionId: input.id }))
 		)
 	])
-	const [rows, links] = results
+	const [rows, links, expenseTransfers, incomeTransfers] = results
 	if (rows.status === 'rejected') throw rows.reason
 	if (links.status === 'rejected') throw links.reason
-	return { existing: rows.value[0], links: links.value }
+	if (expenseTransfers.status === 'rejected') throw expenseTransfers.reason
+	if (incomeTransfers.status === 'rejected') throw incomeTransfers.reason
+	return {
+		existing: rows.value[0],
+		links: links.value,
+		transfers: [...expenseTransfers.value, ...incomeTransfers.value]
+	}
 })
 type EditSnapshot = OutputFrom<typeof readEdit>
 function editable(existing: TransactionRow | undefined, values: IndependentTransaction) {
@@ -241,6 +257,7 @@ type Context = {
 	plan: Plan | undefined
 	handle: OutputFrom<typeof commit> | undefined
 	settlement: FormSettlement
+	failureReason: 'linkedTransferRequiresUnlink' | undefined
 	result: IndependentTransactionResult | undefined
 }
 const actors = {
@@ -286,7 +303,10 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 				result: ({ context }): IndependentTransactionResult => ({
 					outcome,
 					transactionId: context.transactionId,
-					settlement: context.settlement
+					settlement: context.settlement,
+					...(outcome === 'failed' && context.failureReason
+						? { reason: context.failureReason }
+						: {})
 				}),
 				input: undefined,
 				values: undefined,
@@ -312,6 +332,7 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 			plan: undefined,
 			handle: undefined,
 			settlement: 'notStarted',
+			failureReason: undefined,
 			result: undefined
 		}),
 		output: ({ context }) => required(context.result),
@@ -402,6 +423,17 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 							checkingEdit: {
 								always: [
 									{ guard: 'interrupted', target: 'rollingBack' },
+									{
+										guard: ({ context }) =>
+											editable(context.edit?.existing, required(context.values)) &&
+											transferEditRequiresUnlink(
+												context.edit?.existing,
+												required(context.values),
+												(context.edit?.transfers.length ?? 0) > 0
+											),
+										target: 'rollingBack',
+										actions: assign({ failureReason: 'linkedTransferRequiresUnlink' })
+									},
 									{
 										guard: ({ context }) =>
 											editable(context.edit?.existing, required(context.values)),

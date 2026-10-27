@@ -18,6 +18,7 @@ function row(id: string, bookedOn: string, amountMinor: number, currency = 'USD'
 		paymentMethod: null,
 		checkId: null,
 		checkDetailsId: null,
+		internalTransferId: null,
 		externalId: null,
 		batchId: null
 	}

@@ -1,12 +1,15 @@
 <script lang="ts">
-	import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
+	import { EXPENSE, INCOME, transactionPages } from '#lib/domain/transaction-kind.js'
+	import {
+		resolveInternalTransferLinks
+	} from '#lib/domain/internal-transfer.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
-	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { app, transactionDetailQuery } from '#lib/schema.js'
 	import {
 		applicableTransactionCategories,
 		applicableTransactionTags,
 		createTransactionEditFormOptions,
+		transactionEntryScope,
 		writableTransactionAccounts
 	} from '#lib/machines/transaction-entry.js'
 	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
@@ -19,9 +22,13 @@
 		type AccountOrder,
 		type FinanceFilters
 	} from '#lib/finance-filters.js'
-	import { getContext } from 'svelte'
+	import { getContext, onDestroy, onMount, untrack } from 'svelte'
 	import { page } from '$app/state'
 	import { orderAccounts } from '#lib/machines/account-order.js'
+	import { createActor } from 'xstate'
+	import { createTransactionEditMachine } from '#lib/machines/transaction-edit.js'
+	import { getReadiness } from '#lib/bank-sync.js'
+	import type { TransferWriteTracking } from '#lib/machines/internal-transfer.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormFeedback from './FormFeedback.svelte'
@@ -29,17 +36,106 @@
 	import QueryContent from './QueryContent.svelte'
 	import TransactionDetails from './TransactionDetails.svelte'
 	import TransactionForm from './TransactionForm.svelte'
+	import InternalTransferDeleteActions from './InternalTransferDeleteActions.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accountOrder = getContext<AccountOrder>(accountOrderKey)
 	const db = getDb()
+	const readiness = getReadiness()
+	const trackTransferWrite = (write: TransferWriteTracking) =>
+		readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write })
 	const session = fromStore(getJazzSession())
+	const routeKind = untrack(() =>
+		page.url.pathname.startsWith(transactionPages[INCOME].path) ? INCOME : EXPENSE
+	)
+	const entryForm = createTransactionEditFormOptions({ binding: db, observe, db })
+	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite, {
+		send: (event) => readiness.actor.send(event)
+	})
+	const editActor = createActor(editWorkflow.logic, {
+		input: {
+			identityId: session.current.account?.id ?? null,
+			organizationId: filters.activeOrganizationId,
+			binding: db,
+			kind: routeKind,
+			transactionId: page.params.id ?? null,
+			sessionReady: session.current.status === 'ready',
+			loading: true,
+			failed: false,
+			membership: undefined,
+			grants: [],
+			accounts: [],
+			categories: [],
+			tags: [],
+			transaction: null
+		}
+	})
+	let editSnapshot = $state.raw(editActor.getSnapshot())
+	const formView = $derived(editWorkflow.selectFormView(editSnapshot))
+	const transferEditorState = $derived(editWorkflow.selectTransferState(editSnapshot))
+	const transferSearchEnabled = $derived(
+		transferEditorState === 'searching' ||
+			transferEditorState === 'matches' ||
+			transferEditorState === 'empty' ||
+			transferEditorState === 'failed'
+	)
+	const transferLinkPending = $derived(editWorkflow.isLinkPending(editSnapshot))
+	const transferUnlinkPending = $derived(editWorkflow.isUnlinkPending(editSnapshot))
+	const transferDeletePending = $derived(editWorkflow.isDeletePending(editSnapshot))
+	const transferLinkResult = $derived(editSnapshot.context.linkResult)
+	const transferUnlinkResult = $derived(editSnapshot.context.unlinkResult)
+	const transferDeleteResult = $derived(editSnapshot.context.deleteResult)
+	const selectedTransferCandidateId = $derived(editSnapshot.context.selectedCandidateId)
+	$effect(() => {
+		const result = transferLinkResult
+		if (!import.meta.env.DEV || result?.outcome !== 'unavailable') return
+		const error = result.error
+		console.error('[transfer-link] operation unavailable', {
+			phase: result.phase ?? 'before commit',
+			settlement: result.settlement,
+			error:
+				error instanceof Error
+					? { name: error.name, message: error.message, stack: error.stack, cause: error.cause }
+					: error === undefined
+						? 'No error detail was returned'
+						: error
+		})
+	})
 	const transactionQuery = new QuerySubscriptionOne(() =>
 		filters.activeOrganizationId
 			? transactionDetailQuery.where({
 					id: page.params.id ?? '',
 					organizationId: filters.activeOrganizationId
 				})
+			: undefined
+	)
+	const transferLinksQuery = new QuerySubscription(() =>
+		filters.activeOrganizationId && transactionQuery.current
+			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
+			: undefined
+	)
+	const counterpartQuery = new QuerySubscription(() => {
+		const current = transaction
+		const organizationId = filters.activeOrganizationId
+		const related = transferLinksQuery.current?.some(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === current?.id || incomeTransactionId === current?.id
+		)
+		return (transferSearchEnabled || Boolean(current?.internalTransferId) || related) &&
+			current &&
+			organizationId
+			? app.transactions.where({
+					organizationId,
+					kind: current.kind === EXPENSE ? INCOME : EXPENSE
+				})
+			: undefined
+	})
+	const transferAccountsQuery = new QuerySubscription(() =>
+		filters.activeOrganizationId &&
+		(transferSearchEnabled ||
+			Boolean(transactionQuery.current?.internalTransferId) ||
+			linkedTransfer)
+			? app.accounts.where({ organizationId: filters.activeOrganizationId }).orderBy('name')
 			: undefined
 	)
 	const membershipQuery = new QuerySubscriptionOne(() =>
@@ -96,7 +192,7 @@
 			organizationId,
 			binding: session.current.client?.db ?? null,
 			sessionReady: session.current.status === 'ready',
-			kind: current?.kind ?? EXPENSE,
+			kind: current?.kind ?? routeKind,
 			transactionId,
 			membership: observeRow(membershipQuery.current),
 			grants: observeRows(grantsQuery.current),
@@ -109,11 +205,201 @@
 				current?.id === transactionId && current.organizationId === organizationId ? current : null
 		}
 	}
+	onMount(() => {
+		const subscription = editActor.subscribe({ next: (snapshot) => (editSnapshot = snapshot) })
+		editActor.start()
+		return () => subscription.unsubscribe()
+	})
+	$effect(() => {
+		const observation = observe()
+		untrack(() => editActor.send({ type: 'OBSERVE', observation }))
+	})
+	onDestroy(() => {
+		if (editActor.getSnapshot().status !== 'active') {
+			editActor.stop()
+			return
+		}
+		const completion = editActor.subscribe({
+			complete: () => editActor.stop(),
+			error: () => editActor.stop()
+		})
+		editActor.send({ type: 'SHUTDOWN' })
+		if (editActor.getSnapshot().status === 'done') {
+			completion.unsubscribe()
+			editActor.stop()
+		}
+	})
+	function valuesFromForm(form: HTMLFormElement) {
+		const data = new FormData(form)
+		return {
+			...Object.fromEntries(data),
+			tags: data.getAll('tags')
+		}
+	}
+	function submitForm(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		editActor.send({ type: 'OBSERVE', observation: observe() })
+		editActor.send({
+			type: 'FORM',
+			event: { type: 'SUBMIT', values: valuesFromForm(event.currentTarget) }
+		})
+	}
+	function inputForm(event: Event) {
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		editActor.send({ type: 'OBSERVE', observation: observe() })
+		editActor.send({
+			type: 'FORM',
+			event: { type: 'CHANGE', values: valuesFromForm(event.currentTarget) }
+		})
+	}
+	function resetForm(event: Event) {
+		event.preventDefault()
+		editActor.send({ type: 'FORM', event: { type: 'RESET' } })
+	}
+	function retryReadiness() {
+		editActor.send({ type: 'FORM', event: { type: 'RETRY_READINESS' } })
+	}
 	const availableAccounts = $derived(
 		orderAccounts(writableTransactionAccounts(observe()), accountOrder.ids)
 	)
 	const availableCategories = $derived(applicableTransactionCategories(observe()))
 	const tagSuggestions = $derived(applicableTransactionTags(observe()).map((tag) => tag.name))
+	const counterpartRows = $derived(observeRows(counterpartQuery.current))
+	const transferLinks = $derived(observeRows(transferLinksQuery.current))
+	const currentHasRelatedTransfer = $derived(
+		transferLinks.some(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === transaction?.id || incomeTransactionId === transaction?.id
+		)
+	)
+	const transferResolution = $derived(
+		resolveInternalTransferLinks(
+			transferLinks,
+			transaction ? [transaction, ...counterpartRows] : counterpartRows
+		)
+	)
+	const effectiveTransferLink = $derived(
+		transferResolution.effectiveLinks.find(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === transaction?.id || incomeTransactionId === transaction?.id
+		) ?? null
+	)
+	const effectiveTransfer = $derived(
+		effectiveTransferLink
+			? (transferLinks.find(({ id }) => id === effectiveTransferLink.id) ?? null)
+			: null
+	)
+	const pendingTransferLink = $derived(
+		transferResolution.pendingLinks.find(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				expenseTransactionId === transaction?.id || incomeTransactionId === transaction?.id
+		) ?? null
+	)
+	const pendingTransfer = $derived(
+		pendingTransferLink
+			? (transferLinks.find(({ id }) => id === pendingTransferLink.id) ?? null)
+			: null
+	)
+	const counterpartObservationRequired = $derived(
+		transferSearchEnabled || Boolean(transaction?.internalTransferId) || currentHasRelatedTransfer
+	)
+	const transferObservationsSettled = $derived(
+		!transferLinksQuery.isLoading &&
+			(!counterpartObservationRequired || !counterpartQuery.isLoading)
+	)
+	const transferConflict = $derived.by(() => {
+		if (!transaction || !transferObservationsSettled) return false
+		const currentId = transaction.id
+		const resolvedTransfer = effectiveTransfer ?? pendingTransfer
+		const relatedIds = new Set([currentId])
+		if (resolvedTransfer)
+			relatedIds.add(
+				resolvedTransfer.expenseTransactionId === currentId
+					? resolvedTransfer.incomeTransactionId
+					: resolvedTransfer.expenseTransactionId
+			)
+		const hasConflictingLink = transferResolution.conflictedLinks.some(
+			({ expenseTransactionId, incomeTransactionId }) =>
+				relatedIds.has(expenseTransactionId) || relatedIds.has(incomeTransactionId)
+		)
+		const hasOrphanMarker =
+			transaction.internalTransferId != null &&
+			!transferLinks.some(
+				({ id, expenseTransactionId, incomeTransactionId }) =>
+					id === transaction.internalTransferId &&
+					(expenseTransactionId === currentId || incomeTransactionId === currentId)
+			)
+		return hasConflictingLink || hasOrphanMarker
+	})
+	const linkedTransfer = $derived(transferConflict ? null : (effectiveTransfer ?? pendingTransfer))
+	const linkedCounterpartHref = $derived.by(() => {
+		if (!linkedTransfer || !transaction) return null
+		const counterpartId =
+			linkedTransfer.expenseTransactionId === transaction.id
+				? linkedTransfer.incomeTransactionId
+				: linkedTransfer.incomeTransactionId === transaction.id
+					? linkedTransfer.expenseTransactionId
+					: null
+		if (!counterpartId) return null
+		const counterpartKind = transaction.kind === EXPENSE ? INCOME : EXPENSE
+		return `${transactionPages[counterpartKind].path}/${encodeURIComponent(counterpartId)}`
+	})
+	const linkedTransactionIds = $derived(
+		new Set(transferLinks.flatMap((link) => [link.expenseTransactionId, link.incomeTransactionId]))
+	)
+	const transferSuggestions = $derived(
+		editSnapshot.context.candidates.map((candidate) => ({
+			...candidate,
+			description: counterpartRows.find(({ id }) => id === candidate.id)?.description,
+			accountName: transferAccountsQuery.current?.find(
+				(account) => account.id === candidate.accountId
+			)?.name
+		}))
+	)
+	const writableTransferSuggestionIds = $derived(editWorkflow.writableCandidateIds(editSnapshot))
+	const transferUnlinkWritable = $derived(editWorkflow.unlinkWritable(editSnapshot))
+	$effect(() => {
+		const searchEnabled = transferSearchEnabled
+		const linked = linkedTransfer !== null
+		const conflicted = transferConflict
+		const previouslyObserved = ['linked', 'conflicted'].includes(transferEditorState)
+		if (!searchEnabled && !linked && !conflicted && !previouslyObserved) return
+		const observation = {
+			rows: counterpartRows,
+			scope: transactionEntryScope(observe()),
+			scopeGeneration: untrack(() => editActor.getSnapshot().context.scopeGeneration),
+			linkedTransactionIds: [...linkedTransactionIds],
+			linkedTransfer,
+			linked,
+			conflicted,
+			searchEnabled,
+			pendingUnlink: Boolean(linkedTransfer && pendingTransfer?.id === linkedTransfer.id),
+			loading:
+				counterpartQuery.isLoading ||
+				transferLinksQuery.isLoading ||
+				transferAccountsQuery.isLoading,
+			failed:
+				counterpartQuery.error != null ||
+				transferLinksQuery.error != null ||
+				transferAccountsQuery.error != null
+		}
+		untrack(() => editActor.send({ type: 'TRANSFER_OBSERVATION', observation }))
+	})
+	function linkCounterpart(transactionId: string) {
+		editActor.send({ type: 'LINK_COUNTERPART', candidateId: transactionId })
+	}
+	function selectTransferCandidate(transactionId: string) {
+		editActor.send({ type: 'SELECT_COUNTERPART', candidateId: transactionId })
+	}
+	function unlinkTransfer() {
+		editActor.send({ type: 'UNLINK_TRANSFER' })
+	}
+	function deleteLinkedTransfer(
+		choice: import('#lib/machines/internal-transfer.js').InternalTransferDeleteChoice
+	) {
+		editActor.send({ type: 'DELETE_LINKED_TRANSFER', choice })
+	}
 	const creatorQuery = new QuerySubscriptionOne(() =>
 		transaction ? app.profiles.where({ userId: transaction.$createdBy.account }) : undefined
 	)
@@ -146,12 +432,6 @@
 			tags: row.tags?.flatMap((link) => (link.tag?.name ? [link.tag.name] : [])) ?? []
 		}
 	})
-	const entryForm = createTransactionEditFormOptions({
-		binding: db,
-		observe,
-		db
-	})
-	const entryController = createScopedFormController({ ...entryForm, arrayFields: () => ['tags'] })
 </script>
 
 <svelte:head
@@ -175,14 +455,27 @@
 			creatorProfile={creatorQuery.current}
 			editorProfile={editorQuery.current}
 		>
+			{#snippet actions()}
+				<InternalTransferDeleteActions
+					transactionId={transaction?.id ?? page.params.id ?? ''}
+					available={Boolean(
+						linkedTransfer &&
+						formView.fieldsEditable &&
+						transferDeleteResult?.outcome !== 'succeeded'
+					)}
+					pending={transferDeletePending}
+					result={transferDeleteResult}
+					onDelete={deleteLinkedTransfer}
+				/>
+			{/snippet}
 			{#snippet form()}
 				<FormFeedback
-					view={entryController.view}
+					view={formView}
 					subject={m['nouns.transaction']({ count: 1 })}
 					reasonText={(reason) => formReasonText[reason]()}
 					invalidMessage={m['transactions.validation_error']()}
 					section="readiness"
-					onRetryReadiness={entryController.retryReadiness}
+					onRetryReadiness={retryReadiness}
 				/>
 				{#if initialTransaction && transaction}
 					<TransactionForm
@@ -190,16 +483,33 @@
 						kind={transaction.kind}
 						paymentEntry={transactionPages[transaction.kind].paymentEntry}
 						{initialTransaction}
-						oninput={entryController.input}
+						oninput={inputForm}
 						organizationId={filters.activeOrganizationId}
 						accounts={availableAccounts}
 						defaultAccountId={initialTransaction.accountId}
 						categories={availableCategories}
 						defaultCategoryId={initialTransaction.categoryId}
 						{tagSuggestions}
-						view={entryController.view}
-						onsubmit={entryController.submit}
-						onreset={entryController.reset}
+						{transferSuggestions}
+						{transferEditorState}
+						{selectedTransferCandidateId}
+						onSelectTransferCandidate={selectTransferCandidate}
+						{transferSearchEnabled}
+						{writableTransferSuggestionIds}
+						onTransferSearchEnabledChange={(enabled) =>
+							editActor.send({ type: enabled ? 'ENABLE_SEARCH' : 'DISABLE_SEARCH' })}
+						{transferLinkPending}
+						{transferLinkResult}
+						transferUnlinkAvailable={linkedTransfer !== null}
+						{transferUnlinkWritable}
+						{transferUnlinkPending}
+						{transferUnlinkResult}
+						{linkedCounterpartHref}
+						onLinkCounterpart={linkCounterpart}
+						onUnlinkTransfer={unlinkTransfer}
+						view={formView}
+						onsubmit={submitForm}
+						onreset={resetForm}
 					/>
 				{/if}
 			{/snippet}

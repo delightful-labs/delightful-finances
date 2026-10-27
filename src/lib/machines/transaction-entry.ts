@@ -3,6 +3,7 @@ import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
 import { createTransactionSaveMachine, type TransactionSaveDb } from './transaction-save.js'
+import { transferEditRequiresUnlink } from '#lib/transaction-save-contract.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
@@ -177,6 +178,11 @@ export function createTransactionEntryAvailability(binding: object) {
 									(f.transaction.paymentMethod === PAYMENT_METHOD.CHECK && !f.transaction.check))),
 						target: 'unavailableReference'
 					},
+					{
+						guard: ({ context: { observation: { facts: f } } }) =>
+							f.intent !== undefined && transferEditRequiresUnlink(f.transaction, f.intent),
+						target: 'linkedTransferRequiresUnlink'
+					},
 					{ target: 'checkingTags' }
 				]
 			},
@@ -211,6 +217,7 @@ export function createTransactionEntryAvailability(binding: object) {
 			noAccounts: {},
 			noCategories: {},
 			unavailableReference: {},
+			linkedTransferRequiresUnlink: {},
 			ready: {}
 		}
 	})

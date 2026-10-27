@@ -7,6 +7,7 @@
 	import OverviewIcon from 'tdesign-icons-svg/src/dashboard.svg?component'
 	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
 	import IncomeIcon from 'tdesign-icons-svg/src/arrow-down.svg?component'
+	import TransfersIcon from 'tdesign-icons-svg/src/swap.svg?component'
 	import AccountsIcon from 'tdesign-icons-svg/src/wallet.svg?component'
 	import CategoriesIcon from 'tdesign-icons-svg/src/root-list.svg?component'
 	import TagsIcon from 'tdesign-icons-svg/src/tag.svg?component'
@@ -125,6 +126,15 @@
 					onclick={onNavigate}
 				/>
 			</li>
+			<li>
+				<AppNavigationLink
+					href="/transfers/new"
+					{pathname}
+					icon={TransfersIcon}
+					label={m['nouns.transfer']({ count: 2 })}
+					onclick={onNavigate}
+				/>
+			</li>
 
 			<li>
 				<AppNavigationLink
@@ -153,7 +163,7 @@
 							})}</span
 						>
 					{/snippet}
-					{#snippet content()}
+					{#snippet children()}
 						<div class="disclosure-content">
 							<AppDrawerContentSection element="section" aria-labelledby={filtersHeadingId}>
 								<QueryContent
@@ -270,7 +280,7 @@
 					{#snippet summary()}
 						<Icon navigation icon={SettingsIcon} />{m['navigation.settings']()}
 					{/snippet}
-					{#snippet content()}
+					{#snippet children()}
 						<div class="disclosure-content">
 							<AppDrawerContentSection>
 								<QueryContent
@@ -375,6 +385,7 @@
 				solid var(--dui-dialog-border-color, var(--dui-color-foreground, currentColor));
 			--dui-navigation-gap: 0;
 			--dui-details-border-width: 0px;
+			--dui-details-content-padding: 0;
 			--dui-details-summary-padding: 0.5rem 1rem;
 		}
 

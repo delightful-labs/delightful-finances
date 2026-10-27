@@ -457,8 +457,8 @@ test('maps and remaps a provider account to existing accounts without creating d
 	await expect(table.getByRole('row')).toHaveCount(3)
 	await expect(table.getByRole('cell', { name: 'Existing checking', exact: true })).toBeVisible()
 	await expect(table.getByRole('cell', { name: 'Replacement checking', exact: true })).toBeVisible()
-	const checkingRow = table.getByRole('row').filter({ hasText: 'Provider Checking' })
-	await expect(checkingRow.getByRole('cell').nth(3)).toHaveText('$87.66')
+	const checkingRow = table.getByRole('row').filter({ hasText: 'Replacement checking' })
+	await expect(checkingRow.getByRole('cell').nth(3)).toHaveText('$0.00')
 })
 
 test('cancels a pending sync, ignores its late response, and imports only on a new explicit sync', async ({
