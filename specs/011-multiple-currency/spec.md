@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/multiple-currency-spec`
 **Created**: 2026-10-27
-**Status**: Draft
+**Status**: Complete
 **Input**: Add a first multi-currency slice for USD and Tanzanian shillings, including account currency selection, currency-aware presentation, and dual-amount entry for cross-currency transfers created at `/transfers/new`.
 
 This feature implements the approved currency foundation in [001-finance-mvp](../001-finance-mvp/spec.md#approved-multi-currency-foundation). It does not perform foreign exchange conversion. Matching and linking existing transactions remains same-currency only under [010-transfer-linking](../010-transfer-linking/spec.md).
