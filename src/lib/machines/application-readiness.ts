@@ -12,6 +12,12 @@ import {
 } from 'xstate'
 import type { ActorRefFrom, SnapshotFrom } from 'xstate'
 import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
+import type { MutationErrorEvent } from 'jazz-tools'
+import type { TransferWriteTracking } from './internal-transfer.js'
+import {
+	createInternalTransferMutationOwner,
+	type TransferMutationRequest
+} from './internal-transfer-mutation-owner.js'
 import { createSessionStartupMachine } from './session-startup.js'
 import { createWorkspaceReadinessMachine, type WorkspaceAttachment } from './readiness.js'
 import { required } from './bank-sync/identity.js'
@@ -25,6 +31,14 @@ import {
 type Session = JazzSession<JazzClient>
 type Workspace = ActorRefFrom<ReturnType<typeof createWorkspaceReadinessMachine>>
 type Status = ReturnType<Session['getSnapshot']>['status']
+export type MutationNotice =
+	| { kind: 'generic'; transactionId: string }
+	| {
+			kind: 'transfer'
+			operation: TransferWriteTracking['operation']
+			transactionId: string
+			transferId: string
+	  }
 type Context = {
 	attachmentRevision: number
 	recoveryDraftRevision: number
@@ -36,6 +50,9 @@ type Context = {
 	workspace: Workspace | undefined
 	attachment: WorkspaceAttachment | undefined
 	pending: WorkspaceAttachment | undefined
+	trackedTransferWrites: TransferWriteTracking[]
+	mutationNotice: MutationNotice | undefined
+	transferMutationOwnerClosed: boolean
 }
 type Event =
 	| RecoveryNotice
@@ -45,6 +62,13 @@ type Event =
 	| { type: 'RETRY' }
 	| { type: 'SESSION_OBSERVED'; status: Status }
 	| { type: 'SESSION_OBSERVER_FAILED' }
+	| { type: 'MUTATION_REJECTED'; transactionId: string }
+	| { type: 'TRANSFER_WRITE_TRACKED'; write: TransferWriteTracking }
+	| { type: 'TRANSFER_MUTATION_REQUEST'; request: TransferMutationRequest }
+	| { type: 'CANCEL_TRANSFER_MUTATION'; requestId: string }
+	| { type: 'WORKSPACE_SCOPE_OBSERVED'; workspaceId: string | undefined }
+	| { type: 'TRANSFER_MUTATION_OWNER_CLOSED' }
+	| { type: 'DISMISS_MUTATION_REJECTION' }
 	| { type: 'ATTACH_WORKSPACE'; attachment: WorkspaceAttachment }
 	| { type: 'DETACH_WORKSPACE'; attachment: WorkspaceAttachment }
 	| { type: 'WORKSPACE_CLOSED'; actor: unknown }
@@ -64,6 +88,7 @@ export function createApplicationReadinessMachine(
 ) {
 	const actors = {
 		recovery: sessionRecoveryMachine,
+		transferMutationOwner: createInternalTransferMutationOwner(),
 		startup: createSessionStartupMachine(open, existing),
 		observeSession: fromCallback<Event, Session>(({ input, sendBack }) => {
 			// SDK notifications execute outside XState; bridge their failures explicitly.
@@ -76,6 +101,16 @@ export function createApplicationReadinessMachine(
 			}
 			publish()
 			return input.subscribe(publish)
+		}),
+		observeMutationRejections: fromCallback<Event, Session>(({ input, sendBack }) => {
+			const db = input.getSnapshot().client?.db
+			if (!db) return
+			return db.onMutationError((rejection) => {
+				sendBack({
+					type: 'MUTATION_REJECTED',
+					transactionId: rejection.transaction.transactionId
+				})
+			})
 		}),
 		retrySession: fromPromise(({ input }: { input: Session }) => input.retry())
 	}
@@ -125,6 +160,10 @@ export function createApplicationReadinessMachine(
 	}))
 	const shutDownWorkspace = workflow.enqueueActions(({ context, enqueue }) => {
 		enqueue.assign({ pending: undefined })
+		enqueue.sendTo('transferMutationOwner', {
+			type: 'TRANSFER_SCOPE_CHANGED',
+			workspaceId: undefined
+		})
 		if (context.workspace?.getSnapshot().status === 'active')
 			enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 	})
@@ -189,25 +228,31 @@ export function createApplicationReadinessMachine(
 			status: 'transitioning',
 			workspace: undefined,
 			attachment: undefined,
-			pending: undefined
+			pending: undefined,
+			trackedTransferWrites: [],
+			mutationNotice: undefined,
+			transferMutationOwnerClosed: false
 		},
-		invoke: {
-			id: 'startup',
-			src: 'startup',
-			onError: [{ guard: 'shuttingDown' }, { target: '.settlingStartupFailure' }],
-			onSnapshot: [
-				{
-					guard: not('acceptStartup')
-				},
-				{ guard: ({ event }) => event.snapshot.matches('error'), target: '.startupFailed' },
-				{
-					guard: ({ event }) => event.snapshot.context.result !== undefined,
-					target: '.running',
-					actions: assign({ session: ({ event }) => event.snapshot.context.result })
-				},
-				{ target: '.opening' }
-			]
-		},
+		invoke: [
+			{
+				id: 'startup',
+				src: 'startup',
+				onError: [{ guard: 'shuttingDown' }, { target: '.settlingStartupFailure' }],
+				onSnapshot: [
+					{
+						guard: not('acceptStartup')
+					},
+					{ guard: ({ event }) => event.snapshot.matches('error'), target: '.startupFailed' },
+					{
+						guard: ({ event }) => event.snapshot.context.result !== undefined,
+						target: '.running',
+						actions: assign({ session: ({ event }) => event.snapshot.context.result })
+					},
+					{ target: '.opening' }
+				]
+			},
+			{ id: 'transferMutationOwner', src: 'transferMutationOwner' }
+		],
 		on: {
 			'xstate.error.actor.*': [
 				{
@@ -219,7 +264,28 @@ export function createApplicationReadinessMachine(
 			],
 			START: { actions: sendTo('startup', { type: 'START' }) },
 			RETRY: { actions: sendTo('startup', { type: 'RETRY' }) },
-			SHUTDOWN: { target: '.closing', actions: assign({ pending: undefined }) },
+			TRANSFER_MUTATION_REQUEST: {
+				actions: sendTo('transferMutationOwner', ({ event }) => ({
+					type: 'REQUEST_TRANSFER_MUTATION',
+					request: event.request
+				}))
+			},
+			CANCEL_TRANSFER_MUTATION: {
+				actions: sendTo('transferMutationOwner', ({ event }) => event)
+			},
+			WORKSPACE_SCOPE_OBSERVED: {
+				actions: sendTo('transferMutationOwner', ({ event }) => ({
+					type: 'TRANSFER_SCOPE_CHANGED',
+					workspaceId: event.workspaceId
+				}))
+			},
+			TRANSFER_MUTATION_OWNER_CLOSED: {
+				actions: assign({ transferMutationOwnerClosed: true })
+			},
+			SHUTDOWN: {
+				target: '.closing',
+				actions: assign({ pending: undefined })
+			},
 			ATTACH_WORKSPACE: [
 				{
 					guard: ({ context, event }) =>
@@ -229,10 +295,23 @@ export function createApplicationReadinessMachine(
 					guard: ({ context }) => Boolean(context.workspace),
 					actions: [
 						assign({ pending: ({ event }) => event.attachment }),
-						sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' })
+						sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' }),
+						sendTo('transferMutationOwner', ({ event }) => ({
+							type: 'TRANSFER_SCOPE_CHANGED',
+							workspaceId: event.attachment.dependencies.read().organizationId ?? undefined
+						}))
 					]
 				},
-				{ actions: [assign({ pending: ({ event }) => event.attachment }), attach] }
+				{
+					actions: [
+						sendTo('transferMutationOwner', ({ event }) => ({
+							type: 'TRANSFER_SCOPE_CHANGED',
+							workspaceId: event.attachment.dependencies.read().organizationId ?? undefined
+						})),
+						assign({ pending: ({ event }) => event.attachment }),
+						attach
+					]
+				}
 			],
 			DETACH_WORKSPACE: [
 				{
@@ -243,14 +322,29 @@ export function createApplicationReadinessMachine(
 					guard: ({ context, event }) =>
 						context.attachment === event.attachment &&
 						context.workspace?.getSnapshot().status === 'active',
-					actions: sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' })
+					actions: [
+						sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' }),
+						sendTo('transferMutationOwner', {
+							type: 'TRANSFER_SCOPE_CHANGED',
+							workspaceId: undefined
+						})
+					]
 				}
 			],
 			WORKSPACE_CLOSED: {
 				guard: ({ context, event }) => context.workspace === event.actor,
 				actions: release
 			},
-			ATTACH_PENDING: { guard: ({ context }) => Boolean(context.pending), actions: attach }
+			ATTACH_PENDING: {
+				guard: ({ context }) => Boolean(context.pending),
+				actions: [
+					sendTo('transferMutationOwner', ({ context }) => ({
+						type: 'TRANSFER_SCOPE_CHANGED',
+						workspaceId: required(context.pending).dependencies.read().organizationId ?? undefined
+					})),
+					attach
+				]
+			}
 		},
 		states: {
 			opening: {},
@@ -285,13 +379,57 @@ export function createApplicationReadinessMachine(
 			},
 			running: {
 				initial: 'checking',
-				invoke: {
-					id: 'sessionObserver',
-					src: 'observeSession',
-					input: ({ context }) => required(context.session),
-					onError: '#application-readiness.settlingObserverFailure'
-				},
+				invoke: [
+					{
+						id: 'sessionObserver',
+						src: 'observeSession',
+						input: ({ context }) => required(context.session),
+						onError: '#application-readiness.settlingObserverFailure'
+					},
+					{
+						id: 'mutationRejectionObserver',
+						src: 'observeMutationRejections',
+						input: ({ context }) => required(context.session)
+					}
+				],
 				on: {
+					MUTATION_REJECTED: {
+						actions: assign(({ context, event }) => {
+							const { transactionId } = event
+							const tracked = context.trackedTransferWrites.find(
+								(write) => write.transactionId === transactionId
+							)
+							return {
+								trackedTransferWrites: context.trackedTransferWrites.filter(
+									(write) => write.transactionId !== transactionId
+								),
+								mutationNotice: tracked
+									? { kind: 'transfer', ...tracked }
+									: { kind: 'generic', transactionId }
+							}
+						})
+					},
+					TRANSFER_WRITE_TRACKED: {
+						actions: assign(({ context, event }) => {
+							const trackedTransferWrites = [
+								...context.trackedTransferWrites.filter(
+									(write) => write.transactionId !== event.write.transactionId
+								),
+								event.write
+							].slice(-64)
+							const notice = context.mutationNotice
+							return {
+								trackedTransferWrites,
+								mutationNotice:
+									notice?.kind === 'generic' && notice.transactionId === event.write.transactionId
+										? { kind: 'transfer', ...event.write }
+										: notice
+							}
+						})
+					},
+					DISMISS_MUTATION_REJECTION: {
+						actions: assign({ mutationNotice: undefined })
+					},
 					SESSION_OBSERVER_FAILED: '#application-readiness.settlingObserverFailure',
 					SESSION_OBSERVED: {
 						target: '.checking',
@@ -579,8 +717,12 @@ export function createApplicationReadinessMachine(
 				}
 			},
 			closing: {
-				always: { guard: ({ context }) => !context.workspace, target: 'closed' },
+				always: {
+					guard: ({ context }) => !context.workspace && context.transferMutationOwnerClosed,
+					target: 'closed'
+				},
 				entry: workflow.enqueueActions(({ context, enqueue }) => {
+					enqueue.sendTo('transferMutationOwner', { type: 'SHUTDOWN' })
 					if (context.workspace?.getSnapshot().status === 'active')
 						enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 				}),
@@ -588,18 +730,19 @@ export function createApplicationReadinessMachine(
 					'xstate.error.actor.*': [
 						{
 							guard: ({ context, event }) => context.workspace?.id === event.actorId,
-							target: 'closed',
 							actions: release
 						},
 						{}
 					],
 					WORKSPACE_CLOSED: {
 						guard: ({ context, event }) => context.workspace === event.actor,
-						target: 'closed',
 						actions: [
 							stopChild(({ context }) => required(context.workspace)),
 							assign({ workspace: undefined, attachment: undefined })
 						]
+					},
+					TRANSFER_MUTATION_OWNER_CLOSED: {
+						actions: assign({ transferMutationOwnerClosed: true })
 					},
 					ATTACH_WORKSPACE: {},
 					DETACH_WORKSPACE: {},

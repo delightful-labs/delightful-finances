@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openCreationModal, selectWorkspace } from './helpers/ui.js'
+import { openAccountActions, openCreationModal, selectWorkspace } from './helpers/ui.js'
 
 const duplicateMessage = 'An active item with this name already exists. Choose another name.'
 
@@ -43,8 +43,9 @@ test('account duplicate names are rejected across account types offline, and arc
 	await expect(
 		page.getByRole('table', { name: 'Accounts', exact: true }).getByRole('row')
 	).toHaveCount(2)
-	await page.getByRole('main').getByRole('button', { name: 'Archive Reserve', exact: true }).click()
-	await expect(page.getByRole('button', { name: 'Archive Reserve', exact: true })).toHaveCount(0)
+	const accountActions = await openAccountActions(page, 'Reserve')
+	await accountActions.getByRole('button', { name: 'Archive', exact: true }).click()
+	await expect(page.getByRole('button', { name: 'Manage Reserve', exact: true })).toHaveCount(0)
 	dialog = await openCreationModal(page, 'Add Account')
 	await dialog.getByLabel('Account name', { exact: true }).fill('reserve')
 	await saveDialog(dialog, 'Add Account')

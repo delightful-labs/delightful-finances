@@ -67,7 +67,7 @@
 				})}</span
 			>
 		{/snippet}
-		{#snippet content()}
+		{#snippet children()}
 			<div class="disclosure-content">
 				<AppDrawerContentSection element="section" aria-labelledby={filtersHeadingId}>
 					<QueryContent

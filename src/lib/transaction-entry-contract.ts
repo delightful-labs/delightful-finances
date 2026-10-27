@@ -28,6 +28,7 @@ export type TransactionEntryReason =
 	| 'ambiguousTagName'
 	| 'checkRetained'
 	| 'saveUnresolved'
+	| 'linkedTransferRequiresUnlink'
 export type TransactionEntryObservation = TransactionEntryScope & {
 	sessionReady: boolean
 	loading: boolean
@@ -40,4 +41,4 @@ export type TransactionEntryObservation = TransactionEntryScope & {
 	intent?: TransactionSaveValues
 	transaction?: TransactionDetail | null
 }
-export type TransactionEntryView = ScopedFormView<void, TransactionEntryReason>
+export type TransactionEntryView = ScopedFormView<unknown, TransactionEntryReason>

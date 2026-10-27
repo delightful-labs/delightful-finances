@@ -8,6 +8,7 @@
 	import OverviewIcon from 'tdesign-icons-svg/src/dashboard.svg?component'
 	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
 	import IncomeIcon from 'tdesign-icons-svg/src/arrow-down.svg?component'
+	import TransfersIcon from 'tdesign-icons-svg/src/swap.svg?component'
 	import CategoriesIcon from 'tdesign-icons-svg/src/root-list.svg?component'
 	import TagsIcon from 'tdesign-icons-svg/src/tag.svg?component'
 	import LoginIcon from 'tdesign-icons-svg/src/login.svg?component'
@@ -47,6 +48,16 @@
 			{pathname}
 			icon={IncomeIcon}
 			label={m['nouns.income']({ count: 1 })}
+			onclick={onNavigate}
+		/>
+	</li>
+
+	<li>
+		<AppNavigationLink
+			href="/transfers/new"
+			{pathname}
+			icon={TransfersIcon}
+			label={m['nouns.transfer']({ count: 2 })}
 			onclick={onNavigate}
 		/>
 	</li>

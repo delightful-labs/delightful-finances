@@ -229,7 +229,8 @@ for (const scenario of scenarios) {
 								organizationId,
 								accountId: first.id,
 								userId: subjectId,
-								access: grant
+								access: grant,
+								canDelete: false
 							})
 							.wait({ tier: 'global' })
 					return {
@@ -464,7 +465,8 @@ for (const scenario of scenarios) {
 								organizationId,
 								userId: subjectId,
 								accountId: account.id,
-								access: grant
+								access: grant,
+								canDelete: false
 							})
 							.wait({ tier: 'global' })
 					const category = await db.one(

@@ -32,6 +32,7 @@ export const identitySchema = {
 			categories: s.reverse('categories', 'organization'),
 			tags: s.reverse('tags', 'organization'),
 			transactions: s.reverse('transactions', 'organization'),
+			internalTransfers: s.reverse('internalTransfers', 'organization'),
 			simplefinConnections: s.reverse('simplefinConnections', 'organization'),
 			batches: s.reverse('transactionBatches', 'organization'),
 			batchTemplates: s.reverse('batchTemplates', 'organization')

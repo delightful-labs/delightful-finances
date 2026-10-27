@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, setup, sendParent, waitFor, type ActorRefFrom } from 'xstate'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
 import { generateAuthSecret } from 'jazz-tools'
-import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
+import type { JazzClient, JazzSession, getDb } from 'jazz-tools/svelte'
 import {
 	createApplicationReadinessMachine,
 	selectAttachedWorkspace,
@@ -51,6 +51,7 @@ vi.mock('./readiness.js', () => ({
 }))
 
 type Session = JazzSession<JazzClient>
+type MutationErrorDb = Pick<ReturnType<typeof getDb>, 'onMutationError'>
 const actors: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
@@ -62,10 +63,14 @@ function control(actor: { id: string }) {
 	return value
 }
 
-function session() {
+function session(db?: MutationErrorDb) {
 	let notify = () => {}
 	const unsubscribe = vi.fn()
-	const getSnapshot = vi.fn<Session['getSnapshot']>(() => ({ status: 'ready' }))
+	const getSnapshot = vi.fn<Session['getSnapshot']>(() => {
+		const snapshot: ReturnType<Session['getSnapshot']> = { status: 'ready' }
+		if (db) Object.defineProperty(snapshot, 'client', { value: { db } })
+		return snapshot
+	})
 	const subscribe = vi.fn<Session['subscribe']>((listener) => {
 		notify = listener
 		return unsubscribe
@@ -128,6 +133,97 @@ function attach(actor: ReturnType<typeof start>) {
 }
 
 describe('application readiness supervision', () => {
+	it('forwards active workspace observations to the transfer mutation owner', () => {
+		const current = session()
+		const actor = start(async () => current.value, current.value)
+		const mutationOwner = actor.getSnapshot().children.transferMutationOwner
+		if (!mutationOwner) throw new Error('Expected transfer mutation owner')
+
+		actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId: 'workspace-a' })
+		expect(mutationOwner.getSnapshot().context.workspaceId).toBe('workspace-a')
+
+		actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId: undefined })
+		expect(mutationOwner.getSnapshot().context.workspaceId).toBeUndefined()
+	})
+
+	it('correlates late transfer rejections and releases the Jazz observer on shutdown', () => {
+		const release = vi.fn()
+		const onMutationError = vi.fn<MutationErrorDb['onMutationError']>(() => release)
+		const current = session({ onMutationError })
+		const actor = start(async () => current.value, current.value)
+
+		expect(onMutationError).toHaveBeenCalledOnce()
+		actor.send({
+			type: 'TRANSFER_WRITE_TRACKED',
+			write: { transactionId: 'tracked-write', operation: 'link', transferId: 'transfer-id' }
+		})
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'tracked-write' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'transfer',
+			transactionId: 'tracked-write',
+			operation: 'link',
+			transferId: 'transfer-id'
+		})
+
+		actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
+		for (const transactionId of ['delete-clear-write', 'delete-records-write'])
+			actor.send({
+				type: 'TRANSFER_WRITE_TRACKED',
+				write: { transactionId, operation: 'delete', transferId: 'transfer-id' }
+			})
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'delete-clear-write' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'transfer',
+			transactionId: 'delete-clear-write',
+			operation: 'delete',
+			transferId: 'transfer-id'
+		})
+		actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'delete-records-write' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'transfer',
+			transactionId: 'delete-records-write',
+			operation: 'delete',
+			transferId: 'transfer-id'
+		})
+
+		actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'untracked-write' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'generic',
+			transactionId: 'untracked-write'
+		})
+		actor.send({ type: 'SHUTDOWN' })
+		expect(release).toHaveBeenCalledOnce()
+	})
+
+	it('uses a generic notice for evicted and post-restart transfer rejections', () => {
+		const current = session()
+		const actor = start(async () => current.value, current.value)
+		for (let index = 0; index < 65; index++)
+			actor.send({
+				type: 'TRANSFER_WRITE_TRACKED',
+				write: {
+					transactionId: `tracked-${index}`,
+					operation: 'link',
+					transferId: `transfer-${index}`
+				}
+			})
+
+		actor.send({ type: 'MUTATION_REJECTED', transactionId: 'tracked-0' })
+		expect(actor.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'generic',
+			transactionId: 'tracked-0'
+		})
+
+		const restarted = start(async () => current.value, current.value)
+		restarted.send({ type: 'MUTATION_REJECTED', transactionId: 'tracked-64' })
+		expect(restarted.getSnapshot().context.mutationNotice).toEqual({
+			kind: 'generic',
+			transactionId: 'tracked-64'
+		})
+	})
+
 	it('retries failed opening and reuses the resulting session', async () => {
 		const current = session()
 		const open = vi

@@ -11,6 +11,7 @@ import {
 	ledgerValues,
 	parseSaveRequest,
 	sameSaveScope,
+	transferEditRequiresUnlink,
 	type TransactionCheckpoint
 } from '#lib/transaction-save-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
@@ -42,6 +43,7 @@ type Context = {
 	facts: TransactionEntryObservation | undefined
 	check: Check | undefined
 	observed: OutputFrom<ReturnType<typeof makeReadLedger>> | undefined
+	transferChangeBlocked: boolean
 	result: Result | undefined
 }
 function required<T>(value: T | undefined): T {
@@ -212,7 +214,13 @@ export function createTransactionSaveMachine(
 		typeof actors,
 		{},
 		{ forward: undefined },
-		{ interrupted: undefined; closing: undefined; invalidated: undefined; cancelling: undefined },
+		{
+			interrupted: undefined
+			closing: undefined
+			invalidated: undefined
+			cancelling: undefined
+			transferChangeRequiresUnlink: undefined
+		},
 		never,
 		string,
 		Input,
@@ -232,7 +240,11 @@ export function createTransactionSaveMachine(
 			interrupted: stateIn({ running: { control: 'interrupted' } }),
 			closing: stateIn({ running: { control: { interrupted: 'closed' } } }),
 			invalidated: stateIn({ running: { control: { interrupted: 'scopeChanged' } } }),
-			cancelling: stateIn({ running: { control: { interrupted: 'cancelled' } } })
+			cancelling: stateIn({ running: { control: { interrupted: 'cancelled' } } }),
+			transferChangeRequiresUnlink: ({ context }) =>
+				context.facts !== undefined &&
+				context.values !== undefined &&
+				transferEditRequiresUnlink(context.facts.transaction, context.values)
 		}
 	})
 	const patch = (field: 'checkSettlement' | 'transactionSettlement', value: FormSettlement) =>
@@ -241,7 +253,14 @@ export function createTransactionSaveMachine(
 		})
 	const terminal = (
 		outcome:
-			'succeeded' | 'failed' | 'partial' | 'unresolved' | 'cancelled' | 'scopeChanged' | 'closed'
+			| 'succeeded'
+			| 'failed'
+			| 'partial'
+			| 'unresolved'
+			| 'cancelled'
+			| 'scopeChanged'
+			| 'closed'
+			| 'transferChangeRequiresUnlink'
 	) =>
 		model.createStateConfig({
 			type: 'final',
@@ -250,6 +269,13 @@ export function createTransactionSaveMachine(
 					const checkpoint = context.checkpoint
 					const recovery = checkpoint ? { checkpoint } : {}
 					const settlement = checkpoint?.transactionSettlement ?? 'notStarted'
+					if (outcome === 'transferChangeRequiresUnlink')
+						return {
+							outcome: 'unavailable',
+							reason: 'linkedTransferRequiresUnlink',
+							settlement: 'notStarted',
+							...recovery
+						}
 					if (outcome === 'succeeded')
 						return {
 							outcome,
@@ -295,6 +321,7 @@ export function createTransactionSaveMachine(
 			facts: undefined,
 			check: undefined,
 			observed: undefined,
+			transferChangeBlocked: false,
 			result: undefined
 		}),
 		output: ({ context }) => required(context.result),
@@ -388,6 +415,10 @@ export function createTransactionSaveMachine(
 										target: 'finishing'
 									},
 									{ guard: ({ context }) => !available(context), target: 'finishing' },
+									{
+										guard: 'transferChangeRequiresUnlink',
+										target: '#transaction-save.transferChangeRequiresUnlink'
+									},
 									{
 										guard: ({ context }) => context.checkpoint?.transactionSettlement === 'unknown',
 										target: 'reconcilingLedger'
@@ -616,9 +647,13 @@ export function createTransactionSaveMachine(
 							},
 							reassessing: {
 								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => !available(context), target: 'finishing' },
-									{ target: 'savingLedger' }
+								{ guard: 'interrupted', target: 'finishing' },
+								{ guard: ({ context }) => !available(context), target: 'finishing' },
+								{
+									guard: 'transferChangeRequiresUnlink',
+									target: '#transaction-save.transferChangeRequiresUnlink'
+								},
+								{ target: 'savingLedger' }
 								]
 							},
 							savingLedger: {
@@ -651,9 +686,12 @@ export function createTransactionSaveMachine(
 										target: 'finishing',
 										actions: assign({
 											checkpoint: ({ context, event }) => ({
-												...required(context.checkpoint),
-												transactionSettlement: event.output.settlement
-											})
+											...required(context.checkpoint),
+											transactionSettlement: event.output.settlement
+										}),
+											transferChangeBlocked: ({ event }) =>
+											event.output.outcome === 'failed' &&
+											event.output.reason === 'linkedTransferRequiresUnlink'
 										})
 									},
 									onError: 'finishing'
@@ -664,6 +702,10 @@ export function createTransactionSaveMachine(
 									{ guard: 'closing', target: '#transaction-save.closed' },
 									{ guard: 'invalidated', target: '#transaction-save.scopeChanged' },
 									{ guard: 'cancelling', target: '#transaction-save.cancelled' },
+									{
+										guard: ({ context }) => context.transferChangeBlocked,
+										target: '#transaction-save.transferChangeRequiresUnlink'
+									},
 									{
 										guard: ({ context }) =>
 											['locallyPersisted', 'confirmed'].includes(
@@ -693,6 +735,7 @@ export function createTransactionSaveMachine(
 			failed: terminal('failed'),
 			partial: terminal('partial'),
 			unresolved: terminal('unresolved'),
+			transferChangeRequiresUnlink: terminal('transferChangeRequiresUnlink'),
 			cancelled: terminal('cancelled'),
 			scopeChanged: terminal('scopeChanged'),
 			closed: terminal('closed')

@@ -32,6 +32,16 @@ export function creationDialog(page: Page, label: string) {
 	return page.getByRole('dialog', { name: label, exact: true })
 }
 
+export async function openAccountActions(page: Page, name: string) {
+	await page
+		.getByRole('main')
+		.getByRole('button', { name: `Manage ${name}`, exact: true })
+		.click()
+	const dialog = page.getByRole('dialog', { name, exact: true })
+	await expect(dialog).toBeVisible()
+	return dialog
+}
+
 export async function openCreationModal(page: Page, label: string) {
 	const dialog = creationDialog(page, label)
 	if (!(await dialog.isVisible())) {

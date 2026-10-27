@@ -34,7 +34,7 @@
 		{#snippet summary()}
 			<Icon navigation icon={SettingsIcon} />{m['navigation.settings']()}
 		{/snippet}
-		{#snippet content()}
+		{#snippet children()}
 			<div class="disclosure-content">
 				<AppDrawerContentSection>
 					<QueryContent

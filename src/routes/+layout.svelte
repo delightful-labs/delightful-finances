@@ -16,6 +16,7 @@
 	import JazzStartup from '#lib/components/JazzStartup.svelte'
 	import SessionStartup from '#lib/components/SessionStartup.svelte'
 	import WorkspaceBootstrap from '#lib/components/WorkspaceBootstrap.svelte'
+	import MutationRejectionNotice from '#lib/components/MutationRejectionNotice.svelte'
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { queryLinksKey, type QueryLinkContext } from '#lib/query-links.js'
@@ -89,6 +90,11 @@
 <DeveloperMenu appId={jazzConfig.appId} serverUrl={jazzConfig.serverUrl} />
 
 <DemoViewport enabled={PUBLIC_SIMPLEFIN_DEMO === 'true'} />
+
+<MutationRejectionNotice
+	notice={startupState.current.context.mutationNotice}
+	onDismiss={() => actor.send({ type: 'DISMISS_MUTATION_REJECTION' })}
+/>
 
 {#snippet startup()}
 	<SessionStartup />

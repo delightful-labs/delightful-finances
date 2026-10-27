@@ -23,6 +23,7 @@ const transaction = (values: {
 		paymentMethod: null,
 		checkDetailsId: null,
 		checkId: null,
+		internalTransferId: null,
 		externalId: null,
 		memo: null,
 		batchId: null

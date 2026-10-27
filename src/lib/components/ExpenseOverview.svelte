@@ -6,6 +6,7 @@
 	import CategoryLegend from './CategoryLegend.svelte'
 	import TransactionItems from './TransactionItems.svelte'
 	import type { TransactionRow } from '#lib/schema.js'
+	import type { InternalTransferResolution } from '#lib/domain/internal-transfer.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import { formatMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -14,12 +15,14 @@
 		transactions,
 		categoryNames,
 		tagNamesByTransaction,
+		internalTransferResolution,
 		filters = null,
 		onfilterschange = () => {}
 	}: {
 		transactions: readonly TransactionRow[]
 		categoryNames: ReadonlyMap<string, string>
 		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
+		internalTransferResolution: InternalTransferResolution
 		filters?: { start: string; end: string; categoryId: string | null; currency: string } | null
 		onfilterschange?: (filters: {
 			start: string
@@ -48,15 +51,22 @@
 		onfilterschange({ start, end, categoryId: selectedCategory, currency: selectedCurrency })
 	)
 	const validRange = $derived(Boolean(start && end && start <= end))
+	const unlinkedTransactions = $derived(
+		transactions.filter((row) => !internalTransferResolution.suppressedTransactionIds.has(row.id))
+	)
 	const period = $derived(
-		validRange ? transactions.filter((row) => row.bookedOn >= start && row.bookedOn <= end) : []
+		validRange
+			? unlinkedTransactions.filter((row) => row.bookedOn >= start && row.bookedOn <= end)
+			: []
 	)
 	const currencies = $derived([...new Set(period.map((row) => row.currency))].sort())
 	const currency = $derived(
 		currencies.includes(selectedCurrency) ? selectedCurrency : (currencies[0] ?? 'USD')
 	)
 	const expenses = $derived(period.filter((row) => row.currency === currency))
-	const categoryIds = $derived([...new Set(transactions.map((row) => row.categoryId))].sort())
+	const categoryIds = $derived(
+		[...new Set(unlinkedTransactions.map((row) => row.categoryId))].sort()
+	)
 	// A shared perceptual lightness/chroma keeps the categorical palette cohesive.
 	// Golden-angle hue spacing adds colors without cycling a fixed swatch list.
 	function categoryColor(categoryId: string) {

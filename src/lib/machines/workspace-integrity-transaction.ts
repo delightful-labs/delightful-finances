@@ -8,6 +8,7 @@ import {
 	type IntegrityPlan,
 	type IntegrityRecords
 } from './workspace-integrity-assessment.js'
+import { createJazzTransactionActors } from './jazz-transaction-actors.js'
 
 export type IntegrityEvent = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
 export type IntegrityResult =
@@ -27,7 +28,11 @@ function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error('Missing integrity transaction resource')
 	return value
 }
-const open = fromPromise(({ input }: { input: Db }) => Promise.resolve(input.beginTransaction()))
+const transactionActors = createJazzTransactionActors(
+	(db: Db) => db.beginTransaction(),
+	(write: ReturnType<Transaction['commit']>) => write.wait({ tier: 'local' })
+)
+const { open, commit, settle, rollback } = transactionActors
 const read = fromPromise(
 	async ({ input }: { input: { tx: Transaction; scope: Input } }): Promise<IntegrityRecords> => {
 		const { tx, scope } = input
@@ -50,11 +55,6 @@ const linkProfile = fromPromise(
 			profileId: input.link.profileId
 		})
 )
-const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
-const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
-	input.wait({ tier: 'local' })
-)
-const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
 type Context = Input & {
 	tx: Transaction | undefined
 	records: IntegrityRecords | undefined
@@ -69,13 +69,13 @@ export const workspaceIntegrityTransaction = setup<
 	Context,
 	IntegrityEvent,
 	{
-		open: typeof open
+		open: typeof transactionActors.open
 		read: typeof read
 		assess: typeof workspaceIntegrityAssessment
 		linkProfile: typeof linkProfile
-		commit: typeof commit
-		settle: typeof settle
-		rollback: typeof rollback
+		commit: typeof transactionActors.commit
+		settle: typeof transactionActors.settle
+		rollback: typeof transactionActors.rollback
 	},
 	{},
 	{},
