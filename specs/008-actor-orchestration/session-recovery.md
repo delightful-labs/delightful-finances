@@ -216,7 +216,17 @@ stale-origin checks and navigation-only retry remain unchanged. No actors or hel
 add hidden orchestration, and no new resource is acquired.
 
 - [x] Remove the old identity's workspace from the login destination.
-- [ ] User implementation review.
-- [ ] After approval, inspect application-readiness/workspace-navigation unit tests and
+- [x] User implementation review.
+- [x] After approval, inspect application-readiness/workspace-navigation unit tests and
       login recovery browser scenarios; verify old workspace → different restored
       workspace, multiple-workspace chooser, failed restore and navigation-only retry.
+
+### Workspace correction approved verification
+
+The session's implementation was approved for testing. All 52 focused browser checks
+pass, including restoration from a different identity's scoped login URL directly to
+`/?workspace=<restored-id>` before any manual navigation. Multiple workspaces open the
+unscoped chooser. Invalid phrases, startup/recovery failures, identity retention and
+navigation-only retry regressions pass. The 125 focused unit checks include application
+readiness and workspace navigation. No production fixes were needed; type/fixture,
+formatting and whitespace checks pass. Browser tests used disposable in-memory Jazz.

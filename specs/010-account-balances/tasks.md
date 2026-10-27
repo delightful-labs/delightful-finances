@@ -11,5 +11,5 @@
 ## Sidebar extension
 
 - [x] Reuse workspace-scoped balance aggregation and render per-account sidebar values.
-- [ ] Review sidebar implementation.
-- [ ] After approval, inspect/update relevant sidebar browser coverage and run focused checks.
+- [x] Review sidebar implementation.
+- [x] After approval, inspect/update relevant sidebar browser coverage and run focused checks.

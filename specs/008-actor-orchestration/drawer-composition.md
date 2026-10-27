@@ -23,8 +23,19 @@ styles move with their markup. No new visual design is introduced.
 ## Review and verification
 
 - [x] Implement the six-file presentation composition refactor.
-- [ ] User implementation review before adding or running tests.
-- [ ] After approval, inspect navigation, account-order, multiple-workspaces and PWA
+- [x] User implementation review before adding or running tests.
+- [x] After approval, inspect navigation, account-order, multiple-workspaces and PWA
       browser coverage; update fixtures if needed, then run relevant checks for
       desktop/mobile drawer behavior, filtering, balance display, order controls,
       workspace selection, account creation and sync/status rendering.
+
+## Approved verification
+
+Implementation approved for testing. All 52 session browser checks pass, including
+navigation at 390/768/769/1280px, mobile dismissal/focus/overflow, preserved disclosures,
+workspace-aware links, account ordering, account creation and shared modal behavior.
+Sidebar balance scenarios also verify workspace isolation and online/offline status
+rendering on mobile and desktop. The four strengthened category/sidebar cases pass
+on focused rerun. No production fixes were needed. PWA service-worker update behavior
+was not rerun: its integration is unchanged and is disabled in the development server.
+Type checks, fixture types, formatting and whitespace checks pass.

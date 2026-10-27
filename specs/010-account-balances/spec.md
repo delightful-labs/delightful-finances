@@ -52,7 +52,19 @@ Reuse the calculated-balance label as the value's title. No new workflow, promis
 write, or lifecycle policy is introduced; this is a pure projection of subscribed rows.
 
 - [x] Implement the subscription and sidebar presentation in three related files.
-- [ ] User review before test changes or execution.
-- [ ] After approval, inspect existing account balance unit coverage and sidebar/account
+- [x] User review before test changes or execution.
+- [x] After approval, inspect existing account balance unit coverage and sidebar/account
       browser coverage; verify signed/zero totals, filter independence, reactive saves,
       workspace isolation and loading/failure presentation.
+
+## Sidebar approved verification
+
+The user approved session-wide testing. All 52 focused browser checks pass. Sidebar
+coverage compares positive, negative, zero and EUR balances with the table, checks the
+12px balance text, filter independence, offline reactive updates and reloads on mobile
+and desktop. A focused rerun of four strengthened category/sidebar scenarios also
+passes, including workspace isolation and online/offline footer status. Existing
+account-order assertions now target labels so balances do not change their intent.
+All 125 focused unit tests pass, including balance aggregation and signed money
+formatting. No production fixes were needed. Type, fixture, formatting and whitespace
+checks pass. Tests used disposable in-memory Jazz on agent port 5182.

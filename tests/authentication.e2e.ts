@@ -16,7 +16,8 @@ async function createAccount(page: Page, name: string) {
 }
 
 async function restoreAccount(page: Page, phrase: string) {
-	await page.goto('/login')
+	const previousWorkspace = new URL(page.url()).searchParams.get('workspace')
+	await page.goto(previousWorkspace ? `/login?workspace=${previousWorkspace}` : '/login')
 	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	await expect(page).toHaveURL((url) => url.pathname === '/')
@@ -73,6 +74,10 @@ test('restores existing workspace data without duplicates or previous identity a
 		const otherPage = await otherContext.newPage()
 		await createAccount(otherPage, 'Previous identity checking')
 		await restoreAccount(otherPage, phrase)
+		await expect(otherPage).toHaveURL(`/?workspace=${workspaceId}`)
+		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
+			workspaceId
+		)
 		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
 		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
 			workspaceId
@@ -724,4 +729,51 @@ test('recovery navigation failure retries navigation without restoring the accou
 	await expect(
 		page.getByRole('cell', { name: 'Navigation retained checking', exact: true })
 	).toBeVisible()
+})
+
+test('sign-in with several workspaces clears the previous selection and opens the chooser', async ({
+	page
+}) => {
+	await createAccount(page, 'Original identity ledger')
+	await page.goto('/account')
+	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+	await page.getByRole('button', { name: 'Close', exact: true }).click()
+	const previousWorkspace = await page.evaluate(async () => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const snapshot = getCurrentJazzSession()?.getSnapshot()
+		if (!snapshot?.client || !snapshot.account) throw new Error('Missing session')
+		const db = snapshot.client.db
+		const workspace = await db
+			.insert(app.organizations, {
+				name: 'Additional workspace',
+				kind: 'business',
+				defaultCurrency: 'USD',
+				ownerId: snapshot.account.id
+			})
+			.wait({ tier: 'local' })
+		await db
+			.insert(app.organizationMembers, {
+				organizationId: workspace.id,
+				userId: snapshot.account.id,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			.wait({ tier: 'local' })
+		return workspace.id
+	})
+	await page.goto(`/login?workspace=${previousWorkspace}`)
+	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+	await page.getByRole('button', { name: 'Login', exact: true }).click()
+	await expect(page).toHaveURL('/settings/workspace')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Workspaces', exact: true })
+	).toBeVisible()
+	await prepareSidebar(page)
+	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue('')
 })

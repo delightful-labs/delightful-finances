@@ -28,9 +28,22 @@ input so existing draft comparison enables Save. All labels reuse shared message
 ## Review checklist
 
 - [x] Implement focused changes in four presentation/integration files.
-- [ ] User implementation review.
-- [ ] After approval, inspect and update management unit coverage and
+- [x] User implementation review.
+- [x] After approval, inspect and update management unit coverage and
       tests/form-presentation.e2e.ts / tests/transaction-edit.e2e.ts for income and
       expense kind binding, automatic selection, draft preservation, cancellation,
       duplicate handling, permissions, save/reload and repeated creation.
-- [ ] Run relevant approved tests with disposable agent storage.
+- [x] Run relevant approved tests with disposable agent storage.
+
+## Approved verification
+
+Implementation approved for testing. All 52 session browser checks pass; the four
+strengthened inline-category/sidebar scenarios also pass on a focused rerun. Income
+and expense coverage verifies hidden-kind tampering cannot override the observed
+transaction kind, repeated offline creation selects the new category, drafts survive,
+cancellation writes nothing, duplicate names preserve selection, viewer creation is
+disabled, category-only changes enable Save, and explicit saves survive reload.
+Existing shared form and transaction-edit regressions pass. The 125 focused unit
+checks include management duplicate/authorization policy and transaction entry.
+Type checks, test-fixture types, formatting and whitespace checks pass. No production
+fixes were needed. Browser storage was disposable in-memory Jazz on agent port 5182.
