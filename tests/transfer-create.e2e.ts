@@ -63,6 +63,7 @@ async function persistedTransfer(page: Page, accountId: string) {
 			),
 			links: links.map(
 				({
+					id,
 					organizationId,
 					expenseTransactionId,
 					incomeTransactionId,
@@ -71,6 +72,7 @@ async function persistedTransfer(page: Page, accountId: string) {
 					amountMinor,
 					currency
 				}) => ({
+					id,
 					organizationId,
 					expenseTransactionId,
 					incomeTransactionId,
@@ -87,14 +89,14 @@ async function persistedTransfer(page: Page, accountId: string) {
 test('creates both sides of a transfer together while offline', async ({ page, context }) => {
 	const accounts = await seedAccounts(page)
 	await page.goto('/transfers/new')
-	await expect(page.getByLabel('Source account', { exact: true })).toBeVisible()
-	await page.getByLabel('Source account', { exact: true }).selectOption(accounts.checkingId)
-	await page.getByLabel('Destination account', { exact: true }).selectOption(accounts.cardId)
+	await expect(page.getByLabel('Source Account', { exact: true })).toBeVisible()
+	await page.getByLabel('Source Account', { exact: true }).selectOption(accounts.checkingId)
+	await page.getByLabel('Destination Account', { exact: true }).selectOption(accounts.cardId)
 	await page.getByLabel('Amount', { exact: true }).fill('42.17')
 	await page.getByLabel('Date', { exact: true }).fill('2026-10-25')
 	await context.setOffline(true)
 	await page.getByRole('button', { name: 'Save Transfer', exact: true }).click()
-	await expect(page.getByRole('status')).toHaveText('Transfer created.')
+	await expect(page.locator('form').getByRole('status')).toHaveText('Transfer saved.')
 	await expect
 		.poll(() => persistedTransfer(page, accounts.checkingId))
 		.toMatchObject({
@@ -119,11 +121,7 @@ test('creates both sides of a transfer together while offline', async ({ page, c
 	const income = await persistedTransfer(page, accounts.cardId)
 	const transfer = expense.links[0]
 	if (!transfer) throw new Error('Missing paired transfer link')
-	expect(expense.rows[0]?.internalTransferId).toBe(
-		transfer.expenseTransactionId === expense.rows[0]?.id
-			? transfer.expenseTransactionId
-			: undefined
-	)
+	expect(expense.rows[0]?.internalTransferId).toBe(transfer.id)
 	expect(income.rows).toEqual([
 		expect.objectContaining({
 			id: transfer.incomeTransactionId,
@@ -131,10 +129,7 @@ test('creates both sides of a transfer together while offline', async ({ page, c
 			amountMinor: 4217,
 			currency: 'USD',
 			bookedOn: '2026-10-25',
-			internalTransferId:
-				transfer.expenseTransactionId === expense.rows[0]?.id
-					? expense.rows[0]?.internalTransferId
-					: undefined
+			internalTransferId: transfer.id
 		})
 	])
 	expect(transfer.expenseTransactionId).toBe(expense.rows[0]?.id)

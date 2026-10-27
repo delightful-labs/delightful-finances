@@ -3,6 +3,7 @@ import {
 	openSidebarSection,
 	navigateSidebar,
 	openCreationModal,
+	openAccountActions,
 	closeCreationModal,
 	creationDialog,
 	selectWorkspace
@@ -968,12 +969,11 @@ test('account archive works offline, retains history, and excludes new-entry opt
 	}, organizationId)
 	await navigateSidebar(page, 'Accounts')
 	const main = page.getByRole('main')
-	await expect(
-		main.getByRole('button', { name: 'Archive Archive checking', exact: true })
-	).toBeEnabled()
+	const accountActions = await openAccountActions(page, 'Archive checking')
+	await expect(accountActions.getByRole('button', { name: 'Archive', exact: true })).toBeEnabled()
 	await context.setOffline(true)
 	try {
-		await main.getByRole('button', { name: 'Archive Archive checking', exact: true }).click()
+		await accountActions.getByRole('button', { name: 'Archive', exact: true }).click()
 		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
 			'Account Archive checking archived.'
 		)
@@ -1089,7 +1089,8 @@ for (const scenario of archiveScenarios) {
 				.getByRole('row')
 				.filter({ has: subject.getByRole('cell', { name: 'Permission checking', exact: true }) })
 			await expect(row).toBeVisible()
-			const archive = row.getByRole('button', { name: 'Archive Permission checking', exact: true })
+			const accountActions = await openAccountActions(subject, 'Permission checking')
+			const archive = accountActions.getByRole('button', { name: 'Archive', exact: true })
 			if (scenario.write) {
 				await expect(archive).toBeEnabled()
 				await archive.click()

@@ -385,6 +385,7 @@
 				solid var(--dui-dialog-border-color, var(--dui-color-foreground, currentColor));
 			--dui-navigation-gap: 0;
 			--dui-details-border-width: 0px;
+			--dui-details-content-padding: 0;
 			--dui-details-summary-padding: 0.5rem 1rem;
 		}
 

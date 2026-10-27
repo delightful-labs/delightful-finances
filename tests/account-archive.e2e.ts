@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openCreationModal } from './helpers/ui.js'
+import { openAccountActions, openCreationModal } from './helpers/ui.js'
 
 test('archives the chosen account locally, preserves other accounts, and survives reload', async ({
 	page,
@@ -24,7 +24,8 @@ test('archives the chosen account locally, preserves other accounts, and survive
 		const row = accountsTable.getByRole('row').filter({ hasText: name })
 		await expect(row.getByRole('cell').nth(3)).toHaveText('$0.00')
 	}
-	const archive = main.getByRole('button', { name: 'Archive Archive checking', exact: true })
+	const actions = await openAccountActions(page, 'Archive checking')
+	const archive = actions.getByRole('button', { name: 'Archive', exact: true })
 	await expect(archive).toBeEnabled()
 	// Archiving is a local write and must remain useful offline.
 	await context.setOffline(true)
@@ -33,16 +34,12 @@ test('archives the chosen account locally, preserves other accounts, and survive
 		'Account Archive checking archived.'
 	)
 	await expect(archive).toHaveCount(0)
-	await expect(
-		main.getByRole('button', { name: 'Archive Keep savings', exact: true })
-	).toBeEnabled()
+	await expect(main.getByRole('button', { name: 'Manage Keep savings', exact: true })).toBeEnabled()
 	await context.setOffline(false)
 	await page.reload()
 	await expect(main.getByRole('table', { name: 'Accounts', exact: true })).toBeVisible()
 	await expect(
-		main.getByRole('button', { name: 'Archive Archive checking', exact: true })
+		main.getByRole('button', { name: 'Manage Archive checking', exact: true })
 	).toHaveCount(0)
-	await expect(
-		main.getByRole('button', { name: 'Archive Keep savings', exact: true })
-	).toBeEnabled()
+	await expect(main.getByRole('button', { name: 'Manage Keep savings', exact: true })).toBeEnabled()
 })
