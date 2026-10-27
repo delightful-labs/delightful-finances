@@ -116,6 +116,11 @@
 	const resetRevision = $derived(view.draftRevision)
 	let activeCheckFieldsKey = $state('')
 	let selectedAccountId = $state('')
+	const selectedAccountCurrency = $derived(
+		accounts.find((account) => account.id === selectedAccountId)?.currency ??
+			initialTransaction?.currency ??
+			'USD'
+	)
 	let appliedCategoryId = $state<string>()
 	let categorySelect: HTMLSelectElement | undefined = $state()
 	$effect(() => {
@@ -184,11 +189,11 @@
 							>{initialTransaction.accountName ??
 								m['status.unavailable_subject']({
 									subject: m['nouns.account']({ count: 1 })
-								})}</option
+								})} · {initialTransaction.currency}</option
 						>
 					{/if}
 					{#each accounts as account (account.id)}
-						<option value={account.id}>{account.name}</option>
+						<option value={account.id}>{account.name} · {account.currency}</option>
 					{/each}
 				</Select>
 				<FieldFeedback
@@ -244,7 +249,7 @@
 
 				<InputCurrency
 					label={m['labels.amount']()}
-					currencyLabel={initialTransaction?.currency ?? 'USD'}
+					currencyLabel={selectedAccountCurrency}
 					id="transaction-amount"
 					aria-describedby="transaction-amount-feedback"
 					aria-invalid={fieldInvalid(issues, 'amount') || undefined}

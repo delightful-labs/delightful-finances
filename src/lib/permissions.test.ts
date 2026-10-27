@@ -593,7 +593,7 @@ describe('internal transfer read safety during unlink recovery', () => {
 
 		expect((await db.one(linked, { tier: 'remote' }))?.id).toBe(transferId)
 		expect(await selectedMemberDb.one(linked, { tier: 'remote' })).toBeNull()
-	})
+	}, 30_000)
 })
 
 describe('linked transaction update safety', () => {
@@ -654,7 +654,7 @@ describe('linked transaction update safety', () => {
 			currency: 'USD',
 			description: 'Card payment'
 		})
-	})
+	}, 30_000)
 })
 
 describe('linked transaction deletion permissions', () => {

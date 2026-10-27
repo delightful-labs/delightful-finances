@@ -17,10 +17,11 @@ const bookedOnColumn = validatedTextColumn(dateOnlyText)
 const checkDateColumn = validatedTextColumn(dateOnlyText)
 const checkNumberColumn = validatedTextColumn(checkNumberText)
 const externalIdColumn = validatedTextColumn(externalIdText)
-const amountMinorColumn = () => s.bigint().transform<number>({
-	from: (value) => amountMinorValue.parse(Number(value)),
-	to: (value) => BigInt(amountMinorValue.parse(value))
-})
+const amountMinorColumn = () =>
+	s.bigint().transform<number>({
+		from: (value) => amountMinorValue.parse(Number(value)),
+		to: (value) => BigInt(amountMinorValue.parse(value))
+	})
 
 export const transactionsSchema = {
 	transactions: s.table(
@@ -98,6 +99,10 @@ export const transactionsSchema = {
 			incomeTransactionId: s.uuid(),
 			expenseAccountId: s.uuid().optional(),
 			incomeAccountId: s.uuid().optional(),
+			expenseAmountMinor: amountMinorColumn().optional(),
+			expenseCurrency: currencyColumn().optional(),
+			incomeAmountMinor: amountMinorColumn().optional(),
+			incomeCurrency: currencyColumn().optional(),
 			amountMinor: amountMinorColumn().optional(),
 			currency: currencyColumn().optional()
 		},

@@ -20,7 +20,9 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-function fixture() {
+function fixture(
+	options: { incomeCurrency?: string; expenseAmountMinor?: number; incomeAmountMinor?: number } = {}
+) {
 	const tx = new Transaction('mergeable', () => {
 		throw new Error('Fixture must not open a Jazz runtime')
 	})
@@ -37,7 +39,7 @@ function fixture() {
 		organizationId,
 		name: 'Card',
 		kind: 'card',
-		currency: 'USD',
+		currency: options.incomeCurrency ?? 'USD',
 		archivedAt: null
 	}
 	const membership = {
@@ -102,7 +104,8 @@ function fixture() {
 			organizationId,
 			expenseAccountId,
 			incomeAccountId,
-			amountMinor: 100,
+			expenseAmountMinor: options.expenseAmountMinor ?? 100,
+			incomeAmountMinor: options.incomeAmountMinor ?? 100,
 			bookedOn: '2026-10-25',
 			trackWrite
 		}
@@ -149,6 +152,7 @@ describe('internal transfer create machine', () => {
 				categoryId: '99999999-9999-4999-8999-999999999999',
 				kind: 'expense',
 				amountMinor: 100,
+				currency: 'USD',
 				bookedOn: '2026-10-25',
 				internalTransferId: transferId
 			}),
@@ -158,6 +162,7 @@ describe('internal transfer create machine', () => {
 				categoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 				kind: 'income',
 				amountMinor: 100,
+				currency: 'USD',
 				bookedOn: '2026-10-25',
 				internalTransferId: transferId
 			}),
@@ -167,8 +172,10 @@ describe('internal transfer create machine', () => {
 				incomeTransactionId,
 				expenseAccountId,
 				incomeAccountId,
-				amountMinor: 100,
-				currency: 'USD'
+				expenseAmountMinor: 100,
+				expenseCurrency: 'USD',
+				incomeAmountMinor: 100,
+				incomeCurrency: 'USD'
 			})
 		])
 		expect(f.commit).toHaveBeenCalledOnce()
@@ -179,5 +186,32 @@ describe('internal transfer create machine', () => {
 		})
 		expect(f.wait).toHaveBeenCalledOnce()
 		expect(f.rollback).not.toHaveBeenCalled()
+	})
+
+	it('records separately entered amounts and currencies for different-currency accounts', async () => {
+		const f = fixture({ incomeCurrency: 'TZS', expenseAmountMinor: 2500, incomeAmountMinor: 65000 })
+		const done = await waitFor(f.actor, (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toMatchObject({ outcome: 'succeeded' })
+		expect(f.inserted.map(({ row }) => row)).toEqual([
+			expect.objectContaining({ amountMinor: 2500, currency: 'USD' }),
+			expect.objectContaining({ amountMinor: 65000, currency: 'TZS' }),
+			expect.objectContaining({
+				expenseAmountMinor: 2500,
+				expenseCurrency: 'USD',
+				incomeAmountMinor: 65000,
+				incomeCurrency: 'TZS'
+			})
+		])
+	})
+
+	it('rejects inconsistent amounts when both selected accounts use one currency', async () => {
+		const f = fixture({ expenseAmountMinor: 100, incomeAmountMinor: 101 })
+		const done = await waitFor(f.actor, (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toMatchObject({ outcome: 'incompatible', settlement: 'notStarted' })
+		expect(f.inserted).toHaveLength(0)
+		expect(f.commit).not.toHaveBeenCalled()
+		expect(f.rollback).toHaveBeenCalledOnce()
 	})
 })

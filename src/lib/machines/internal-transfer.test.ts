@@ -88,6 +88,10 @@ function fixture(
 		incomeTransactionId: incomeId,
 		expenseAccountId,
 		incomeAccountId,
+		expenseAmountMinor: null,
+		expenseCurrency: null,
+		incomeAmountMinor: null,
+		incomeCurrency: null,
 		amountMinor: 4500,
 		currency: 'USD'
 	}
@@ -309,6 +313,10 @@ describe('internal transfer link machine', () => {
 				incomeTransactionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 				expenseAccountId,
 				incomeAccountId,
+				expenseAmountMinor: null,
+				expenseCurrency: null,
+				incomeAmountMinor: null,
+				incomeCurrency: null,
 				amountMinor: 4500,
 				currency: 'USD'
 			} satisfies InternalTransfer
@@ -391,6 +399,10 @@ describe('internal transfer unlink machine', () => {
 				incomeTransactionId: incomeId,
 				expenseAccountId,
 				incomeAccountId,
+				expenseAmountMinor: null,
+				expenseCurrency: null,
+				incomeAmountMinor: null,
+				incomeCurrency: null,
 				amountMinor: 4500,
 				currency: 'USD'
 			} satisfies InternalTransfer)
@@ -430,6 +442,47 @@ describe('internal transfer unlink machine', () => {
 		expect(f.writeOrder).toEqual(['tracked', 'local', 'tracked', 'local'])
 	})
 
+	it('unlinks cross-currency endpoint facts using each side amount and currency', async () => {
+		const f = linkedFixture()
+		f.unlinkOne
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: transferId,
+				organizationId,
+				expenseTransactionId: expenseId,
+				incomeTransactionId: incomeId,
+				expenseAccountId,
+				incomeAccountId,
+				expenseAmountMinor: 4217,
+				expenseCurrency: 'USD',
+				incomeAmountMinor: 6500000,
+				incomeCurrency: 'TZS',
+				amountMinor: null,
+				currency: null
+			} satisfies InternalTransfer)
+			.mockResolvedValueOnce({
+				...expense,
+				amountMinor: 4217,
+				currency: 'USD',
+				internalTransferId: transferId
+			})
+			.mockResolvedValueOnce({
+				...income,
+				amountMinor: 6500000,
+				currency: 'TZS',
+				internalTransferId: transferId
+			})
+			.mockResolvedValueOnce(membership)
+		f.unlinkAll.mockReset().mockResolvedValueOnce([])
+		const done = await waitFor(f.unlinkActor(), (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toEqual({
+			outcome: 'succeeded',
+			transferId,
+			settlement: 'locallyPersisted'
+		})
+	})
+
 	it('does not stage writes when the user cannot edit both accounts', async () => {
 		const f = linkedFixture()
 		f.unlinkOne.mockReset().mockResolvedValueOnce({
@@ -439,6 +492,10 @@ describe('internal transfer unlink machine', () => {
 			incomeTransactionId: incomeId,
 			expenseAccountId,
 			incomeAccountId,
+			expenseAmountMinor: null,
+			expenseCurrency: null,
+			incomeAmountMinor: null,
+			incomeCurrency: null,
 			amountMinor: 4500,
 			currency: 'USD'
 		} satisfies InternalTransfer)
@@ -464,6 +521,10 @@ describe('internal transfer unlink machine', () => {
 			incomeTransactionId: incomeId,
 			expenseAccountId,
 			incomeAccountId,
+			expenseAmountMinor: null,
+			expenseCurrency: null,
+			incomeAmountMinor: null,
+			incomeCurrency: null,
 			amountMinor: 4500,
 			currency: 'USD'
 		} satisfies InternalTransfer)
@@ -503,6 +564,10 @@ describe('internal transfer delete machine', () => {
 				incomeTransactionId: incomeId,
 				expenseAccountId,
 				incomeAccountId,
+				expenseAmountMinor: null,
+				expenseCurrency: null,
+				incomeAmountMinor: null,
+				incomeCurrency: null,
 				amountMinor: 4500,
 				currency: 'USD'
 			} satisfies InternalTransfer)
@@ -613,6 +678,52 @@ describe('internal transfer delete machine', () => {
 		expect(done.output).toMatchObject({
 			outcome: 'succeeded',
 			deletedTransactionIds: [expenseId]
+		})
+	})
+
+	it('deletes a cross-currency transfer after validating each endpoint independently', async () => {
+		const f = linkedFixture()
+		f.unlinkOne
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: transferId,
+				organizationId,
+				expenseTransactionId: expenseId,
+				incomeTransactionId: incomeId,
+				expenseAccountId,
+				incomeAccountId,
+				expenseAmountMinor: 4217,
+				expenseCurrency: 'USD',
+				incomeAmountMinor: 6500000,
+				incomeCurrency: 'TZS',
+				amountMinor: null,
+				currency: null
+			} satisfies InternalTransfer)
+			.mockResolvedValueOnce({
+				...expense,
+				amountMinor: 4217,
+				currency: 'USD',
+				internalTransferId: transferId
+			})
+			.mockResolvedValueOnce({
+				...income,
+				amountMinor: 6500000,
+				currency: 'TZS',
+				internalTransferId: transferId
+			})
+			.mockResolvedValueOnce(membership)
+		f.unlinkAll.mockReset().mockResolvedValueOnce([
+			{ accountId: expenseAccountId, access: 'write', canDelete: true },
+			{ accountId: incomeAccountId, access: 'write', canDelete: true }
+		])
+		const done = await waitFor(
+			f.deleteActor({ kind: 'both' }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toMatchObject({
+			outcome: 'succeeded',
+			deletedTransactionIds: [expenseId, incomeId]
 		})
 	})
 

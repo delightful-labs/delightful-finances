@@ -1,5 +1,6 @@
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization, type Tag } from './schema.js'
+import { ACCOUNT_CURRENCY, type AccountCurrency } from './domain/account-currency.js'
 import { appAccountSchema } from './validation/accounts.js'
 import { appCategorySchema } from './validation/categories.js'
 import { appTagSchema } from './validation/tags.js'
@@ -45,9 +46,10 @@ export function createAccount(
 	db: Pick<Db, 'insert'>,
 	organizationId: string,
 	name: string,
-	kind: Account['kind']
+	kind: Account['kind'],
+	currency: AccountCurrency = ACCOUNT_CURRENCY.USD
 ) {
-	const account = appAccountSchema.parse({ organizationId, name, kind })
+	const account = appAccountSchema.parse({ organizationId, name, kind, currency })
 	return db.insert(app.accounts, account).wait({ tier: 'local' })
 }
 

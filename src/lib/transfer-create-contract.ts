@@ -33,7 +33,8 @@ export type InternalTransferEntryReason =
 export type InternalTransferEntryValues = {
 	expenseAccountId: string
 	incomeAccountId: string
-	amountMinor: number
+	expenseAmountMinor: number
+	incomeAmountMinor: number
 	bookedOn: string
 }
 

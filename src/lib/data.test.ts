@@ -58,6 +58,19 @@ describe('createAccount', () => {
 		pending.resolve(account)
 		await expect(result).resolves.toEqual(account)
 	})
+	it('persists an explicitly selected Tanzanian shilling currency', async () => {
+		const wait = vi.fn().mockResolvedValue({ ...account, currency: 'TZS' })
+		const db = { insert: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'insert'>
+		await expect(
+			createAccount(db, organization.id, 'Wallet', 'cash', 'TZS')
+		).resolves.toMatchObject({
+			currency: 'TZS'
+		})
+		expect(db.insert).toHaveBeenCalledExactlyOnceWith(
+			app.accounts,
+			expect.objectContaining({ currency: 'TZS', name: 'Wallet' })
+		)
+	})
 	it('propagates local persistence failures', async () => {
 		const failure = new Error('Local write failed')
 		const wait = vi.fn().mockRejectedValue(failure)

@@ -1,4 +1,4 @@
-import type { AccountKind } from '#lib/domain/account-kind.js'
+import type { AccountFormValues } from '#lib/validation/accounts.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
@@ -266,7 +266,7 @@ export function selectAccountCreationAvailability(
 	return snapshot.context.capability
 }
 
-type Values = { name: string; kind: AccountKind }
+type Values = AccountFormValues
 export function createAccountCreationFormOptions(dependencies: {
 	binding: object
 	observe: () => AccountCreationObservation

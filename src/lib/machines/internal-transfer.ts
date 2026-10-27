@@ -319,10 +319,10 @@ function assessUnlink(records: UnlinkRecords, request: TransferEndpointRequest):
 		income.accountId !== transfer.incomeAccountId ||
 		expense.kind !== EXPENSE ||
 		income.kind !== INCOME ||
-		expense.amountMinor !== transfer.amountMinor ||
-		income.amountMinor !== transfer.amountMinor ||
-		expense.currency !== transfer.currency ||
-		income.currency !== transfer.currency ||
+		expense.amountMinor !== (transfer.expenseAmountMinor ?? transfer.amountMinor) ||
+		income.amountMinor !== (transfer.incomeAmountMinor ?? transfer.amountMinor) ||
+		expense.currency !== (transfer.expenseCurrency ?? transfer.currency) ||
+		income.currency !== (transfer.incomeCurrency ?? transfer.currency) ||
 		expense.accountId === income.accountId
 	)
 		return { outcome: 'incompatible' }
@@ -803,10 +803,10 @@ export const internalTransferDeleteMachine = setup<
 				income.accountId === transfer.incomeAccountId &&
 				expense.kind === EXPENSE &&
 				income.kind === INCOME &&
-				expense.amountMinor === transfer.amountMinor &&
-				income.amountMinor === transfer.amountMinor &&
-				expense.currency === transfer.currency &&
-				income.currency === transfer.currency &&
+				expense.amountMinor === (transfer.expenseAmountMinor ?? transfer.amountMinor) &&
+				income.amountMinor === (transfer.incomeAmountMinor ?? transfer.amountMinor) &&
+				expense.currency === (transfer.expenseCurrency ?? transfer.currency) &&
+				income.currency === (transfer.incomeCurrency ?? transfer.currency) &&
 				expense.accountId !== income.accountId
 			)
 		},

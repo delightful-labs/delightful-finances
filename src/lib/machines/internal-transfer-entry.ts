@@ -121,7 +121,8 @@ function createPersistence(dependencies: Dependencies) {
 								organizationId: required(scope.organizationId),
 								expenseAccountId: values.expenseAccountId,
 								incomeAccountId: values.incomeAccountId,
-								amountMinor: values.amountMinor,
+								expenseAmountMinor: values.expenseAmountMinor,
+								incomeAmountMinor: values.incomeAmountMinor,
 								bookedOn: values.bookedOn,
 								trackWrite: dependencies.trackWrite
 							}
@@ -352,14 +353,39 @@ const amountText = z.string().transform((value, context) => {
 	return z.NEVER
 })
 
+const transferEntryFields = {
+	expenseAccountId: z.uuid(),
+	incomeAccountId: z.uuid(),
+	bookedOn: dateOnlyText
+}
+
 export const internalTransferEntrySchema = z
-	.strictObject({
-		expenseAccountId: z.uuid(),
-		incomeAccountId: z.uuid(),
-		amount: amountText,
-		bookedOn: dateOnlyText
-	})
-	.transform(({ amount, ...values }) => ({ ...values, amountMinor: amount }))
+	.discriminatedUnion('amountMode', [
+		z.strictObject({ ...transferEntryFields, amountMode: z.literal('shared'), amount: amountText }),
+		z.strictObject({
+			...transferEntryFields,
+			amountMode: z.literal('separate'),
+			expenseAmount: amountText,
+			incomeAmount: amountText
+		})
+	])
+	.transform((values) =>
+		values.amountMode === 'shared'
+			? {
+					expenseAccountId: values.expenseAccountId,
+					incomeAccountId: values.incomeAccountId,
+					expenseAmountMinor: values.amount,
+					incomeAmountMinor: values.amount,
+					bookedOn: values.bookedOn
+				}
+			: {
+					expenseAccountId: values.expenseAccountId,
+					incomeAccountId: values.incomeAccountId,
+					expenseAmountMinor: values.expenseAmount,
+					incomeAmountMinor: values.incomeAmount,
+					bookedOn: values.bookedOn
+				}
+	)
 
 export function createInternalTransferEntryFormOptions(dependencies: Dependencies) {
 	const availability = createInternalTransferEntryAvailability(dependencies.db)
