@@ -24,7 +24,7 @@
 		onRetryReadiness: () => void
 	} = $props()
 	const explanations: Record<WorkspaceRenameReason, () => string> = {
-		sessionUnavailable: () => m['workspace.rename_session_unavailable'](),
+		sessionUnavailable: () => m['forms.session_unavailable'](),
 		selectWorkspace: () =>
 			m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
 		loadFailed: () =>
@@ -35,8 +35,9 @@
 			m['status.loading_subject']({
 				subject: m['labels.subject_settings']({ subject: m['nouns.workspace']({ count: 1 }) })
 			}),
-		workspaceUnavailable: () => m['workspace.rename_unavailable'](),
-		readOnly: () => m['workspace.rename_restricted']()
+		workspaceUnavailable: () =>
+			m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
+		readOnly: () => m['forms.read_only']()
 	}
 </script>
 
@@ -57,15 +58,6 @@
 			})}
 		{onRetryReadiness}
 		blockedRole={(reason) => (reason === 'loadFailed' ? 'alert' : 'status')}
-		messages={{
-			sessionUnavailable: explanations.sessionUnavailable(),
-			settling: m['workspace.rename_settling'](),
-			scopeChanged: m['workspace.rename_scope_changed'](),
-			cancelled: m['workspace.rename_cancelled'](),
-			closed: m['workspace.rename_closed'](),
-			interruptedSaved: m['workspace.rename_interrupted_saved'](),
-			unknown: m['workspace.rename_unknown']()
-		}}
 	/>
 {/snippet}
 {@render formFeedback('readiness')}

@@ -43,7 +43,14 @@
 	{view}
 	subject={m['nouns.account']({ count: 1 })}
 	reasonText={(reason) => explanations[reason]()}
-	invalidMessage={m['accounts.validation_error']()}
+	invalidMessages={[
+		m['forms.enter_subject']({
+			subject: m['labels.subject_name']({ subject: m['nouns.account']({ count: 1 }) })
+		}),
+		m['forms.select_subject']({
+			subject: m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })
+		})
+	]}
 	section="readiness"
 	{onRetryReadiness}
 />
@@ -88,7 +95,14 @@
 			{view}
 			subject={m['nouns.account']({ count: 1 })}
 			reasonText={(reason) => explanations[reason]()}
-			invalidMessage={m['accounts.validation_error']()}
+			invalidMessages={[
+				m['forms.enter_subject']({
+					subject: m['labels.subject_name']({ subject: m['nouns.account']({ count: 1 }) })
+				}),
+				m['forms.select_subject']({
+					subject: m['labels.subject_type']({ subject: m['nouns.account']({ count: 1 }) })
+				})
+			]}
 			successMessage={(value) =>
 				m['status.saved_subject_name']({
 					subject: m['nouns.account']({ count: 1 }),

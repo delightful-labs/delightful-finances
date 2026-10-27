@@ -7,6 +7,7 @@
 		subject,
 		reasonText,
 		invalidMessage,
+		invalidMessages,
 		successMessage,
 		section = 'all',
 		onRetryReadiness,
@@ -17,7 +18,8 @@
 		view: ScopedFormView<Result, Reason>
 		subject: string
 		reasonText: (reason: Reason) => string
-		invalidMessage: string
+		invalidMessage?: string
+		invalidMessages?: readonly string[]
 		successMessage?: (value: Result) => string
 		section?: 'all' | 'readiness' | 'result'
 		onRetryReadiness?: () => void
@@ -33,6 +35,9 @@
 		}
 		blockedRole?: (reason: Reason) => 'alert' | 'status'
 	} = $props()
+	const validationMessages = $derived(
+		invalidMessages ?? (invalidMessage === undefined ? [] : [invalidMessage])
+	)
 </script>
 
 {#if section !== 'result'}
@@ -66,7 +71,7 @@
 	{:else if result.outcome === 'invalid' || (result.outcome === 'failed' && result.code === 'validationFailed')}<p
 			role="alert"
 		>
-			{invalidMessage}
+			{#each validationMessages as message}<span>{message}</span>{/each}
 		</p>
 	{:else if result.outcome === 'denied' || result.outcome === 'unavailable'}<p role="alert">
 			{reasonText(result.reason)}

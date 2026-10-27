@@ -37,7 +37,18 @@
 	{view}
 	subject={m['nouns.category']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
-	invalidMessage={m['categories.validation_error']()}
+	invalidMessages={[
+		m['forms.enter_subject']({
+			subject: m['labels.subject_name']({ subject: m['nouns.category']({ count: 1 }) })
+		}),
+		...(fixedKind
+			? []
+			: [
+					m['forms.select_subject']({
+						subject: m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })
+					})
+				])
+	]}
 	section="readiness"
 	{onRetryReadiness}
 />
@@ -80,7 +91,18 @@
 			{view}
 			subject={m['nouns.category']({ count: 1 })}
 			reasonText={(reason) => formReasonText[reason]()}
-			invalidMessage={m['categories.validation_error']()}
+			invalidMessages={[
+				m['forms.enter_subject']({
+					subject: m['labels.subject_name']({ subject: m['nouns.category']({ count: 1 }) })
+				}),
+				...(fixedKind
+					? []
+					: [
+							m['forms.select_subject']({
+								subject: m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })
+							})
+						])
+			]}
 			successMessage={(value) =>
 				m['status.saved_subject_name']({
 					subject: m['nouns.category']({ count: 1 }),

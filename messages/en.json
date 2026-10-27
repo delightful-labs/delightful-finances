@@ -15,8 +15,7 @@
 		"type": {
 			"bank": "Bank",
 			"card": "Card"
-		},
-		"validation_error": "Enter an account name and select an account type."
+		}
 	},
 	"actions": {
 		"add_another_subject": "Add another {subject}",
@@ -122,13 +121,10 @@
 		"waiting": "Waiting for encrypted credentials to replicate, or reconnection is required.",
 		"working": "Waiting for passkey verification or completing your requested operation…"
 	},
-	"categories": {
-		"validation_error": "Enter a category name and select income or expense."
-	},
 	"database": {
 		"offline": "Offline",
 		"online": "Online",
-		"start_error": "Your finances could not be opened. Try again.",
+		"start_error": "Your finances could not be opened.",
 		"starting": "Loading your finances…"
 	},
 	"defaults": {
@@ -153,12 +149,12 @@
 	},
 	"errors": {
 		"already_selected_subject_name": "{subject} {name} is already selected.",
-		"archive_subject": "Could not archive {subject}. Please try again.",
+		"archive_subject": "Could not archive {subject}.",
 		"date_range_invalid": "Enter a start date and an end date on or after the start date.",
-		"load_subject": "Could not load {subject}. Please try again.",
+		"load_subject": "Could not load {subject}.",
 		"not_found_description": "The page you’re looking for could not be found.",
 		"not_found_title": "Page not found",
-		"save_subject": "Could not save {subject}. Please try again.",
+		"save_subject": "Could not save {subject}.",
 		"unexpected_description": "The page could not be loaded. Please try again.",
 		"unexpected_title": "Something went wrong"
 	},
@@ -543,15 +539,6 @@
 		"integrity_partial": "Some required workspace records need repair. An administrator may be needed to repair profile attribution.",
 		"integrity_working": "Checking required workspace records…",
 		"loading": "Getting your workspaces ready…",
-		"rename_cancelled": "Renaming was cancelled.",
-		"rename_closed": "Renaming ended when the page closed.",
-		"rename_interrupted_saved": "The name was saved before the operation ended.",
-		"rename_restricted": "Only workspace owners and admins can change the name.",
-		"rename_scope_changed": "The workspace or your access changed before renaming completed.",
-		"rename_session_unavailable": "Workspace editing is unavailable until your session is ready. If your session changed, reopen this page.",
-		"rename_settling": "Waiting for the issued rename to finish. Closing the page does not undo an issued change.",
-		"rename_unavailable": "This workspace is unavailable. Select an available workspace.",
-		"rename_unknown": "The final save result could not be confirmed. Check the workspace name before trying again.",
 		"setup_error": "Your workspaces could not be prepared.",
 		"unavailable": "This workspace or transaction is unavailable. Select a workspace you can access."
 	}
