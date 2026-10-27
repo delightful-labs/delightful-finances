@@ -443,6 +443,7 @@
 		"avatar_alt": "Your avatar",
 		"avatar_description": "PNG, JPEG, or WebP, up to 10 MB. Images are resized for your avatar.",
 		"avatar_invalid": "Choose a valid PNG, JPEG, or WebP image up to 10 MB.",
+		"crop_title": "Crop your avatar",
 		"name_description": "Leave the name blank to use your account ID.",
 		"name_invalid": "Enter a valid display name."
 	},

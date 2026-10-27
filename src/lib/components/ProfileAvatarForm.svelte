@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { Button, Text, InputAvatar } from 'delightful-ui'
+	import { Button, Dialog, Text, InputAvatar } from 'delightful-ui'
 	import { avatarMimeType } from '#lib/validation/identity.js'
 	import type { ProfileView } from '#lib/profile-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
+	import PhotoCropper from './photo-cropper/PhotoCropper.svelte'
 	let {
 		profileId,
 		avatarData,
@@ -31,6 +32,8 @@
 	} = $props()
 	let savedFile = $state<File | null>(null)
 	let selectedFile = $state<File | null>(null)
+	let pendingFile = $state<File | null>(null)
+	let cropOpen = $state(false)
 	const resetRevision = $derived(view.draftRevision)
 	const recordId = $derived(profileId)
 	$effect(() => {
@@ -42,6 +45,8 @@
 				: null
 		savedFile = file
 		selectedFile = file
+		pendingFile = null
+		cropOpen = false
 	})
 </script>
 
@@ -68,8 +73,13 @@
 							onRemove()
 							return
 						}
-						selectedFile = file ?? savedFile
-						onSelectionChange(file)
+						if (file) {
+							pendingFile = file
+							cropOpen = true
+							return
+						}
+						selectedFile = savedFile
+						onSelectionChange(savedFile)
 					}
 				}
 				removeLabel={selectedFile === savedFile
@@ -103,3 +113,26 @@
 		{/snippet}
 	</FormContent>
 {/key}
+{#if pendingFile}
+	<Dialog
+		heading={m['profile.crop_title']()}
+		bind:open={cropOpen}
+		closedby="any"
+		onclose={() => (pendingFile = null)}
+	>
+		<PhotoCropper
+			file={pendingFile}
+			mask="circle"
+			oncomplete={(file) => {
+				selectedFile = file
+				onSelectionChange(file)
+				pendingFile = null
+				cropOpen = false
+			}}
+			oncancel={() => {
+				pendingFile = null
+				cropOpen = false
+			}}
+		/>
+	</Dialog>
+{/if}
