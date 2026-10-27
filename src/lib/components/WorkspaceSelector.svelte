@@ -23,6 +23,7 @@
 <Select
 	{label}
 	value={selectedOrganizationId}
+	disabled={organizations.length < 2}
 	onchange={(event) => onchange(event.currentTarget.value)}
 >
 	<option value="" disabled
