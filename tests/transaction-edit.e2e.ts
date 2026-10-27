@@ -482,6 +482,10 @@ for (const scenario of ['viewer', 'archived'] satisfies ('viewer' | 'archived')[
 		await page.goto(`/expenses/${seed.id}`)
 		await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
 		await expect(page.getByLabel('Amount', { exact: true })).toBeDisabled()
+		if (scenario === 'viewer')
+			await expect(
+				page.getByRole('main').getByRole('button', { name: 'Add Category', exact: true })
+			).toBeDisabled()
 		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
 			'Original memo'
 		)
@@ -738,3 +742,123 @@ test('list and overview show archived tag names and react to renaming', async ({
 	await page.goto('/expenses')
 	await expect(row.locator('.classification')).toContainText('Renamed historical')
 })
+
+for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
+	test(`inline ${kind} category creation preserves drafts, binds kind and selects repeated additions offline`, async ({
+		page,
+		context
+	}) => {
+		const seed = await seedTransaction(page, kind === 'income' ? 'imported-income' : 'manual')
+		await page.goto(`/${kind === 'income' ? 'income' : 'expenses'}/${seed.id}`)
+		const main = page.getByRole('main')
+		const category = main.getByLabel('Category', { exact: true })
+		const memo = main.getByLabel('Memo (additional notes)', { exact: true })
+		const save = main.getByRole('button', { name: 'Save Transaction', exact: true })
+		await expect(category).toHaveValue(seed.categoryId)
+		await memo.fill('Unsaved category draft')
+		const add = main.getByRole('button', { name: 'Add Category', exact: true })
+		await expect(add).toBeEnabled()
+		await context.setOffline(true)
+		await add.click()
+		const dialog = page.getByRole('dialog', { name: 'Add Category', exact: true })
+		await expect(dialog).toBeVisible()
+		await expect(dialog.getByRole('combobox')).toHaveCount(0)
+		await dialog.getByLabel('Category name', { exact: true }).fill('Cancelled category')
+		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+		await expect(category).toHaveValue(seed.categoryId)
+		await expect(memo).toHaveValue('Unsaved category draft')
+		for (const name of ['First inline category', 'Second inline category']) {
+			await add.click()
+			await dialog.getByLabel('Category name', { exact: true }).fill(name)
+			// A forged hidden kind cannot override the transaction's observed kind.
+			await dialog.locator('input[name="kind"]').evaluate((input) => {
+				if (input instanceof HTMLInputElement)
+					input.value = input.value === 'income' ? 'expense' : 'income'
+			})
+			await dialog.getByRole('button', { name: 'Add Category', exact: true }).click()
+			await expect(dialog.getByRole('status')).toContainText(name)
+			await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+			await expect(category.locator('option:checked')).toHaveText(name)
+			await expect(memo).toHaveValue('Unsaved category draft')
+			await expect(save).toBeEnabled()
+			await expect
+				.poll(() => persisted(page, seed.id))
+				.toMatchObject({ categoryId: seed.categoryId, memo: 'Original memo' })
+		}
+		const selectedId = await category.inputValue()
+		await category.selectOption(seed.categoryId)
+		await memo.fill('Still my chosen category')
+		await expect(category).toHaveValue(seed.categoryId)
+		await category.selectOption(selectedId)
+		await save.click()
+		await expect(save).toBeDisabled()
+		await expect
+			.poll(() => persisted(page, seed.id))
+			.toMatchObject({ categoryId: selectedId, memo: 'Still my chosen category' })
+		await context.setOffline(false)
+		await page.reload()
+		await expect(category).toHaveValue(selectedId)
+		await expect(memo).toHaveValue('Still my chosen category')
+		await expect(save).toBeDisabled()
+		await add.click()
+		await dialog.getByLabel('Category name', { exact: true }).fill('Category only change')
+		await dialog.getByRole('button', { name: 'Add Category', exact: true }).click()
+		await expect(dialog.getByRole('status')).toContainText('Category only change')
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await expect(category.locator('option:checked')).toHaveText('Category only change')
+		await expect(save).toBeEnabled()
+		const categoryOnlyId = await category.inputValue()
+		const createdRows = await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+				sessionPath
+			)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			return (await db.all(app.categories))
+				.filter((row) =>
+					[
+						'First inline category',
+						'Second inline category',
+						'Category only change',
+						'Cancelled category'
+					].includes(row.name)
+				)
+				.map(({ id, name, kind }) => ({ id, name, kind }))
+		})
+		expect(createdRows).toHaveLength(3)
+		expect(createdRows.every((row) => row.kind === kind)).toBe(true)
+		await save.click()
+		await expect.poll(() => persisted(page, seed.id)).toMatchObject({ categoryId: categoryOnlyId })
+	})
+}
+
+test('inline category rejects duplicate names without changing the draft selection', async ({
+	page
+}) => {
+	const seed = await seedTransaction(page)
+	await page.goto(`/expenses/${seed.id}`)
+	await page.getByRole('main').getByRole('button', { name: 'Add Category', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: 'Add Category', exact: true })
+	await dialog.getByLabel('Category name', { exact: true }).fill('Editable category')
+	await dialog.getByRole('button', { name: 'Add Category', exact: true }).click()
+	await expect(
+		dialog.getByText('An active item with this name already exists. Choose another name.', {
+			exact: true
+		})
+	).toBeVisible()
+	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await expect(page.getByLabel('Category', { exact: true })).toHaveValue(seed.categoryId)
+	await expect(page.getByRole('button', { name: 'Save Transaction', exact: true })).toBeDisabled()
+})
+
+for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
+	test(`${kind} list abbreviates month names and preserves date semantics`, async ({ page }) => {
+		await seedTransaction(page, kind === 'income' ? 'imported-income' : 'manual')
+		await page.goto(kind === 'income' ? '/income' : '/expenses')
+		const date = page.getByRole('main').locator('time[datetime="2026-10-18"]')
+		await expect(date).toHaveText('Sun, Oct 18, 2026')
+	})
+}

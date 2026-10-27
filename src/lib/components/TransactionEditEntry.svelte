@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { EXPENSE, INCOME, transactionPages } from '#lib/domain/transaction-kind.js'
-	import {
-		resolveInternalTransferLinks
-	} from '#lib/domain/internal-transfer.js'
+	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
+	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { app, transactionDetailQuery } from '#lib/schema.js'
 	import {
 		applicableTransactionCategories,
@@ -32,6 +31,11 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormFeedback from './FormFeedback.svelte'
+	import CategoryForm from './CategoryForm.svelte'
+	import { createManagementFormOptions } from '#lib/machines/management.js'
+	import { categoryFormSchema } from '#lib/validation/categories.js'
+	import { createCategory } from '#lib/data.js'
+	import type { ManagementObservation } from '#lib/management-contract.js'
 	import PageHeader from './PageHeader.svelte'
 	import QueryContent from './QueryContent.svelte'
 	import TransactionDetails from './TransactionDetails.svelte'
@@ -432,6 +436,46 @@
 			tags: row.tags?.flatMap((link) => (link.tag?.name ? [link.tag.name] : [])) ?? []
 		}
 	})
+	let categoryModal: CategoryForm | undefined = $state()
+	const categoryScope = $derived({
+		identityId: session.current.account?.id ?? null,
+		organizationId: filters.activeOrganizationId,
+		binding: session.current.client?.db ?? null
+	})
+	function observeCategory(): ManagementObservation {
+		return {
+			...categoryScope,
+			sessionReady: session.current.status === 'ready',
+			membership: observeRow(membershipQuery.current),
+			categories: observeRows(categoryQuery.current),
+			tags: [],
+			loading: [membershipQuery, categoryQuery, transactionQuery].some((q) => q.isLoading),
+			failed: [membershipQuery, categoryQuery, transactionQuery].some((q) => q.error != null)
+		}
+	}
+	const categoryOptions = createManagementFormOptions({ binding: db, observe: observeCategory })({
+		schema: categoryFormSchema,
+		successContent: 'replace',
+		assessmentObservation: ({ request, observation }) => ({
+			...observation.facts,
+			intent: {
+				kind: 'createCategory',
+				name: request.values.name,
+				categoryKind: request.values.kind
+			}
+		}),
+		write: ({ request }) => {
+			const organizationId = request.scope.organizationId
+			if (!organizationId) throw new Error('Missing authorized workspace')
+			return createCategory(db, organizationId, request.values.name, request.values.kind)
+		}
+	})
+	const categoryController = createScopedFormController(categoryOptions)
+	const createdCategory = $derived(
+		categoryController.view.content.kind === 'success'
+			? categoryController.view.content.value
+			: undefined
+	)
 </script>
 
 <svelte:head
@@ -480,6 +524,9 @@
 				{#if initialTransaction && transaction}
 					<TransactionForm
 						mode="edit"
+						onaddcategory={() => categoryModal?.open()}
+						canAddCategory={categoryController.view.canOpen}
+						{createdCategory}
 						kind={transaction.kind}
 						paymentEntry={transactionPages[transaction.kind].paymentEntry}
 						{initialTransaction}
@@ -516,3 +563,25 @@
 		</TransactionDetails>
 	{/key}
 </QueryContent>
+
+{#if transaction}
+	<CategoryForm
+		bind:this={categoryModal}
+		scope={categoryScope}
+		fixedKind={transaction.kind}
+		view={categoryController.view}
+		onopen={categoryController.open}
+		onsubmit={(event) => {
+			event.preventDefault()
+			if (!(event.currentTarget instanceof HTMLFormElement) || !transaction) return
+			categoryController.submitValues({
+				name: new FormData(event.currentTarget).get('name'),
+				kind: transaction.kind
+			})
+		}}
+		onreset={categoryController.reset}
+		onRetryReadiness={categoryController.retryReadiness}
+	>
+		{#snippet trigger()}{/snippet}
+	</CategoryForm>
+{/if}

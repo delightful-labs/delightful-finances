@@ -7,3 +7,9 @@
 - [x] Generate a Jazz migration from deployed schema `2ef8450fd994` to current schema
       `3f5fa6550799`; the edge adds only `availableBalance` and `balanceDate`.
 - [x] Review implementation, update focused unit and Playwright coverage, and run relevant checks.
+
+## Sidebar extension
+
+- [x] Reuse workspace-scoped balance aggregation and render per-account sidebar values.
+- [x] Review sidebar implementation.
+- [x] After approval, inspect/update relevant sidebar browser coverage and run focused checks.

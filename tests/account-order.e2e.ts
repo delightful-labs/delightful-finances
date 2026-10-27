@@ -51,7 +51,7 @@ test('account order controls preserve selection and persisted order', async ({ p
 	).toBeDisabled()
 	await accounts.getByRole('button', { name: 'Move Charlie up', exact: true }).click()
 	await accounts.getByRole('button', { name: 'Move Charlie up', exact: true }).click()
-	await expect(accounts.locator('li.account-filter')).toHaveText([
+	await expect(accounts.locator('li.account-filter label')).toHaveText([
 		'All Accounts',
 		'Charlie',
 		'Alpha',
@@ -66,7 +66,7 @@ test('account order controls preserve selection and persisted order', async ({ p
 
 	await page.reload()
 	await openAccounts(page)
-	await expect(accounts.locator('li.account-filter')).toHaveText([
+	await expect(accounts.locator('li.account-filter label')).toHaveText([
 		'All Accounts',
 		'Charlie',
 		'Alpha',
@@ -75,7 +75,7 @@ test('account order controls preserve selection and persisted order', async ({ p
 	await expect(accounts.getByRole('button', { name: 'Edit Order', exact: true })).toBeVisible()
 	await addAccount(page, 'Aaron')
 	await openAccounts(page)
-	await expect(accounts.locator('li.account-filter')).toHaveText([
+	await expect(accounts.locator('li.account-filter label')).toHaveText([
 		'All Accounts',
 		'Charlie',
 		'Alpha',
@@ -178,14 +178,26 @@ test('workspace changes exit editing, isolate saved order and ignore archived ac
 	await expect(selector.locator(`option[value="${otherId}"]`)).toHaveCount(1)
 	await selector.selectOption(otherId)
 	await expect(accounts.getByRole('button', { name: 'Edit Order', exact: true })).toBeVisible()
-	await expect(accounts.locator('li.account-filter')).toHaveText(['All Accounts', 'Delta', 'Echo'])
+	await expect(accounts.locator('li.account-filter label')).toHaveText([
+		'All Accounts',
+		'Delta',
+		'Echo'
+	])
 	await accounts.getByRole('button', { name: 'Edit Order', exact: true }).click()
 	await accounts.getByRole('button', { name: 'Move Echo up', exact: true }).click()
 	await selector.selectOption(originalId)
 	await expect(accounts.getByRole('button', { name: 'Edit Order', exact: true })).toBeVisible()
-	await expect(accounts.locator('li.account-filter')).toHaveText(['All Accounts', 'Bravo', 'Alpha'])
+	await expect(accounts.locator('li.account-filter label')).toHaveText([
+		'All Accounts',
+		'Bravo',
+		'Alpha'
+	])
 	await selector.selectOption(otherId)
-	await expect(accounts.locator('li.account-filter')).toHaveText(['All Accounts', 'Echo', 'Delta'])
+	await expect(accounts.locator('li.account-filter label')).toHaveText([
+		'All Accounts',
+		'Echo',
+		'Delta'
+	])
 })
 
 for (const route of ['/expenses/new', '/income/new']) {
