@@ -194,7 +194,7 @@
 				<FieldFeedback
 					id="transaction-account-feedback"
 					errorMessage={fieldInvalid(issues, 'accountId')
-						? m['transactions.account_invalid']()
+						? m['forms.select_subject']({ subject: m['nouns.account']({ count: 1 }) })
 						: ''}
 				/>
 
@@ -238,7 +238,7 @@
 				<FieldFeedback
 					id="transaction-category-feedback"
 					errorMessage={fieldInvalid(issues, 'categoryId')
-						? m['transactions.category_invalid']()
+						? m['forms.select_subject']({ subject: m['nouns.category']({ count: 1 }) })
 						: ''}
 				/>
 
@@ -257,7 +257,9 @@
 				/>
 				<FieldFeedback
 					id="transaction-amount-feedback"
-					errorMessage={fieldInvalid(issues, 'amount') ? m['transactions.amount_invalid']() : ''}
+					errorMessage={fieldInvalid(issues, 'amount')
+						? m['forms.enter_subject']({ subject: m['labels.amount']() })
+						: ''}
 				/>
 
 				<InputDate
@@ -271,7 +273,9 @@
 				/>
 				<FieldFeedback
 					id="transaction-date-feedback"
-					errorMessage={fieldInvalid(issues, 'bookedOn') ? m['transactions.date_invalid']() : ''}
+					errorMessage={fieldInvalid(issues, 'bookedOn')
+						? m['forms.enter_subject']({ subject: m['nouns.date']({ count: 1 }) })
+						: ''}
 				/>
 
 				{#if paymentEntry === 'inline'}
@@ -287,7 +291,7 @@
 					>
 						<option value="">{m['labels.unspecified']()}</option>
 						<option value={PAYMENT_METHOD.CASH}>{m['labels.cash']()}</option>
-						<option value={PAYMENT_METHOD.CHECK}>{m['transactions.payment.check']()}</option>
+						<option value={PAYMENT_METHOD.CHECK}>{m['nouns.check']({ count: 1 })}</option>
 						<option value={PAYMENT_METHOD.TRANSFER}>{m['transactions.payment.transfer']()}</option>
 						<option value={PAYMENT_METHOD.ELECTRONIC}
 							>{m['transactions.payment.electronic']()}</option
@@ -296,7 +300,9 @@
 					<FieldFeedback
 						id="transaction-payment-method-feedback"
 						errorMessage={fieldInvalid(issues, 'paymentMethod')
-							? m['transactions.payment_invalid']()
+							? m['forms.enter_subject']({
+									subject: m['labels.subject_method']({ subject: m['nouns.payment']({ count: 1 }) })
+								})
 							: ''}
 					/>
 

@@ -35,7 +35,11 @@
 	/>
 	<FieldFeedback
 		id="check-number-feedback"
-		errorMessage={invalid('checkNumber') ? m['transactions.check_number_invalid']() : ''}
+		errorMessage={invalid('checkNumber')
+			? m['forms.enter_subject']({
+					subject: m['labels.subject_number']({ subject: m['nouns.check']({ count: 1 }) })
+				})
+			: ''}
 	/>
 	<InputDate
 		name="checkDate"
@@ -48,6 +52,10 @@
 	/>
 	<FieldFeedback
 		id="check-date-feedback"
-		errorMessage={invalid('checkDate') ? m['transactions.check_date_invalid']() : ''}
+		errorMessage={invalid('checkDate')
+			? m['forms.enter_subject']({
+					subject: m['labels.subject_date']({ subject: m['nouns.check']({ count: 1 }) })
+				})
+			: ''}
 	/>
 </fieldset>

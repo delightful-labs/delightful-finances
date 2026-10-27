@@ -39,7 +39,9 @@
 	{view}
 	subject={m['nouns.tag']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
-	invalidMessage={m['tags.validation_error']()}
+	invalidMessage={m['forms.enter_subject']({
+		subject: m['labels.subject_name']({ subject: m['nouns.tag']({ count: 1 }) })
+	})}
 	section="readiness"
 	{onRetryReadiness}
 />
@@ -74,6 +76,11 @@
 			<option value={EXPENSE}>{m['nouns.expense']({ count: 2 })}</option>
 			<option value={INCOME}>{m['nouns.income']({ count: 1 })}</option>
 		</Select>
+		<p>
+			{m['forms.select_subject']({
+				subject: m['labels.subject_type']({ subject: m['nouns.transaction']({ count: 1 }) })
+			})}
+		</p>
 		<Select
 			label={m['nouns.category']({ count: 1 })}
 			id="tag-category"
@@ -99,7 +106,9 @@
 			{view}
 			subject={m['nouns.tag']({ count: 1 })}
 			reasonText={(reason) => formReasonText[reason]()}
-			invalidMessage={m['tags.validation_error']()}
+			invalidMessage={m['forms.enter_subject']({
+				subject: m['labels.subject_name']({ subject: m['nouns.tag']({ count: 1 }) })
+			})}
 			successMessage={(value) =>
 				m['status.saved_subject_name']({ subject: m['nouns.tag']({ count: 1 }), name: value.name })}
 			section="all"

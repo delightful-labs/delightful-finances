@@ -72,13 +72,6 @@
 			{reasonText(result.reason)}
 		</p>
 	{:else if result.outcome === 'scopeChanged' || result.outcome === 'cancelled' || result.outcome === 'closed'}
-		<p role="status">
-			{result.outcome === 'scopeChanged'
-				? (messages.scopeChanged ?? m['forms.scope_changed']())
-				: result.outcome === 'cancelled'
-					? (messages.cancelled ?? m['forms.cancelled']())
-					: (messages.closed ?? m['forms.closed']())}
-		</p>
 		{#if result.settlement === 'locallyPersisted'}<p role="status">
 				{messages.interruptedSaved ?? m['forms.interrupted_saved']()}
 			</p>

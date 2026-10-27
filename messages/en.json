@@ -12,9 +12,10 @@
 		"archived": "Archived only",
 		"all": "All"
 	},
-	"tags.kind_unassigned": "Type unassigned; unavailable for new transactions until migration.",
-	"tags.ambiguous_name": "More than one active tag has this name for this transaction type. Resolve the duplicate tags before saving.",
-	"forms.duplicate_name": "An active item with this name already exists. Choose another name.",
+	"tags": {
+		"kind_unassigned": "Type unassigned; unavailable for new transactions until migration.",
+		"ambiguous_name": "More than one active tag has this name for this transaction type. Resolve the duplicate tags before saving."
+	},
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"developer": {
 		"browser_origin": "Browser origin",
@@ -32,7 +33,6 @@
 	"forms": {
 		"completion_failed": "Your changes were saved, but the next page could not open. Retry to open it without saving again.",
 		"session_unavailable": "Editing is unavailable until your session is ready. If your session changed, reopen this page.",
-		"loading": "Loading editing permissions and records…",
 		"load_failed": "Editing information could not be loaded.",
 		"read_only": "You do not have permission to make this change.",
 		"unavailable_reference": "A selected record is no longer available in this workspace. Select an available record and try again.",
@@ -42,15 +42,15 @@
 		"no_categories": "No applicable category is available for this transaction.",
 		"settling": "Finishing your change…",
 		"scope_changed": "The workspace, identity, record or your access changed before this request completed.",
-		"cancelled": "The request was cancelled.",
-		"closed": "The form was closed.",
 		"interrupted_saved": "The change was saved locally before the request ended. Check the original record before trying again.",
-		"unknown": "The save result is unknown. Check your records before trying again."
+		"unknown": "The save result is unknown. Check your records before trying again.",
+		"enter_subject": "Enter {subject}",
+		"select_subject": "Select an option for {subject}",
+		"duplicate_name": "An active item with this name already exists. Choose another name."
 	},
 	"workspace": {
 		"loading": "Getting your workspaces ready…",
 		"setup_error": "Your workspaces could not be prepared.",
-		"name_required": "Enter a workspace name.",
 		"rename_restricted": "Only workspace owners and admins can change the name.",
 		"rename_session_unavailable": "Workspace editing is unavailable until your session is ready. If your session changed, reopen this page.",
 		"rename_unavailable": "This workspace is unavailable. Select an available workspace.",
@@ -367,7 +367,6 @@
 		"add_sample_count_kind_subjects": "Add {count} sample {kind} {subjects}",
 		"remove_name": "Remove {name}",
 		"edit_subject": "Edit {subject}",
-		"done": "Done",
 		"back_to_subject": "Back to {subject}"
 	},
 	"permissions": {
@@ -407,7 +406,6 @@
 		},
 		"no_accounts_selected": "Turn on an account to see its transactions.",
 		"payment": {
-			"check": "Check",
 			"transfer": "Transfer",
 			"electronic": "Electronic"
 		},
@@ -419,13 +417,6 @@
 		"created_at": "Created at",
 		"updated_by": "Last edited by",
 		"updated_at": "Last edited at",
-		"account_invalid": "Select an available account.",
-		"category_invalid": "Select a category for this transaction type.",
-		"amount_invalid": "Enter a non-negative USD amount with up to two decimal places.",
-		"date_invalid": "Enter a valid transaction date.",
-		"payment_invalid": "Select a payment method.",
-		"check_number_invalid": "Enter the check number.",
-		"check_date_invalid": "Enter a valid check date.",
 		"daily_total_amount": "Daily total: {amount}",
 		"check_retained": "The Check was saved, but the transaction was not. Save again to reuse the same Check.",
 		"save_unresolved": "The save result is uncertain. Save again to verify the same records when connected before issuing another write. Keep this form open until the result is resolved."
@@ -476,6 +467,9 @@
 		"saved_subject": "{subject} saved.",
 		"saved_subject_name": "{subject} {name} saved.",
 		"archived_subject_name": "{subject} {name} archived.",
+		"cancelled": "The request was cancelled.",
+		"done": "Done",
+		"loading": "Loading…",
 		"loading_subject": "Loading {subject}…",
 		"archiving_subject": "Archiving {subject}…",
 		"unavailable_subject": "{subject} unavailable",
@@ -493,9 +487,6 @@
 		"archive_subject": "Could not archive {subject}. Please try again.",
 		"already_selected_subject_name": "{subject} {name} is already selected.",
 		"date_range_invalid": "Enter a start date and an end date on or after the start date."
-	},
-	"tags": {
-		"validation_error": "Enter a tag name and select an available category or no category."
 	},
 	"profile": {
 		"name_invalid": "Enter a valid display name.",

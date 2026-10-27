@@ -2,9 +2,7 @@
 	import { Button } from 'delightful-ui'
 	import AppLink from '#lib/components/AppLink.svelte'
 	import { formatMoney } from '#lib/domain/money.js'
-	import type {
-		InternalTransferCandidate
-	} from '#lib/domain/internal-transfer.js'
+	import type { InternalTransferCandidate } from '#lib/domain/internal-transfer.js'
 	import type { TransactionRow } from '#lib/schema.js'
 	import type {
 		InternalTransferLinkResult,
@@ -63,8 +61,8 @@
 		if (!result) return ''
 		if (result.outcome === 'succeeded')
 			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		if (result.outcome === 'cancelled') return m['forms.cancelled']()
-		if (result.outcome === 'closed') return m['forms.closed']()
+		if (result.outcome === 'cancelled' || result.outcome === 'closed')
+			return m['status.cancelled']()
 		return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 	})
 	const unlinkResultMessage = $derived.by(() => {
@@ -72,8 +70,8 @@
 		if (unlinkResult.outcome === 'succeeded')
 			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (unlinkResult.outcome === 'recoveryRequired') return m['transfers.recovery_required']()
-		if (unlinkResult.outcome === 'cancelled') return m['forms.cancelled']()
-		if (unlinkResult.outcome === 'closed') return m['forms.closed']()
+		if (unlinkResult.outcome === 'cancelled' || unlinkResult.outcome === 'closed')
+			return m['status.cancelled']()
 		return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 	})
 	const statusMessage = $derived.by(() => {
@@ -105,7 +103,9 @@
 		{#if unlinkAvailable && !unlinkWritable}<p>
 				{m['forms.read_only']()}
 			</p>{/if}
-		{#if !unlinkAvailable && !unlinkPending}<p>{m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}</p>{/if}
+		{#if !unlinkAvailable && !unlinkPending}<p>
+				{m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
+			</p>{/if}
 	{/if}
 	{#if editorState === 'conflicted'}
 		<p>{m['transfers.conflict_notice']()}</p>
@@ -115,7 +115,9 @@
 	{/if}
 	{#if editorState === 'matches'}
 		<fieldset>
-		<legend>{m['actions.select_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</legend>
+			<legend
+				>{m['actions.select_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</legend
+			>
 			{#each suggestions as suggestion (suggestion.id)}
 				<label>
 					<input

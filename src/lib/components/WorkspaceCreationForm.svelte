@@ -29,7 +29,10 @@
 		unavailable: () => m['workspace.create_unavailable'](),
 		working: () => m['workspace.create_working'](),
 		editing: () => '',
-		invalid: () => m['workspace.name_required'](),
+		invalid: () =>
+			m['forms.enter_subject']({
+				subject: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })
+			}),
 		recovered: () => m['workspace.create_recovered'](),
 		complete: () => m['status.saved_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
 		conflict: () => m['workspace.create_conflict'](),

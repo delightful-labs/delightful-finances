@@ -48,7 +48,9 @@
 			? m['labels.subject_settings']({ subject: m['nouns.workspace']({ count: 1 }) })
 			: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })}
 		reasonText={(reason) => explanations[reason]()}
-		invalidMessage={m['workspace.name_required']()}
+		invalidMessage={m['forms.enter_subject']({
+			subject: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })
+		})}
 		successMessage={() =>
 			m['status.saved_subject']({
 				subject: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })

@@ -13,3 +13,9 @@
 		<Button type="button" onclick={onDismiss}>{m['actions.dismiss']()}</Button>
 	{/if}
 </p>
+
+<style>
+	p {
+		margin: 0;
+	}
+</style>
