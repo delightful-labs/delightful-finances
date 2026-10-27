@@ -375,7 +375,7 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 		await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
 		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
 			file.name === 'broken.png'
-				? 'Could not save Profile. Please try again.'
+				? 'Could not save Profile.'
 				: 'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
 		)
 		expect(await avatarRecord(page)).toEqual(initial)
@@ -482,7 +482,7 @@ test('startup network failures can retry repeatedly without replacing the saved 
 	await page.reload()
 	const retry = page.getByRole('button', { name: 'Try again', exact: true })
 	await expect(retry).toBeVisible()
-	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened. Try again.')
+	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened.')
 	expect(blocked).toBeGreaterThan(0)
 	await retry.click()
 	await expect(retry).toBeVisible()
@@ -533,7 +533,7 @@ test('restore session failures retain identity and retry without exposing the re
 	await page.getByRole('button', { name: 'Login', exact: true }).click()
 	const retry = page.getByRole('button', { name: 'Try again', exact: true })
 	await expect(retry).toBeVisible()
-	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened. Try again.')
+	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened.')
 	expect(await currentIdentity(page)).toBe(identity)
 	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
 	await retry.click()

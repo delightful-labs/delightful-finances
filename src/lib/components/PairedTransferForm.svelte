@@ -37,20 +37,6 @@
 	const currency = $derived(
 		accounts.find((account) => account.id === expenseAccountId)?.currency ?? 'USD'
 	)
-	function statusText() {
-		if (view.activity.kind === 'settling') return m['forms.settling']()
-		if (view.readiness.kind === 'observing')
-			return m['status.loading_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		if (view.readiness.kind === 'blocked') return reasonText(view.readiness.reason)
-		if (view.feedback.kind !== 'result') return ''
-		const result = view.feedback.result
-		if (result.outcome === 'succeeded')
-			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		if (result.outcome === 'cancelled') return m['forms.cancelled']()
-		if (result.outcome === 'closed') return m['forms.closed']()
-		if (result.outcome === 'scopeChanged') return m['forms.scope_changed']()
-		return ''
-	}
 	function alertText() {
 		if (view.readiness.kind === 'failed')
 			return m['errors.load_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
@@ -115,7 +101,9 @@
 			/>
 			<FieldFeedback
 				id="transfer-amount-feedback"
-				errorMessage={fieldInvalid('amount') ? m['transactions.amount_invalid']() : ''}
+				errorMessage={fieldInvalid('amount')
+					? m['forms.enter_subject']({ subject: m['labels.amount']() })
+					: ''}
 			/>
 			<InputDate
 				label={m['nouns.date']({ count: 1 })}
@@ -138,8 +126,11 @@
 			</Button>
 		{/if}
 	{/snippet}
-	{#snippet feedback(form)}
-		<p role="status" aria-live="polite" aria-atomic="true">{statusText()}</p>
-		<p role="alert" aria-live="assertive" aria-atomic="true">{alertText()}</p>
+	{#snippet feedback()}
+		{#if view.feedback.kind === 'result' && view.feedback.result.outcome === 'succeeded'}
+			<p role="status">
+				{m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
+			</p>
+		{:else}<p role="alert" aria-live="assertive" aria-atomic="true">{alertText()}</p>{/if}
 	{/snippet}
 </FormContent>

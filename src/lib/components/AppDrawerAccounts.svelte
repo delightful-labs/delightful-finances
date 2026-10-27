@@ -150,7 +150,7 @@
 									aria-pressed={editingAccountOrder}
 									onclick={editingAccountOrder ? onDoneAccountOrder : onEditAccountOrder}
 									>{editingAccountOrder
-										? m['actions.done']()
+										? m['status.done']()
 										: m['actions.edit_subject']({
 												subject: m['nouns.order']({ count: 1 })
 											})}</Button

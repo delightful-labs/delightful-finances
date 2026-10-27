@@ -35,7 +35,9 @@
 	view={archiveView}
 	subject={m['nouns.tag']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
-	invalidMessage={m['tags.validation_error']()}
+	invalidMessage={m['forms.enter_subject']({
+		subject: m['labels.subject_name']({ subject: m['nouns.tag']({ count: 1 }) })
+	})}
 	successMessage={(name) =>
 		m['status.archived_subject_name']({ subject: m['nouns.tag']({ count: 1 }), name })}
 	action="archive"

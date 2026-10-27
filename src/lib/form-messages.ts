@@ -7,7 +7,7 @@ export const formReasonText = {
 	sessionUnavailable: () => m['forms.session_unavailable'](),
 	selectWorkspace: () =>
 		m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
-	loading: () => m['forms.loading'](),
+	loading: () => m['status.loading'](),
 	loadFailed: () => m['forms.load_failed'](),
 	readOnly: () => m['forms.read_only'](),
 	unavailableReference: () => m['forms.unavailable_reference'](),
