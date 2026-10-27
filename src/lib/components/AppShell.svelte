@@ -1,6 +1,10 @@
 <script lang="ts">
 	import AppTopMenu from './AppTopMenu.svelte'
 	import AppDrawer from './AppDrawer.svelte'
+	import AppDrawerNavigation from './AppDrawerNavigation.svelte'
+	import AppDrawerAccounts from './AppDrawerAccounts.svelte'
+	import AppDrawerSettings from './AppDrawerSettings.svelte'
+	import AppDrawerStatus from './AppDrawerStatus.svelte'
 	import type QueryContent from './QueryContent.svelte'
 	import { onMount, type ComponentProps, type Snippet } from 'svelte'
 	import { page } from '$app/state'
@@ -76,32 +80,43 @@
 <div class="app-shell">
 	<AppTopMenu {drawerId} {toggleId} {drawerOpen} onToggle={() => (drawerOpen = !drawerOpen)} />
 	<div class="workspace" data-drawer-open={drawerOpen}>
-		<AppDrawer
-			{drawerId}
-			bind:drawerOpen
-			pathname={page.url.pathname}
-			onNavigate={dismissMobileDrawer}
-			{accountCreation}
-			{bankSync}
-			{syncConfigured}
-			{browserOffline}
-			{organizations}
-			{accounts}
-			{accountBalances}
-			{organizationId}
-			{selectedAccountIds}
-			{organizationQueries}
-			{accountQueries}
-			{onOrganizationChange}
-			{onAccountChange}
-			{onAllAccountsChange}
-			{editingAccountOrder}
-			{canToggleAccountOrder}
-			{canMoveAccount}
-			{onEditAccountOrder}
-			{onDoneAccountOrder}
-			{onMoveAccount}
-		/>
+		<AppDrawer {drawerId} bind:drawerOpen>
+			<AppDrawerNavigation pathname={page.url.pathname} onNavigate={dismissMobileDrawer}>
+				<AppDrawerAccounts
+					pathname={page.url.pathname}
+					onNavigate={dismissMobileDrawer}
+					{accountCreation}
+					{accounts}
+					{accountBalances}
+					{selectedAccountIds}
+					{accountQueries}
+					{onAccountChange}
+					{onAllAccountsChange}
+					{editingAccountOrder}
+					{canToggleAccountOrder}
+					{canMoveAccount}
+					{onEditAccountOrder}
+					{onDoneAccountOrder}
+					{onMoveAccount}
+				/>
+				<AppDrawerSettings
+					pathname={page.url.pathname}
+					onNavigate={dismissMobileDrawer}
+					{organizations}
+					{organizationId}
+					{organizationQueries}
+					{onOrganizationChange}
+				/>
+			</AppDrawerNavigation>
+			{#snippet footer()}
+				<AppDrawerStatus
+					{bankSync}
+					{browserOffline}
+					{syncConfigured}
+					onNavigate={dismissMobileDrawer}
+				/>
+			{/snippet}
+		</AppDrawer>
 		<main inert={mainInert}>
 			{@render children()}
 		</main>
