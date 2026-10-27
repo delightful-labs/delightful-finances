@@ -48,11 +48,11 @@ This is an evidence-based inventory reviewed on 2026-10-25 using recorded verifi
 
 ## Deferred features and their release gates
 
-These are not unfinished MVP implementations. USD-only handling is already supported by the inspected parser/import guards; maintain that boundary (FR-057). Currency-aware entry/import/editing/formatting/totals must be reviewed before enabling additional currencies.
+These are not unfinished MVP implementations. USD-only handling is already supported by the inspected parser/import guards; retain that current behavior until [feature 011](../011-multiple-currency/spec.md) is implemented. Feature 011 expands manual entry to USD and TZS while SimpleFIN imports remain USD-only. Currency-aware entry, editing, formatting, and totals must be reviewed together before release.
 
 Sharing requires the FR-058 policy/schema migration and direct-query authorization verification before release, including multiple accepted owners, scoped capabilities and selected-account privacy. It does not block an owned-workspace MVP merely because future sharing remains unimplemented.
 
-Splits, linked transfers, attachments, multi-currency entry/conversion, transaction version history/restoration, workspace archive/restore, account merging, and batches/templates/recurrence remain deferred under their approved compatibility requirements or unresolved designs. Archive enforcement and offline/pending-write behavior remain undecided, not approved as online-only. Broader responsive/keyboard audit remains deliberately deferred until after the design revision. Whole-device sync-completion observability, extra credential recovery/sharing, native wrappers, written-check controls and exclusive Check assignment are also deferred.
+Splits, linked transfers, attachments, the implementation of multi-currency entry, conversion, transaction version history/restoration, workspace archive/restore, account merging, and batches/templates/recurrence remain deferred under their approved compatibility requirements or unresolved designs. Archive enforcement and offline/pending-write behavior remain undecided, not approved as online-only. Broader responsive/keyboard audit remains deliberately deferred until after the design revision. Whole-device sync-completion observability, extra credential recovery/sharing, native wrappers, written-check controls and exclusive Check assignment are also deferred.
 
 ## Resolved: First verification finding: schema transition coverage
 
