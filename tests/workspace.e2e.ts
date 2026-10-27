@@ -109,8 +109,8 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await name.fill('  Household  ')
 	await save.click()
 	await expect(
-		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace name saved.' })
-	).toHaveText('Workspace name saved.')
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace settings saved.' })
+	).toHaveText('Workspace settings saved.')
 	await expect(
 		page.getByLabel('Current Workspace', { exact: true }).locator('option:checked')
 	).toHaveText('Household')
@@ -119,6 +119,29 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 	await expect(save).toBeDisabled()
 	expect(await page.evaluate(() => sessionStorage.getItem('workspace-action-warning'))).toBeNull()
+
+	const currency = page.getByRole('main').getByLabel('Currency', { exact: true })
+	await expect(currency).toHaveValue('USD')
+	await currency.selectOption('TZS')
+	await save.click()
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace settings saved.' })
+	).toHaveText('Workspace settings saved.')
+	await expect(currency).toHaveValue('TZS')
+	await page.reload()
+	await expect(currency).toHaveValue('TZS')
+
+	await page.goto(`/accounts?workspace=${workspaceId}`)
+	const accountDialog = await openCreationModal(page, 'Add Account')
+	await expect(accountDialog.getByLabel('Currency', { exact: true })).toHaveValue('TZS')
+	await accountDialog.getByLabel('Account name').fill('Default currency wallet')
+	await accountDialog.getByLabel('Account type').selectOption('cash')
+	await accountDialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+	await expect(accountDialog.getByRole('status')).toHaveText(
+		'Account Default currency wallet saved.'
+	)
+	await accountDialog.getByRole('button', { name: 'Close', exact: true }).click()
+	await expect(page.getByRole('main').getByRole('cell', { name: 'TZS', exact: true })).toBeVisible()
 })
 
 test('sidebar navigation preserves the selected workspace and database session', async ({
@@ -1174,20 +1197,25 @@ for (const role of ['admin', 'member', 'viewer']) {
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
 			const name = subject.getByRole('textbox', { name: 'Workspace name', exact: true })
+			const currency = subject.getByRole('main').getByLabel('Currency', { exact: true })
 			const save = subject.getByRole('button', { name: 'Save', exact: true })
 			await expect(name).toHaveValue('Shared workspace')
+			await expect(currency).toHaveValue('USD')
 			if (role === 'admin') {
 				await expect(name).toBeEditable()
+				await expect(currency).toBeEnabled()
+				await currency.selectOption('TZS')
 				await name.fill('Admin renamed workspace')
 				await save.click()
 				await expect(
 					subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
-				).toHaveText('Workspace name saved.')
+				).toHaveText('Workspace settings saved.')
 				await expect(
 					page.getByRole('textbox', { name: 'Workspace name', exact: true })
 				).toHaveValue('Admin renamed workspace')
 			} else {
 				await expect(name).not.toBeEditable()
+				await expect(currency).toBeDisabled()
 				await expect(save).toBeDisabled()
 				await expect(
 					subject.getByText('You do not have permission to make this change.')

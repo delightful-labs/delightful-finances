@@ -5,7 +5,11 @@ import { appAccountSchema } from './validation/accounts.js'
 import { appCategorySchema } from './validation/categories.js'
 import { appTagSchema } from './validation/tags.js'
 import type { z } from 'zod'
-import { appProfileSchema, profileAvatarValuesSchema } from './validation/identity.js'
+import {
+	appProfileSchema,
+	profileAvatarValuesSchema,
+	workspaceSettingsFormSchema
+} from './validation/identity.js'
 
 export { stableUuid } from './domain/stable-uuid.js'
 
@@ -37,9 +41,10 @@ export function saveProfileAvatar(
 export function renameWorkspace(
 	db: Pick<Db, 'update'>,
 	workspaceId: Organization['id'],
-	name: Organization['name']
+	values: { name: Organization['name']; defaultCurrency: AccountCurrency }
 ) {
-	return db.update(app.organizations, workspaceId, { name }).wait({ tier: 'local' })
+	const settings = workspaceSettingsFormSchema.parse(values)
+	return db.update(app.organizations, workspaceId, settings).wait({ tier: 'local' })
 }
 
 export function createAccount(

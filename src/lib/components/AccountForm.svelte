@@ -95,18 +95,20 @@
 			<option value={ACCOUNT_KIND.BANK}>{m['accounts.type.bank']()}</option>
 			<option value={ACCOUNT_KIND.CARD}>{m['accounts.type.card']()}</option>
 		</Select>
-		<Select
-			label={m['labels.currency']()}
-			id={`${formId}-currency`}
-			name="currency"
-			required
-			disabled={!form.fieldsEditable}
-			defaultValue={defaultCurrency}
-		>
-			{#each currencyOptions as currency (currency.code)}
-				<option value={currency.code}>{currency.label()} ({currency.code})</option>
-			{/each}
-		</Select>
+		{#key defaultCurrency}
+			<Select
+				label={m['labels.currency']()}
+				id={`${formId}-currency`}
+				name="currency"
+				required
+				disabled={!form.fieldsEditable}
+				defaultValue={defaultCurrency}
+			>
+				{#each currencyOptions as currency (currency.code)}
+					<option value={currency.code}>{currency.label()} ({currency.code})</option>
+				{/each}
+			</Select>
+		{/key}
 	{/snippet}
 	{#snippet feedback(view)}
 		<FormFeedback

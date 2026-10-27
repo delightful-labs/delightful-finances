@@ -7,6 +7,7 @@ import {
 	createTag,
 	createCategory,
 	createAccount,
+	renameWorkspace,
 	saveProfileName,
 	saveProfileAvatar
 } from './data.js'
@@ -81,6 +82,19 @@ describe('createAccount', () => {
 		const db = { insert: vi.fn() } satisfies Pick<Db, 'insert'>
 		expect(() => createAccount(db, organization.id, ' ', 'cash')).toThrow()
 		expect(db.insert).not.toHaveBeenCalled()
+	})
+})
+
+describe('renameWorkspace', () => {
+	it('updates the workspace name and default currency together at local durability', async () => {
+		const wait = vi.fn().mockResolvedValue(organization)
+		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
+		await renameWorkspace(db, organization.id, { name: 'Home', defaultCurrency: 'TZS' })
+		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.organizations, organization.id, {
+			name: 'Home',
+			defaultCurrency: 'TZS'
+		})
+		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
 	})
 })
 

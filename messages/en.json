@@ -543,6 +543,7 @@
 		"integrity_partial": "Some required workspace records need repair. An administrator may be needed to repair profile attribution.",
 		"integrity_working": "Checking required workspace records…",
 		"loading": "Getting your workspaces ready…",
+		"settings_saved": "Workspace settings saved.",
 		"setup_error": "Your workspaces could not be prepared.",
 		"unavailable": "This workspace or transaction is unavailable. Select a workspace you can access."
 	}

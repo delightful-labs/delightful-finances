@@ -9,6 +9,10 @@ import { createWorkspaceRenameFormOptions, workspaceRenameScope } from './worksp
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
 
 const cleanups: (() => void)[] = []
+function settings(name: string): { name: string; defaultCurrency: 'USD' | 'TZS' } {
+	return { name, defaultCurrency: 'USD' }
+}
+
 afterEach(() => {
 	cleanups.splice(0).forEach((cleanup) => cleanup())
 })
@@ -24,19 +28,21 @@ export function renameFixture() {
 		membershipLoading: false,
 		workspaceError: false,
 		membershipError: false,
-		workspace: { id: 'workspace', name: 'Home' },
+		workspace: { id: 'workspace', name: 'Home', defaultCurrency: 'USD' },
 		membership: { userId: 'user', organizationId: 'workspace', role: 'owner' }
 	}
 	const saved = Promise.withResolvers<unknown>()
 	const observe = vi.fn(() => facts)
-	const rename = vi.fn<(id: string, name: string) => Promise<unknown>>(() => saved.promise)
+	const rename = vi.fn<
+		(id: string, values: { name: string; defaultCurrency: 'USD' | 'TZS' }) => Promise<unknown>
+	>(() => saved.promise)
 	const options = createWorkspaceRenameFormOptions({ binding, observe, rename })
 	function owner(mode: 'create' | 'edit' = 'edit') {
 		const createMode: { mode: 'create' } = { mode: 'create' }
 		const config = mode === 'edit' ? options : { ...options, ...createMode }
 		const actor = createActor(
 			createScopedFormMachine<
-				{ name: string },
+				{ name: string; defaultCurrency: 'USD' | 'TZS' },
 				void,
 				WorkspaceRenameReason,
 				WorkspaceRenameScope,
@@ -49,7 +55,7 @@ export function renameFixture() {
 		cleanups.push(() => actor.stop())
 		const view = () =>
 			selectScopedFormView<
-				{ name: string },
+				{ name: string; defaultCurrency: 'USD' | 'TZS' },
 				void,
 				WorkspaceRenameReason,
 				WorkspaceRenameScope,
@@ -70,7 +76,7 @@ export function renameFixture() {
 				id: 1,
 				scope: workspaceRenameScope(facts),
 				scopeRevision: 0,
-				values: { name: 'Office' }
+				values: settings('Office')
 			},
 			observation: { revision: 0, facts }
 		}

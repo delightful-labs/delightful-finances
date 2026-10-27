@@ -18,6 +18,7 @@
 	import WorkspaceCreation from '#lib/components/WorkspaceCreation.svelte'
 	import WorkspaceNameForm from '#lib/components/WorkspaceNameForm.svelte'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
+	import { ACCOUNT_CURRENCY } from '#lib/domain/account-currency.js'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const coordinator = getWorkspace()
@@ -53,7 +54,7 @@
 	const options = createWorkspaceRenameFormOptions({
 		binding: db,
 		observe,
-		rename: (id, name) => renameWorkspace(db, id, name)
+		rename: (id, values) => renameWorkspace(db, id, values)
 	})
 	const form = createScopedFormController(options)
 </script>
@@ -78,6 +79,9 @@
 	>
 	<WorkspaceNameForm
 		name={workspace?.name ?? ''}
+		defaultCurrency={workspace?.defaultCurrency === ACCOUNT_CURRENCY.TZS
+			? ACCOUNT_CURRENCY.TZS
+			: ACCOUNT_CURRENCY.USD}
 		view={form.view}
 		onsubmit={form.submit}
 		onreset={form.reset}

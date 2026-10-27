@@ -1,4 +1,5 @@
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
+import type { AccountCurrency } from '#lib/domain/account-currency.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
 import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
 import type {
@@ -6,10 +7,10 @@ import type {
 	WorkspaceRenameReason,
 	WorkspaceRenameScope
 } from '#lib/workspace-rename-contract.js'
-import { workspaceNameFormSchema } from '#lib/validation/identity.js'
+import { workspaceSettingsFormSchema } from '#lib/validation/identity.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 
-type Values = { name: string }
+type Values = { name: string; defaultCurrency: AccountCurrency }
 
 export function workspaceRenameScope(facts: WorkspaceRenameObservation): WorkspaceRenameScope {
 	return {
@@ -135,7 +136,7 @@ export function selectWorkspaceRenameAvailability(
 export function createWorkspaceRenameFormOptions(dependencies: {
 	binding: object
 	observe: () => WorkspaceRenameObservation
-	rename: (organizationId: string, name: string) => Promise<unknown>
+	rename: (organizationId: string, values: Values) => Promise<unknown>
 }) {
 	const availability = createWorkspaceRenameAvailability(dependencies.binding)
 	return createSingleWriteFormOptions<
@@ -146,17 +147,20 @@ export function createWorkspaceRenameFormOptions(dependencies: {
 		WorkspaceRenameObservation,
 		SnapshotFrom<typeof availability>
 	>({
-		schema: workspaceNameFormSchema,
+		schema: workspaceSettingsFormSchema,
 		mode: 'edit',
 		initialValues: (facts: WorkspaceRenameObservation): Values => ({
-			name: facts.workspace?.name ?? ''
+			name: facts.workspace?.name ?? '',
+			defaultCurrency: facts.workspace?.defaultCurrency === 'TZS' ? 'TZS' : 'USD'
 		}),
 		valuesEqual: (draft: unknown, initial: Values) =>
 			typeof draft === 'object' &&
 			draft !== null &&
 			'name' in draft &&
 			typeof draft.name === 'string' &&
-			draft.name.trim() === initial.name,
+			draft.name.trim() === initial.name &&
+			'defaultCurrency' in draft &&
+			draft.defaultCurrency === initial.defaultCurrency,
 
 		availability,
 		selectAvailability: selectWorkspaceRenameAvailability,
@@ -169,7 +173,7 @@ export function createWorkspaceRenameFormOptions(dependencies: {
 			// Defensive type invariant; eligibility is decided by the shared policy chart.
 			const id = request.scope.organizationId
 			if (id === null) throw new Error('Missing authorized workspace')
-			await dependencies.rename(id, request.values.name)
+			await dependencies.rename(id, request.values)
 		}
 	})
 }
