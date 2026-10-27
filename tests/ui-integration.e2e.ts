@@ -72,7 +72,7 @@ test('sidebar status follows browser connectivity without claiming completed syn
 	).toBeVisible()
 	const sidebar = page.locator('aside.inline-drawer')
 	const status = sidebar.locator('[role="status"]').nth(1)
-	await expect(status).toHaveText('Sync enabled')
+	await expect(status).toHaveText('Online')
 	await expect(status.locator('[aria-hidden="true"]')).toHaveCount(1)
 	const body = await bounds(sidebar.locator('.drawer-body'))
 	const indicator = await bounds(status)
@@ -92,11 +92,11 @@ test('sidebar status follows browser connectivity without claiming completed syn
 	} finally {
 		await context.setOffline(false)
 	}
-	await expect(status).toHaveText('Sync enabled')
+	await expect(status).toHaveText('Online')
 	await closeCreationModal(page)
 	await sidebar.getByRole('link', { name: 'Expenses', exact: true }).click()
 	await expect(page).toHaveURL(/\/expenses(?:\?|$)/)
-	await expect(status).toHaveText('Sync enabled')
+	await expect(status).toHaveText('Online')
 })
 
 test('sidebar status does not claim a successful sync when the database is disconnected', async ({
@@ -116,7 +116,7 @@ test('sidebar status does not claim a successful sync when the database is disco
 		if (!db) throw new Error('Test session is not ready.')
 		await db.disconnect()
 	})
-	await expect(status).toHaveText('Sync enabled')
+	await expect(status).toHaveText('Online')
 	await expect(status).not.toContainText(/synced|connected|saved/i)
 })
 
@@ -134,7 +134,7 @@ test('mobile sidebar status stays inside the Drawer and is hidden when it closes
 	await open.click()
 	const drawer = page.locator('aside.inline-drawer')
 	const status = drawer.locator('[role="status"]').nth(1)
-	await expect(status).toHaveText('Sync enabled')
+	await expect(status).toHaveText('Online')
 	try {
 		await context.setOffline(true)
 		await expect(status).toHaveText('Offline')
@@ -149,7 +149,7 @@ test('mobile sidebar status stays inside the Drawer and is hidden when it closes
 		await context.setOffline(false)
 	}
 	await open.click()
-	await expect(status).toHaveText('Sync enabled')
+	await expect(status).toHaveText('Online')
 })
 
 test('localized manifest keeps the install URL and declares its language', async ({

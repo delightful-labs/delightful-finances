@@ -454,9 +454,9 @@ export default s.defineMigration({
 		),
 		transactions: s.table(
 			{
-				amountMinor: s.bigint(),
+				amountMinor: s.bigint().optional(),
 				kind: s.enum('expense', 'income'),
-				currency: s.string(),
+				currency: s.string().optional(),
 				categoryId: s.uuid(),
 				accountId: s.uuid(),
 				organizationId: s.uuid(),

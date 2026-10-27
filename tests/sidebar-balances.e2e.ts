@@ -151,10 +151,10 @@ for (const width of [390, 1280]) {
 		await selector.selectOption(originalWorkspace)
 		await expect(balance('Positive')).toHaveText('$174.75')
 		const sidebar = page.locator('aside.site-drawer')
-		await expect(sidebar.getByText('Sync enabled', { exact: true })).toBeVisible()
+		await expect(sidebar.getByText('Online', { exact: true })).toBeVisible()
 		await context.setOffline(true)
 		await expect(sidebar.getByText('Offline', { exact: true })).toBeVisible()
 		await context.setOffline(false)
-		await expect(sidebar.getByText('Sync enabled', { exact: true })).toBeVisible()
+		await expect(sidebar.getByText('Online', { exact: true })).toBeVisible()
 	})
 }

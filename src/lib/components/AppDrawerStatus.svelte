@@ -42,7 +42,7 @@
 				? m['database.local']()
 				: browserOffline
 					? m['database.offline']()
-					: m['database.sync_enabled']()}
+					: m['database.online']()}
 		/>
 	</div>
 </AppDrawerContentSection>

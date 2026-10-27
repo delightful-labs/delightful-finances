@@ -465,9 +465,8 @@
 	},
 	"database": {
 		"starting": "Loading your finances…",
-		"local": "Online",
+		"online": "Online",
 		"offline": "Offline",
-		"sync_enabled": "Sync enabled",
 		"start_error": "Your finances could not be opened. Try again."
 	},
 	"categories": {
