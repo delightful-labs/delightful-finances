@@ -21,7 +21,14 @@ afterEach(() => {
 })
 
 function fixture(
-	options: { incomeCurrency?: string; expenseAmountMinor?: number; incomeAmountMinor?: number } = {}
+	options: {
+		incomeCurrency?: string
+		expenseCurrency?: string
+		submittedIncomeCurrency?: string
+		submittedExpenseCurrency?: string
+		expenseAmountMinor?: number
+		incomeAmountMinor?: number
+	} = {}
 ) {
 	const tx = new Transaction('mergeable', () => {
 		throw new Error('Fixture must not open a Jazz runtime')
@@ -31,7 +38,7 @@ function fixture(
 		organizationId,
 		name: 'Checking',
 		kind: 'bank',
-		currency: 'USD',
+		currency: options.expenseCurrency ?? 'USD',
 		archivedAt: null
 	}
 	const incomeAccount = {
@@ -106,6 +113,8 @@ function fixture(
 			incomeAccountId,
 			expenseAmountMinor: options.expenseAmountMinor ?? 100,
 			incomeAmountMinor: options.incomeAmountMinor ?? 100,
+			expenseCurrency: options.submittedExpenseCurrency ?? options.expenseCurrency ?? 'USD',
+			incomeCurrency: options.submittedIncomeCurrency ?? options.incomeCurrency ?? 'USD',
 			bookedOn: '2026-10-25',
 			trackWrite
 		}
@@ -213,5 +222,13 @@ describe('internal transfer create machine', () => {
 		expect(f.inserted).toHaveLength(0)
 		expect(f.commit).not.toHaveBeenCalled()
 		expect(f.rollback).toHaveBeenCalledOnce()
+	})
+
+	it('rejects submitted currencies that do not match the selected accounts', async () => {
+		const f = fixture({ incomeCurrency: 'TZS', submittedIncomeCurrency: 'USD' })
+		const done = await waitFor(f.actor, (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toMatchObject({ outcome: 'incompatible', settlement: 'notStarted' })
+		expect(f.inserted).toHaveLength(0)
 	})
 })

@@ -317,7 +317,7 @@ export function createTransactionEditFormOptions(
 		},
 		valuesEqual: (draft, original) => {
 			if (!isTransactionFormDraft(draft)) return false
-			const amount = parseAmountMinor(draft.amount)
+			const amount = parseAmountMinor(draft.amount, original.money.currency)
 			const names = (values: readonly string[]) => [...new Set(values.map(normalizedName))].sort()
 			return (
 				draft.accountId === original.accountId &&

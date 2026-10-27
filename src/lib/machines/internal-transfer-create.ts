@@ -34,6 +34,8 @@ export type InternalTransferCreateInput = {
 	incomeAccountId: string
 	expenseAmountMinor: number
 	incomeAmountMinor: number
+	expenseCurrency: string
+	incomeCurrency: string
 	bookedOn: string
 	trackWrite: (write: { transactionId: string; operation: 'create'; transferId: string }) => void
 }
@@ -103,6 +105,8 @@ const requestSchema = z.strictObject({
 	incomeAccountId: z.uuid(),
 	expenseAmountMinor: amountMinorValue,
 	incomeAmountMinor: amountMinorValue,
+	expenseCurrency: z.string().regex(/^[A-Z]{3}$/),
+	incomeCurrency: z.string().regex(/^[A-Z]{3}$/),
 	bookedOn: dateOnlyText
 })
 const validate = fromPromise(({ input }: { input: InternalTransferCreateInput }) =>
@@ -114,6 +118,8 @@ const validate = fromPromise(({ input }: { input: InternalTransferCreateInput })
 			incomeAccountId: input.incomeAccountId,
 			expenseAmountMinor: input.expenseAmountMinor,
 			incomeAmountMinor: input.incomeAmountMinor,
+			expenseCurrency: input.expenseCurrency,
+			incomeCurrency: input.incomeCurrency,
 			bookedOn: input.bookedOn
 		})
 	)
@@ -178,6 +184,11 @@ function assess(records: Records, request: InternalTransferCreateInput): Assessm
 		expenseAccount.archivedAt !== null ||
 		incomeAccount.archivedAt !== null ||
 		expenseAccount.id === incomeAccount.id
+	)
+		return { outcome: 'incompatible' }
+	if (
+		expenseAccount.currency !== request.expenseCurrency ||
+		incomeAccount.currency !== request.incomeCurrency
 	)
 		return { outcome: 'incompatible' }
 	if (

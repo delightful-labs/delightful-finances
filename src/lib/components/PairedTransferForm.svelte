@@ -6,7 +6,7 @@
 		InternalTransferEntryReason,
 		InternalTransferEntryView
 	} from '#lib/transfer-create-contract.js'
-	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
+	import { amountInputPattern } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
@@ -98,6 +98,8 @@
 			</Select>
 			<input type="hidden" name="amountMode" value={differentCurrencies ? 'separate' : 'shared'} />
 			{#if differentCurrencies}
+				<input type="hidden" name="expenseCurrency" value={expenseAccount?.currency ?? 'USD'} />
+				<input type="hidden" name="incomeCurrency" value={incomeAccount?.currency ?? 'USD'} />
 				<InputCurrency
 					label={m['transfers.source_subject']({ subject: m['labels.amount']() })}
 					currencyLabel={expenseAccount?.currency ?? 'USD'}
@@ -106,7 +108,7 @@
 					bind:value={expenseAmount}
 					inputmode="decimal"
 					autocomplete="off"
-					pattern={AMOUNT_INPUT_PATTERN}
+					pattern={amountInputPattern(expenseAccount?.currency ?? 'USD')}
 					aria-invalid={fieldInvalid('expenseAmount') || undefined}
 					required
 				/>
@@ -124,7 +126,7 @@
 					bind:value={incomeAmount}
 					inputmode="decimal"
 					autocomplete="off"
-					pattern={AMOUNT_INPUT_PATTERN}
+					pattern={amountInputPattern(incomeAccount?.currency ?? 'USD')}
 					aria-invalid={fieldInvalid('incomeAmount') || undefined}
 					required
 				/>
@@ -135,6 +137,7 @@
 						: ''}
 				/>
 			{:else}
+				<input type="hidden" name="currency" value={expenseAccount?.currency ?? 'USD'} />
 				<InputCurrency
 					label={m['labels.amount']()}
 					currencyLabel={expenseAccount?.currency ?? 'USD'}
@@ -143,7 +146,7 @@
 					bind:value={sharedAmount}
 					inputmode="decimal"
 					autocomplete="off"
-					pattern={AMOUNT_INPUT_PATTERN}
+					pattern={amountInputPattern(expenseAccount?.currency ?? 'USD')}
 					aria-invalid={fieldInvalid('amount') || undefined}
 					required
 				/>

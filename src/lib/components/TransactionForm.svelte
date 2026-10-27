@@ -11,7 +11,7 @@
 		FieldFeedback
 	} from 'delightful-ui'
 	import { untrack, tick } from 'svelte'
-	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
+	import { amountInputPattern, minorUnitsToInput } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
 	import type { InternalTransferCandidate } from '#lib/domain/internal-transfer.js'
@@ -256,8 +256,10 @@
 					name="amount"
 					inputmode="decimal"
 					autocomplete="off"
-					pattern={AMOUNT_INPUT_PATTERN}
-					defaultValue={initialTransaction ? (initialTransaction.amountMinor / 100).toFixed(2) : ''}
+					pattern={amountInputPattern(selectedAccountCurrency)}
+					defaultValue={initialTransaction
+						? minorUnitsToInput(initialTransaction.amountMinor, initialTransaction.currency)
+						: ''}
 					required
 				/>
 				<FieldFeedback

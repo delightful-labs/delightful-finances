@@ -19,7 +19,11 @@ import type {
 	InternalTransferEntryScope,
 	InternalTransferEntryValues
 } from '#lib/transfer-create-contract.js'
-import { defaultTransactionCategory, dateOnlyText } from '#lib/validation/transactions.js'
+import {
+	currencyText,
+	defaultTransactionCategory,
+	dateOnlyText
+} from '#lib/validation/transactions.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 import type { TransferWriteTracking } from './internal-transfer.js'
 import {
@@ -123,6 +127,8 @@ function createPersistence(dependencies: Dependencies) {
 								incomeAccountId: values.incomeAccountId,
 								expenseAmountMinor: values.expenseAmountMinor,
 								incomeAmountMinor: values.incomeAmountMinor,
+								expenseCurrency: values.expenseCurrency,
+								incomeCurrency: values.incomeCurrency,
 								bookedOn: values.bookedOn,
 								trackWrite: dependencies.trackWrite
 							}
@@ -346,12 +352,13 @@ export function selectInternalTransferEntryAvailability(
 	return snapshot.context.capability
 }
 
-const amountText = z.string().transform((value, context) => {
-	const amount = parseAmountMinor(value)
-	if (amount.kind === 'valid') return amount.amountMinor
-	context.addIssue({ code: 'custom', message: 'Enter a valid amount.' })
-	return z.NEVER
-})
+const amountText = (currency: string) =>
+	z.string().transform((value, context) => {
+		const amount = parseAmountMinor(value, currency)
+		if (amount.kind === 'valid') return amount.amountMinor
+		context.addIssue({ code: 'custom', message: 'Enter a valid amount.' })
+		return z.NEVER
+	})
 
 const transferEntryFields = {
 	expenseAccountId: z.uuid(),
@@ -361,31 +368,65 @@ const transferEntryFields = {
 
 export const internalTransferEntrySchema = z
 	.discriminatedUnion('amountMode', [
-		z.strictObject({ ...transferEntryFields, amountMode: z.literal('shared'), amount: amountText }),
+		z.strictObject({
+			...transferEntryFields,
+			amountMode: z.literal('shared'),
+			currency: currencyText,
+			amount: z.string()
+		}),
 		z.strictObject({
 			...transferEntryFields,
 			amountMode: z.literal('separate'),
-			expenseAmount: amountText,
-			incomeAmount: amountText
+			expenseCurrency: currencyText,
+			incomeCurrency: currencyText,
+			expenseAmount: z.string(),
+			incomeAmount: z.string()
 		})
 	])
-	.transform((values) =>
-		values.amountMode === 'shared'
-			? {
-					expenseAccountId: values.expenseAccountId,
-					incomeAccountId: values.incomeAccountId,
-					expenseAmountMinor: values.amount,
-					incomeAmountMinor: values.amount,
-					bookedOn: values.bookedOn
-				}
-			: {
-					expenseAccountId: values.expenseAccountId,
-					incomeAccountId: values.incomeAccountId,
-					expenseAmountMinor: values.expenseAmount,
-					incomeAmountMinor: values.incomeAmount,
-					bookedOn: values.bookedOn
-				}
-	)
+	.transform((values, context) => {
+		if (values.amountMode === 'shared') {
+			const amount = amountText(values.currency).safeParse(values.amount)
+			if (!amount.success) {
+				context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a valid amount.' })
+				return z.NEVER
+			}
+			return {
+				expenseAccountId: values.expenseAccountId,
+				incomeAccountId: values.incomeAccountId,
+				expenseAmountMinor: amount.data,
+				incomeAmountMinor: amount.data,
+				expenseCurrency: values.currency,
+				incomeCurrency: values.currency,
+				bookedOn: values.bookedOn
+			}
+		}
+		const expenseAmount = amountText(values.expenseCurrency).safeParse(values.expenseAmount)
+		const incomeAmount = amountText(values.incomeCurrency).safeParse(values.incomeAmount)
+		if (!expenseAmount.success || !incomeAmount.success) {
+			if (!expenseAmount.success)
+				context.addIssue({
+					code: 'custom',
+					path: ['expenseAmount'],
+					message: 'Enter a valid amount.'
+				})
+			if (!incomeAmount.success)
+				context.addIssue({
+					code: 'custom',
+					path: ['incomeAmount'],
+					message: 'Enter a valid amount.'
+				})
+			return z.NEVER
+		}
+		return {
+			expenseAccountId: values.expenseAccountId,
+			incomeAccountId: values.incomeAccountId,
+			expenseAmountMinor: expenseAmount.data,
+			incomeAmountMinor: incomeAmount.data,
+			expenseCurrency: values.expenseCurrency,
+			incomeCurrency: values.incomeCurrency,
+			bookedOn: values.bookedOn
+		}
+	})
 
 export function createInternalTransferEntryFormOptions(dependencies: Dependencies) {
 	const availability = createInternalTransferEntryAvailability(dependencies.db)
