@@ -12,12 +12,12 @@ import {
 import { validatedTextColumn } from './text-column.js'
 import { transactionCheckColumns, transactionCheckRelations } from './checks.js'
 
-const currencyColumn = validatedTextColumn(currencyText)
+const currencyColumn = () => validatedTextColumn(currencyText).column
 const bookedOnColumn = validatedTextColumn(dateOnlyText)
 const checkDateColumn = validatedTextColumn(dateOnlyText)
 const checkNumberColumn = validatedTextColumn(checkNumberText)
 const externalIdColumn = validatedTextColumn(externalIdText)
-const amountMinorColumn = s.bigint().transform<number>({
+const amountMinorColumn = () => s.bigint().transform<number>({
 	from: (value) => amountMinorValue.parse(Number(value)),
 	to: (value) => BigInt(amountMinorValue.parse(value))
 })
@@ -25,9 +25,9 @@ const amountMinorColumn = s.bigint().transform<number>({
 export const transactionsSchema = {
 	transactions: s.table(
 		{
-			amountMinor: amountMinorColumn,
+			amountMinor: amountMinorColumn(),
 			kind: s.enum(EXPENSE, INCOME),
-			currency: currencyColumn.column,
+			currency: currencyColumn(),
 			categoryId: s.uuid(),
 			accountId: s.uuid(),
 			organizationId: s.uuid(),
@@ -98,8 +98,8 @@ export const transactionsSchema = {
 			incomeTransactionId: s.uuid(),
 			expenseAccountId: s.uuid().optional(),
 			incomeAccountId: s.uuid().optional(),
-			amountMinor: amountMinorColumn.optional(),
-			currency: currencyColumn.column.optional()
+			amountMinor: amountMinorColumn().optional(),
+			currency: currencyColumn().optional()
 		},
 		{
 			organization: s.rel('organizations', 'organizationId'),
