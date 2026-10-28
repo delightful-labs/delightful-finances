@@ -2,6 +2,12 @@ export type MoneyParseResult =
 	| { kind: 'valid'; amountMinor: number }
 	| { kind: 'invalid'; reason: 'empty' | 'format' | 'too-large' }
 
+const currencySymbols: Record<string, string> = { TZS: 'TSh' }
+
+function currencyPartValue(currency: string, value: string): string {
+	return currencySymbols[currency] ?? value
+}
+
 export function currencyFractionDigits(currency: string): number {
 	return (
 		new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions()
@@ -61,7 +67,15 @@ export function formatMoney(amountMinor: number, currency: string, locale = 'en-
 		useGrouping: false,
 		minimumIntegerDigits: fractionDigits
 	}).format(fraction)
-	return parts.map((part) => (part.type === 'fraction' ? localizedFraction : part.value)).join('')
+	return parts
+		.map((part) =>
+			part.type === 'fraction'
+				? localizedFraction
+				: part.type === 'currency'
+					? currencyPartValue(currency, part.value)
+					: part.value
+		)
+		.join('')
 }
 
 export function formatSignedMoney(amountMinor: bigint, currency: string, locale = 'en-US'): string {
@@ -80,5 +94,13 @@ export function formatSignedMoney(amountMinor: bigint, currency: string, locale 
 		minimumIntegerDigits: fractionDigits,
 		maximumFractionDigits: 0
 	}).format(fraction)
-	return parts.map((part) => (part.type === 'fraction' ? localizedFraction : part.value)).join('')
+	return parts
+		.map((part) =>
+			part.type === 'fraction'
+				? localizedFraction
+				: part.type === 'currency'
+					? currencyPartValue(currency, part.value)
+					: part.value
+		)
+		.join('')
 }

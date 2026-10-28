@@ -319,10 +319,8 @@ function assessUnlink(records: UnlinkRecords, request: TransferEndpointRequest):
 		income.accountId !== transfer.incomeAccountId ||
 		expense.kind !== EXPENSE ||
 		income.kind !== INCOME ||
-		expense.amountMinor !== (transfer.expenseAmountMinor ?? transfer.amountMinor) ||
-		income.amountMinor !== (transfer.incomeAmountMinor ?? transfer.amountMinor) ||
-		expense.currency !== (transfer.expenseCurrency ?? transfer.currency) ||
-		income.currency !== (transfer.incomeCurrency ?? transfer.currency) ||
+		!transferEndpointMatches(expense, transfer, 'expense') ||
+		!transferEndpointMatches(income, transfer, 'income') ||
 		expense.accountId === income.accountId
 	)
 		return { outcome: 'incompatible' }
@@ -336,6 +334,18 @@ function assessUnlink(records: UnlinkRecords, request: TransferEndpointRequest):
 	const pending = expense.internalTransferId == null && income.internalTransferId == null
 	if (!linked && !pending) return { outcome: 'incompatible' }
 	return { outcome: 'eligible', state: pending ? 'pending' : 'linked', transfer, expense, income }
+}
+
+function transferEndpointMatches(
+	transaction: TransactionRow,
+	transfer: InternalTransfer,
+	side: 'expense' | 'income'
+): boolean {
+	const sideCurrency = side === 'expense' ? transfer.expenseCurrency : transfer.incomeCurrency
+	const sideAmount = side === 'expense' ? transfer.expenseAmountMinor : transfer.incomeAmountMinor
+	return sideCurrency == null
+		? transaction.amountMinor === transfer.amountMinor && transaction.currency === transfer.currency
+		: transaction.amountMinor === sideAmount && transaction.currency === sideCurrency
 }
 
 const clearUnlinkMarkers = fromPromise(
@@ -803,10 +813,8 @@ export const internalTransferDeleteMachine = setup<
 				income.accountId === transfer.incomeAccountId &&
 				expense.kind === EXPENSE &&
 				income.kind === INCOME &&
-				expense.amountMinor === (transfer.expenseAmountMinor ?? transfer.amountMinor) &&
-				income.amountMinor === (transfer.incomeAmountMinor ?? transfer.amountMinor) &&
-				expense.currency === (transfer.expenseCurrency ?? transfer.currency) &&
-				income.currency === (transfer.incomeCurrency ?? transfer.currency) &&
+				transferEndpointMatches(expense, transfer, 'expense') &&
+				transferEndpointMatches(income, transfer, 'income') &&
 				expense.accountId !== income.accountId
 			)
 		},

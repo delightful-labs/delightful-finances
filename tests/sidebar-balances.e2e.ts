@@ -32,7 +32,7 @@ for (const width of [390, 1280]) {
 				['Positive', 'USD', [10000, -2525]],
 				['Negative', 'USD', [-1234]],
 				['Zero', 'USD', []],
-				['Euro', 'EUR', [4500]]
+				['TZS', 'TZS', [4500]]
 			] satisfies [string, string, number[]][]) {
 				const account = await db
 					.insert(app.accounts, { organizationId, name, currency, kind: 'bank' })
@@ -60,7 +60,7 @@ for (const width of [390, 1280]) {
 			['Positive', '$74.75'],
 			['Negative', '-$12.34'],
 			['Zero', '$0.00'],
-			['Euro', '€45.00']
+			['TZS', 'TSh 45.00']
 		] satisfies [string, string][]) {
 			await expect(
 				table
@@ -80,7 +80,7 @@ for (const width of [390, 1280]) {
 			['Positive', '$74.75'],
 			['Negative', '-$12.34'],
 			['Zero', '$0.00'],
-			['Euro', '€45.00']
+			['TZS', 'TSh 45.00']
 		] satisfies [string, string][]) {
 			await expect(balance(name)).toHaveText(amount)
 		}

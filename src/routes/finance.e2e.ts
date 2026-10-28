@@ -12,7 +12,9 @@ test('creates a workspace account and records an expense', async ({ page }) => {
 	await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 
 	await page.goto('/expenses/new')
-	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Everyday checking' })
+	await main
+		.getByLabel('Account', { exact: true })
+		.selectOption({ label: 'Everyday checking · USD' })
 	await main.getByLabel('Amount', { exact: true }).fill('12.34')
 	await main.getByLabel('Description', { exact: true }).fill('Weekly market')
 	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()

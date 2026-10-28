@@ -66,7 +66,7 @@ describe('formatMoney', () => {
 
 	it('formats minor units as locale-aware currency', () => {
 		expect(formatMoney(1234, 'USD')).toBe('$12.34')
-		expect(formatMoney(6500000, 'TZS')).toContain('65,000.00')
+		expect(formatMoney(6500000, 'TZS')).toBe('TSh\u00a065,000.00')
 	})
 
 	it('rejects negative or fractional minor units', () => {
@@ -83,5 +83,9 @@ describe('formatSignedMoney', () => {
 		[1234n, 'en-US', 'JPY', '¥1,234']
 	] as const)('formats %s minor units for %s / %s', (amount, locale, currency, expected) => {
 		expect(formatSignedMoney(amount, currency, locale)).toBe(expected)
+	})
+
+	it('uses the Tanzanian shilling symbol for account balances', () => {
+		expect(formatSignedMoney(6500000n, 'TZS')).toBe('TSh\u00a065,000.00')
 	})
 })

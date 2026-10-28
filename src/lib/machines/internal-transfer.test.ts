@@ -442,6 +442,33 @@ describe('internal transfer unlink machine', () => {
 		expect(f.writeOrder).toEqual(['tracked', 'local', 'tracked', 'local'])
 	})
 
+	it('unlinks legacy transfers when Jazz defaults absent side amounts to zero', async () => {
+		const f = linkedFixture()
+		f.unlinkOne
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: transferId,
+				organizationId,
+				expenseTransactionId: expenseId,
+				incomeTransactionId: incomeId,
+				expenseAccountId,
+				incomeAccountId,
+				expenseAmountMinor: 0,
+				expenseCurrency: null,
+				incomeAmountMinor: 0,
+				incomeCurrency: null,
+				amountMinor: 4500,
+				currency: 'USD'
+			} satisfies InternalTransfer)
+			.mockResolvedValueOnce({ ...expense, internalTransferId: transferId })
+			.mockResolvedValueOnce({ ...income, internalTransferId: transferId })
+			.mockResolvedValueOnce(membership)
+		f.unlinkAll.mockReset().mockResolvedValueOnce([])
+		const done = await waitFor(f.unlinkActor(), (snapshot) => snapshot.status === 'done')
+
+		expect(done.output).toMatchObject({ outcome: 'succeeded', transferId })
+	})
+
 	it('unlinks cross-currency endpoint facts using each side amount and currency', async () => {
 		const f = linkedFixture()
 		f.unlinkOne
@@ -711,6 +738,42 @@ describe('internal transfer delete machine', () => {
 				currency: 'TZS',
 				internalTransferId: transferId
 			})
+			.mockResolvedValueOnce(membership)
+		f.unlinkAll.mockReset().mockResolvedValueOnce([
+			{ accountId: expenseAccountId, access: 'write', canDelete: true },
+			{ accountId: incomeAccountId, access: 'write', canDelete: true }
+		])
+		const done = await waitFor(
+			f.deleteActor({ kind: 'both' }),
+			(snapshot) => snapshot.status === 'done'
+		)
+
+		expect(done.output).toMatchObject({
+			outcome: 'succeeded',
+			deletedTransactionIds: [expenseId, incomeId]
+		})
+	})
+
+	it('deletes legacy transfers when Jazz defaults absent side amounts to zero', async () => {
+		const f = linkedFixture()
+		f.unlinkOne
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: transferId,
+				organizationId,
+				expenseTransactionId: expenseId,
+				incomeTransactionId: incomeId,
+				expenseAccountId,
+				incomeAccountId,
+				expenseAmountMinor: 0,
+				expenseCurrency: null,
+				incomeAmountMinor: 0,
+				incomeCurrency: null,
+				amountMinor: 4500,
+				currency: 'USD'
+			} satisfies InternalTransfer)
+			.mockResolvedValueOnce({ ...expense, internalTransferId: transferId })
+			.mockResolvedValueOnce({ ...income, internalTransferId: transferId })
 			.mockResolvedValueOnce(membership)
 		f.unlinkAll.mockReset().mockResolvedValueOnce([
 			{ accountId: expenseAccountId, access: 'write', canDelete: true },

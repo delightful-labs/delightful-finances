@@ -110,7 +110,7 @@ for (const route of ['/expenses', '/income', '/expenses/new', '/income/new']) {
 		if (entry !== route) await page.goto(entry)
 		const main = page.getByRole('main')
 		await expect(main.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
-			'First checking'
+			'First checking · USD'
 		)
 		await main.getByLabel('Amount', { exact: true }).fill('12.34')
 		const description = main.getByLabel('Description', { exact: true })

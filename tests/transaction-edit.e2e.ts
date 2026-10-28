@@ -298,9 +298,7 @@ test('links and unlinks a matching synced transaction without changing either tr
 	await suggestions
 		.getByRole('button', { name: 'Link to existing Transaction', exact: true })
 		.click()
-	await expect(
-		suggestions.getByText('Linked to Transfer')
-	).toBeVisible()
+	await expect(suggestions.getByText('Linked to Transfer')).toBeVisible()
 	await expect(suggestions.getByText('Transfer saved.', { exact: true })).toBeVisible()
 	await expect
 		.poll(() => persisted(page, seed.id))
@@ -334,9 +332,7 @@ test('links and unlinks a matching synced transaction without changing either tr
 		linkedCounterpart.getByRole('link', { name: 'Open Transaction', exact: true })
 	).toHaveAttribute('href', new RegExp(`/expenses/${seed.id}\\?workspace=`))
 	await linkedCounterpart.getByRole('button', { name: 'Unlink Transfer', exact: true }).click()
-	await expect(
-		linkedCounterpart.getByText('Transfer saved.')
-	).toBeVisible()
+	await expect(linkedCounterpart.getByText('Transfer saved.')).toBeVisible()
 	await expect
 		.poll(() => persisted(page, seed.id))
 		.toMatchObject({ internalTransferId: null, transfers: [] })
@@ -402,9 +398,7 @@ test('unlinks and deletes only the current transaction, restoring the counterpar
 	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
 	await page.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
 	const dialog = page.getByRole('dialog', { name: 'Delete Transactions' })
-	await dialog
-		.getByRole('button', { name: 'Delete Transaction', exact: true })
-		.click()
+	await dialog.getByRole('button', { name: 'Delete Transaction', exact: true }).click()
 	await expect(
 		page.getByText(
 			'This transaction was unlinked and deleted on this device. The other transaction remains.'
@@ -490,7 +484,7 @@ for (const scenario of ['viewer', 'archived'] satisfies ('viewer' | 'archived')[
 			'Original memo'
 		)
 		await expect(page.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
-			'Editable ledger'
+			'Editable ledger · USD'
 		)
 		await expect(page.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveCount(0)
 	})
