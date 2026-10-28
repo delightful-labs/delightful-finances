@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
-import { imageEditorMachine } from '../machines/image-editor.js'
+import { imageEditorMachine, imageEditorPresentation } from '../machines/image-editor.js'
 import * as platform from '../domain/image-editor-platform.js'
 import * as pixels from '../domain/image-editor-pixels.js'
 import { TestImageData } from './fixtures.js'
@@ -278,5 +278,60 @@ describe('image editor actor', () => {
 		await ready(f)
 		f.actor.send({ type: 'APPLY' })
 		await expect(toPromise(f.actor)).resolves.toEqual({ kind: 'failed', reason: 'cleanup' })
+	})
+	it('projects loading, editing, preview and export into explicit presentation capabilities', async () => {
+		const f = fixture()
+		const decode = Promise.withResolvers<ImageBitmap>()
+		f.decode.mockReturnValue(decode.promise)
+		f.actor.start()
+		expect(imageEditorPresentation(f.actor.getSnapshot())).toMatchObject({
+			status: 'loading',
+			viewport: { kind: 'empty' },
+			controls: { apply: false, adjust: false, cancel: true }
+		})
+		decode.resolve(f.bitmap)
+		await waitFor(f.actor, (snapshot) => snapshot.matches('interactive'))
+		expect(imageEditorPresentation(f.actor.getSnapshot())).toMatchObject({
+			status: 'editing',
+			viewport: { kind: 'selection', enabled: true },
+			controls: { apply: true, preview: true, edit: false }
+		})
+		f.actor.send({ type: 'PREVIEW' })
+		await waitFor(f.actor, (snapshot) => snapshot.matches({ interactive: 'previewReady' }))
+		expect(imageEditorPresentation(f.actor.getSnapshot())).toMatchObject({
+			status: 'preview',
+			viewport: { kind: 'preview' },
+			controls: { edit: true, preview: false }
+		})
+		const encode = Promise.withResolvers<Blob | null>()
+		f.encode.mockReturnValue(encode.promise)
+		f.actor.send({ type: 'APPLY' })
+		await waitFor(f.actor, (snapshot) => snapshot.matches('encoding'))
+		expect(imageEditorPresentation(f.actor.getSnapshot())).toMatchObject({
+			status: 'exporting',
+			busy: true,
+			controls: { apply: false, adjust: false, cancel: true }
+		})
+		f.actor.send({ type: 'CANCEL' })
+		encode.resolve(null)
+		await toPromise(f.actor)
+		expect(imageEditorPresentation(f.actor.getSnapshot())).toMatchObject({
+			status: 'finished',
+			viewport: { kind: 'empty' },
+			controls: { apply: false, cancel: false }
+		})
+	})
+
+	it('handles a native display failure without allocating export resources', async () => {
+		const f = fixture()
+		await ready(f)
+		f.actor.send({ type: 'DISPLAY_FAILED' })
+		await expect(toPromise(f.actor)).resolves.toEqual({ kind: 'failed', reason: 'render' })
+		expect(imageEditorPresentation(f.actor.getSnapshot())).toMatchObject({
+			status: 'failed',
+			viewport: { kind: 'empty' },
+			controls: { apply: false, cancel: true }
+		})
+		expect(f.allocate).not.toHaveBeenCalled()
 	})
 })

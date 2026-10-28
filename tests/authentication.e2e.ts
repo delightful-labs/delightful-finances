@@ -348,7 +348,8 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	expect(replacement.id).toBe(first.id)
 	expect(replacement.displayName).toBe(first.displayName)
 	const replacementUrl = await avatarPreview(page).getAttribute('src')
-	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).click()
+	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
+	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 	await expect(avatarPreview(page)).toHaveCount(0)
 	await expect
 		.poll(() =>
@@ -408,7 +409,8 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 		await waitForAvatar(page, 100, 100)
 		const local = await avatarRecord(page)
 		expect(local.byteLength).toBeGreaterThan(0)
-		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).click()
+		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
+		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 		await expect(avatarPreview(page)).toHaveCount(0)
 		expect((await avatarRecord(page)).byteLength).toBe(0)
 	} finally {

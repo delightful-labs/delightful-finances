@@ -399,6 +399,10 @@
 					name="memo"
 					defaultValue={initialTransaction?.memo ?? ''}
 				></Textarea>
+			{/if}
+		{/snippet}
+		{#snippet supplemental(form)}
+			{#if form.content.kind !== 'success'}
 				{#key attachmentPickerRevision}
 					<TransactionImageInput
 						disabled={!form.fieldsEditable}

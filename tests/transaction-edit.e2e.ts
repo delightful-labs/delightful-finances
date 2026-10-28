@@ -559,6 +559,9 @@ test('creates an image attachment, downloads it, and removes only its transactio
 	const transactionId = await findTransactionByDescription(page, 'Image receipt')
 	if (!transactionId) throw new Error('Saved transaction was not found')
 	await page.goto(`/expenses/${transactionId}`)
+	const information = page.getByRole('button', { name: 'Image details: receipt.png', exact: true })
+	await information.focus()
+	await information.press('Enter')
 	const filename = page.getByRole('link', { name: 'receipt.png', exact: true })
 	await expect(filename).toBeVisible()
 	await expect(page.getByRole('img', { name: 'Preview of receipt.png' })).toBeVisible()
@@ -568,7 +571,25 @@ test('creates an image attachment, downloads it, and removes only its transactio
 	expect(attached).toMatchObject({ fileName: 'receipt.png', mimeType: 'image/png' })
 	expect(attached?.parts).toBeGreaterThan(0)
 	const fileId = attached?.fileId
-	await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).click()
+	if (!fileId) throw new Error('Uploaded file was not found')
+	// Keep a second authorized reference so retained contents remain readable.
+	await page.evaluate(
+		async ({ fileId, transactionId }) => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+				sessionPath
+			)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			await db.insert(app.transactionAttachments, { transactionId, fileId }).wait({ tier: 'local' })
+		},
+		{ fileId, transactionId: seed.id }
+	)
+	await page.keyboard.press('Escape')
+	await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).focus()
+	await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).press('Enter')
 	await expect.poll(() => attachmentState(page, transactionId)).toHaveLength(0)
 	if (!fileId) throw new Error('Uploaded file was not found')
 	const retained = await page.evaluate(async (fileId) => {
