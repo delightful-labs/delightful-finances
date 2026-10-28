@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button, Dialog, Text, InputAvatar } from 'delightful-ui'
-	import { avatarMimeType } from '#lib/validation/identity.js'
+	import { avatarMimeType, profileAvatarFormSchema } from '#lib/validation/identity.js'
 	import type { ProfileView } from '#lib/profile-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -34,6 +34,7 @@
 	let selectedFile = $state<File | null>(null)
 	let pendingFile = $state<File | null>(null)
 	let cropOpen = $state(false)
+	let selectionError = $state(false)
 	const resetRevision = $derived(view.draftRevision)
 	const recordId = $derived(profileId)
 	$effect(() => {
@@ -47,6 +48,7 @@
 		selectedFile = file
 		pendingFile = null
 		cropOpen = false
+		selectionError = false
 	})
 </script>
 
@@ -74,6 +76,15 @@
 							return
 						}
 						if (file) {
+							if (!profileAvatarFormSchema.safeParse({ action: 'upload', file }).success) {
+								selectedFile = savedFile
+								pendingFile = null
+								cropOpen = false
+								selectionError = true
+								onSelectionChange(savedFile)
+								return
+							}
+							selectionError = false
 							pendingFile = file
 							cropOpen = true
 							return
@@ -92,6 +103,7 @@
 				required
 				disabled={!view.fieldsEditable}
 			/>
+			{#if selectionError}<p role="alert">{m['profile.avatar_invalid']()}</p>{/if}
 		{/snippet}
 		{#snippet controls(view)}
 			{#if selectedFile && selectedFile !== savedFile}

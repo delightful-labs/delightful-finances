@@ -267,7 +267,15 @@ function withAttachmentSelectionValidation(
 	return z.preprocess((input, ctx) => {
 		if (!isFormRecord(input)) return input
 		const { attachments, ...values } = input
-		const selected = Array.isArray(attachments) ? attachments : []
+		const selected = (Array.isArray(attachments) ? attachments : []).filter(
+			(file) =>
+				!(
+					typeof File !== 'undefined' &&
+					file instanceof File &&
+					file.name === '' &&
+					file.size === 0
+				)
+		)
 		const files = selected.filter(
 			(file): file is File => typeof File !== 'undefined' && file instanceof File
 		)
