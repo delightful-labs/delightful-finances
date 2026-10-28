@@ -28,17 +28,17 @@
 	const corners = $derived(
 		quad
 			? ([
-					{ corner: 'topLeft', point: quad.topLeft, label: m['profile.crop_resize_top_left']() },
-					{ corner: 'topRight', point: quad.topRight, label: m['profile.crop_resize_top_right']() },
+					{ corner: 'topLeft', point: quad.topLeft, label: m['image_editor.resize_top_left']() },
+					{ corner: 'topRight', point: quad.topRight, label: m['image_editor.resize_top_right']() },
 					{
 						corner: 'bottomRight',
 						point: quad.bottomRight,
-						label: m['profile.crop_resize_bottom_right']()
+						label: m['image_editor.resize_bottom_right']()
 					},
 					{
 						corner: 'bottomLeft',
 						point: quad.bottomLeft,
-						label: m['profile.crop_resize_bottom_left']()
+						label: m['image_editor.resize_bottom_left']()
 					}
 				] satisfies { corner: ImageCorner; point: { x: number; y: number }; label: string }[])
 			: []
@@ -104,7 +104,7 @@
 >
 	<canvas
 		bind:this={canvas}
-		aria-label={m['nouns.image']({ count: 1 })}
+		aria-label={m['image_editor.image']()}
 		style:filter={`grayscale(${adjustments?.blackWhite ? 1 : 0}) contrast(${(adjustments?.contrast ?? 100) / 100})`}
 	></canvas>
 	{#if quad}
@@ -115,10 +115,10 @@
 			<button
 				type="button"
 				class="reposition"
-				aria-label={m['profile.crop_reposition']()}
+				aria-label={m['image_editor.reposition']()}
 				onkeydown={(event) => nudge(event)}
 			>
-				{m['profile.crop_reposition']()}
+				{m['image_editor.reposition']()}
 			</button>
 			{#each corners as { corner, point, label } (corner)}
 				<CropperHandle

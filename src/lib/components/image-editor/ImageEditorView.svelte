@@ -23,11 +23,7 @@
 	)
 </script>
 
-<section
-	class="editor"
-	aria-label={m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}
-	aria-busy={view.busy}
->
+<section class="editor" aria-label={m['image_editor.edit']()} aria-busy={view.busy}>
 	<p>{m['image_editor.instructions']()}</p>
 	{#if view.viewport.kind === 'selection'}
 		<ImageEditorSurface

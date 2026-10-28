@@ -8,7 +8,7 @@
 		"pathPattern": [
 			"./messages/{locale}.json",
 			"./messages/photo-cropper/{locale}.json",
-			"./messages/transaction-attachments/{locale}.json"
+			"./messages/image-editor/{locale}.json"
 		]
 	},
 	"baseLocale": "en",

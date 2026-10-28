@@ -105,7 +105,7 @@
 	<StatusMessage
 		variant="error"
 		text={selection.error === 'editingFailed'
-			? m['image_editor.failed']()
+			? m['attachments.edit_failed']()
 			: m['attachments.invalid_selection']()}
 	/>
 {/if}

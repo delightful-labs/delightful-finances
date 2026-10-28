@@ -62,11 +62,11 @@
 			disabled={!view.controls.reset}
 			onclick={() => oncommand({ type: 'RESET' })}
 		>
-			{m['actions.reset_subject']({ subject: m['nouns.image']({ count: 1 }) })}
+			{m['image_editor.reset']()}
 		</Button>
 		{#if view.controls.edit}
 			<Button type="button" onclick={() => oncommand({ type: 'EDIT' })}>
-				{m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}
+				{m['image_editor.edit']()}
 			</Button>
 		{:else}
 			<Button
@@ -74,19 +74,19 @@
 				disabled={!view.controls.preview}
 				onclick={() => oncommand({ type: 'PREVIEW' })}
 			>
-				{m['actions.preview_subject']({ subject: m['nouns.image']({ count: 1 }) })}
+				{m['image_editor.preview']()}
 			</Button>
 		{/if}
 		<Button
 			type="button"
 			disabled={!view.controls.cancel}
-			onclick={() => oncommand({ type: 'CANCEL' })}>{m['actions.cancel']()}</Button
+			onclick={() => oncommand({ type: 'CANCEL' })}>{m['image_editor.cancel']()}</Button
 		>
 		<Button
 			type="button"
 			variant="primary"
 			disabled={!view.controls.apply}
-			onclick={() => oncommand({ type: 'APPLY' })}>{m['actions.apply_changes']()}</Button
+			onclick={() => oncommand({ type: 'APPLY' })}>{m['image_editor.apply_changes']()}</Button
 		>
 	</div>
 </div>

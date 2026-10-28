@@ -42,7 +42,7 @@
 	const problem = $derived({
 		unavailable: m['attachments.edit_unavailable'](),
 		conflict: m['attachments.edit_conflict'](),
-		editingFailed: m['image_editor.failed'](),
+		editingFailed: m['attachments.edit_failed'](),
 		saveFailed: m['attachments.edit_save_failed'](),
 		unresolved: m['attachments.edit_unresolved']()
 	})
@@ -104,7 +104,7 @@
 			<StatusMessage
 				variant="loading"
 				text={view.dialog.kind === 'loading'
-					? m['image_editor.loading']()
+					? m['attachments.loading_image']()
 					: m['attachments.saving_image']()}
 			/>
 			<Button type="button" onclick={() => send({ type: 'CLOSE' })}>{m['actions.close']()}</Button>
