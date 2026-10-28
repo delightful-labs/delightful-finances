@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
+	import { ACCOUNT_CURRENCY, type AccountCurrency } from '#lib/domain/account-currency.js'
 	import type { Snippet } from 'svelte'
 	import { InputText, Select } from 'delightful-ui'
 	import type {
@@ -12,6 +13,7 @@
 	import FormFeedback from './FormFeedback.svelte'
 	let {
 		scope,
+		defaultCurrency,
 		view,
 		trigger,
 		onopen,
@@ -20,6 +22,7 @@
 		onRetryReadiness
 	}: {
 		scope: AccountCreationScope
+		defaultCurrency: AccountCurrency
 		view: AccountCreationView
 		trigger?: Snippet<[() => void, boolean]> | undefined
 		onopen: () => void
@@ -28,6 +31,10 @@
 		onRetryReadiness: () => void
 	} = $props()
 	const formId = $props.id()
+	const currencyOptions: readonly { code: AccountCurrency; label: () => string }[] = [
+		{ code: ACCOUNT_CURRENCY.USD, label: () => m['currencies.us_dollar']() },
+		{ code: ACCOUNT_CURRENCY.TZS, label: () => m['currencies.tanzanian_shilling']() }
+	]
 	const explanations: Record<AccountCreationReason, () => string> = {
 		sessionUnavailable: () => m['accounts.create_session_unavailable'](),
 		selectWorkspace: () =>
@@ -88,7 +95,20 @@
 			<option value={ACCOUNT_KIND.BANK}>{m['accounts.type.bank']()}</option>
 			<option value={ACCOUNT_KIND.CARD}>{m['accounts.type.card']()}</option>
 		</Select>
-		<p>{m['labels.currency_code']({ code: 'USD' })}</p>
+		{#key defaultCurrency}
+			<Select
+				label={m['labels.currency']()}
+				id={`${formId}-currency`}
+				name="currency"
+				required
+				disabled={!form.fieldsEditable}
+				defaultValue={defaultCurrency}
+			>
+				{#each currencyOptions as currency (currency.code)}
+					<option value={currency.code}>{currency.label()} ({currency.code})</option>
+				{/each}
+			</Select>
+		{/key}
 	{/snippet}
 	{#snippet feedback(view)}
 		<FormFeedback

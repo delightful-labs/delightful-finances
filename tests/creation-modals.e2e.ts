@@ -110,7 +110,7 @@ for (const route of ['/expenses', '/income', '/expenses/new', '/income/new']) {
 		if (entry !== route) await page.goto(entry)
 		const main = page.getByRole('main')
 		await expect(main.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
-			'First checking'
+			'First checking · USD'
 		)
 		await main.getByLabel('Amount', { exact: true }).fill('12.34')
 		const description = main.getByLabel('Description', { exact: true })
@@ -147,8 +147,22 @@ test('account management reuses the modal and the removed account route is unava
 	const { dialog } = await openCreation(page, '/accounts', 'Add Account')
 	await dialog.getByLabel('Account name', { exact: true }).fill('Modal checking')
 	await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
+	await dialog.getByLabel('Currency', { exact: true }).selectOption('TZS')
 	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
 	await expect(dialog.getByRole('status')).toContainText('Modal checking')
+	const savedCurrency = await page.evaluate(async () => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const [account] = await db.all(app.accounts.where({ name: 'Modal checking' }))
+		return account?.currency
+	})
+	expect(savedCurrency).toBe('TZS')
 	await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 	await expect(
 		page.getByRole('main').getByRole('cell', { name: 'Modal checking', exact: true })

@@ -373,7 +373,7 @@ export function createTransactionEditFormOptions(
 			)
 			if (files.length !== selected.length || files.length > 0) return false
 			const values = draft
-			const amount = parseAmountMinor(values.amount)
+			const amount = parseAmountMinor(values.amount, original.money.currency)
 			const names = (values: readonly string[]) => [...new Set(values.map(normalizedName))].sort()
 			return (
 				values.accountId === original.accountId &&

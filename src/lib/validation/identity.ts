@@ -1,14 +1,18 @@
 import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
+import { accountCurrencySchema } from './accounts.js'
 import { z } from 'zod'
 
 export const appWorkspaceSchema = z.strictObject({
 	name: z.string().trim().min(1),
 	kind: z.enum(['personal', 'business']),
-	defaultCurrency: z.literal('USD'),
+	defaultCurrency: accountCurrencySchema.default('USD'),
 	ownerId: z.uuid()
 })
 
 export const workspaceNameFormSchema = appWorkspaceSchema.pick({ name: true }).strip()
+export const workspaceSettingsFormSchema = appWorkspaceSchema
+	.pick({ name: true, defaultCurrency: true })
+	.strip()
 
 export const workspaceCreationAttemptSchema = z.strictObject({
 	organizationId: z.uuid(),

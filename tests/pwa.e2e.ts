@@ -117,7 +117,7 @@ test('serves a saved transaction detail directly and after reload in production'
 	await page.goto('/expenses/new')
 	await page
 		.getByLabel('Account', { exact: true })
-		.selectOption({ label: 'Production detail checking' })
+		.selectOption({ label: 'Production detail checking · USD' })
 	await page.getByLabel('Amount', { exact: true }).fill('12.34')
 	await page.getByLabel('Date', { exact: true }).fill('2026-03-10')
 	await page.getByLabel('Description', { exact: true }).fill('Production detail verification')

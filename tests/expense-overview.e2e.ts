@@ -24,12 +24,12 @@ async function seed(page: Page) {
 				currency: 'USD'
 			})
 			.wait({ tier: 'local' })
-		const euroAccount = await db
+		const tzsAccount = await db
 			.insert(app.accounts, {
 				organizationId: org.id,
-				name: 'Euro ledger',
+				name: 'TZS ledger',
 				kind: 'cash',
-				currency: 'EUR'
+				currency: 'TZS'
 			})
 			.wait({ tier: 'local' })
 
@@ -84,18 +84,18 @@ async function seed(page: Page) {
 				currency: 'USD'
 			},
 			{
-				description: 'Euro expense',
+				description: 'TZS expense',
 				categoryId: food.id,
 				amountMinor: 500,
 				bookedOn: date(0),
-				currency: 'EUR'
+				currency: 'TZS'
 			}
 		])
 			await db
 				.insert(app.transactions, {
 					...row,
 					organizationId: org.id,
-					accountId: row.currency === 'EUR' ? euroAccount.id : account.id,
+					accountId: row.currency === 'TZS' ? tzsAccount.id : account.id,
 					kind: 'expense',
 					source: 'manual'
 				})
@@ -148,8 +148,8 @@ test('date presets, category selection, currencies, empty and invalid ranges', a
 	).toBe(true)
 	await overview.getByRole('button', { name: 'Last 30 Days', exact: true }).click()
 	await expect(overview).toContainText('Total Expenses: $120.00')
-	await overview.getByLabel('Currency').selectOption('EUR')
-	await expect(page.getByText('Euro expense', { exact: true })).toBeVisible()
+	await overview.getByLabel('Currency').selectOption('TZS')
+	await expect(page.getByText('TZS expense', { exact: true })).toBeVisible()
 	await expect(page.getByText('Recent food', { exact: true })).toHaveCount(0)
 	await overview.getByLabel('Start Date').fill('2000-01-01')
 	await overview.getByLabel('End Date').fill('2000-01-02')
@@ -197,7 +197,7 @@ test('overview filters persist in this tab across page navigation', async ({ pag
 	await overview.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
 	const savedStart = await start.inputValue()
 	const savedEnd = await end.inputValue()
-	await overview.getByLabel('Currency').selectOption('EUR')
+	await overview.getByLabel('Currency').selectOption('TZS')
 	await overview
 		.locator('.legend')
 		.getByRole('button', { name: /Overview food/ })
@@ -219,7 +219,7 @@ test('overview filters persist in this tab across page navigation', async ({ pag
 	const restoredOverview = page.getByRole('region', { name: 'Expenses by Category', exact: true })
 	await expect(restoredOverview.getByLabel('Start Date')).toHaveValue(savedStart)
 	await expect(restoredOverview.getByLabel('End Date')).toHaveValue(savedEnd)
-	await expect(restoredOverview.getByLabel('Currency')).toHaveValue('EUR')
+	await expect(restoredOverview.getByLabel('Currency')).toHaveValue('TZS')
 	await expect(restoredOverview.locator('.legend button[aria-pressed="true"]')).toHaveCount(1)
 	await expect(restoredOverview.locator('.legend button[aria-pressed="true"]')).toContainText(
 		'Overview food'

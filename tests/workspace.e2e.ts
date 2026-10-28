@@ -109,8 +109,8 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await name.fill('  Household  ')
 	await save.click()
 	await expect(
-		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace name saved.' })
-	).toHaveText('Workspace name saved.')
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace settings saved.' })
+	).toHaveText('Workspace settings saved.')
 	await expect(
 		page.getByLabel('Current Workspace', { exact: true }).locator('option:checked')
 	).toHaveText('Household')
@@ -119,6 +119,29 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 	await expect(save).toBeDisabled()
 	expect(await page.evaluate(() => sessionStorage.getItem('workspace-action-warning'))).toBeNull()
+
+	const currency = page.getByRole('main').getByLabel('Currency', { exact: true })
+	await expect(currency).toHaveValue('USD')
+	await currency.selectOption('TZS')
+	await save.click()
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Workspace settings saved.' })
+	).toHaveText('Workspace settings saved.')
+	await expect(currency).toHaveValue('TZS')
+	await page.reload()
+	await expect(currency).toHaveValue('TZS')
+
+	await page.goto(`/accounts?workspace=${workspaceId}`)
+	const accountDialog = await openCreationModal(page, 'Add Account')
+	await expect(accountDialog.getByLabel('Currency', { exact: true })).toHaveValue('TZS')
+	await accountDialog.getByLabel('Account name').fill('Default currency wallet')
+	await accountDialog.getByLabel('Account type').selectOption('cash')
+	await accountDialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+	await expect(accountDialog.getByRole('status')).toHaveText(
+		'Account Default currency wallet saved.'
+	)
+	await accountDialog.getByRole('button', { name: 'Close', exact: true }).click()
+	await expect(page.getByRole('main').getByRole('cell', { name: 'TZS', exact: true })).toBeVisible()
 })
 
 test('sidebar navigation preserves the selected workspace and database session', async ({
@@ -646,7 +669,10 @@ for (const scenario of formScenarios) {
 		await expect(page).toHaveURL(`${scenario.path}?workspace=${firstWorkspaceId}`)
 		const account = page.getByLabel('Account', { exact: true })
 		const category = page.getByLabel('Category', { exact: true })
-		await expect(account.locator('option')).toHaveText(['Select Account', 'Personal checking'])
+		await expect(account.locator('option')).toHaveText([
+			'Select Account',
+			'Personal checking · USD'
+		])
 		await expect(
 			category.getByRole('option', { name: 'Personal category', exact: true })
 		).toHaveCount(1)
@@ -672,10 +698,13 @@ for (const scenario of formScenarios) {
 			})
 			.click()
 		await expect(page).toHaveURL(`${scenario.path}?workspace=${secondWorkspaceId}`)
-		await expect(account.locator('option')).toHaveText(['Select Account', 'Business checking'])
+		await expect(account.locator('option')).toHaveText([
+			'Select Account',
+			'Business checking · USD'
+		])
 		await expect(category.locator('option')).toHaveText(['Select Category', 'Business category'])
 		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue('')
-		await account.selectOption({ label: 'Business checking' })
+		await account.selectOption({ label: 'Business checking · USD' })
 		await category.selectOption({ label: 'Business category' })
 		await page.getByLabel(/Amount/).fill('42.50')
 		await page.getByLabel('Date', { exact: true }).fill('2026-10-13')
@@ -755,7 +784,10 @@ for (const scenario of formScenarios) {
 		} else expect(saved.check).toBeNull()
 		await page.goto(`${scenario.path}?workspace=${secondWorkspaceId}`)
 		await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue('')
-		await expect(account.locator('option')).toHaveText(['Select Account', 'Business checking'])
+		await expect(account.locator('option')).toHaveText([
+			'Select Account',
+			'Business checking · USD'
+		])
 		if (scenario.kind === 'income') {
 			await expect(page.getByLabel('Payment method')).toHaveValue('')
 			await expect(page.getByLabel('Check number')).toBeHidden()
@@ -1174,20 +1206,25 @@ for (const role of ['admin', 'member', 'viewer']) {
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
 			const name = subject.getByRole('textbox', { name: 'Workspace name', exact: true })
+			const currency = subject.getByRole('main').getByLabel('Currency', { exact: true })
 			const save = subject.getByRole('button', { name: 'Save', exact: true })
 			await expect(name).toHaveValue('Shared workspace')
+			await expect(currency).toHaveValue('USD')
 			if (role === 'admin') {
 				await expect(name).toBeEditable()
+				await expect(currency).toBeEnabled()
+				await currency.selectOption('TZS')
 				await name.fill('Admin renamed workspace')
 				await save.click()
 				await expect(
 					subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
-				).toHaveText('Workspace name saved.')
+				).toHaveText('Workspace settings saved.')
 				await expect(
 					page.getByRole('textbox', { name: 'Workspace name', exact: true })
 				).toHaveValue('Admin renamed workspace')
 			} else {
 				await expect(name).not.toBeEditable()
+				await expect(currency).toBeDisabled()
 				await expect(save).toBeDisabled()
 				await expect(
 					subject.getByText('You do not have permission to make this change.')
@@ -2103,7 +2140,9 @@ test('transaction tags reject a tag archived after selection without saving part
 	await navigateSidebar(page, 'Expenses')
 	await page.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 	const main = page.getByRole('main')
-	await main.getByLabel('Account', { exact: true }).selectOption({ label: 'Retry tag account' })
+	await main
+		.getByLabel('Account', { exact: true })
+		.selectOption({ label: 'Retry tag account · USD' })
 	await main.getByLabel('Amount', { exact: true }).fill('5')
 	await main.getByLabel('Memo (additional notes)', { exact: true }).fill('Retry tagged entry')
 	const tags = main
@@ -2281,8 +2320,8 @@ test('transaction list groups days, separates currency totals, and displays arch
 				currency: 'USD'
 			})
 			.wait({ tier: 'global' })
-		const euro = await db
-			.insert(app.accounts, { organizationId, name: 'Euro account', kind: 'bank', currency: 'EUR' })
+		const tzs = await db
+			.insert(app.accounts, { organizationId, name: 'TZS account', kind: 'bank', currency: 'TZS' })
 			.wait({ tier: 'global' })
 		const category = await db
 			.insert(app.categories, {
@@ -2331,13 +2370,13 @@ test('transaction list groups days, separates currency totals, and displays arch
 		await db
 			.insert(app.transactions, {
 				organizationId,
-				accountId: euro.id,
+				accountId: tzs.id,
 				categoryId: category.id,
 				kind: 'expense',
 				amountMinor: 300,
-				currency: 'EUR',
+				currency: 'TZS',
 				bookedOn: '2026-03-10',
-				description: 'Euro daily entry',
+				description: 'TZS daily entry',
 				source: 'manual'
 			})
 			.wait({ tier: 'global' })
@@ -2365,7 +2404,7 @@ test('transaction list groups days, separates currency totals, and displays arch
 	await expect(main.locator('time')).toHaveText(['Tue, Mar 10, 2026', 'Mon, Mar 9, 2026'])
 	const day = main.getByRole('region', { name: 'Tue, Mar 10, 2026', exact: true })
 	await expect(day.getByLabel('Daily total: $12.50', { exact: true })).toBeVisible()
-	await expect(day.getByLabel('Daily total: €3.00', { exact: true })).toBeVisible()
+	await expect(day.getByLabel('Daily total: TSh 3.00', { exact: true })).toBeVisible()
 	await expect(day.getByRole('listitem')).toHaveCount(3)
 	const first = day
 		.getByRole('listitem')
@@ -2375,8 +2414,8 @@ test('transaction list groups days, separates currency totals, and displays arch
 	await expect(
 		day.getByRole('listitem').filter({ hasText: '$2.50' }).getByRole('link')
 	).toHaveAccessibleName('Transaction details: Daily category, $2.50')
-	await page.getByRole('checkbox', { name: 'Euro account', exact: true }).uncheck()
-	await expect(day.getByLabel('Daily total: €3.00', { exact: true })).toHaveCount(0)
+	await page.getByRole('checkbox', { name: 'TZS account', exact: true }).uncheck()
+	await expect(day.getByLabel('Daily total: TSh 3.00', { exact: true })).toHaveCount(0)
 	await expect(day.getByLabel('Daily total: $12.50', { exact: true })).toBeVisible()
 	await expect(day.getByRole('listitem')).toHaveCount(2)
 	await page.evaluate(async (fixture) => {
@@ -2400,7 +2439,7 @@ test('transaction list groups days, separates currency totals, and displays arch
 	await expect(first.getByText('Renamed historical tag', { exact: true })).toBeVisible()
 	await first.getByRole('link').click()
 	const selectedAccount = main.getByLabel('Account', { exact: true }).locator('option:checked')
-	await expect(selectedAccount).toHaveText('Renamed daily account')
+	await expect(selectedAccount).toHaveText('Renamed daily account · USD')
 	await expect(selectedAccount).toBeDisabled()
 	await navigateSidebar(page, 'Expenses')
 	await page.reload()
@@ -2514,7 +2553,7 @@ for (const kind of ['expense', 'income']) {
 			main.getByRole('heading', { name: 'Transaction details', exact: true })
 		).toBeVisible()
 		await expect(main.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
-			'Detail account'
+			'Detail account · USD'
 		)
 		await expect(main.getByLabel('Category', { exact: true }).locator('option:checked')).toHaveText(
 			'Detail category'
@@ -2756,7 +2795,7 @@ for (const scenario of [
 			if (scenario.read) {
 				await expect(
 					main.getByLabel('Account', { exact: true }).locator('option:checked')
-				).toHaveText('Shared detail account')
+				).toHaveText('Shared detail account · USD')
 				await expect(
 					main.getByRole('button', { name: 'Remove Shared detail tag', exact: true })
 				).toBeVisible()

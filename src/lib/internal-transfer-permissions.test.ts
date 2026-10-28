@@ -21,6 +21,10 @@ const app = s.defineApp({
 			incomeTransactionId: s.uuid(),
 			expenseAccountId: s.uuid(),
 			incomeAccountId: s.uuid(),
+			expenseAmountMinor: s.string().optional(),
+			expenseCurrency: s.string().optional(),
+			incomeAmountMinor: s.string().optional(),
+			incomeCurrency: s.string().optional(),
 			amountMinor: s.string(),
 			currency: s.string()
 		},
@@ -41,8 +45,8 @@ const permissions = s.definePermissions(app, ({ policy, allOf }) => {
 				organizationId: transfer.organizationId,
 				accountId: transfer.expenseAccountId,
 				kind: 'expense',
-				amountMinor: transfer.amountMinor,
-				currency: transfer.currency,
+				amountMinor: transfer.expenseAmountMinor,
+				currency: transfer.expenseCurrency,
 				internalTransferId: transfer.id
 			}),
 			policy.transactions.exists.where({
@@ -50,8 +54,8 @@ const permissions = s.definePermissions(app, ({ policy, allOf }) => {
 				organizationId: transfer.organizationId,
 				accountId: transfer.incomeAccountId,
 				kind: 'income',
-				amountMinor: transfer.amountMinor,
-				currency: transfer.currency,
+				amountMinor: transfer.incomeAmountMinor,
+				currency: transfer.incomeCurrency,
 				internalTransferId: transfer.id
 			})
 		])
@@ -104,6 +108,10 @@ function transfer(
 		incomeTransactionId,
 		expenseAccountId,
 		incomeAccountId,
+		expenseAmountMinor: '4500',
+		expenseCurrency: 'USD',
+		incomeAmountMinor: '4500',
+		incomeCurrency: 'USD',
 		amountMinor: '4500',
 		currency: 'USD',
 		...overrides
@@ -206,6 +214,68 @@ describe('positive Check-style transfer endpoint lookups', () => {
 		)
 		await db.expectDenied((writer) =>
 			writer.insert(app.internalTransfers, transfer({ currency: 'CAD' }))
+		)
+	})
+
+	it('accepts different endpoint amounts and currencies when each matches its transaction', async () => {
+		const crossExpenseId = crypto.randomUUID()
+		const crossIncomeId = crypto.randomUUID()
+		const crossTransferId = crypto.randomUUID()
+		await db
+			.insert(
+				app.transactions,
+				{
+					organizationId,
+					accountId: expenseAccountId,
+					kind: 'expense',
+					amountMinor: '4217',
+					currency: 'USD',
+					internalTransferId: crossTransferId
+				},
+				{ id: crossExpenseId }
+			)
+			.wait({ tier: 'global' })
+		await db
+			.insert(
+				app.transactions,
+				{
+					organizationId,
+					accountId: incomeAccountId,
+					kind: 'income',
+					amountMinor: '6500000',
+					currency: 'TZS',
+					internalTransferId: crossTransferId
+				},
+				{ id: crossIncomeId }
+			)
+			.wait({ tier: 'global' })
+		const saved = await db
+			.insert(
+				app.internalTransfers,
+				transfer({
+					expenseTransactionId: crossExpenseId,
+					incomeTransactionId: crossIncomeId,
+					expenseAmountMinor: '4217',
+					expenseCurrency: 'USD',
+					incomeAmountMinor: '6500000',
+					incomeCurrency: 'TZS'
+				}),
+				{ id: crossTransferId }
+			)
+			.wait({ tier: 'global' })
+		expect(saved.incomeAmountMinor).toBe('6500000')
+		await db.expectDenied((writer) =>
+			writer.insert(
+				app.internalTransfers,
+				transfer({
+					expenseTransactionId: crossExpenseId,
+					incomeTransactionId: crossIncomeId,
+					expenseAmountMinor: '4217',
+					expenseCurrency: 'USD',
+					incomeAmountMinor: '6500001',
+					incomeCurrency: 'TZS'
+				})
+			)
 		)
 	})
 })

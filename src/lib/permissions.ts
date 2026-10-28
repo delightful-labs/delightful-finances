@@ -36,6 +36,10 @@ type InternalTransferContext = Pick<
 	| 'incomeTransactionId'
 	| 'expenseAccountId'
 	| 'incomeAccountId'
+	| 'expenseAmountMinor'
+	| 'expenseCurrency'
+	| 'incomeAmountMinor'
+	| 'incomeCurrency'
 	| 'amountMinor'
 	| 'currency'
 >
@@ -187,24 +191,46 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 
 	const transferEndpointFactsMatch = (transfer: InternalTransferContext) =>
 		allOf([
-			policy.transactions.exists.where({
-				id: transfer.expenseTransactionId,
-				organizationId: transfer.organizationId,
-				accountId: transfer.expenseAccountId,
-				kind: EXPENSE,
-				amountMinor: transfer.amountMinor,
-				currency: transfer.currency,
-				internalTransferId: transfer.id
-			}),
-			policy.transactions.exists.where({
-				id: transfer.incomeTransactionId,
-				organizationId: transfer.organizationId,
-				accountId: transfer.incomeAccountId,
-				kind: INCOME,
-				amountMinor: transfer.amountMinor,
-				currency: transfer.currency,
-				internalTransferId: transfer.id
-			})
+			anyOf([
+				policy.transactions.exists.where({
+					id: transfer.expenseTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.expenseAccountId,
+					kind: EXPENSE,
+					amountMinor: transfer.expenseAmountMinor,
+					currency: transfer.expenseCurrency,
+					internalTransferId: transfer.id
+				}),
+				policy.transactions.exists.where({
+					id: transfer.expenseTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.expenseAccountId,
+					kind: EXPENSE,
+					amountMinor: transfer.amountMinor,
+					currency: transfer.currency,
+					internalTransferId: transfer.id
+				})
+			]),
+			anyOf([
+				policy.transactions.exists.where({
+					id: transfer.incomeTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.incomeAccountId,
+					kind: INCOME,
+					amountMinor: transfer.incomeAmountMinor,
+					currency: transfer.incomeCurrency,
+					internalTransferId: transfer.id
+				}),
+				policy.transactions.exists.where({
+					id: transfer.incomeTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.incomeAccountId,
+					kind: INCOME,
+					amountMinor: transfer.amountMinor,
+					currency: transfer.currency,
+					internalTransferId: transfer.id
+				})
+			])
 		])
 
 	const transferEndpointsAreUnlinked = (transfer: InternalTransferContext) =>
@@ -223,44 +249,96 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 
 	const transferEndpointsHaveMarkers = (transfer: InternalTransferContext) =>
 		allOf([
-			policy.transactions.exists.where({
-				id: transfer.expenseTransactionId,
-				organizationId: transfer.organizationId,
-				accountId: transfer.expenseAccountId,
-				kind: EXPENSE,
-				amountMinor: transfer.amountMinor,
-				currency: transfer.currency,
-				internalTransferId: { isNull: false }
-			}),
-			policy.transactions.exists.where({
-				id: transfer.incomeTransactionId,
-				organizationId: transfer.organizationId,
-				accountId: transfer.incomeAccountId,
-				kind: INCOME,
-				amountMinor: transfer.amountMinor,
-				currency: transfer.currency,
-				internalTransferId: { isNull: false }
-			})
+			anyOf([
+				policy.transactions.exists.where({
+					id: transfer.expenseTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.expenseAccountId,
+					kind: EXPENSE,
+					amountMinor: transfer.expenseAmountMinor,
+					currency: transfer.expenseCurrency,
+					internalTransferId: { isNull: false }
+				}),
+				policy.transactions.exists.where({
+					id: transfer.expenseTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.expenseAccountId,
+					kind: EXPENSE,
+					amountMinor: transfer.amountMinor,
+					currency: transfer.currency,
+					internalTransferId: { isNull: false }
+				})
+			]),
+			anyOf([
+				policy.transactions.exists.where({
+					id: transfer.incomeTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.incomeAccountId,
+					kind: INCOME,
+					amountMinor: transfer.incomeAmountMinor,
+					currency: transfer.incomeCurrency,
+					internalTransferId: { isNull: false }
+				}),
+				policy.transactions.exists.where({
+					id: transfer.incomeTransactionId,
+					organizationId: transfer.organizationId,
+					accountId: transfer.incomeAccountId,
+					kind: INCOME,
+					amountMinor: transfer.amountMinor,
+					currency: transfer.currency,
+					internalTransferId: { isNull: false }
+				})
+			])
 		])
 
-	const transactionTransferFactsMatch = (transaction: TransactionContext) =>
+	const transactionTransferRelationshipExists = (transaction: TransactionContext) =>
 		anyOf([
 			policy.internalTransfers.exists.where({
 				id: transaction.internalTransferId,
 				organizationId: transaction.organizationId,
 				expenseTransactionId: transaction.id,
-				expenseAccountId: transaction.accountId,
-				amountMinor: transaction.amountMinor,
-				currency: transaction.currency
+				expenseAccountId: transaction.accountId
 			}),
 			policy.internalTransfers.exists.where({
 				id: transaction.internalTransferId,
 				organizationId: transaction.organizationId,
 				incomeTransactionId: transaction.id,
-				incomeAccountId: transaction.accountId,
-				amountMinor: transaction.amountMinor,
-				currency: transaction.currency
+				incomeAccountId: transaction.accountId
 			})
+		])
+
+	const transactionFinancialFactsAreUnchanged = (transaction: TransactionContext) =>
+		policy.transactions.exists.where({
+			id: transaction.id,
+			organizationId: transaction.organizationId,
+			accountId: transaction.accountId,
+			kind: transaction.kind,
+			amountMinor: transaction.amountMinor,
+			currency: transaction.currency
+		})
+
+	const transactionTransferUpdateIsValid = (transaction: TransactionContext) =>
+		anyOf([
+			allOf([
+				transactionHasNoTransfer(),
+				anyOf([
+					policy.transactions.exists.where({
+						id: transaction.id,
+						internalTransferId: { isNull: true }
+					}),
+					allOf([
+						policy.transactions.exists.where({
+							id: transaction.id,
+							internalTransferId: { isNull: false }
+						}),
+						transactionFinancialFactsAreUnchanged(transaction)
+					])
+				])
+			]),
+			allOf([
+				transactionTransferRelationshipExists(transaction),
+				transactionFinancialFactsAreUnchanged(transaction)
+			])
 		])
 
 	const transactionHasNoTransfer = () => ({ internalTransferId: { isNull: true } })
@@ -406,7 +484,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	policy.transactions.allowInsert.where((transaction) =>
 		allOf([
 			canWriteTransaction(transaction),
-			anyOf([transactionHasNoTransfer(), transactionTransferFactsMatch(transaction)])
+			anyOf([transactionHasNoTransfer(), transactionTransferRelationshipExists(transaction)])
 		])
 	)
 	policy.transactions.allowUpdate
@@ -414,7 +492,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((transaction) =>
 			allOf([
 				canWriteTransaction(transaction),
-				anyOf([transactionHasNoTransfer(), transactionTransferFactsMatch(transaction)]),
+				transactionTransferUpdateIsValid(transaction),
 				// Preserve tenancy, kind and provenance so edits cannot break provider deduplication.
 				policy.transactions.exists.where({
 					id: transaction.id,

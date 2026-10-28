@@ -19,7 +19,7 @@ export type WorkspaceRenameObservation = WorkspaceRenameScope & {
 	membershipLoading: boolean
 	workspaceError: boolean
 	membershipError: boolean
-	workspace: Pick<Organization, 'id' | 'name'> | null | undefined
+	workspace: Pick<Organization, 'id' | 'name' | 'defaultCurrency'> | null | undefined
 	membership: Pick<OrganizationMember, 'userId' | 'organizationId' | 'role'> | null | undefined
 }
 export type WorkspaceRenameView = ScopedFormView<void, WorkspaceRenameReason>

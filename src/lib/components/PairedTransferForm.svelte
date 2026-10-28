@@ -6,7 +6,7 @@
 		InternalTransferEntryReason,
 		InternalTransferEntryView
 	} from '#lib/transfer-create-contract.js'
-	import { AMOUNT_INPUT_PATTERN } from '#lib/domain/money.js'
+	import { amountInputPattern } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
@@ -27,15 +27,22 @@
 		reasonText: (reason: InternalTransferEntryReason) => string
 	} = $props()
 	let expenseAccountId = $state('')
+	let incomeAccountId = $state('')
+	let sharedAmount = $state('')
+	let expenseAmount = $state('')
+	let incomeAmount = $state('')
 	const draftRevision = $derived(view.draftRevision)
 	$effect(() => {
 		void draftRevision
 		untrack(() => {
 			expenseAccountId = accounts[0]?.id ?? ''
+			incomeAccountId = accounts[1]?.id ?? ''
 		})
 	})
-	const currency = $derived(
-		accounts.find((account) => account.id === expenseAccountId)?.currency ?? 'USD'
+	const expenseAccount = $derived(accounts.find((account) => account.id === expenseAccountId))
+	const incomeAccount = $derived(accounts.find((account) => account.id === incomeAccountId))
+	const differentCurrencies = $derived(
+		Boolean(expenseAccount && incomeAccount && expenseAccount.currency !== incomeAccount.currency)
 	)
 	function alertText() {
 		if (view.readiness.kind === 'failed')
@@ -80,6 +87,7 @@
 				id="transfer-income-account"
 				name="incomeAccountId"
 				required
+				bind:value={incomeAccountId}
 			>
 				<option value="" disabled
 					>{m['actions.select_subject']({ subject: m['nouns.account']({ count: 1 }) })}</option
@@ -88,23 +96,67 @@
 					<option value={account.id}>{account.name} · {account.currency}</option>
 				{/each}
 			</Select>
-			<InputCurrency
-				label={m['labels.amount']()}
-				currencyLabel={currency}
-				id="transfer-amount"
-				name="amount"
-				inputmode="decimal"
-				autocomplete="off"
-				pattern={AMOUNT_INPUT_PATTERN}
-				aria-invalid={fieldInvalid('amount') || undefined}
-				required
-			/>
-			<FieldFeedback
-				id="transfer-amount-feedback"
-				errorMessage={fieldInvalid('amount')
-					? m['forms.enter_subject']({ subject: m['labels.amount']() })
-					: ''}
-			/>
+			<input type="hidden" name="amountMode" value={differentCurrencies ? 'separate' : 'shared'} />
+			{#if differentCurrencies}
+				<input type="hidden" name="expenseCurrency" value={expenseAccount?.currency ?? 'USD'} />
+				<input type="hidden" name="incomeCurrency" value={incomeAccount?.currency ?? 'USD'} />
+				<InputCurrency
+					label={m['transfers.source_subject']({ subject: m['labels.amount']() })}
+					currencyLabel={expenseAccount?.currency ?? 'USD'}
+					id="transfer-expense-amount"
+					name="expenseAmount"
+					bind:value={expenseAmount}
+					inputmode="decimal"
+					autocomplete="off"
+					pattern={amountInputPattern(expenseAccount?.currency ?? 'USD')}
+					aria-invalid={fieldInvalid('expenseAmount') || undefined}
+					required
+				/>
+				<FieldFeedback
+					id="transfer-expense-amount-feedback"
+					errorMessage={fieldInvalid('expenseAmount')
+						? m['forms.enter_subject']({ subject: m['labels.amount']() })
+						: ''}
+				/>
+				<InputCurrency
+					label={m['transfers.destination_subject']({ subject: m['labels.amount']() })}
+					currencyLabel={incomeAccount?.currency ?? 'USD'}
+					id="transfer-income-amount"
+					name="incomeAmount"
+					bind:value={incomeAmount}
+					inputmode="decimal"
+					autocomplete="off"
+					pattern={amountInputPattern(incomeAccount?.currency ?? 'USD')}
+					aria-invalid={fieldInvalid('incomeAmount') || undefined}
+					required
+				/>
+				<FieldFeedback
+					id="transfer-income-amount-feedback"
+					errorMessage={fieldInvalid('incomeAmount')
+						? m['forms.enter_subject']({ subject: m['labels.amount']() })
+						: ''}
+				/>
+			{:else}
+				<input type="hidden" name="currency" value={expenseAccount?.currency ?? 'USD'} />
+				<InputCurrency
+					label={m['labels.amount']()}
+					currencyLabel={expenseAccount?.currency ?? 'USD'}
+					id="transfer-amount"
+					name="amount"
+					bind:value={sharedAmount}
+					inputmode="decimal"
+					autocomplete="off"
+					pattern={amountInputPattern(expenseAccount?.currency ?? 'USD')}
+					aria-invalid={fieldInvalid('amount') || undefined}
+					required
+				/>
+				<FieldFeedback
+					id="transfer-amount-feedback"
+					errorMessage={fieldInvalid('amount')
+						? m['forms.enter_subject']({ subject: m['labels.amount']() })
+						: ''}
+				/>
+			{/if}
 			<InputDate
 				label={m['nouns.date']({ count: 1 })}
 				id="transfer-booked-on"

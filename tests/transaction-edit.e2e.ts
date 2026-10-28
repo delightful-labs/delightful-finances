@@ -525,7 +525,7 @@ for (const scenario of ['viewer', 'archived'] satisfies ('viewer' | 'archived')[
 			'Original memo'
 		)
 		await expect(page.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
-			'Editable ledger'
+			'Editable ledger · USD'
 		)
 		await expect(page.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveCount(0)
 	})

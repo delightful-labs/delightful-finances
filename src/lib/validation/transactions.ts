@@ -106,15 +106,7 @@ export function defaultTransactionCategory(
 	)
 }
 
-const amountText = z
-	.string()
-	.transform((value, context) => {
-		const parsed = parseAmountMinor(value)
-		if (parsed.kind === 'valid') return parsed.amountMinor
-		context.addIssue({ code: 'custom', message: 'Enter a valid amount.' })
-		return z.NEVER
-	})
-	.pipe(amountMinorValue)
+const amountText = z.string()
 
 /** Form intent: a Check can be created inline or selected explicitly by identity. */
 export const transactionSaveSchema = z.union([
@@ -183,13 +175,18 @@ export function independentTransactionFormSchema(
 				context.addIssue({ code: 'custom', message: 'Select an available account and category.' })
 				return z.NEVER
 			}
+			const parsedAmount = parseAmountMinor(fields.amount, account.currency)
+			if (parsedAmount.kind !== 'valid') {
+				context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a valid amount.' })
+				return z.NEVER
+			}
 			const base = {
 				organizationId: account.organizationId,
 				accountId: account.id,
 				categoryId: category.id,
 				kind: options.kind,
 				bookedOn: fields.bookedOn,
-				money: { amountMinor: fields.amount, currency: account.currency },
+				money: { amountMinor: parsedAmount.amountMinor, currency: account.currency },
 				description: fields.description,
 				memo: fields.memo,
 				tags: fields.tags,

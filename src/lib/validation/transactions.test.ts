@@ -267,6 +267,18 @@ describe('transaction form schema', () => {
 		expect(result.description).toBeUndefined()
 	})
 
+	it('parses TZS transaction amounts using two minor-unit digits', () => {
+		const schema = transactionFormSchema(() => ({
+			...options(),
+			accounts: [{ ...account, currency: 'TZS' }]
+		}))
+		expect(schema.parse({ ...fields, amount: '65000.00' }).money).toEqual({
+			amountMinor: 6500000,
+			currency: 'TZS'
+		})
+		expect(schema.safeParse({ ...fields, amount: '65000.001' }).success).toBe(false)
+	})
+
 	it.each(['2026-02-29', '2026-13-01', '10/13/2026', ''])(
 		'rejects invalid booked date %j',
 		(bookedOn) => {

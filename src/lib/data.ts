@@ -1,10 +1,15 @@
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization, type Tag } from './schema.js'
+import { ACCOUNT_CURRENCY, type AccountCurrency } from './domain/account-currency.js'
 import { appAccountSchema } from './validation/accounts.js'
 import { appCategorySchema } from './validation/categories.js'
 import { appTagSchema } from './validation/tags.js'
 import type { z } from 'zod'
-import { appProfileSchema, profileAvatarValuesSchema } from './validation/identity.js'
+import {
+	appProfileSchema,
+	profileAvatarValuesSchema,
+	workspaceSettingsFormSchema
+} from './validation/identity.js'
 
 export { stableUuid } from './domain/stable-uuid.js'
 
@@ -36,18 +41,20 @@ export function saveProfileAvatar(
 export function renameWorkspace(
 	db: Pick<Db, 'update'>,
 	workspaceId: Organization['id'],
-	name: Organization['name']
+	values: { name: Organization['name']; defaultCurrency: AccountCurrency }
 ) {
-	return db.update(app.organizations, workspaceId, { name }).wait({ tier: 'local' })
+	const settings = workspaceSettingsFormSchema.parse(values)
+	return db.update(app.organizations, workspaceId, settings).wait({ tier: 'local' })
 }
 
 export function createAccount(
 	db: Pick<Db, 'insert'>,
 	organizationId: string,
 	name: string,
-	kind: Account['kind']
+	kind: Account['kind'],
+	currency: AccountCurrency = ACCOUNT_CURRENCY.USD
 ) {
-	const account = appAccountSchema.parse({ organizationId, name, kind })
+	const account = appAccountSchema.parse({ organizationId, name, kind, currency })
 	return db.insert(app.accounts, account).wait({ tier: 'local' })
 }
 

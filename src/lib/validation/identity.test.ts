@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	appProfileSchema,
 	profileNameFormSchema,
+	workspaceSettingsFormSchema,
 	workspaceNameFormSchema,
 	profileAvatarFormSchema,
 	profileAvatarValuesSchema,
@@ -20,6 +21,22 @@ describe('workspace name validation', () => {
 		expect(workspaceNameFormSchema.parse({ name: 'Household', ownerId: 'other' })).toEqual({
 			name: 'Household'
 		})
+	})
+})
+
+describe('workspace settings validation', () => {
+	it('trims the name and accepts each supported default currency', () => {
+		expect(
+			workspaceSettingsFormSchema.parse({ name: '  Household  ', defaultCurrency: 'USD' })
+		).toEqual({ name: 'Household', defaultCurrency: 'USD' })
+		expect(
+			workspaceSettingsFormSchema.parse({ name: 'Household', defaultCurrency: 'TZS' })
+		).toEqual({ name: 'Household', defaultCurrency: 'TZS' })
+	})
+	it('rejects unsupported default currencies', () => {
+		expect(
+			workspaceSettingsFormSchema.safeParse({ name: 'Household', defaultCurrency: 'EUR' }).success
+		).toBe(false)
 	})
 })
 
