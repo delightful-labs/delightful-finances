@@ -3,3 +3,6 @@ command = "pnpm build"
 
 [context.production]
 command = "pnpm deploy:jazz && pnpm build"
+
+[context.deploy-preview]
+command = "pnpm deploy:jazz && pnpm build"
