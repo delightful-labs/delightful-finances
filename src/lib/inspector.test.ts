@@ -151,3 +151,33 @@ it('removes rejected actor errors from the real SDK output', async () => {
 	expect(JSON.stringify(fixture.events)).not.toContain('PRIVATE_')
 	actor.stop()
 })
+
+it('never traverses live context before the SDK sanitizers run', async () => {
+	const { inspectActor } = await import('./inspector.js')
+	const readPrivateValue = vi.fn(() => 'PRIVATE_CONTEXT_VALUE')
+	const privatePayload = Object.defineProperty({}, 'token', {
+		enumerable: true,
+		get: readPrivateValue
+	})
+	const actor = createActor(
+		createMachine({
+			id: 'private-context-fixture',
+			context: () => ({ privatePayload }),
+			initial: 'waiting',
+			states: { waiting: { on: { ADVANCE: 'finished' } }, finished: { type: 'final' } }
+		}),
+		{ inspect: inspectActor }
+	).start()
+	actor.send({ type: 'ADVANCE', privatePayload })
+	await vi.waitFor(() =>
+		expect(fixture.events).toContainEqual(
+			expect.objectContaining({
+				type: '@xstate.snapshot',
+				snapshot: expect.objectContaining({ status: 'done' })
+			})
+		)
+	)
+	expect(readPrivateValue).not.toHaveBeenCalled()
+	expect(JSON.stringify(fixture.events)).not.toContain('PRIVATE_CONTEXT_VALUE')
+	actor.stop()
+})

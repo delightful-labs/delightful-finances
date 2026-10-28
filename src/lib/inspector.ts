@@ -93,7 +93,17 @@ export function inspectActor(event: InspectionEvent) {
 			serialize,
 			maxDeferredEvents: 200
 		})
-		inspector.inspect.next?.(event)
+		// The SDK serializes snapshot events before its sanitizeContext hook runs.
+		// Project first so it never traverses Jazz clients or private live context.
+		inspector.inspect.next?.(
+			event.type === '@xstate.snapshot'
+				? {
+						...event,
+						event: { type: safeEventType(event.event.type) },
+						snapshot: safeSnapshot(event.snapshot)
+					}
+				: event
+		)
 	} catch {
 		// Optional tooling must not fail the application or expose raw errors.
 		logger.warn('Inspector could not attach')

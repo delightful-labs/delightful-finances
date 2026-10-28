@@ -24,6 +24,14 @@ fields from static machine definitions before the adapter buffers or transmits t
 attachment failures produce only a generic debug warning. State values and names are static
 machine identifiers, not domain record identifiers. Browser popup permission may be required.
 
+CI follow-up: the SDK converts snapshot events to JSON before invoking its sanitizer hooks.
+The integration now projects native snapshot events before forwarding them to the SDK, so live
+Jazz clients and private context are never traversed by that conversion. A real-SDK regression
+test uses a getter inside private context and verifies it is never read. Dedicated true/false
+debug browser jobs run `playwright.debug.config.ts`; the general application suite excludes this
+file because it requires that config's metadata and inspector transport fixture. Failed general
+browser jobs retain their error-context artifacts for diagnosis.
+
 - [x] Install the official inspector and implement sanitized, environment-gated attachment.
 - [x] Attach the application root (including startup/workspace/bank descendants), shared scoped
       forms, and the independent transaction editor root without changing their ownership.
