@@ -4,7 +4,6 @@
 	import {
 		Button,
 		InputText,
-		InputAvatar,
 		InputDate,
 		Select,
 		Textarea,
@@ -29,6 +28,7 @@
 	import TransactionCheckFields from './TransactionCheckFields.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'
 	import InternalTransferSuggestions from './InternalTransferSuggestions.svelte'
+	import TransactionImageInput from './TransactionImageInput.svelte'
 
 	let {
 		kind,
@@ -119,12 +119,6 @@
 		onLinkCounterpart?: (transactionId: string) => void
 		onUnlinkTransfer?: () => void
 	} = $props()
-
-	let selectedImages = $state<File | File[] | null>([])
-	$effect(() => {
-		void attachmentPickerRevision
-		selectedImages = []
-	})
 
 	const resetRevision = $derived(view.draftRevision)
 	let activeCheckFieldsKey = $state('')
@@ -406,35 +400,13 @@
 					defaultValue={initialTransaction?.memo ?? ''}
 				></Textarea>
 				{#key attachmentPickerRevision}
-					<InputAvatar
-						label={m['actions.add_subject']({ subject: m['nouns.image']({ count: 2 }) })}
-						uploadLabel={m['actions.select_subject']({ subject: m['nouns.image']({ count: 2 }) })}
-						infoLabel={m['labels.subject_details']({ subject: m['nouns.image']({ count: 1 }) })}
-						removeLabel={m['actions.remove_subject']({ subject: m['nouns.image']({ count: 1 }) })}
-						id="transaction-attachments"
-						name="attachments"
-						accept="image/jpeg,image/png,image/webp"
-						multiple
-						bind:value={
-							() => selectedImages,
-							(value) => {
-								selectedImages = value
-								onattachmentschange?.(Array.isArray(value) ? value : value ? [value] : [])
-								const element = document.getElementById('transaction-attachments')
-								void tick().then(() => {
-									if (element?.isConnected && element instanceof HTMLInputElement)
-										element.form?.dispatchEvent(new Event('input', { bubbles: true }))
-								})
-							}
-						}
+					<TransactionImageInput
 						disabled={!form.fieldsEditable}
-						aria-invalid={attachmentIssue !== undefined || undefined}
-						aria-describedby={attachmentIssue ? 'transaction-attachments-error' : undefined}
-					>
-						{#snippet leadingImages()}
-							{#if savedImages}{@render savedImages()}{/if}
-						{/snippet}
-					</InputAvatar>
+						invalid={attachmentIssue !== undefined}
+						describedby={attachmentIssue ? 'transaction-attachments-error' : undefined}
+						{savedImages}
+						onfileschange={onattachmentschange}
+					/>
 				{/key}
 				{#if attachmentIssue}
 					<p id="transaction-attachments-error" role="alert">{attachmentError}</p>

@@ -671,6 +671,17 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		policy.transactions.exists.where({ id: attachment.transactionId })
 	)
 	policy.transactionAttachments.allowInsert.where(allowedTo.update('transaction'))
+	policy.transactionAttachments.allowUpdate
+		.whereOld(allowedTo.update('transaction'))
+		.whereNew((attachment) =>
+			allOf([
+				allowedTo.update('transaction'),
+				policy.files.exists.where({
+					id: attachment.fileId,
+					transactionId: attachment.transactionId
+				})
+			])
+		)
 	policy.transactionAttachments.allowDelete.where(allowedTo.update('transaction'))
 
 	policy.files.allowRead.where(allowedTo.readReferencing(policy.transactionAttachments, 'file'))

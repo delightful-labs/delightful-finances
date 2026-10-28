@@ -8,5 +8,19 @@
 		"crop_resize_top_left": "Resize crop from top left corner",
 		"crop_resize_top_right": "Resize crop from top right corner",
 		"crop_reposition": "Move crop area with arrow keys"
+	},
+	"image_editor": {
+		"instructions": "Move the crop area or its corners to choose what to keep. Use arrow keys to move a focused handle; hold Shift for larger steps.",
+		"crop_mode": "Crop shape",
+		"square": "Square",
+		"rectangle": "Freeform rectangle",
+		"perspective": "Perspective correction",
+		"black_white": "Black and white",
+		"contrast": "Contrast",
+		"failed": "This image could not be edited. Cancel and try again.",
+		"loading": "Loading image\u2026",
+		"rendering": "Rendering preview\u2026",
+		"exporting": "Preparing edited image\u2026",
+		"closing": "Closing image editor\u2026"
 	}
 }

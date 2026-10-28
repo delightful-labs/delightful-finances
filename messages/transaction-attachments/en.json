@@ -8,6 +8,11 @@
 		"image_limit_reached": "A transaction can have up to five images.",
 		"remove_image": "Remove {name}",
 		"remove_failed": "This image could not be removed. Try again.",
-		"upload_failed": "The transaction was saved, but some images could not be attached."
+		"upload_failed": "The transaction was saved, but some images could not be attached.",
+		"edit_unavailable": "This image is not fully available on this device yet.",
+		"edit_conflict": "This image changed while you were editing. Reopen it and try again.",
+		"edit_save_failed": "The edited image could not be saved. The existing image is unchanged.",
+		"edit_unresolved": "The save could not be confirmed. Check the image before trying again.",
+		"saving_image": "Saving edited image\u2026"
 	}
 }

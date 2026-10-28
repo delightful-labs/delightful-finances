@@ -4,7 +4,7 @@
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { app, transactionDetailQuery } from '#lib/schema.js'
-	import TransactionAttachments from './TransactionAttachments.svelte'
+	import SavedTransactionImages from './SavedTransactionImages.svelte'
 	import {
 		applicableTransactionCategories,
 		applicableTransactionTags,
@@ -215,14 +215,14 @@
 			: undefined
 	)
 	const transaction = $derived(observeRow(transactionQuery.current))
-	let attachmentImages = $state<{ id: string; name: string; source: string }[]>([])
+	let attachmentImages = $state<{ id: string; fileId: string; name: string; source: string }[]>([])
 	$effect(() => {
 		const sources = (transaction?.attachments ?? []).flatMap(({ id, file }) => {
 			if (!file) return []
 			const parts = [...(file.parts ?? [])].sort((left, right) => left.partIndex - right.partIndex)
 			const bytes = parts.flatMap((part) => Array.from(part.data ?? []))
 			const source = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: file.mimeType }))
-			return [{ id, name: file.fileName, source }]
+			return [{ id, fileId: file.id, name: file.fileName, source }]
 		})
 		attachmentImages = sources
 		return () => sources.forEach(({ source }) => URL.revokeObjectURL(source))
@@ -660,13 +660,19 @@
 						onreset={resetForm}
 					>
 						{#snippet savedImages()}
-							<TransactionAttachments
-								images={attachmentImages}
-								canEdit={formView.fieldsEditable}
-								removingIds={removingAttachmentIds}
-								failedIds={failedAttachmentIds}
-								onremove={removeAttachment}
-							/>
+							{#if transaction}
+								{#key `${transaction.id}:${transaction.accountId}:${transaction.organizationId}`}
+									<SavedTransactionImages
+										{db}
+										{transaction}
+										images={attachmentImages}
+										canEdit={formView.fieldsEditable}
+										removingIds={removingAttachmentIds}
+										failedIds={failedAttachmentIds}
+										onremove={removeAttachment}
+									/>
+								{/key}
+							{/if}
 						{/snippet}
 					</TransactionForm>
 				{/if}

@@ -1,0 +1,113 @@
+<script lang="ts">
+	import { onMount, untrack } from 'svelte'
+	import { createActor } from 'xstate'
+	import { Button, Dialog, StatusMessage } from 'delightful-ui'
+	import type { getDb } from 'jazz-tools/svelte'
+	import {
+		savedTransactionImageEditorMachine,
+		savedImageEditorPresentation
+	} from '#lib/machines/saved-transaction-image-editor.js'
+	import type { AttachmentReplacementInput } from '#lib/machines/transaction-attachment-replacement.js'
+	import { m } from '#lib/paraglide/messages.js'
+	import TransactionAttachments, { type AttachmentImage } from './TransactionAttachments.svelte'
+	import ImageEditor from './image-editor/ImageEditor.svelte'
+
+	let {
+		db,
+		transaction,
+		images,
+		canEdit,
+		removingIds,
+		failedIds,
+		onremove
+	}: {
+		db: Pick<ReturnType<typeof getDb>, 'one' | 'beginTransaction'>
+		transaction: AttachmentReplacementInput['transaction']
+		images: readonly AttachmentImage[]
+		canEdit: boolean
+		removingIds: readonly string[]
+		failedIds: readonly string[]
+		onremove: (id: string) => void
+	} = $props()
+	const actor = untrack(() =>
+		createActor(savedTransactionImageEditorMachine, {
+			input: {
+				db,
+				transaction,
+				observation: { editable: canEdit, images, blockedIds: removingIds }
+			}
+		})
+	)
+	let view = $state.raw(savedImageEditorPresentation(actor.getSnapshot()))
+	const problem = $derived({
+		unavailable: m['attachments.edit_unavailable'](),
+		conflict: m['attachments.edit_conflict'](),
+		editingFailed: m['image_editor.failed'](),
+		saveFailed: m['attachments.edit_save_failed'](),
+		unresolved: m['attachments.edit_unresolved']()
+	})
+	function send(event: Parameters<typeof actor.send>[0]) {
+		if (actor.getSnapshot().status === 'active') actor.send(event)
+	}
+	$effect(() => {
+		send({ type: 'OBSERVE', observation: { editable: canEdit, images, blockedIds: removingIds } })
+	})
+	onMount(() => {
+		const subscription = actor.subscribe({
+			next: (snapshot) => {
+				view = savedImageEditorPresentation(snapshot)
+			}
+		})
+		actor.start()
+		return () => {
+			subscription.unsubscribe()
+			if (actor.getSnapshot().status !== 'active') {
+				actor.stop()
+				return
+			}
+			const draining = actor.subscribe({
+				complete: () => {
+					draining.unsubscribe()
+					actor.stop()
+				},
+				error: () => {
+					draining.unsubscribe()
+					actor.stop()
+				}
+			})
+			actor.send({ type: 'SHUTDOWN' })
+		}
+	})
+</script>
+
+<TransactionAttachments
+	{images}
+	{canEdit}
+	{failedIds}
+	{onremove}
+	removingIds={view.disabledIds}
+	editableIds={view.editableIds}
+	onedit={(attachmentId) => send({ type: 'EDIT', attachmentId })}
+/>
+{#if view.problem}<StatusMessage variant="error" text={problem[view.problem]} />{/if}
+{#if view.dialog}
+	<Dialog
+		heading={m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}
+		open
+		closedby="any"
+		onclose={() => send({ type: 'CLOSE' })}
+		oninput={(event) => event.stopPropagation()}
+	>
+		{#if view.dialog.kind === 'editor'}
+			<ImageEditor file={view.dialog.file} actor={view.dialog.actor} />
+		{:else}
+			<StatusMessage
+				variant="loading"
+				text={view.dialog.kind === 'loading'
+					? m['image_editor.loading']()
+					: m['attachments.saving_image']()}
+			/>
+			<Button type="button" onclick={() => send({ type: 'CLOSE' })}>{m['actions.close']()}</Button>
+		{/if}
+	</Dialog>
+{/if}

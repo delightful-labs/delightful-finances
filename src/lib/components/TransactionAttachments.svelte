@@ -1,19 +1,26 @@
+<script module lang="ts">
+	export type AttachmentImage = { id: string; fileId: string; name: string; source: string }
+</script>
+
 <script lang="ts">
-	import { AvatarImageTile } from 'delightful-ui'
+	import { AvatarImageTile, Button } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
-	type AttachmentImage = { id: string; name: string; source: string }
 	let {
 		images,
 		canEdit = false,
 		removingIds = [],
 		failedIds = [],
-		onremove
+		onremove,
+		onedit,
+		editableIds = []
 	}: {
 		images: readonly AttachmentImage[]
 		canEdit?: boolean
 		removingIds?: readonly string[]
 		failedIds?: readonly string[]
-		onremove?: (id: string) => void
+		onremove?: ((id: string) => void) | undefined
+		onedit?: (id: string) => void
+		editableIds?: readonly string[]
 	} = $props()
 </script>
 
@@ -29,7 +36,21 @@
 			removeAccessibleLabel={m['attachments.remove_image']({ name: image.name })}
 			disabled={removingIds.includes(image.id)}
 			onremove={canEdit && onremove ? () => onremove?.(image.id) : undefined}
-		/>
+		>
+			{#snippet actions(popoverId)}
+				{#if canEdit && onedit}
+					<Button
+						type="button"
+						popovertarget={popoverId}
+						popovertargetaction="hide"
+						disabled={!editableIds.includes(image.id)}
+						onclick={() => onedit?.(image.id)}
+					>
+						{m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}
+					</Button>
+				{/if}
+			{/snippet}
+		</AvatarImageTile>
 		{#if canEdit && failedIds.includes(image.id)}
 			<p role="status">{m['attachments.remove_failed']()}</p>
 		{/if}
