@@ -38,7 +38,7 @@ function fixture() {
 	const create = vi.fn(() => saved.promise)
 	const options = createAccountCreationFormOptions({ binding, observe: () => facts, create })
 	const machine = createScopedFormMachine<
-		{ name: string; kind: 'cash' | 'bank' | 'card' },
+		{ name: string; kind: 'cash' | 'bank' | 'card'; currency: 'USD' | 'TZS' },
 		Account,
 		AccountCreationReason,
 		AccountCreationScope,
@@ -50,7 +50,7 @@ function fixture() {
 	cleanups.push(() => actor.stop())
 	const view = () =>
 		selectScopedFormView<
-			{ name: string; kind: 'cash' | 'bank' | 'card' },
+			{ name: string; kind: 'cash' | 'bank' | 'card'; currency: 'USD' | 'TZS' },
 			Account,
 			AccountCreationReason,
 			AccountCreationScope,
@@ -96,7 +96,7 @@ describe('account creation scoped adoption', () => {
 			const f = fixture()
 			f.patch(patch)
 			await vi.waitFor(() => expect(f.view().readiness).toEqual({ kind: 'blocked', reason }))
-			f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash' } })
+			f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash', currency: 'USD' } })
 			expect(f.create).not.toHaveBeenCalled()
 			expect(f.actor.getSnapshot().context.sequence).toBe(0)
 		}
@@ -113,16 +113,17 @@ describe('account creation scoped adoption', () => {
 	it('validates, trims, accepts create without CHANGE and prevents duplicate work', async () => {
 		const f = fixture()
 		await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
-		f.actor.send({ type: 'SUBMIT', values: { name: ' ', kind: 'cash' } })
+		f.actor.send({ type: 'SUBMIT', values: { name: ' ', kind: 'cash', currency: 'USD' } })
 		await waitFor(f.actor, (s) => s.context.result?.outcome === 'invalid')
-		f.actor.send({ type: 'SUBMIT', values: { name: ' Wallet ', kind: 'cash' } })
+		f.actor.send({ type: 'SUBMIT', values: { name: ' Wallet ', kind: 'cash', currency: 'TZS' } })
 		await vi.waitFor(() =>
 			expect(f.create).toHaveBeenCalledExactlyOnceWith('workspace', {
 				name: 'Wallet',
-				kind: 'cash'
+				kind: 'cash',
+				currency: 'TZS'
 			})
 		)
-		f.actor.send({ type: 'SUBMIT', values: { name: 'Duplicate', kind: 'bank' } })
+		f.actor.send({ type: 'SUBMIT', values: { name: 'Duplicate', kind: 'bank', currency: 'USD' } })
 		f.actor.send({ type: 'RESET' })
 		expect(f.create).toHaveBeenCalledTimes(1)
 		f.saved.resolve(account)
@@ -135,14 +136,14 @@ describe('account creation scoped adoption', () => {
 		const f = fixture()
 		await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
 		f.patch({ membership: null }, false)
-		f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash' } })
+		f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash', currency: 'USD' } })
 		await waitFor(f.actor, (s) => s.context.result?.outcome === 'denied')
 		expect(f.create).not.toHaveBeenCalled()
 	})
 	it('keeps ordinary observations from interrupting issued work and settles shutdown after local persistence', async () => {
 		const f = fixture()
 		await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
-		f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash' } })
+		f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash', currency: 'USD' } })
 		await vi.waitFor(() => expect(f.create).toHaveBeenCalledTimes(1))
 		f.patch({ membership: f.facts().membership })
 		await vi.waitFor(() => expect(f.view().readiness).toEqual({ kind: 'ready' }))
@@ -156,7 +157,7 @@ describe('account creation scoped adoption', () => {
 	it('reconciles scope-away-and-back without attributing the old result', async () => {
 		const f = fixture()
 		await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
-		f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash' } })
+		f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash', currency: 'USD' } })
 		await vi.waitFor(() => expect(f.create).toHaveBeenCalledTimes(1))
 		f.patch({ organizationId: 'other' })
 		f.patch({ organizationId: 'workspace' })
@@ -174,7 +175,7 @@ describe('account creation scoped adoption', () => {
 			const f = fixture()
 			await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
 			f.patch({ accounts: [{ ...account, kind, name: '  WALLET ' }] }, false)
-			f.actor.send({ type: 'SUBMIT', values: { name: ' wallet ', kind: 'cash' } })
+			f.actor.send({ type: 'SUBMIT', values: { name: ' wallet ', kind: 'cash', currency: 'USD' } })
 			await waitFor(f.actor, (s) => s.context.result?.outcome === 'unavailable')
 			expect(f.view().feedback).toMatchObject({
 				kind: 'result',
@@ -182,11 +183,12 @@ describe('account creation scoped adoption', () => {
 			})
 			expect(f.create).not.toHaveBeenCalled()
 			expect(f.view().fieldsEditable).toBe(true)
-			f.actor.send({ type: 'SUBMIT', values: { name: 'Savings', kind: 'bank' } })
+			f.actor.send({ type: 'SUBMIT', values: { name: 'Savings', kind: 'bank', currency: 'USD' } })
 			await vi.waitFor(() =>
 				expect(f.create).toHaveBeenCalledExactlyOnceWith('workspace', {
 					name: 'Savings',
-					kind: 'bank'
+					kind: 'bank',
+					currency: 'USD'
 				})
 			)
 			f.saved.resolve({ ...account, name: 'Savings', kind: 'bank' })
@@ -202,7 +204,7 @@ describe('account creation scoped adoption', () => {
 			const f = fixture()
 			f.patch({ accounts: [existing] })
 			await vi.waitFor(() => expect(f.view().canSubmit).toBe(true))
-			f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash' } })
+			f.actor.send({ type: 'SUBMIT', values: { name: 'Wallet', kind: 'cash', currency: 'USD' } })
 			await vi.waitFor(() => expect(f.create).toHaveBeenCalledTimes(1))
 			f.saved.resolve(account)
 			await waitFor(f.actor, (s) => s.context.result?.outcome === 'succeeded')

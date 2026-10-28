@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button, InputText } from 'delightful-ui'
+	import { Button, InputText, Select } from 'delightful-ui'
+	import { ACCOUNT_CURRENCY, type AccountCurrency } from '#lib/domain/account-currency.js'
 	import type {
 		WorkspaceRenameReason,
 		WorkspaceRenameView
@@ -10,6 +11,7 @@
 
 	let {
 		name,
+		defaultCurrency,
 		view,
 		onsubmit,
 		onreset,
@@ -17,6 +19,7 @@
 		onRetryReadiness
 	}: {
 		name: string
+		defaultCurrency: AccountCurrency
 		view: WorkspaceRenameView
 		onsubmit: (event: SubmitEvent) => void
 		oninput: (event: Event) => void
@@ -39,6 +42,10 @@
 			m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
 		readOnly: () => m['forms.read_only']()
 	}
+	const currencyOptions: readonly { code: AccountCurrency; label: () => string }[] = [
+		{ code: ACCOUNT_CURRENCY.USD, label: () => m['currencies.us_dollar']() },
+		{ code: ACCOUNT_CURRENCY.TZS, label: () => m['currencies.tanzanian_shilling']() }
+	]
 </script>
 
 {#snippet formFeedback(section: 'readiness' | 'result')}
@@ -52,10 +59,7 @@
 		invalidMessage={m['forms.enter_subject']({
 			subject: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })
 		})}
-		successMessage={() =>
-			m['status.saved_subject']({
-				subject: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })
-			})}
+		successMessage={() => m['workspace.settings_saved']()}
 		{onRetryReadiness}
 		blockedRole={(reason) => (reason === 'loadFailed' ? 'alert' : 'status')}
 	/>
@@ -70,8 +74,20 @@
 			name="name"
 			value={name}
 			required
-			disabled={!form.fieldsEditable}
+			disabled={!form.fieldsEditable || view.readiness.kind !== 'ready'}
 		/>
+		<Select
+			label={m['labels.currency']()}
+			id="workspace-default-currency"
+			name="defaultCurrency"
+			value={defaultCurrency}
+			required
+			disabled={!form.fieldsEditable || view.readiness.kind !== 'ready'}
+		>
+			{#each currencyOptions as currency (currency.code)}
+				<option value={currency.code}>{currency.label()} ({currency.code})</option>
+			{/each}
+		</Select>
 	{/snippet}
 	{#snippet controls(form)}
 		<Button type="submit" disabled={!form.canSubmit}>

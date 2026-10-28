@@ -24,7 +24,7 @@ No setup tasks.
 
 **Purpose**: Establish the persisted pair, enforce Jazz security and every safety invariant currently supported by its policy engine, and identify app-owned validation/recovery for capability gaps.
 
-- [ ] T001 Add the workspace-scoped `internalTransfers` table and policy-checkable endpoint account, amount, and currency facts in `src/lib/schema/transactions.ts`, the optional `canDelete` capability in `src/lib/schema/accounts.ts`, expose the transfer row type in `src/lib/schema.ts`, and add the workspace reverse relation in `src/lib/schema/identity.ts`.
+- [ ] T001 Add the workspace-scoped `internalTransfers` table and policy-checkable per-endpoint account, amount, and currency facts in `src/lib/schema/transactions.ts`, the optional `canDelete` capability in `src/lib/schema/accounts.ts`, expose the transfer row type in `src/lib/schema.ts`, and add the workspace reverse relation in `src/lib/schema/identity.ts`.
 - [ ] T002 Add additive Jazz migrations and matching schema snapshots under `src/lib/migrations/` from the current schema heads, defaulting existing account grants to no delete authority and policy facts to null; do not reset local or remote data.
 
 **Review checkpoint**: Review the pair data model and additive migration before changing authorization or UI.
@@ -61,13 +61,13 @@ No setup tasks.
 
 **Goal**: Let a user create a manual expense and income and their relationship with one submission and one user-visible completion.
 
-**Independent Test**: Submit a paired transfer between two writable accounts while offline. Verify exactly two account entries and one relationship commit locally together; later Jazz permission rejection is shown as a separate sync outcome.
+**Independent Test**: Submit same-currency and cross-currency paired transfers between two writable accounts while offline. Verify the shared amount for same-currency accounts and both explicit amounts/currencies for different-currency accounts are retained in exactly two account entries and one relationship committed locally together; later Jazz permission rejection is shown as a separate sync outcome.
 
 ### Implementation
 
 - [ ] T011 [US2] Implement an `internal-transfer-create` statechart that owns account reads, workspace/currency/permission/safety decisions, transaction and relationship staging in one mergeable transaction, local durability, rollback, cancellation, and typed outcomes. Promise actors perform leaf reads/writes only.
-- [ ] T012 [US2] Add a focused paired-transfer integration component and `/transfers/new` route that own Jazz observations and actor lifecycle, and collect source account, destination account, amount, and shared date for one submission.
-- [ ] T013 [US2] Add a props-only paired-transfer form using existing transaction form conventions, with clear source/destination account inputs and one completion/error result.
+- [ ] T012 [US2] Add a focused paired-transfer integration component and `/transfers/new` route that own Jazz observations and actor lifecycle, and collect source/destination accounts, one shared amount for same-currency accounts or two explicit amounts for different-currency accounts, and the shared date for one submission.
+- [ ] T013 [US2] Add a props-only paired-transfer form using existing transaction form conventions, with clear source/destination account and ISO currency inputs, the appropriate shared or per-side amount fields, and one completion/error result.
 - [ ] T014 [US2] Add localized paired-creation labels, validation, pending, success, and failure messages in `messages/en.json` and compile Paraglide after implementation review.
 
 **Checkpoint**: A user can record a transfer between manually maintained accounts with one submission, and both sides are locally durable together. Later permission rejection remains a separately reported sync outcome.

@@ -32,19 +32,20 @@ When a user edits an expense or income, they can mark it as an internal transfer
 
 ### User Story 2 - Record both sides together (Priority: P1)
 
-When a user moves money between two accounts that are not represented by a matching pair of synced transactions, they can record the outgoing expense and incoming income together as one transfer action. The app stores two ordinary account transactions and their relationship, and presents one completion result.
+When a user moves money between two accounts that are not represented by a matching pair of synced transactions, they can record the outgoing expense and incoming income together at `/transfers/new`. For same-currency accounts, one amount is recorded on both sides. For different-currency accounts, the user enters each side's amount independently. The app stores two ordinary account transactions and their relationship, and presents one completion result.
 
 **Why this priority**: Transfers between manually maintained accounts need the same reporting and account-history behavior without requiring the user to enter each side separately.
 
-**Independent Test**: Select two different accounts in one workspace and enter a transfer amount. Submit once and verify one expense, one income, and one relationship are persisted; both appear in their account histories and neither affects workspace income or expense totals.
+**Independent Test**: Select two different accounts in one workspace and enter a transfer. For same-currency accounts, verify the shared amount is saved on both sides. For different-currency accounts, enter both amounts independently and verify each amount and account currency is preserved. Submit once and verify one expense, one income, and one relationship are persisted; both appear in their account histories and neither affects workspace income or expense totals.
 
 **Acceptance Scenarios**:
 
-1. **Given** two writable accounts in the same workspace, **When** the user records a transfer and submits once, **Then** one expense and one income with equal amount and currency and a shared date are created and linked, and the user sees one completion result.
-2. **Given** the Jazz authority is unavailable, **When** the user submits, **Then** the pair is committed atomically to the local database and reported as saved locally without waiting for network confirmation.
-3. **Given** Jazz later rejects the locally committed pair under its current permissions, **When** the rejection is synchronized, **Then** Jazz's rollback is reflected in the UI and the user receives an accurate recovery message.
-4. **Given** the selected accounts are the same, in different workspaces, or not both writable, **When** the user submits, **Then** the operation is rejected and no transfer is created.
-5. **Given** a transfer created together, **When** the user views account histories and workspace totals, **Then** both entries remain in their respective account histories and are excluded from workspace income and expense totals.
+1. **Given** two writable accounts in the same workspace with the same currency, **When** the user records a transfer and submits once, **Then** one expense and one income with equal amount and currency and a shared date are created and linked, and the user sees one completion result.
+2. **Given** two writable accounts in the same workspace with different currencies, **When** the user records a transfer at `/transfers/new`, **Then** the form requires a separately entered amount for each account, creates one expense and one income with each account's currency and the shared date, links them, and performs no conversion or exchange-rate calculation.
+3. **Given** the Jazz authority is unavailable, **When** the user submits, **Then** the pair is committed atomically to the local database and reported as saved locally without waiting for network confirmation.
+4. **Given** Jazz later rejects the locally committed pair under its current permissions, **When** the rejection is synchronized, **Then** Jazz's rollback is reflected in the UI and the user receives an accurate recovery message.
+5. **Given** the selected accounts are the same, in different workspaces, or not both writable, **When** the user submits, **Then** the operation is rejected and no transfer is created.
+6. **Given** a transfer created together, **When** the user views account histories and workspace totals, **Then** both entries remain in their respective account histories and are excluded from workspace income and expense totals.
 
 ### User Story 3 - See correct totals for linked movements (Priority: P1)
 
@@ -79,7 +80,7 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 
 ### Edge Cases
 
-- Equal amounts with different currencies are not suggested; matching does not imply currency conversion.
+- Equal amounts with different currencies are not suggested; matching does not imply currency conversion. Cross-currency transfer records are created only through `/transfers/new` in this iteration.
 - Equal same-currency amounts on the same account are not a transfer candidate.
 - Transactions in another workspace are never suggested, even when their owner is the same person.
 - Already linked transactions are not suggested as new counterparts.
@@ -96,8 +97,9 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 ### Functional Requirements
 
 - **FR-001**: Users MUST be able to link two existing transactions in different accounts of the same workspace as one internal transfer: one expense and one income.
-- **FR-001a**: Users MUST be able to create both sides of an internal transfer in one user action. The system MUST persist one expense, one income, and their relationship in one locally atomic mergeable transaction; the UI MUST report one local completion result and MUST NOT report completion while only part of the pair is committed locally.
-- **FR-002**: This feature MUST link only same-currency transactions with equal amounts in minor units. Cross-currency transfer linking remains deferred; the app MUST NOT calculate a conversion.
+- **FR-001a**: Users MUST be able to create both sides of an internal transfer in one user action at `/transfers/new`. The system MUST persist one expense, one income, and their relationship in one locally atomic mergeable transaction; the UI MUST report one local completion result and MUST NOT report completion while only part of the pair is committed locally.
+- **FR-001b**: For same-currency account pairs, `/transfers/new` MUST use one shared amount for both sides. For different-currency account pairs, it MUST require two independently entered amounts, validate each using that account currency's precision, and store each amount and currency on its corresponding transaction. It MUST NOT infer either amount from the other or from an exchange rate. Exchange rates and fees are not fields on this transfer action; fees remain separate expense transactions.
+- **FR-002**: Linking existing transactions and suggesting matching counterparts MUST remain limited to same-currency transactions with equal amounts in minor units. Cross-currency linking of existing transactions remains deferred. Cross-currency pairs MAY be created only through `/transfers/new` under FR-001b; the app MUST NOT calculate a conversion.
 - **FR-003**: Each linked side MUST retain its own business date, account currency, and account history entry.
 - **FR-004**: When a user chooses to link a transaction, the system MUST suggest unlinked transactions in the same workspace that have the opposite direction, a different account, the same currency and amount, and a date no more than seven calendar days before or after the current transaction.
 - **FR-005**: Suggestions MUST include only transactions readable by the user. Creating, changing, or removing a link MUST require edit permission for both accounts.
@@ -135,7 +137,7 @@ Users can unlink a pair and can edit ordinary transaction details without accide
 ## Assumptions
 
 - The initial matching window is seven calendar days on either side of the transaction date. This is a product default for the first implementation and can be revised after using the feature.
-- Suggestions and links in this iteration match the full amount and currency exactly. Cross-currency linking remains deferred; no automatic conversion is permitted.
+- Suggestions and linking of existing transactions in this iteration match the full amount and currency exactly. Cross-currency linking of existing transactions remains deferred; no automatic conversion is permitted.
 - Link, unlink, paired creation, and linked deletion use local mergeable transactions so they remain useful offline. Jazz authority checks security permissions during synchronization; app state machines own safety validation, local conflict serialization, conflict detection, and repair feedback.
-- Existing-transaction linking supports imported and manual records. Paired creation creates two ordinary manual transactions with the same amount, currency, date, and user-entered description, then links them as one transfer action.
+- Existing-transaction linking supports imported and manual records. Paired creation creates two ordinary manual transactions with one shared date and user-entered description, then links them as one transfer action. Same-currency accounts use one shared amount. Different-currency accounts require both amounts explicitly; the transactions retain their respective account currencies and no conversion is performed.
 - Existing approved transfer requirements in `001-finance-mvp` remain authoritative for deletion, authorization, reporting, workspace boundaries, fees, and currency behavior.

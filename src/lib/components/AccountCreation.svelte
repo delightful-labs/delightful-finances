@@ -23,6 +23,11 @@
 	const membership = new QuerySubscriptionOne(() =>
 		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 	)
+	const workspace = new QuerySubscriptionOne(() =>
+		filters.activeOrganizationId
+			? app.organizations.where({ id: filters.activeOrganizationId })
+			: undefined
+	)
 	const accounts = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts.where({
@@ -39,20 +44,22 @@
 			sessionReady: session.current.status === 'ready',
 			membership: observeRow(membership.current),
 			accounts: observeRows(accounts.current),
-			loading: membership.isLoading || accounts.isLoading,
-			error: membership.error ?? accounts.error
+			loading: membership.isLoading || workspace.isLoading || accounts.isLoading,
+			error: membership.error ?? workspace.error ?? accounts.error
 		}
 	}
+	const defaultCurrency = $derived(workspace.current?.defaultCurrency === 'TZS' ? 'TZS' : 'USD')
 	const options = createAccountCreationFormOptions({
 		binding: db,
 		observe,
-		create: (id, values) => createAccount(db, id, values.name, values.kind)
+		create: (id, values) => createAccount(db, id, values.name, values.kind, values.currency)
 	})
 	const form = createScopedFormController(options)
 </script>
 
 <AccountForm
 	{scope}
+	{defaultCurrency}
 	{trigger}
 	view={form.view}
 	onopen={form.open}

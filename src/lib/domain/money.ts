@@ -1,23 +1,53 @@
-export const AMOUNT_INPUT_PATTERN = String.raw`^(0|[1-9]\d*)(?:\.(\d{1,2}))?$`
-
 export type MoneyParseResult =
 	| { kind: 'valid'; amountMinor: number }
 	| { kind: 'invalid'; reason: 'empty' | 'format' | 'too-large' }
 
-/** Parse a non-negative USD-style amount without ever passing through a float. */
-export function parseAmountMinor(input: string): MoneyParseResult {
+const currencySymbols: Record<string, string> = { TZS: 'TSh' }
+
+function currencyPartValue(currency: string, value: string): string {
+	return currencySymbols[currency] ?? value
+}
+
+export function currencyFractionDigits(currency: string): number {
+	return (
+		new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions()
+			.maximumFractionDigits ?? 2
+	)
+}
+
+export function amountInputPattern(currency = 'USD'): string {
+	const fractionDigits = currencyFractionDigits(currency)
+	const fraction = fractionDigits > 0 ? String.raw`(?:\.(\d{1,${fractionDigits}}))?` : ''
+	return String.raw`^(0|[1-9]\d*)${fraction}$`
+}
+
+/** Parse a non-negative amount using the currency's ISO minor-unit precision. */
+export function parseAmountMinor(input: string, currency = 'USD'): MoneyParseResult {
 	const value = input.trim()
 	if (value.length === 0) return { kind: 'invalid', reason: 'empty' }
 
-	const match = new RegExp(AMOUNT_INPUT_PATTERN).exec(value)
+	const fractionDigits = currencyFractionDigits(currency)
+	const match = new RegExp(amountInputPattern(currency)).exec(value)
 	if (match === null) return { kind: 'invalid', reason: 'format' }
 
-	const amountMinor = BigInt(`${match[1]}${(match[2] ?? '').padEnd(2, '0')}`)
+	const amountMinor = BigInt(`${match[1]}${(match[2] ?? '').padEnd(fractionDigits, '0')}`)
 	if (amountMinor > BigInt(Number.MAX_SAFE_INTEGER)) {
 		return { kind: 'invalid', reason: 'too-large' }
 	}
 
 	return { kind: 'valid', amountMinor: Number(amountMinor) }
+}
+
+export function minorUnitsToInput(amountMinor: number, currency: string): string {
+	if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) {
+		throw new RangeError('Money must be a non-negative integer amount in minor units.')
+	}
+	const fractionDigits = currencyFractionDigits(currency)
+	const scale = 10 ** fractionDigits
+	const whole = Math.floor(amountMinor / scale)
+	if (fractionDigits === 0) return String(whole)
+	const fraction = String(amountMinor % scale).padStart(fractionDigits, '0')
+	return `${whole}.${fraction}`
 }
 
 export function formatMoney(amountMinor: number, currency: string, locale = 'en-US'): string {
@@ -37,7 +67,15 @@ export function formatMoney(amountMinor: number, currency: string, locale = 'en-
 		useGrouping: false,
 		minimumIntegerDigits: fractionDigits
 	}).format(fraction)
-	return parts.map((part) => (part.type === 'fraction' ? localizedFraction : part.value)).join('')
+	return parts
+		.map((part) =>
+			part.type === 'fraction'
+				? localizedFraction
+				: part.type === 'currency'
+					? currencyPartValue(currency, part.value)
+					: part.value
+		)
+		.join('')
 }
 
 export function formatSignedMoney(amountMinor: bigint, currency: string, locale = 'en-US'): string {
@@ -56,5 +94,13 @@ export function formatSignedMoney(amountMinor: bigint, currency: string, locale 
 		minimumIntegerDigits: fractionDigits,
 		maximumFractionDigits: 0
 	}).format(fraction)
-	return parts.map((part) => (part.type === 'fraction' ? localizedFraction : part.value)).join('')
+	return parts
+		.map((part) =>
+			part.type === 'fraction'
+				? localizedFraction
+				: part.type === 'currency'
+					? currencyPartValue(currency, part.value)
+					: part.value
+		)
+		.join('')
 }

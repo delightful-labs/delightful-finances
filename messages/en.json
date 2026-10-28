@@ -121,6 +121,10 @@
 		"waiting": "Waiting for encrypted credentials to replicate, or reconnection is required.",
 		"working": "Waiting for passkey verification or completing your requested operation…"
 	},
+	"currencies": {
+		"tanzanian_shilling": "Tanzanian shilling",
+		"us_dollar": "US dollar"
+	},
 	"database": {
 		"offline": "Offline",
 		"online": "Online",
@@ -520,7 +524,7 @@
 		"delete_saved_both": "Both linked transactions were deleted on this device.",
 		"delete_saved_selected": "This transaction was unlinked and deleted on this device. The other transaction remains.",
 		"destination_subject": "Destination {subject}",
-		"incompatible": "Choose different accounts with the same currency.",
+		"incompatible": "Choose two different accounts in the same workspace.",
 		"insufficient_accounts": "Add a second writable account to record a transfer.",
 		"recovery_required": "The transfer is incomplete. Review the transactions before retrying.",
 		"source_subject": "Source {subject}",
@@ -539,6 +543,7 @@
 		"integrity_partial": "Some required workspace records need repair. An administrator may be needed to repair profile attribution.",
 		"integrity_working": "Checking required workspace records…",
 		"loading": "Getting your workspaces ready…",
+		"settings_saved": "Workspace settings saved.",
 		"setup_error": "Your workspaces could not be prepared.",
 		"unavailable": "This workspace or transaction is unavailable. Select a workspace you can access."
 	}

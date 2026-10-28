@@ -15,10 +15,10 @@ describe('canonical account schema', () => {
 			archivedAt: null
 		})
 	})
-	it('preserves an explicit supported currency and archive date', () => {
+	it('preserves Tanzanian shillings and an archive date', () => {
 		const archivedAt = new Date()
-		expect(appAccountSchema.parse({ ...input, currency: 'EUR', archivedAt })).toMatchObject({
-			currency: 'EUR',
+		expect(appAccountSchema.parse({ ...input, currency: 'TZS', archivedAt })).toMatchObject({
+			currency: 'TZS',
 			archivedAt
 		})
 	})
@@ -27,6 +27,7 @@ describe('canonical account schema', () => {
 		{ name: ' ' },
 		{ kind: 'investment' },
 		{ currency: 'usd' },
+		{ currency: 'EUR' },
 		{ currency: 'ZZZ' },
 		{ archivedAt: '2026-10-13' }
 	])('rejects invalid entity fields %j', (values) => {
@@ -56,7 +57,8 @@ describe('account form schema', () => {
 	it.each(['cash', 'bank', 'card'])('trims the name and accepts %s accounts', (kind) => {
 		expect(accountFormSchema.parse({ name: '  Checking  ', kind })).toEqual({
 			name: 'Checking',
-			kind
+			kind,
+			currency: 'USD'
 		})
 	})
 	it.each(['', ' ', '\t\n'])('rejects a blank name %j', (name) => {
@@ -65,14 +67,19 @@ describe('account form schema', () => {
 	it.each(['', 'investment', null, undefined])('rejects an invalid type %j', (kind) => {
 		expect(accountFormSchema.safeParse({ name: 'Checking', kind }).success).toBe(false)
 	})
-	it('ignores submitted workspace and currency fields', () => {
+	it('keeps the chosen currency and ignores submitted workspace fields', () => {
 		expect(
 			accountFormSchema.parse({
 				name: 'Checking',
 				kind: 'bank',
 				organizationId: 'other',
-				currency: 'EUR'
+				currency: 'TZS'
 			})
-		).toEqual({ name: 'Checking', kind: 'bank' })
+		).toEqual({ name: 'Checking', kind: 'bank', currency: 'TZS' })
+	})
+	it.each(['EUR', 'ZZZ'])('rejects unsupported account currency %s', (currency) => {
+		expect(accountFormSchema.safeParse({ name: 'Checking', kind: 'bank', currency }).success).toBe(
+			false
+		)
 	})
 })

@@ -32,7 +32,10 @@ export type InternalTransferCreateInput = {
 	organizationId: string
 	expenseAccountId: string
 	incomeAccountId: string
-	amountMinor: number
+	expenseAmountMinor: number
+	incomeAmountMinor: number
+	expenseCurrency: string
+	incomeCurrency: string
 	bookedOn: string
 	trackWrite: (write: { transactionId: string; operation: 'create'; transferId: string }) => void
 }
@@ -53,7 +56,8 @@ type Assessment =
 			outcome: 'eligible'
 			expenseCategoryId: string
 			incomeCategoryId: string
-			currency: string
+			expenseCurrency: string
+			incomeCurrency: string
 	  }
 	| { outcome: 'denied' | 'incompatible' | 'unavailable' }
 type Result =
@@ -99,7 +103,10 @@ const requestSchema = z.strictObject({
 	organizationId: z.uuid(),
 	expenseAccountId: z.uuid(),
 	incomeAccountId: z.uuid(),
-	amountMinor: amountMinorValue,
+	expenseAmountMinor: amountMinorValue,
+	incomeAmountMinor: amountMinorValue,
+	expenseCurrency: z.string().regex(/^[A-Z]{3}$/),
+	incomeCurrency: z.string().regex(/^[A-Z]{3}$/),
 	bookedOn: dateOnlyText
 })
 const validate = fromPromise(({ input }: { input: InternalTransferCreateInput }) =>
@@ -109,7 +116,10 @@ const validate = fromPromise(({ input }: { input: InternalTransferCreateInput })
 			organizationId: input.organizationId,
 			expenseAccountId: input.expenseAccountId,
 			incomeAccountId: input.incomeAccountId,
-			amountMinor: input.amountMinor,
+			expenseAmountMinor: input.expenseAmountMinor,
+			incomeAmountMinor: input.incomeAmountMinor,
+			expenseCurrency: input.expenseCurrency,
+			incomeCurrency: input.incomeCurrency,
 			bookedOn: input.bookedOn
 		})
 	)
@@ -173,8 +183,17 @@ function assess(records: Records, request: InternalTransferCreateInput): Assessm
 		incomeAccount.organizationId !== request.organizationId ||
 		expenseAccount.archivedAt !== null ||
 		incomeAccount.archivedAt !== null ||
-		expenseAccount.id === incomeAccount.id ||
-		expenseAccount.currency !== incomeAccount.currency
+		expenseAccount.id === incomeAccount.id
+	)
+		return { outcome: 'incompatible' }
+	if (
+		expenseAccount.currency !== request.expenseCurrency ||
+		incomeAccount.currency !== request.incomeCurrency
+	)
+		return { outcome: 'incompatible' }
+	if (
+		expenseAccount.currency === incomeAccount.currency &&
+		request.expenseAmountMinor !== request.incomeAmountMinor
 	)
 		return { outcome: 'incompatible' }
 	if (
@@ -197,7 +216,8 @@ function assess(records: Records, request: InternalTransferCreateInput): Assessm
 		outcome: 'eligible',
 		expenseCategoryId: expenseCategory.id,
 		incomeCategoryId: incomeCategory.id,
-		currency: expenseAccount.currency
+		expenseCurrency: expenseAccount.currency,
+		incomeCurrency: incomeAccount.currency
 	}
 }
 
@@ -234,8 +254,6 @@ const stage = fromPromise(
 		const assessment = eligibleAssessment(input.assessment)
 		const common = {
 			organizationId: request.organizationId,
-			amountMinor: request.amountMinor,
-			currency: assessment.currency,
 			bookedOn: request.bookedOn,
 			description: null,
 			memo: null,
@@ -248,6 +266,8 @@ const stage = fromPromise(
 			app.transactions,
 			{
 				...common,
+				amountMinor: request.expenseAmountMinor,
+				currency: assessment.expenseCurrency,
 				accountId: request.expenseAccountId,
 				categoryId: assessment.expenseCategoryId,
 				kind: EXPENSE
@@ -258,6 +278,8 @@ const stage = fromPromise(
 			app.transactions,
 			{
 				...common,
+				amountMinor: request.incomeAmountMinor,
+				currency: assessment.incomeCurrency,
 				accountId: request.incomeAccountId,
 				categoryId: assessment.incomeCategoryId,
 				kind: INCOME
@@ -272,8 +294,10 @@ const stage = fromPromise(
 				incomeTransactionId: identifiers.incomeTransactionId,
 				expenseAccountId: request.expenseAccountId,
 				incomeAccountId: request.incomeAccountId,
-				amountMinor: request.amountMinor,
-				currency: assessment.currency
+				expenseAmountMinor: request.expenseAmountMinor,
+				expenseCurrency: assessment.expenseCurrency,
+				incomeAmountMinor: request.incomeAmountMinor,
+				incomeCurrency: assessment.incomeCurrency
 			},
 			{ id: identifiers.transferId }
 		)

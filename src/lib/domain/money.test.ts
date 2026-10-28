@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, formatSignedMoney, parseAmountMinor } from './money.js'
+import {
+	amountInputPattern,
+	formatMoney,
+	formatSignedMoney,
+	minorUnitsToInput,
+	parseAmountMinor
+} from './money.js'
 
 describe('parseAmountMinor', () => {
 	it.each([
@@ -27,6 +33,18 @@ describe('parseAmountMinor', () => {
 	])('rejects invalid amount %s', (input) => {
 		expect(parseAmountMinor(input).kind).toBe('invalid')
 	})
+
+	it('parses TZS using its two minor-unit digits', () => {
+		expect(parseAmountMinor('65000.00', 'TZS')).toEqual({ kind: 'valid', amountMinor: 6500000 })
+		expect(parseAmountMinor('65000.001', 'TZS').kind).toBe('invalid')
+		expect(amountInputPattern('TZS')).toBe(amountInputPattern('USD'))
+		expect(minorUnitsToInput(6500000, 'TZS')).toBe('65000.00')
+	})
+
+	it('uses the selected currency precision when parsing USD', () => {
+		expect(parseAmountMinor('42.17', 'USD')).toEqual({ kind: 'valid', amountMinor: 4217 })
+		expect(parseAmountMinor('42.173', 'USD').kind).toBe('invalid')
+	})
 })
 
 describe('formatMoney', () => {
@@ -48,6 +66,7 @@ describe('formatMoney', () => {
 
 	it('formats minor units as locale-aware currency', () => {
 		expect(formatMoney(1234, 'USD')).toBe('$12.34')
+		expect(formatMoney(6500000, 'TZS')).toBe('TSh\u00a065,000.00')
 	})
 
 	it('rejects negative or fractional minor units', () => {
@@ -64,5 +83,9 @@ describe('formatSignedMoney', () => {
 		[1234n, 'en-US', 'JPY', '¥1,234']
 	] as const)('formats %s minor units for %s / %s', (amount, locale, currency, expected) => {
 		expect(formatSignedMoney(amount, currency, locale)).toBe(expected)
+	})
+
+	it('uses the Tanzanian shilling symbol for account balances', () => {
+		expect(formatSignedMoney(6500000n, 'TZS')).toBe('TSh\u00a065,000.00')
 	})
 })

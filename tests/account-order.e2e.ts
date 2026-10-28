@@ -210,7 +210,7 @@ for (const route of ['/expenses/new', '/income/new']) {
 		await accounts.getByRole('button', { name: 'Done', exact: true }).click()
 		await page.goto(route)
 		await expect(page.getByLabel('Account', { exact: true }).locator('option:checked')).toHaveText(
-			'Bravo'
+			'Bravo · USD'
 		)
 	})
 }
