@@ -30,7 +30,7 @@ Use `createLogger(scope)` from `src/lib/logger.ts` for application `info`, `warn
 
 Jazz's embedded inspector requires its development server integration; `PUBLIC_DEBUG` does not enable it in a deployed build. Use the [standalone Jazz Inspector](https://v2.inspector.jazz.tools/) for a hosted lower-environment app, entering its server URL, app ID, and admin secret directly into that tool. Never expose the admin secret through a `PUBLIC_` variable.
 
-With `PUBLIC_DEBUG=true`, [Stately Inspector](https://stately.ai/docs/inspector) opens in a separate browser tab; allow popups for the app origin if necessary. It observes the application/startup/workspace/bank tree, shared forms, and transaction editing. Inspection includes state values, event types and actor relationships, with context, event payloads, results and raw errors removed before transmission to the external inspector. Other independent roots are not yet attached.
+With `PUBLIC_DEBUG=true`, the developer menu offers **Open Stately Inspector** and **Open Jazz inspector**. Neither opens automatically. Stately opens a separate browser tab when clicked; allow popups for the app origin if necessary. It observes the application/startup/workspace/bank tree, shared forms, and transaction editing. Sanitized machine descriptions and current states are replayed on connection so opening the inspector after startup still shows existing machines. Inspection includes state values, event types and actor relationships, with context, event payloads, results and raw errors removed before transmission to the external inspector. Other independent roots are not yet attached.
 
 ## Native PWA
 

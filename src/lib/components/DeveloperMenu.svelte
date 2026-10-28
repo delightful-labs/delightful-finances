@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { debugEnabled } from '#lib/logger.js'
+	import { openStateInspector } from '#lib/inspector.js'
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { onMount, setContext } from 'svelte'
 	import { fromStore } from 'svelte/store'
@@ -38,7 +39,13 @@
 </script>
 
 {#if debugEnabled}
-	<DeveloperMenuDialog {appId} {serverUrl} {browserOrigin} accountId={sessionSnapshot?.account?.id}>
+	<DeveloperMenuDialog
+		{appId}
+		{serverUrl}
+		{browserOrigin}
+		accountId={sessionSnapshot?.account?.id}
+		onOpenStateInspector={openStateInspector}
+	>
 		<SampleTransactionControls kind={INCOME} {...controls.income} />
 		<SampleTransactionControls kind={EXPENSE} {...controls.expense} />
 	</DeveloperMenuDialog>

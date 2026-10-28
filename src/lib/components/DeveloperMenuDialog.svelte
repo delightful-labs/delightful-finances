@@ -8,13 +8,15 @@
 		appId,
 		serverUrl,
 		browserOrigin,
-		accountId
+		accountId,
+		onOpenStateInspector
 	}: {
 		children: Snippet
 		appId: string
 		serverUrl: string
 		browserOrigin?: string | undefined
 		accountId?: string | undefined
+		onOpenStateInspector: () => void
 	} = $props()
 	let open = $state(false)
 	const dialogId = $props.id()
@@ -41,6 +43,12 @@
 		<dt>{m['developer.account_id']()}</dt>
 		<dd><code>{accountId || m['developer.unavailable']()}</code></dd>
 	</dl>
+	<Button type="button" onclick={onOpenStateInspector}
+		>{m['actions.open_subject']({ subject: m['developer.stately_inspector']() })}</Button
+	>
+	<a href="https://v2.inspector.jazz.tools/" target="_blank" rel="noopener noreferrer"
+		>{m['actions.open_subject']({ subject: m['developer.jazz_inspector']() })}</a
+	>
 	{@render children()}
 	<Button type="button" onclick={() => (open = false)}>{m['actions.close']()}</Button>
 </Dialog>

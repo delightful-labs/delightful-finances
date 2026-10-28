@@ -1,11 +1,19 @@
 import { browser } from '$app/env'
-import { createBrowserInspector, type StatelyInspectionEvent } from '@statelyai/inspect'
+import {
+	createBrowserInspector,
+	type StatelyActorEvent,
+	type StatelyInspectionEvent
+} from '@statelyai/inspect'
 import type { InspectionEvent, Snapshot } from 'xstate'
 import { createLogger, debugEnabled } from './logger.js'
 
 const logger = createLogger('inspector')
 let inspector: ReturnType<typeof createBrowserInspector> | undefined
 const lifetime = new AbortController()
+let listeners = new AbortController()
+// Sanitized diagnostic data only: no actor references or application context.
+// Keep registrations/current states separate from the SDK's rolling event history.
+const topology = new Map<string, StatelyActorEvent>()
 
 // The SDK's stop() does not remove its browser message listener. Scope that
 // listener to this module so a later inspector cannot reconnect the old adapter.
@@ -20,7 +28,7 @@ function inspectorWindow() {
 				) =>
 					target.addEventListener(type, listener, {
 						...(typeof options === 'boolean' ? { capture: options } : options),
-						signal: lifetime.signal
+						signal: listeners.signal
 					})
 			const value: unknown = Reflect.get(target, key, target)
 			return typeof value === 'function' ? value.bind(target) : value
@@ -66,7 +74,7 @@ function safeSnapshot(snapshot: unknown): Snapshot<undefined> & { value?: unknow
 	}
 }
 
-function serialize(event: StatelyInspectionEvent): StatelyInspectionEvent {
+function sanitize(event: StatelyInspectionEvent): StatelyInspectionEvent {
 	if (event.type === '@xstate.event')
 		return { ...event, event: { type: safeEventType(event.event.type) } }
 	if (event.type === '@xstate.snapshot')
@@ -82,20 +90,85 @@ function serialize(event: StatelyInspectionEvent): StatelyInspectionEvent {
 	}
 }
 
+function serialize(event: StatelyInspectionEvent): StatelyInspectionEvent {
+	const safe = sanitize(event)
+	if (safe.type === '@xstate.actor') topology.set(safe.sessionId, safe)
+	if (safe.type === '@xstate.snapshot') {
+		const registration = topology.get(safe.sessionId)
+		if (registration) {
+			topology.delete(safe.sessionId)
+			topology.set(safe.sessionId, { ...registration, snapshot: safe.snapshot })
+		}
+	}
+	// Bound historical descriptors across route changes and completed actors.
+	if (topology.size > 1000) {
+		const oldest = topology.keys().next().value
+		if (oldest !== undefined) topology.delete(oldest)
+	}
+	return safe
+}
+
+function getInspector() {
+	inspector ??= createBrowserInspector({
+		window: inspectorWindow(),
+		autoStart: false,
+		// Our composed charts exceed the SDK's default depth of 10. Truncated
+		// "[Object]" state nodes crash the hosted machine renderer.
+		serializationDepthLimit: 100,
+		sanitizeContext: () => ({}),
+		sanitizeEvent: (event) => ({ type: safeEventType(event.type) }),
+		serialize,
+		maxDeferredEvents: 200
+	})
+	return inspector
+}
+
+/** Called directly from the menu click so popup permission follows user intent. */
+export function openStateInspector() {
+	if (!browser || !debugEnabled || lifetime.signal.aborted) return
+	try {
+		const current = getInspector()
+		const target = current.adapter.targetWindow
+		if (target && !target.closed) {
+			target.focus()
+			return
+		}
+		listeners.abort()
+		listeners = new AbortController()
+		window.addEventListener(
+			'message',
+			(event: MessageEvent<unknown>) => {
+				const target = current.adapter.targetWindow
+				const data = event.data
+				if (
+					event.source !== target ||
+					event.origin !== 'https://stately.ai' ||
+					!data ||
+					typeof data !== 'object' ||
+					!('type' in data) ||
+					data.type !== '@statelyai.connected'
+				)
+					return
+				for (const registration of topology.values())
+					target?.postMessage(registration, 'https://stately.ai')
+			},
+			{ signal: listeners.signal }
+		)
+		current.start()
+		if (!current.adapter.targetWindow) logger.warn('Allow popups to open Stately Inspector')
+	} catch {
+		logger.warn('Inspector could not open')
+	}
+}
+
 /** Attach at existing roots; XState automatically includes their descendants. */
 export function inspectActor(event: InspectionEvent) {
 	if (!browser || !debugEnabled || lifetime.signal.aborted) return
 	try {
-		inspector ??= createBrowserInspector({
-			window: inspectorWindow(),
-			sanitizeContext: () => ({}),
-			sanitizeEvent: (event) => ({ type: safeEventType(event.type) }),
-			serialize,
-			maxDeferredEvents: 200
-		})
+		const current = getInspector()
 		// The SDK serializes snapshot events before its sanitizeContext hook runs.
 		// Project first so it never traverses Jazz clients or private live context.
-		inspector.inspect.next?.(
+		current.inspect.next?.(
 			event.type === '@xstate.snapshot'
 				? {
 						...event,
@@ -113,6 +186,8 @@ export function inspectActor(event: InspectionEvent) {
 if (import.meta.hot)
 	import.meta.hot.dispose(() => {
 		inspector?.stop()
+		listeners.abort()
 		lifetime.abort()
+		topology.clear()
 		inspector = undefined
 	})

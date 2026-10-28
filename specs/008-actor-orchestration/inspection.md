@@ -10,6 +10,23 @@ Requirement: use `@statelyai/inspect` behind the sole `PUBLIC_DEBUG` gate, on th
 to observe state topology, actor relationships, state values and event types. Never transmit live
 context, input/output, raw errors, finance records, credentials or provider payloads.
 
+User-directed follow-up: popups must be initiated from the developer menu, never at startup.
+The menu exposes Stately and standalone Jazz inspector actions. Stately uses `autoStart: false`
+and opens synchronously on the explicit menu click, focusing an existing popup when possible.
+Its 200-event history is supplemented by at most 1,000 sanitized machine-registration/current-state
+descriptors, replayed on a verified popup handshake. This is diagnostic data only, not an actor
+registry: it holds no actor references and cannot send application commands or change ownership.
+Replay avoids losing existing machine graphs when startup events roll out of the SDK buffer.
+The synchronous resource adapter owns listeners, popup acquisition and disposal; no async business
+workflow or duplicated lifecycle flags are introduced. HMR clears the descriptor cache.
+
+Real hosted-receiver verification exposed an additional failure masked by the former local popup
+fixture: the SDK's default definition depth of 10 replaced deep state nodes with `"[Object]"`,
+crashing Stately's renderer. A depth limit of 100 now preserves our composed charts; a 16-level
+unit fixture checks that state nodes are not truncated. The browser fixture now uses an actual
+cross-origin popup and handshake, and a manual unmocked check confirmed that the hosted Stately
+page renders `application-readiness` when opened from the menu, with zero automatic popups.
+
 Ownership and machine-first assessment: this is a synchronous diagnostic adapter at existing
 actor creation points, not a business workflow. One lazy browser inspector owns its popup and
 bounded 200-event buffer. XState owns inspection propagation to child actors; existing integration

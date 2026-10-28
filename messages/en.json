@@ -147,8 +147,10 @@
 		"account_id": "Current account ID",
 		"browser_origin": "Browser origin",
 		"jazz_app_id": "Jazz app ID",
+		"jazz_inspector": "Jazz inspector",
 		"jazz_server_url": "Jazz server URL",
 		"menu": "Developer menu",
+		"stately_inspector": "Stately Inspector",
 		"unavailable": "Unavailable"
 	},
 	"errors": {

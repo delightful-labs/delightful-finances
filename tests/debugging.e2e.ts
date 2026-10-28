@@ -7,16 +7,26 @@ declare global {
 	}
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, context }) => {
+	// Use a real cross-origin popup/handshake, with a local test receiver.
+	await context.route('https://stately.ai/**', (route) =>
+		route.fulfill({
+			contentType: 'text/html',
+			body: `<!doctype html><title>Inspector test receiver</title><script>
+			addEventListener('message', ({ data }) => opener.postMessage({ type: 'test:inspection', event: data }, '*'));
+			opener.postMessage({ type: '@statelyai.connected' }, '*');
+		</script>`
+		})
+	)
 	await page.addInitScript(() => {
 		window.debugFixture = { opens: 0, messages: [], disconnects: 0 }
-		window.open = () => {
+		const open = window.open.bind(window)
+		window.open = (url, target, features) => {
 			window.debugFixture.opens += 1
-			// Emulate the inspector handshake locally, without contacting Stately.
-			window.postMessage({ type: '@statelyai.connected' }, '*')
-			return window
+			return open(url, target, features)
 		}
-		window.addEventListener('message', ({ data }) => {
+		window.addEventListener('message', ({ data: message }) => {
+			const data = message?.type === 'test:inspection' ? message.event : message
 			if (data?.type === '@statelyai.disconnected') window.debugFixture.disconnects += 1
 			if (
 				data &&
@@ -46,6 +56,11 @@ test('debug flag controls developer tools and sanitized state inspection', async
 		await menu.focus()
 		await menu.press('Enter')
 		await expect(page.getByRole('dialog', { name: 'Developer menu', exact: true })).toBeVisible()
+		expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
+		await page.getByRole('button', { name: 'Open Stately Inspector', exact: true }).click()
+		await expect(
+			page.getByRole('link', { name: 'Open Jazz inspector', exact: true })
+		).toHaveAttribute('href', 'https://v2.inspector.jazz.tools/')
 		await page.keyboard.press('Escape')
 	} else {
 		await expect(menu).toHaveCount(0)
@@ -92,6 +107,8 @@ test('deployed debug build starts the inspector and developer menu', async ({ pa
 	await menu.focus()
 	await menu.press('Enter')
 	await expect(page.getByRole('dialog', { name: 'Developer menu', exact: true })).toBeVisible()
+	expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
+	await page.getByRole('button', { name: 'Open Stately Inspector', exact: true }).click()
 	await expect
 		.poll(() => page.evaluate(() => window.debugFixture.messages.length))
 		.toBeGreaterThan(0)
@@ -109,6 +126,11 @@ test('HMR replacement disconnects the old inspector and attaches the new module'
 	await expect(
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()
+	const menu = page.getByRole('button', { name: 'Developer menu', exact: true })
+	await menu.focus()
+	await menu.press('Enter')
+	await page.getByRole('button', { name: 'Open Stately Inspector', exact: true }).click()
+	await page.keyboard.press('Escape')
 	await expect
 		.poll(() => page.evaluate(() => window.debugFixture.messages.length))
 		.toBeGreaterThan(0)
@@ -148,7 +170,8 @@ test('HMR replacement disconnects the old inspector and attaches the new module'
 			timestamp
 		})
 		const inspectorPath = `/src/lib/inspector.ts?t=${timestamp}`
-		const { inspectActor }: typeof import('../src/lib/inspector.js') = await import(inspectorPath)
+		const { inspectActor, openStateInspector }: typeof import('../src/lib/inspector.js') =
+			await import(inspectorPath)
 		const xstatePath = '/node_modules/.vite/deps/xstate.js'
 		const { createActor, createMachine }: typeof import('xstate') = await import(xstatePath)
 		const actor = createActor(
@@ -156,6 +179,8 @@ test('HMR replacement disconnects the old inspector and attaches the new module'
 			{ inspect: inspectActor }
 		).start()
 		actor.stop()
+		openStateInspector()
+		original.openStateInspector()
 		const retired = createActor(createMachine({ id: 'retired-hmr-fixture' }), {
 			inspect: original.inspectActor
 		}).start()
