@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { debugEnabled } from '#lib/logger.js'
 	import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { app } from '#lib/schema.js'
@@ -6,7 +7,6 @@
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
-	const dev = import.meta.env.DEV
 	import { createActor } from 'xstate'
 	import { readable } from 'svelte/store'
 	import { fromStore } from 'svelte/store'
@@ -43,12 +43,12 @@
 	const db = getDb()
 	const session = fromStore(getJazzSession())
 	const membership = new QuerySubscriptionOne(() =>
-		dev
+		debugEnabled
 			? organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 			: undefined
 	)
 	const grants = new QuerySubscription(() =>
-		dev && filters.activeOrganizationId && session.current.account?.id
+		debugEnabled && filters.activeOrganizationId && session.current.account?.id
 			? app.accountMemberships.where({
 					organizationId: filters.activeOrganizationId,
 					userId: session.current.account.id
@@ -85,7 +85,8 @@
 		observe: sampleObservation
 	})
 	const sampleMachine = createSampleTransactionsMachine(creation.operation, (index) => {
-		if (!dev || batchScope !== currentSampleScope()) throw new Error('Sample scope changed')
+		if (!debugEnabled || batchScope !== currentSampleScope())
+			throw new Error('Sample scope changed')
 		const observation = sampleObservation()
 		const account = writableTransactionAccounts(observation).find(
 			(account) =>

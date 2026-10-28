@@ -20,6 +20,18 @@ Create and claim a hosted app in the Jazz dashboard first. In Netlify's environm
 
 Other Netlify contexts run only `pnpm build` and do not deploy database changes. Configure separate Jazz app settings for previews when they need database access. Local `pnpm build` also remains a frontend-only build.
 
+## Debug logging
+
+`PUBLIC_DEBUG` is the sole gate for application logging and the developer menu. Vite defaults it to `true` when serving in development mode and `false` otherwise, while preserving explicit shell or mode-specific `.env` values. Set `PUBLIC_DEBUG=false` in `.env.local` to disable debugging locally, then restart the development server. To enable debugging in a deployed lower environment, set `PUBLIC_DEBUG=true` in that Netlify context with build scope, then rebuild.
+
+The same setting enables the existing developer menu, including its sample transaction controls. The menu trigger retains its existing keyboard-focus behavior and appearance. Sample creation still requires the current workspace's write permissions.
+
+Use `createLogger(scope)` from `src/lib/logger.ts` for application `info`, `warn`, and `error` messages. Select only non-sensitive scalar fields; never log credentials, finance records, provider payloads, or raw errors/messages/stacks. Existing bank diagnostics retain their error classification and timing heartbeats. SDK-internal logs are controlled separately.
+
+Jazz's embedded inspector requires its development server integration; `PUBLIC_DEBUG` does not enable it in a deployed build. Use the [standalone Jazz Inspector](https://v2.inspector.jazz.tools/) for a hosted lower-environment app, entering its server URL, app ID, and admin secret directly into that tool. Never expose the admin secret through a `PUBLIC_` variable.
+
+With `PUBLIC_DEBUG=true`, [Stately Inspector](https://stately.ai/docs/inspector) opens in a separate browser tab; allow popups for the app origin if necessary. It observes the application/startup/workspace/bank tree, shared forms, and transaction editing. Inspection includes state values, event types and actor relationships, with context, event payloads, results and raw errors removed before transmission to the external inspector. Other independent roots are not yet attached.
+
 ## Native PWA
 
 SvelteKit bundles and registers `src/service-worker/index.ts` in production. `static/manifest.webmanifest` supplies the installation metadata and existing app icon. No PWA plugin or Workbox dependency is used.

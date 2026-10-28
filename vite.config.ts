@@ -1,5 +1,5 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { sveltekit } from '@sveltejs/kit/vite'
 import adapter from '@sveltejs/adapter-auto'
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
@@ -12,6 +12,14 @@ export default defineConfig({
 	// A different page origin has different browser storage. Never silently change ports.
 	server: { port: 5173, strictPort: true },
 	plugins: [
+		{
+			name: 'finance-debug-default',
+			config(config, { command, mode }) {
+				const env = loadEnv(mode, config.envDir ?? config.root ?? process.cwd(), 'PUBLIC_DEBUG')
+				process.env.PUBLIC_DEBUG ??=
+					env.PUBLIC_DEBUG ?? String(command === 'serve' && mode === 'development')
+			}
+		},
 		sveltekit({
 			adapter: adapter(),
 			preprocess: vitePreprocess(),

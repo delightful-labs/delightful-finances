@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { debugEnabled } from '#lib/logger.js'
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { onMount, setContext } from 'svelte'
 	import { fromStore } from 'svelte/store'
@@ -36,7 +37,7 @@
 	})
 </script>
 
-{#if import.meta.env.DEV}
+{#if debugEnabled}
 	<DeveloperMenuDialog {appId} {serverUrl} {browserOrigin} accountId={sessionSnapshot?.account?.id}>
 		<SampleTransactionControls kind={INCOME} {...controls.income} />
 		<SampleTransactionControls kind={EXPENSE} {...controls.expense} />

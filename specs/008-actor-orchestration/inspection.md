@@ -2,7 +2,83 @@
 
 The custom development trace adapter, browser API, actor wiring and dedicated tests were removed
 at the user's request in favor of using the XState tooling ecosystem when inspection is needed.
-No replacement inspector is installed or configured.
+The Stately integration below replaces that removed custom tooling.
+
+## Stately Inspector — reviewed scope and verification
+
+Requirement: use `@statelyai/inspect` behind the sole `PUBLIC_DEBUG` gate, on the browser only,
+to observe state topology, actor relationships, state values and event types. Never transmit live
+context, input/output, raw errors, finance records, credentials or provider payloads.
+
+Ownership and machine-first assessment: this is a synchronous diagnostic adapter at existing
+actor creation points, not a business workflow. One lazy browser inspector owns its popup and
+bounded 200-event buffer. XState owns inspection propagation to child actors; existing integration
+components retain actor creation, startup, replacement, drain and shutdown. HMR disconnects the
+inspector, aborts its module-scoped browser listeners, and prevents retired callbacks from
+reattaching. This is synchronous resource-adapter cleanup; no business workflow or actor ownership
+changes are introduced. No actor registry, reparenting or message routing is introduced.
+
+The official SDK's `sanitizeContext` and `sanitizeEvent` hooks discard context/event payloads;
+its serializer additionally rebuilds snapshots without results/errors/children and strips data
+fields from static machine definitions before the adapter buffers or transmits them. Inspection
+attachment failures produce only a generic debug warning. State values and names are static
+machine identifiers, not domain record identifiers. Browser popup permission may be required.
+
+- [x] Install the official inspector and implement sanitized, environment-gated attachment.
+- [x] Attach the application root (including startup/workspace/bank descendants), shared scoped
+      forms, and the independent transaction editor root without changing their ownership.
+- [x] User approved testing this implementation.
+- [x] Verify disabled/SSR no-op behavior, topology and event redaction, result/error
+      removal, definition redaction, popup behavior, and child propagation through the real SDK.
+- [x] Redact runtime actor names and internal completion/error/snapshot event suffixes that may
+      contain provider account IDs. Preserve static machine names and generated session IDs.
+- [x] Verify HMR disposal and replacement through Vite's live browser update pipeline, without
+      editing shared source files. The regression check confirms one disconnect, one replacement
+      popup, fresh inspection events, no replay of the retired inspector's buffered events, and no
+      reattachment through retired callbacks. The test exposed that SDK `stop()` leaves a message
+      listener behind; a module-scoped abort signal now owns and removes that listener.
+- [ ] In a subsequent reviewed batch, attach the independent account archive/delete-grant,
+      recovery phrase, account order, sample transaction, and PWA update roots.
+
+## Lower-environment logging — reviewed scope and verification
+
+Requirement: application console diagnostics and the developer menu run only when the build-time
+`PUBLIC_DEBUG` setting is exactly `true`. Vite defaults the setting to `true` for development
+serving and `false` otherwise, preserving shell and mode-specific env-file overrides. An explicit
+local `false` disables the menu and application logs. Other deployed builds remain silent. SDK logging and
+service-worker development behavior are independent of this flag.
+
+Plan: declare the validated public setting, centralize console emission in `src/lib/logger.ts`,
+and migrate bank traces and transaction diagnostics. Keep the existing bank error allowlists and
+use that classifier for transaction errors instead of raw messages, stacks or causes. No actor
+ownership, workflow or persistence changes are required; the existing trace resource adapter
+continues to clear its heartbeat in `finally`.
+
+- [x] Implement the environment gate and scoped scalar-only logger.
+- [x] Migrate existing application console calls and document deployment setup.
+- [x] Extend the same gate to the developer menu and sample transaction controls, including
+      their subscription and write guards. Preserve existing presentation and permission checks.
+- [x] User approved testing the implementation.
+- [x] Add unit coverage for development, explicit opt-in, default/false deployed
+      builds, all logger levels, error classification, and trace heartbeat cleanup.
+- [x] Verify debug-enabled and explicitly disabled agent-browser behavior, including menu absence,
+      inspector attachment, form payload redaction and authorized sample creation.
+- [x] Verify an optimized production build and a browser smoke check of its inspector/menu startup.
+      This smoke uses a dummy unreachable Jazz URL and does not claim hosted workspace coverage.
+- [ ] Production-build sample creation and disabled-production browser checks remain unperformed;
+      the equivalent development flag paths and build-mode configuration precedence are covered.
+
+Verification uses `src/lib/{logger,inspector,debug-config}.test.ts`,
+`src/lib/integrations/diagnostics.test.ts`, existing SimpleFIN/passkey tests, and the affected
+application-readiness/scoped-form/transaction-edit/sample-transactions tests. Browser coverage is
+`tests/debugging.e2e.ts` with `playwright.debug.config.ts`: explicit true/false agent runs and an
+enabled production smoke. The fixture intercepts popup communication locally instead of sending
+test data to Stately and explicitly isolates Jazz settings from developer `.env` credentials.
+
+Jazz inspector assessment: the installed alpha.59 provider attaches its overlay only outside
+production, and its Vite plugin serves inspector assets through development middleware. The
+documented supported hosted-server path is the standalone Jazz Inspector. The debug flag does
+not claim to enable a deployed overlay. No embedded inspector changes are included in this cycle.
 
 XState provides an inspection API; Stately Inspector consumes it to visualize state machines and
 actor communication. Evaluate that tooling before adding custom instrumentation. Any future

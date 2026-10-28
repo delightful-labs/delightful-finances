@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { createLogger } from '#lib/logger.js'
+	import { safeBankError } from '#lib/integrations/diagnostics.js'
+
+	const logger = createLogger('Jazz transaction view')
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
@@ -113,13 +117,10 @@
 			if (!error || reportedQueryErrors.has(error)) continue
 			reportedQueryErrors.add(error)
 			// Log error details only, never query parameters or finance records.
-			console.error('[Jazz transaction view] Query failed', {
+			logger.error('Query failed', {
 				query,
 				kind,
-				name: error.name,
-				message: error.message,
-				stack: error.stack,
-				userAgent: navigator.userAgent
+				...safeBankError(error)
 			})
 		}
 	})
