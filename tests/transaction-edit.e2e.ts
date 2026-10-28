@@ -625,13 +625,18 @@ test('adds an image to an existing transaction and restores its preview after re
 	await expect(page.getByRole('img', { name: 'Preview of edited.png' })).toBeVisible()
 })
 
-test('shows localized feedback when selected images exceed the per-transaction limit', async ({
+test('shows shared form feedback when selected images exceed the per-transaction limit', async ({
 	page
 }) => {
 	await seedTransaction(page)
 	await page.goto('/expenses/new')
 	const main = page.getByRole('main')
 	await main.getByLabel('Amount', { exact: true }).fill('12.34')
+	await expect(
+		main.getByText(
+			'JPEG, PNG, or WebP images. Up to five images per transaction. Up to 10 MiB per image.'
+		)
+	).toBeVisible()
 	await main.locator('input[type="file"]').setInputFiles(
 		Array.from({ length: 6 }, (_, index) => ({
 			name: `receipt-${index}.png`,
@@ -641,11 +646,11 @@ test('shows localized feedback when selected images exceed the per-transaction l
 	)
 	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await expect(main.locator('#transaction-attachments-error')).toContainText(
-		'A transaction can have up to five images.'
+		'Check the form and try again.'
 	)
 })
 
-test('shows localized feedback for unsupported and oversized image selections', async ({
+test('shows shared form feedback for unsupported and oversized image selections', async ({
 	page
 }) => {
 	await seedTransaction(page)
@@ -653,14 +658,12 @@ test('shows localized feedback for unsupported and oversized image selections', 
 		{
 			name: 'receipt.svg',
 			mimeType: 'image/svg+xml',
-			buffer: Buffer.from('<svg></svg>'),
-			message: 'Choose JPEG, PNG, or WebP images.'
+			buffer: Buffer.from('<svg></svg>')
 		},
 		{
 			name: 'oversized.png',
 			mimeType: 'image/png',
-			buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
-			message: 'Each image must be 10 MiB or smaller.'
+			buffer: Buffer.alloc(10 * 1024 * 1024 + 1)
 		}
 	]
 	for (const selection of selections) {
@@ -673,7 +676,9 @@ test('shows localized feedback for unsupported and oversized image selections', 
 			buffer: selection.buffer
 		})
 		await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-		await expect(main.locator('#transaction-attachments-error')).toContainText(selection.message)
+		await expect(main.locator('#transaction-attachments-error')).toContainText(
+			'Check the form and try again.'
+		)
 	}
 })
 

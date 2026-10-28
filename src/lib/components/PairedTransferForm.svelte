@@ -49,7 +49,7 @@
 			return m['errors.load_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
 		if (view.feedback.kind !== 'result') return ''
 		const result = view.feedback.result
-		if (result.outcome === 'invalid') return m['transactions.validation_error']()
+		if (result.outcome === 'invalid') return m['forms.validation_error']()
 		if (result.outcome === 'denied' || result.outcome === 'unavailable')
 			return reasonText(result.reason)
 		if (result.outcome === 'failed')

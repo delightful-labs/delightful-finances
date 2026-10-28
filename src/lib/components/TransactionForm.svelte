@@ -164,17 +164,7 @@
 			: []
 	)
 	const attachmentIssue = $derived(issues.find(({ path }) => path[0] === 'attachments'))
-	const attachmentError = $derived(
-		attachmentIssue?.message === 'unsupportedType'
-			? m['attachments.unsupported_type']()
-			: attachmentIssue?.message === 'tooLarge'
-				? m['attachments.image_too_large']()
-				: attachmentIssue?.message === 'limitReached'
-					? m['attachments.image_limit_reached']()
-					: attachmentIssue
-						? m['attachments.invalid_selection']()
-						: undefined
-	)
+
 	// Finance maps validation paths to translated messages; the UI stays independent of Zod.
 	function fieldInvalid(issues: readonly { path: readonly PropertyKey[] }[], field: string) {
 		return issues.some(
@@ -413,9 +403,9 @@
 					/>
 				{/key}
 				{#if attachmentIssue}
-					<p id="transaction-attachments-error" role="alert">{attachmentError}</p>
+					<p id="transaction-attachments-error" role="alert">{m['forms.validation_error']()}</p>
 				{/if}
-				<p>{m['attachments.image_limits']()}</p>
+				<p>{m['images.formats']()} {m['images.max_count']()} {m['images.max_file_size']()}</p>
 			{/if}
 		{/snippet}
 		{#snippet controls(form)}
@@ -443,7 +433,7 @@
 				{view}
 				subject={m['nouns.transaction']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
-				invalidMessage={m['transactions.validation_error']()}
+				invalidMessage={m['forms.validation_error']()}
 				section="result"
 			/>
 		{/snippet}

@@ -64,24 +64,6 @@
 		"all": "All",
 		"archived": "Archived only"
 	},
-	"attachments": {
-		"image_preview": "Preview of {name}",
-		"image_limits": "JPEG, PNG, or WebP images; up to five images and 10 MiB per image.",
-		"invalid_selection": "Choose valid image files.",
-		"unsupported_type": "Choose JPEG, PNG, or WebP images.",
-		"image_too_large": "Each image must be 10 MiB or smaller.",
-		"image_limit_reached": "A transaction can have up to five images.",
-		"remove_image": "Remove {name}",
-		"remove_failed": "This image could not be removed. Try again.",
-		"upload_failed": "The transaction was saved, but some images could not be attached.",
-		"edit_unavailable": "This image is not fully available on this device yet.",
-		"edit_conflict": "This image changed while you were editing. Reopen it and try again.",
-		"edit_save_failed": "The edited image could not be saved. The existing image is unchanged.",
-		"edit_unresolved": "The save could not be confirmed. Check the image before trying again.",
-		"saving_image": "Saving edited image…",
-		"edit_failed": "This image could not be edited. Cancel and try again.",
-		"loading_image": "Loading image…"
-	},
 	"bank": {
 		"account_already_linked": "This local account is already linked to another provider account. Add a new account or select an unlinked account.",
 		"cancelled": "Operation cancelled. Credential locked. If token claim had begun, revoke it at SimpleFIN before reconnecting.",
@@ -196,7 +178,20 @@
 		"session_unavailable": "Editing is unavailable until your session is ready. If your session changed, reopen this page.",
 		"settling": "Finishing your change…",
 		"unavailable_reference": "A selected record is no longer available in this workspace. Select an available record and try again.",
-		"unknown": "The save result is unknown. Check your records before trying again."
+		"unknown": "The save result is unknown. Check your records before trying again.",
+		"validation_error": "Check the form and try again."
+	},
+	"images": {
+		"avatar_alt": "Your avatar",
+		"avatar_resize": "Images are resized for your avatar.",
+		"crop_avatar_title": "Crop your avatar",
+		"edit_failed": "The image could not be edited. Check it before trying again.",
+		"formats": "JPEG, PNG, or WebP images.",
+		"max_count": "Up to five images per transaction.",
+		"max_file_size": "Up to 10 MiB per image.",
+		"preview_name": "Preview of {name}",
+		"remove_failed": "This image could not be removed. Try again.",
+		"transaction_upload_failed": "The transaction was saved, but some images could not be attached."
 	},
 	"labels": {
 		"actions": "Actions",
@@ -462,10 +457,6 @@
 		"updated": "Permissions were updated."
 	},
 	"profile": {
-		"avatar_alt": "Your avatar",
-		"avatar_description": "PNG, JPEG, or WebP, up to 10 MB. Images are resized for your avatar.",
-		"avatar_invalid": "Choose a valid PNG, JPEG, or WebP image up to 10 MB.",
-		"crop_title": "Crop your avatar",
 		"name_description": "Leave the name blank to use your account ID.",
 		"name_invalid": "Enter a valid display name."
 	},
@@ -532,8 +523,7 @@
 		"save_unresolved": "The save result is uncertain. Save again to verify the same records when connected before issuing another write. Keep this form open until the result is resolved.",
 		"unavailable": "This transaction is unavailable in the selected workspace.",
 		"updated_at": "Last edited at",
-		"updated_by": "Last edited by",
-		"validation_error": "Check the transaction details and try again."
+		"updated_by": "Last edited by"
 	},
 	"transfers": {
 		"conflict_notice": "This transfer link is inconsistent. Related transactions are excluded from totals until it is repaired.",

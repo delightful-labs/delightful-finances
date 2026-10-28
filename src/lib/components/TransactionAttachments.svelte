@@ -30,10 +30,10 @@
 			name={image.name}
 			preview={image.source}
 			downloadUrl={image.source}
-			alt={m['attachments.image_preview']({ name: image.name })}
+			alt={m['images.preview_name']({ name: image.name })}
 			infoLabel={m['labels.subject_details']({ subject: m['nouns.image']({ count: 1 }) })}
 			removeLabel={m['actions.remove_subject']({ subject: m['nouns.image']({ count: 1 }) })}
-			removeAccessibleLabel={m['attachments.remove_image']({ name: image.name })}
+			removeAccessibleLabel={m['actions.remove_name']({ name: image.name })}
 			disabled={removingIds.includes(image.id)}
 			onremove={canEdit && onremove ? () => onremove?.(image.id) : undefined}
 		>
@@ -52,7 +52,7 @@
 			{/snippet}
 		</AvatarImageTile>
 		{#if canEdit && failedIds.includes(image.id)}
-			<p role="status">{m['attachments.remove_failed']()}</p>
+			<p role="status">{m['images.remove_failed']()}</p>
 		{/if}
 	</div>
 {/each}

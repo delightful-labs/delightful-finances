@@ -616,7 +616,7 @@
 					view={formView}
 					subject={m['nouns.transaction']({ count: 1 })}
 					reasonText={(reason) => formReasonText[reason]()}
-					invalidMessage={m['transactions.validation_error']()}
+					invalidMessage={m['forms.validation_error']()}
 					section="readiness"
 					onRetryReadiness={retryReadiness}
 				/>

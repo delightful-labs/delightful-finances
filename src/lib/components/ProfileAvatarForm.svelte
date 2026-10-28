@@ -52,7 +52,9 @@
 	})
 </script>
 
-<Text id="avatar-help">{m['profile.avatar_description']()}</Text>
+<Text id="avatar-help"
+	>{m['images.formats']()} {m['images.max_file_size']()} {m['images.avatar_resize']()}</Text
+>
 <FormFeedback
 	{view}
 	subject={m['nouns.profile']({ count: 1 })}
@@ -104,7 +106,7 @@
 				required
 				disabled={!view.fieldsEditable}
 			/>
-			{#if selectionError}<p role="alert">{m['profile.avatar_invalid']()}</p>{/if}
+			{#if selectionError}<p role="alert">{m['forms.validation_error']()}</p>{/if}
 		{/snippet}
 		{#snippet controls(view)}
 			{#if selectedFile && selectedFile !== savedFile}
@@ -118,7 +120,7 @@
 				{view}
 				subject={m['nouns.profile']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
-				invalidMessage={m['profile.avatar_invalid']()}
+				invalidMessage={m['forms.validation_error']()}
 				successMessage={() =>
 					m['status.saved_subject']({ subject: m['nouns.avatar']({ count: 1 }) })}
 				section="result"
@@ -128,7 +130,7 @@
 {/key}
 {#if pendingFile}
 	<Dialog
-		heading={m['profile.crop_title']()}
+		heading={m['images.crop_avatar_title']()}
 		bind:open={cropOpen}
 		closedby="any"
 		onclose={() => (pendingFile = null)}

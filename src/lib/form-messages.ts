@@ -3,7 +3,7 @@ import { m } from './paraglide/messages.js'
 export const formReasonText = {
 	checkRetained: () => m['transactions.check_retained'](),
 	saveUnresolved: () => m['transactions.save_unresolved'](),
-	attachmentsFailed: () => m['attachments.upload_failed'](),
+	attachmentsFailed: () => m['images.transaction_upload_failed'](),
 	linkedTransferRequiresUnlink: () => m['forms.linked_transfer_requires_unlink'](),
 	sessionUnavailable: () => m['forms.session_unavailable'](),
 	selectWorkspace: () =>

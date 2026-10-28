@@ -370,6 +370,11 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 	test.setTimeout(120_000)
 	await page.goto('/account')
 	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+	await expect(
+		page.getByText(
+			'JPEG, PNG, or WebP images. Up to 10 MiB per image. Images are resized for your avatar.'
+		)
+	).toBeVisible()
 	const initial = await avatarRecord(page)
 	for (const file of [
 		{ name: 'avatar.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') },
@@ -385,7 +390,7 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 			await cropDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 		} else {
 			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-				'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
+				'Check the form and try again.'
 			)
 		}
 		expect(await avatarRecord(page)).toEqual(initial)

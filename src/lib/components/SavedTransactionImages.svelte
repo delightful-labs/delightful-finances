@@ -39,13 +39,7 @@
 		})
 	)
 	let view = $state.raw(savedImageEditorPresentation(actor.getSnapshot()))
-	const problem = $derived({
-		unavailable: m['attachments.edit_unavailable'](),
-		conflict: m['attachments.edit_conflict'](),
-		editingFailed: m['attachments.edit_failed'](),
-		saveFailed: m['attachments.edit_save_failed'](),
-		unresolved: m['attachments.edit_unresolved']()
-	})
+
 	function send(event: Parameters<typeof actor.send>[0]) {
 		if (actor.getSnapshot().status === 'active') actor.send(event)
 	}
@@ -89,7 +83,7 @@
 	editableIds={view.editableIds}
 	onedit={(attachmentId) => send({ type: 'EDIT', attachmentId })}
 />
-{#if view.problem}<StatusMessage variant="error" text={problem[view.problem]} />{/if}
+{#if view.problem}<StatusMessage variant="error" text={m['images.edit_failed']()} />{/if}
 {#if view.dialog}
 	<Dialog
 		heading={m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}
@@ -104,8 +98,8 @@
 			<StatusMessage
 				variant="loading"
 				text={view.dialog.kind === 'loading'
-					? m['attachments.loading_image']()
-					: m['attachments.saving_image']()}
+					? m['status.loading_subject']({ subject: m['nouns.image']({ count: 1 }) })
+					: m['forms.settling']()}
 			/>
 			<Button type="button" onclick={() => send({ type: 'CLOSE' })}>{m['actions.close']()}</Button>
 		{/if}
