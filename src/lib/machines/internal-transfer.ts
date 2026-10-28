@@ -337,7 +337,7 @@ function assessUnlink(records: UnlinkRecords, request: TransferEndpointRequest):
 }
 
 function transferEndpointMatches(
-	transaction: TransactionRow,
+	transaction: Endpoint,
 	transfer: InternalTransfer,
 	side: 'expense' | 'income'
 ): boolean {
