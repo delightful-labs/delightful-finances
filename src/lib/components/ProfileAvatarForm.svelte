@@ -93,6 +93,7 @@
 						onSelectionChange(savedFile)
 					}
 				}
+				infoLabel={m['labels.subject_details']({ subject: m['nouns.avatar']({ count: 1 }) })}
 				removeLabel={selectedFile === savedFile
 					? m['actions.remove_subject']({ subject: m['nouns.avatar']({ count: 1 }) })
 					: m['actions.clear_selected_subject']({ subject: m['nouns.image']({ count: 1 }) })}

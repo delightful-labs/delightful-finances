@@ -122,9 +122,8 @@
 		if (
 			feedback.kind === 'result' &&
 			(feedback.result.outcome === 'succeeded' ||
-				(feedback.result.outcome === 'partial' &&
-					feedback.result.reason === 'attachmentsFailed') ||
-			completedAfterSave) &&
+				(feedback.result.outcome === 'partial' && feedback.result.reason === 'attachmentsFailed') ||
+				completedAfterSave) &&
 			selectedAttachments.length > 0
 		) {
 			selectedAttachments = []
@@ -599,15 +598,6 @@
 			creatorProfile={creatorQuery.current}
 			editorProfile={editorQuery.current}
 		>
-			{#snippet attachments()}
-				<TransactionAttachments
-					images={attachmentImages}
-					canEdit={formView.fieldsEditable}
-					removingIds={removingAttachmentIds}
-					failedIds={failedAttachmentIds}
-					onremove={removeAttachment}
-				/>
-			{/snippet}
 			{#snippet actions()}
 				<InternalTransferDeleteActions
 					transactionId={transaction?.id ?? page.params.id ?? ''}
@@ -668,7 +658,17 @@
 						view={formView}
 						onsubmit={submitForm}
 						onreset={resetForm}
-					/>
+					>
+						{#snippet savedImages()}
+							<TransactionAttachments
+								images={attachmentImages}
+								canEdit={formView.fieldsEditable}
+								removingIds={removingAttachmentIds}
+								failedIds={failedAttachmentIds}
+								onremove={removeAttachment}
+							/>
+						{/snippet}
+					</TransactionForm>
 				{/if}
 			{/snippet}
 		</TransactionDetails>

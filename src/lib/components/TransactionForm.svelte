@@ -4,13 +4,14 @@
 	import {
 		Button,
 		InputText,
+		InputAvatar,
 		InputDate,
 		Select,
 		Textarea,
 		InputCurrency,
 		FieldFeedback
 	} from 'delightful-ui'
-	import { untrack, tick } from 'svelte'
+	import { untrack, tick, type Snippet } from 'svelte'
 	import { amountInputPattern, minorUnitsToInput } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
@@ -46,6 +47,7 @@
 		oncancel,
 		oninput,
 		onattachmentschange,
+		savedImages,
 		attachmentPickerRevision = 0,
 		onaddcategory,
 		canAddCategory = false,
@@ -94,6 +96,7 @@
 		canAddCategory?: boolean
 		createdCategory?: Category | undefined
 		oninput?: (event: Event) => void
+		savedImages?: Snippet
 		onattachmentschange?: (files: readonly File[]) => void
 		attachmentPickerRevision?: number
 		transferSuggestions?: readonly (InternalTransferCandidate & {
@@ -116,6 +119,12 @@
 		onLinkCounterpart?: (transactionId: string) => void
 		onUnlinkTransfer?: () => void
 	} = $props()
+
+	let selectedImages = $state<File | File[] | null>([])
+	$effect(() => {
+		void attachmentPickerRevision
+		selectedImages = []
+	})
 
 	const resetRevision = $derived(view.draftRevision)
 	let activeCheckFieldsKey = $state('')
@@ -396,25 +405,36 @@
 					name="memo"
 					defaultValue={initialTransaction?.memo ?? ''}
 				></Textarea>
-				<label for="transaction-attachments">
-					{m['actions.add_subject']({ subject: m['nouns.image']({ count: 2 }) })}
-				</label>
 				{#key attachmentPickerRevision}
-					<input
+					<InputAvatar
+						label={m['actions.add_subject']({ subject: m['nouns.image']({ count: 2 }) })}
+						uploadLabel={m['actions.select_subject']({ subject: m['nouns.image']({ count: 2 }) })}
+						infoLabel={m['labels.subject_details']({ subject: m['nouns.image']({ count: 1 }) })}
+						removeLabel={m['actions.remove_subject']({ subject: m['nouns.image']({ count: 1 }) })}
 						id="transaction-attachments"
 						name="attachments"
-						type="file"
 						accept="image/jpeg,image/png,image/webp"
 						multiple
+						bind:value={
+							() => selectedImages,
+							(value) => {
+								selectedImages = value
+								onattachmentschange?.(Array.isArray(value) ? value : value ? [value] : [])
+								const element = document.getElementById('transaction-attachments')
+								void tick().then(() => {
+									if (element?.isConnected && element instanceof HTMLInputElement)
+										element.form?.dispatchEvent(new Event('input', { bubbles: true }))
+								})
+							}
+						}
 						disabled={!form.fieldsEditable}
 						aria-invalid={attachmentIssue !== undefined || undefined}
 						aria-describedby={attachmentIssue ? 'transaction-attachments-error' : undefined}
-						onchange={(event) => {
-							const target = event.currentTarget
-							if (target instanceof HTMLInputElement)
-								onattachmentschange?.([...(target.files ?? [])])
-						}}
-					/>
+					>
+						{#snippet leadingImages()}
+							{#if savedImages}{@render savedImages()}{/if}
+						{/snippet}
+					</InputAvatar>
 				{/key}
 				{#if attachmentIssue}
 					<p id="transaction-attachments-error" role="alert">{attachmentError}</p>
