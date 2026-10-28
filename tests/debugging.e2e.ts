@@ -238,3 +238,24 @@ test('startup failure diagnostics follow the debug flag and preserve retry', asy
 	await page.getByRole('button', { name: 'Try again', exact: true }).click()
 	await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
 })
+
+test('deployed debug build prepares fresh hosted Jazz workspaces', async ({ page }) => {
+	test.skip(process.env.JAZZ_HOSTED_PREVIEW_SMOKE !== 'true')
+	const failures: string[] = []
+	page.on('pageerror', (error) => failures.push(error.message))
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
+	await expect(
+		page.getByText('Your workspaces could not be prepared.', { exact: false })
+	).toHaveCount(0)
+	await openCreationModal(page, 'Add Account')
+	const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true })
+	await dialog.getByLabel('Account name', { exact: true }).fill('Preview smoke account')
+	await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
+	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+	await expect(dialog.getByRole('status')).toContainText('Preview smoke account')
+	expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
+	expect(failures).toEqual([])
+})

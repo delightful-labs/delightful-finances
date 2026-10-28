@@ -18,7 +18,11 @@ Create and claim a hosted app in the Jazz dashboard first. In Netlify's environm
 
 `netlify.toml` runs `pnpm deploy:jazz && pnpm build` for production deployments. The Jazz command uses the installed SDK version and deploys `src/lib/schema.ts`, `src/lib/permissions.ts`, and migrations from `src/lib/migrations`. A failed database deployment stops the frontend build. A successful database deployment takes effect immediately, even if the subsequent frontend build fails, so schema and permission changes must remain compatible with the currently published app.
 
-Other Netlify contexts run only `pnpm build` and do not deploy database changes. Configure separate Jazz app settings for previews when they need database access. Local `pnpm build` also remains a frontend-only build.
+Deploy Previews run `pnpm build:deploy-preview`. Each build provisions a fresh Jazz Cloud app, waits for its admin endpoint to become available, deploys its schema and permissions, then builds the frontend with that app's public settings. Preview builds override inherited Jazz app/server settings and need no preconfigured Jazz secret. The generated admin secret is used for readiness checks and passed only to the schema-deploy child process, never written to a file, logged, or passed to the frontend build. Jazz deployment output is suppressed to avoid printing server payloads; the build log identifies the failed stage and reports HTTP status codes from recognized Jazz admin errors. Readiness checks are bounded to 12 attempts with five-second pauses; each request has a five-second timeout. Temporary 404/502/503/504 responses and request timeouts wait for another check. App creation itself is never retried automatically. A failure stops the build instead of falling back to a shared app.
+
+Every preview rebuild starts with fresh data. These generated apps remain unclaimed and Jazz automatically deletes them after 14 days, including apps left by failed or cancelled builds. Rebuild an expired preview to restore its backend. This flow intentionally does not retain admin credentials for later inspection/claiming. See [Jazz provisioning and app lifetime](https://jazz.tools/docs/getting-started/server-setup).
+
+The preview command refuses to run unless Netlify's `CONTEXT` is `deploy-preview`. Branch deploys and local `pnpm build` remain frontend-only builds and require their own public Jazz settings.
 
 ## Debug logging
 

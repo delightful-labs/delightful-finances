@@ -12,6 +12,7 @@
 		"pretest:unit": "pnpm paraglide",
 		"pretest:e2e": "pnpm paraglide",
 		"build": "vite build",
+		"build:deploy-preview": "node --experimental-strip-types netlify-preview.ts",
 		"deploy:jazz": "jazz-tools deploy --schema-dir src/lib --migrations-dir src/lib/migrations",
 		"preview": "vite preview",
 		"prepare": "pnpm paraglide && FINANCE_PREVIEW=true svelte-kit sync",

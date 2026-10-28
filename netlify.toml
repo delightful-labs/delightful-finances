@@ -5,7 +5,7 @@ command = "pnpm build"
 command = "pnpm deploy:jazz && pnpm build"
 
 [context.deploy-preview]
-command = "pnpm deploy:jazz && pnpm build"
+command = "pnpm build:deploy-preview"
 
 [context.deploy-preview.environment]
 PUBLIC_DEBUG = "true"
