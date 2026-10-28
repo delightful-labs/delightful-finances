@@ -12,12 +12,14 @@
 		transaction,
 		form,
 		actions,
+		attachments,
 		creatorProfile,
 		editorProfile
 	}: {
 		transaction: TransactionDetail | undefined | null
 		form: Snippet
 		actions?: Snippet
+		attachments?: Snippet
 		creatorProfile: AttributionProfile | null | undefined
 		editorProfile: AttributionProfile | null | undefined
 	} = $props()
@@ -28,6 +30,7 @@
 
 {#if transaction}
 	{@render form()}
+	{#if attachments}{@render attachments()}{/if}
 	{#if actions}{@render actions()}{/if}
 	<Details summary={m['transactions.metadata']()}>
 		<dl>

@@ -8,9 +8,8 @@ import {
 	type Snapshot
 } from 'xstate'
 import type { z } from 'zod'
-import type { PicaCanvas } from 'pica'
-import * as image from '#lib/domain/avatar.js'
 import { profileAvatarFormSchema, profileAvatarValuesSchema } from '#lib/validation/identity.js'
+import { imageProcessingMachine } from './image-processing.js'
 import type {
 	FormChildEvent,
 	FormInterruption,
@@ -29,8 +28,6 @@ type Context = {
 	request: Omit<Input['request'], 'values'> | undefined
 	draft: Draft | undefined
 	observation: FormObservation<ProfileObservation> | undefined
-	bitmap: ImageBitmap | undefined
-	canvas: PicaCanvas | undefined
 	blob: Blob | undefined
 	bytes: Uint8Array | undefined
 	prepared: Values | undefined
@@ -53,27 +50,12 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 	sameScope: (left: ProfileScope, right: ProfileScope) => boolean
 }) {
 	const actors = {
-		decode: fromPromise(({ input }: { input: File }) => image.decodeAvatar(input)),
-		initialize: fromPromise(() => image.initializeAvatarResizer()),
-		canvas: fromPromise(async ({ input }: { input: ImageBitmap }) =>
-			image.createAvatarCanvas(input)
-		),
-		resize: fromPromise(({ input }: { input: { bitmap: ImageBitmap; canvas: PicaCanvas } }) =>
-			image.resizeAvatarImage(input.bitmap, input.canvas)
-		),
-		encode: fromPromise(({ input }: { input: PicaCanvas }) => image.encodeAvatar(input)),
-		read: fromPromise(({ input }: { input: Blob }) => image.readAvatarBytes(input)),
+		processImage: imageProcessingMachine,
 		validate: fromPromise(async ({ input }: { input: { bytes: Uint8Array; mimeType: string } }) =>
 			profileAvatarValuesSchema.safeParse({
 				avatarData: input.bytes,
 				avatarMimeType: input.mimeType
 			})
-		),
-		closeBitmap: fromPromise(async ({ input }: { input: ImageBitmap }) =>
-			image.releaseAvatarBitmap(input)
-		),
-		closeCanvas: fromPromise(async ({ input }: { input: PicaCanvas }) =>
-			image.releaseAvatarCanvas(input)
 		),
 		write: options.write
 	}
@@ -99,6 +81,13 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 			fail: assign({ result: (): Result => failed }),
 			forward: enqueueActions(({ context, self, event, enqueue }) => {
 				const child = self.getSnapshot().children.write
+				const processor = self.getSnapshot().children.processImage
+				if (processor?.getSnapshot().status === 'active' && event.type !== 'OBSERVE') {
+					enqueue.sendTo(
+						processor,
+						event.type === 'SHUTDOWN' ? { type: 'SHUTDOWN' } : { type: 'CANCEL' }
+					)
+				}
 				if (child?.getSnapshot().status !== 'active') return
 				const changed =
 					event.type === 'OBSERVE' &&
@@ -124,8 +113,6 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 		request: undefined,
 		draft: undefined,
 		observation: undefined,
-		bitmap: undefined,
-		canvas: undefined,
 		blob: undefined,
 		bytes: undefined,
 		prepared: undefined
@@ -154,8 +141,6 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 			},
 			draft: input.request.values,
 			observation: input.observation,
-			bitmap: undefined,
-			canvas: undefined,
 			blob: undefined,
 			bytes: undefined,
 			prepared: undefined,
@@ -202,7 +187,7 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 						states: {
 							choosing: {
 								always: [
-									{ guard: 'interrupted', target: 'cleanup' },
+									{ guard: 'interrupted', target: 'ready' },
 									{
 										guard: ({ context }) => context.draft?.action === 'remove',
 										target: 'ready',
@@ -210,99 +195,40 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 											prepared: () => ({ avatarData: null, avatarMimeType: null })
 										})
 									},
-									{ target: 'decoding' }
+									{ target: 'processingImage' }
 								]
 							},
-							decoding: {
+							processingImage: {
 								invoke: {
-									src: 'decode',
+									id: 'processImage',
+									src: 'processImage',
 									input: ({ context }) => {
 										const draft = required(context.draft)
 										if (draft.action !== 'upload') throw new Error('Missing avatar upload')
-										return draft.file
+										return {
+											file: draft.file,
+											options: {
+												maxWidth: 256,
+												maxHeight: 256,
+												mimeType: 'image/webp',
+												quality: 0.85
+											}
+										}
 									},
 									onDone: [
 										{
-											guard: 'interrupted',
-											target: 'cleanup',
-											actions: assign({ bitmap: ({ event }) => event.output })
-										},
-										{
-											target: 'initializing',
-											actions: assign({ bitmap: ({ event }) => event.output })
-										}
-									],
-									onError: { target: 'cleanup', actions: 'fail' }
-								}
-							},
-							initializing: {
-								invoke: {
-									src: 'initialize',
-									onDone: [
-										{ guard: 'interrupted', target: 'cleanup' },
-										{ target: 'creatingCanvas' }
-									],
-									onError: { target: 'cleanup', actions: 'fail' }
-								}
-							},
-							creatingCanvas: {
-								invoke: {
-									src: 'canvas',
-									input: ({ context }) => required(context.bitmap),
-									onDone: [
-										{
-											guard: 'interrupted',
-											target: 'cleanup',
-											actions: assign({ canvas: ({ event }) => event.output })
-										},
-										{ target: 'resizing', actions: assign({ canvas: ({ event }) => event.output }) }
-									],
-									onError: { target: 'cleanup', actions: 'fail' }
-								}
-							},
-							resizing: {
-								invoke: {
-									src: 'resize',
-									input: ({ context }) => ({
-										bitmap: required(context.bitmap),
-										canvas: required(context.canvas)
-									}),
-									onDone: [{ guard: 'interrupted', target: 'cleanup' }, { target: 'encoding' }],
-									onError: { target: 'cleanup', actions: 'fail' }
-								}
-							},
-							encoding: {
-								invoke: {
-									src: 'encode',
-									input: ({ context }) => required(context.canvas),
-									onDone: [
-										{ guard: 'interrupted', target: 'cleanup' },
-										{
-											guard: ({ event }) => event.output instanceof Blob,
-											target: 'readingBytes',
-											actions: assign({ blob: ({ event }) => event.output ?? undefined })
-										},
-										{ target: 'cleanup', actions: 'fail' }
-									],
-									onError: { target: 'cleanup', actions: 'fail' }
-								}
-							},
-							readingBytes: {
-								invoke: {
-									src: 'read',
-									input: ({ context }) => required(context.blob),
-									onDone: [
-										{
-											guard: 'interrupted',
-											target: 'cleanup',
-											actions: assign({ bytes: ({ event }) => event.output })
-										},
-										{
+											guard: ({ event }) => event.output.outcome === 'processed',
 											target: 'validatingBytes',
-											actions: assign({ bytes: ({ event }) => event.output })
-										}
+											actions: assign({
+												blob: ({ event }) =>
+													event.output.outcome === 'processed' ? event.output.blob : undefined,
+												bytes: ({ event }) =>
+													event.output.outcome === 'processed' ? event.output.bytes : undefined
+											})
+										},
+										{ target: 'ready', actions: 'fail' }
 									],
-									onError: { target: 'cleanup', actions: 'fail' }
+									onError: { target: 'ready', actions: 'fail' }
 								}
 							},
 							validatingBytes: {
@@ -315,59 +241,12 @@ export function createProfileAvatarMachine<WriteSnapshot extends Snapshot<Result
 									onDone: [
 										{
 											guard: ({ event }) => event.output.success,
-											target: 'cleanup',
+											target: 'ready',
 											actions: assign({ prepared: ({ event }) => event.output.data })
 										},
-										{ target: 'cleanup', actions: 'fail' }
+										{ target: 'ready', actions: 'fail' }
 									],
-									onError: { target: 'cleanup', actions: 'fail' }
-								}
-							},
-							cleanup: {
-								initial: 'bitmap',
-								onDone: 'ready',
-								states: {
-									bitmap: {
-										always: [
-											{
-												guard: ({ context }) => context.bitmap !== undefined,
-												target: 'closingBitmap'
-											},
-											{ target: 'canvas' }
-										]
-									},
-									closingBitmap: {
-										invoke: {
-											src: 'closeBitmap',
-											input: ({ context }) => required(context.bitmap),
-											onDone: { target: 'canvas', actions: assign({ bitmap: undefined }) },
-											onError: {
-												target: 'canvas',
-												actions: ['fail', assign({ bitmap: undefined })]
-											}
-										}
-									},
-									canvas: {
-										always: [
-											{
-												guard: ({ context }) => context.canvas !== undefined,
-												target: 'closingCanvas'
-											},
-											{ target: 'done' }
-										]
-									},
-									closingCanvas: {
-										invoke: {
-											src: 'closeCanvas',
-											input: ({ context }) => required(context.canvas),
-											onDone: { target: 'done', actions: assign({ canvas: undefined }) },
-											onError: { target: 'done', actions: ['fail', assign({ canvas: undefined })] }
-										}
-									},
-									done: {
-										type: 'final',
-										entry: assign({ blob: undefined, bytes: undefined, draft: undefined })
-									}
+									onError: { target: 'ready', actions: 'fail' }
 								}
 							},
 							ready: {

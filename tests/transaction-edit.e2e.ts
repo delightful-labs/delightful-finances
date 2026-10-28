@@ -206,6 +206,47 @@ async function persisted(page: Page, id: string) {
 	}, id)
 }
 
+async function attachmentState(page: Page, transactionId: string) {
+	return page.evaluate(async (transactionId) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const links = await db.all(app.transactionAttachments.where({ transactionId }))
+		return Promise.all(
+			links.map(async ({ id, fileId }) => {
+				const file = await db.one(app.files.where({ id: fileId }), { tier: 'local' })
+				const parts = await db.all(app.fileParts.where({ fileId }))
+				return {
+					id,
+					fileId,
+					fileName: file?.fileName,
+					mimeType: file?.mimeType,
+					parts: parts.length
+				}
+			})
+		)
+	}, transactionId)
+}
+
+async function findTransactionByDescription(page: Page, description: string) {
+	return page.evaluate(async (description) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		return (await db.all(app.transactions.where({ description })))[0]?.id
+	}, description)
+}
+
 async function transactionExists(page: Page, id: string) {
 	return page.evaluate(async (id) => {
 		const schemaPath = '/src/lib/schema.ts'
@@ -298,9 +339,7 @@ test('links and unlinks a matching synced transaction without changing either tr
 	await suggestions
 		.getByRole('button', { name: 'Link to existing Transaction', exact: true })
 		.click()
-	await expect(
-		suggestions.getByText('Linked to Transfer')
-	).toBeVisible()
+	await expect(suggestions.getByText('Linked to Transfer')).toBeVisible()
 	await expect(suggestions.getByText('Transfer saved.', { exact: true })).toBeVisible()
 	await expect
 		.poll(() => persisted(page, seed.id))
@@ -334,9 +373,7 @@ test('links and unlinks a matching synced transaction without changing either tr
 		linkedCounterpart.getByRole('link', { name: 'Open Transaction', exact: true })
 	).toHaveAttribute('href', new RegExp(`/expenses/${seed.id}\\?workspace=`))
 	await linkedCounterpart.getByRole('button', { name: 'Unlink Transfer', exact: true }).click()
-	await expect(
-		linkedCounterpart.getByText('Transfer saved.')
-	).toBeVisible()
+	await expect(linkedCounterpart.getByText('Transfer saved.')).toBeVisible()
 	await expect
 		.poll(() => persisted(page, seed.id))
 		.toMatchObject({ internalTransferId: null, transfers: [] })
@@ -402,9 +439,7 @@ test('unlinks and deletes only the current transaction, restoring the counterpar
 	await seedLinkedTransfer(page, seed.id, seed.counterpartId)
 	await page.getByRole('button', { name: 'Delete Transactions', exact: true }).click()
 	const dialog = page.getByRole('dialog', { name: 'Delete Transactions' })
-	await dialog
-		.getByRole('button', { name: 'Delete Transaction', exact: true })
-		.click()
+	await dialog.getByRole('button', { name: 'Delete Transaction', exact: true }).click()
 	await expect(
 		page.getByText(
 			'This transaction was unlinked and deleted on this device. The other transaction remains.'
@@ -495,6 +530,129 @@ for (const scenario of ['viewer', 'archived'] satisfies ('viewer' | 'archived')[
 		await expect(page.getByRole('button', { name: 'Save Transaction', exact: true })).toHaveCount(0)
 	})
 }
+
+const onePixelPng = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==',
+	'base64'
+)
+
+test('creates an image attachment, downloads it, and removes only its transaction link', async ({
+	page
+}) => {
+	const seed = await seedTransaction(page)
+	await page.goto('/expenses/new')
+	const main = page.getByRole('main')
+	await expect(main.getByLabel('Amount', { exact: true })).toBeEnabled()
+	await main.getByLabel('Account', { exact: true }).selectOption(seed.accountId)
+	await main.getByLabel('Category', { exact: true }).selectOption(seed.categoryId)
+	await main.getByLabel('Amount', { exact: true }).fill('12.34')
+	await main.getByLabel('Description', { exact: true }).fill('Image receipt')
+	await main.locator('input[type="file"]').setInputFiles({
+		name: 'receipt.png',
+		mimeType: 'image/png',
+		buffer: onePixelPng
+	})
+	await expect(main.locator('input[type="file"]')).toHaveJSProperty('files.length', 1)
+	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await page.waitForURL(/\/expenses(?:\?|$)/)
+	await expect.poll(() => findTransactionByDescription(page, 'Image receipt')).toBeTruthy()
+	const transactionId = await findTransactionByDescription(page, 'Image receipt')
+	if (!transactionId) throw new Error('Saved transaction was not found')
+	await page.goto(`/expenses/${transactionId}`)
+	const filename = page.getByRole('link', { name: 'receipt.png', exact: true })
+	await expect(filename).toBeVisible()
+	await expect(page.getByRole('img', { name: 'Preview of receipt.png' })).toBeVisible()
+	const [download] = await Promise.all([page.waitForEvent('download'), filename.click()])
+	expect(download.suggestedFilename()).toBe('receipt.png')
+	const [attached] = await attachmentState(page, transactionId)
+	expect(attached).toMatchObject({ fileName: 'receipt.png', mimeType: 'image/png' })
+	expect(attached?.parts).toBeGreaterThan(0)
+	const fileId = attached?.fileId
+	await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).click()
+	await expect.poll(() => attachmentState(page, transactionId)).toHaveLength(0)
+	if (!fileId) throw new Error('Uploaded file was not found')
+	const retained = await page.evaluate(async (fileId) => {
+		const schemaPath = '/src/lib/schema.ts'
+		const sessionPath = '/src/lib/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+			sessionPath
+		)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		return db.one(app.files.where({ id: fileId }), { tier: 'local' })
+	}, fileId)
+	expect(retained?.id).toBe(fileId)
+})
+
+test('adds an image to an existing transaction and restores its preview after reload', async ({
+	page
+}) => {
+	const seed = await seedTransaction(page)
+	await page.goto(`/expenses/${seed.id}`)
+	await page.locator('main input[type="file"]').setInputFiles({
+		name: 'edited.png',
+		mimeType: 'image/png',
+		buffer: onePixelPng
+	})
+	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await expect(page.getByRole('img', { name: 'Preview of edited.png' })).toBeVisible()
+	await expect.poll(() => attachmentState(page, seed.id)).toHaveLength(1)
+	await page.reload()
+	await expect(page.getByRole('img', { name: 'Preview of edited.png' })).toBeVisible()
+})
+
+test('shows localized feedback when selected images exceed the per-transaction limit', async ({
+	page
+}) => {
+	await seedTransaction(page)
+	await page.goto('/expenses/new')
+	const main = page.getByRole('main')
+	await main.getByLabel('Amount', { exact: true }).fill('12.34')
+	await main.locator('input[type="file"]').setInputFiles(
+		Array.from({ length: 6 }, (_, index) => ({
+			name: `receipt-${index}.png`,
+			mimeType: 'image/png',
+			buffer: onePixelPng
+		}))
+	)
+	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await expect(main.locator('#transaction-attachments-error')).toContainText(
+		'A transaction can have up to five images.'
+	)
+})
+
+test('shows localized feedback for unsupported and oversized image selections', async ({
+	page
+}) => {
+	await seedTransaction(page)
+	const selections = [
+		{
+			name: 'receipt.svg',
+			mimeType: 'image/svg+xml',
+			buffer: Buffer.from('<svg></svg>'),
+			message: 'Choose JPEG, PNG, or WebP images.'
+		},
+		{
+			name: 'oversized.png',
+			mimeType: 'image/png',
+			buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
+			message: 'Each image must be 10 MiB or smaller.'
+		}
+	]
+	for (const selection of selections) {
+		await page.goto('/expenses/new')
+		const main = page.getByRole('main')
+		await main.getByLabel('Amount', { exact: true }).fill('12.34')
+		await main.locator('input[type="file"]').setInputFiles({
+			name: selection.name,
+			mimeType: selection.mimeType,
+			buffer: selection.buffer
+		})
+		await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+		await expect(main.locator('#transaction-attachments-error')).toContainText(selection.message)
+	}
+})
 
 test('removing a tag alone enables Save and persists removal', async ({ page }) => {
 	const seed = await seedTransaction(page)

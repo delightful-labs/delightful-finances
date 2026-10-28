@@ -158,7 +158,11 @@ export function createScopedFormSubmissionMachine<
 									settlement: 'notStarted',
 									issues:
 										event.error instanceof z.ZodError
-											? event.error.issues.map((issue) => ({ path: issue.path, code: issue.code }))
+											? event.error.issues.map((issue) => ({
+													path: issue.path,
+													code: issue.code,
+													message: issue.message
+												}))
 											: []
 								})
 							})

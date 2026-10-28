@@ -1,0 +1,13 @@
+{
+	"attachments": {
+		"image_preview": "Preview of {name}",
+		"image_limits": "JPEG, PNG, or WebP images; up to five images and 10 MiB per image.",
+		"invalid_selection": "Choose valid image files.",
+		"unsupported_type": "Choose JPEG, PNG, or WebP images.",
+		"image_too_large": "Each image must be 10 MiB or smaller.",
+		"image_limit_reached": "A transaction can have up to five images.",
+		"remove_image": "Remove {name}",
+		"remove_failed": "This image could not be removed. Try again.",
+		"upload_failed": "The transaction was saved, but some images could not be attached."
+	}
+}

@@ -45,6 +45,8 @@
 		onreset,
 		oncancel,
 		oninput,
+		onattachmentschange,
+		attachmentPickerRevision = 0,
 		onaddcategory,
 		canAddCategory = false,
 		createdCategory,
@@ -92,6 +94,8 @@
 		canAddCategory?: boolean
 		createdCategory?: Category | undefined
 		oninput?: (event: Event) => void
+		onattachmentschange?: (files: readonly File[]) => void
+		attachmentPickerRevision?: number
 		transferSuggestions?: readonly (InternalTransferCandidate & {
 			accountName: Account['name'] | undefined
 			description: TransactionDetail['description'] | undefined
@@ -150,6 +154,18 @@
 		view.feedback.kind === 'result' && view.feedback.result.outcome === 'invalid'
 			? view.feedback.result.issues
 			: []
+	)
+	const attachmentIssue = $derived(issues.find(({ path }) => path[0] === 'attachments'))
+	const attachmentError = $derived(
+		attachmentIssue?.message === 'unsupportedType'
+			? m['attachments.unsupported_type']()
+			: attachmentIssue?.message === 'tooLarge'
+				? m['attachments.image_too_large']()
+				: attachmentIssue?.message === 'limitReached'
+					? m['attachments.image_limit_reached']()
+					: attachmentIssue
+						? m['attachments.invalid_selection']()
+						: undefined
 	)
 	// Finance maps validation paths to translated messages; the UI stays independent of Zod.
 	function fieldInvalid(issues: readonly { path: readonly PropertyKey[] }[], field: string) {
@@ -373,6 +389,30 @@
 					name="memo"
 					defaultValue={initialTransaction?.memo ?? ''}
 				></Textarea>
+				<label for="transaction-attachments">
+					{m['actions.add_subject']({ subject: m['nouns.image']({ count: 2 }) })}
+				</label>
+				{#key attachmentPickerRevision}
+					<input
+						id="transaction-attachments"
+						name="attachments"
+						type="file"
+						accept="image/jpeg,image/png,image/webp"
+						multiple
+						disabled={!form.fieldsEditable}
+						aria-invalid={attachmentIssue !== undefined || undefined}
+						aria-describedby={attachmentIssue ? 'transaction-attachments-error' : undefined}
+						onchange={(event) => {
+							const target = event.currentTarget
+							if (target instanceof HTMLInputElement)
+								onattachmentschange?.([...(target.files ?? [])])
+						}}
+					/>
+				{/key}
+				{#if attachmentIssue}
+					<p id="transaction-attachments-error" role="alert">{attachmentError}</p>
+				{/if}
+				<p>{m['attachments.image_limits']()}</p>
 			{/if}
 		{/snippet}
 		{#snippet controls(form)}

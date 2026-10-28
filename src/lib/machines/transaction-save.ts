@@ -35,7 +35,10 @@ type Input = FormOperationInput<
 	TransactionEntryScope,
 	TransactionEntryObservation
 >
-type Result = FormOperationResult<void, TransactionEntryReason>
+export type TransactionSaveResult = FormOperationResult<void, TransactionEntryReason> & {
+	transactionId?: string
+}
+type Result = TransactionSaveResult
 type Context = {
 	input: Input | undefined
 	values: TransactionSaveValues | undefined
@@ -269,22 +272,23 @@ export function createTransactionSaveMachine(
 					const checkpoint = context.checkpoint
 					const recovery = checkpoint ? { checkpoint } : {}
 					const settlement = checkpoint?.transactionSettlement ?? 'notStarted'
+					let result: FormOperationResult<void, TransactionEntryReason>
 					if (outcome === 'transferChangeRequiresUnlink')
-						return {
+						result = {
 							outcome: 'unavailable',
 							reason: 'linkedTransferRequiresUnlink',
 							settlement: 'notStarted',
 							...recovery
 						}
-					if (outcome === 'succeeded')
-						return {
+					else if (outcome === 'succeeded')
+						result = {
 							outcome,
 							value: undefined,
 							settlement: settlement === 'confirmed' ? 'confirmed' : 'locallyPersisted',
 							...recovery
 						}
-					if (outcome === 'partial')
-						return {
+					else if (outcome === 'partial')
+						result = {
 							outcome,
 							value: undefined,
 							reason: 'checkRetained',
@@ -292,17 +296,18 @@ export function createTransactionSaveMachine(
 								checkpoint?.checkSettlement === 'locallyPersisted' ? 'locallyPersisted' : 'unknown',
 							...recovery
 						}
-					if (outcome === 'unresolved')
-						return {
+					else if (outcome === 'unresolved')
+						result = {
 							outcome: 'partial',
 							value: undefined,
 							reason: 'saveUnresolved',
 							settlement: 'unknown',
 							...recovery
 						}
-					if (outcome === 'failed')
-						return { outcome, code: 'operationFailed', settlement, ...recovery }
-					return { outcome, settlement, ...recovery }
+					else if (outcome === 'failed')
+						result = { outcome, code: 'operationFailed', settlement, ...recovery }
+					else result = { outcome, settlement, ...recovery }
+					return checkpoint ? { ...result, transactionId: checkpoint.transactionId } : result
 				},
 				input: undefined,
 				values: undefined,
@@ -647,13 +652,13 @@ export function createTransactionSaveMachine(
 							},
 							reassessing: {
 								always: [
-								{ guard: 'interrupted', target: 'finishing' },
-								{ guard: ({ context }) => !available(context), target: 'finishing' },
-								{
-									guard: 'transferChangeRequiresUnlink',
-									target: '#transaction-save.transferChangeRequiresUnlink'
-								},
-								{ target: 'savingLedger' }
+									{ guard: 'interrupted', target: 'finishing' },
+									{ guard: ({ context }) => !available(context), target: 'finishing' },
+									{
+										guard: 'transferChangeRequiresUnlink',
+										target: '#transaction-save.transferChangeRequiresUnlink'
+									},
+									{ target: 'savingLedger' }
 								]
 							},
 							savingLedger: {
@@ -686,12 +691,12 @@ export function createTransactionSaveMachine(
 										target: 'finishing',
 										actions: assign({
 											checkpoint: ({ context, event }) => ({
-											...required(context.checkpoint),
-											transactionSettlement: event.output.settlement
-										}),
+												...required(context.checkpoint),
+												transactionSettlement: event.output.settlement
+											}),
 											transferChangeBlocked: ({ event }) =>
-											event.output.outcome === 'failed' &&
-											event.output.reason === 'linkedTransferRequiresUnlink'
+												event.output.outcome === 'failed' &&
+												event.output.reason === 'linkedTransferRequiresUnlink'
 										})
 									},
 									onError: 'finishing'

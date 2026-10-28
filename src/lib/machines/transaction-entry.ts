@@ -2,7 +2,8 @@ import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
 import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
-import { createTransactionSaveMachine, type TransactionSaveDb } from './transaction-save.js'
+import { createTransactionSubmissionMachine } from './transaction-submission.js'
+import type { TransactionSaveDb } from './transaction-save.js'
 import { transferEditRequiresUnlink } from '#lib/transaction-save-contract.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
@@ -21,6 +22,8 @@ import {
 	type TransactionSaveValues
 } from '#lib/validation/transactions.js'
 import type { AppTransaction, IncomePaymentMethod } from '#lib/domain/transaction.js'
+import { z } from 'zod'
+import { validateAttachmentSelection } from '#lib/domain/transaction-attachments.js'
 
 export function transactionEntryScope(f: TransactionEntryObservation): TransactionEntryScope {
 	return {
@@ -179,8 +182,11 @@ export function createTransactionEntryAvailability(binding: object) {
 						target: 'unavailableReference'
 					},
 					{
-						guard: ({ context: { observation: { facts: f } } }) =>
-							f.intent !== undefined && transferEditRequiresUnlink(f.transaction, f.intent),
+						guard: ({
+							context: {
+								observation: { facts: f }
+							}
+						}) => f.intent !== undefined && transferEditRequiresUnlink(f.transaction, f.intent),
 						target: 'linkedTransferRequiresUnlink'
 					},
 					{ target: 'checkingTags' }
@@ -254,15 +260,51 @@ function transactionFormPolicy(deps: TransactionFormPolicyDependencies) {
 	return { common, schema }
 }
 
+function withAttachmentSelectionValidation(
+	schema: ReturnType<typeof independentTransactionFormSchema>,
+	observe: () => TransactionEntryObservation
+) {
+	return z.preprocess((input, ctx) => {
+		if (!isFormRecord(input)) return input
+		const { attachments, ...values } = input
+		const selected = Array.isArray(attachments) ? attachments : []
+		const files = selected.filter(
+			(file): file is File => typeof File !== 'undefined' && file instanceof File
+		)
+		if (files.length !== selected.length) {
+			ctx.addIssue({ code: 'custom', path: ['attachments'], message: 'invalidSelection' })
+			return z.NEVER
+		}
+		const selection = validateAttachmentSelection(
+			files,
+			observe().transaction?.attachments?.length ?? 0
+		)
+		if (selection.kind !== 'accepted') {
+			ctx.addIssue({ code: 'custom', path: ['attachments'], message: selection.kind })
+			return z.NEVER
+		}
+		return values
+	}, schema)
+}
+
+function isFormRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 export function createTransactionEntryFormOptions(
 	deps: TransactionFormPolicyDependencies & {
 		db: TransactionSaveDb
+		getAttachments?: () => readonly File[]
 		navigate?: (destination: string, signal: AbortSignal) => Promise<void>
 	}
 ) {
 	const { common, schema } = transactionFormPolicy(deps)
 	const availability = common.availability
-	const persistence = createTransactionSaveMachine(deps.db, deps.observe)
+	const persistence = createTransactionSubmissionMachine(
+		deps.db,
+		deps.observe,
+		deps.getAttachments ?? (() => [])
+	)
 	const options = createSingleWriteFormOptions<
 		TransactionSaveValues,
 		void,
@@ -273,7 +315,7 @@ export function createTransactionEntryFormOptions(
 		SnapshotFrom<typeof persistence>
 	>({
 		...common,
-		schema,
+		schema: withAttachmentSelectionValidation(schema, deps.observe),
 		mode: 'create',
 		successContent: 'replace',
 		assessmentObservation: ({ request, observation }) => ({
@@ -293,11 +335,18 @@ export function createTransactionEntryFormOptions(
 }
 
 export function createTransactionEditFormOptions(
-	deps: TransactionFormPolicyDependencies & { db: TransactionSaveDb }
+	deps: TransactionFormPolicyDependencies & {
+		db: TransactionSaveDb
+		getAttachments?: () => readonly File[]
+	}
 ) {
 	const { common, schema } = transactionFormPolicy(deps)
 	const availability = common.availability
-	const persistence = createTransactionSaveMachine(deps.db, deps.observe)
+	const persistence = createTransactionSubmissionMachine(
+		deps.db,
+		deps.observe,
+		deps.getAttachments ?? (() => [])
+	)
 	return createSingleWriteFormOptions<
 		TransactionSaveValues,
 		void,
@@ -308,7 +357,7 @@ export function createTransactionEditFormOptions(
 		SnapshotFrom<typeof persistence>
 	>({
 		...common,
-		schema,
+		schema: withAttachmentSelectionValidation(schema, deps.observe),
 		mode: 'edit',
 		initialValues: (facts) => {
 			const initial = facts.transaction ? transactionAsInput(facts.transaction) : undefined
@@ -317,24 +366,31 @@ export function createTransactionEditFormOptions(
 		},
 		valuesEqual: (draft, original) => {
 			if (!isTransactionFormDraft(draft)) return false
-			const amount = parseAmountMinor(draft.amount)
+			const selected =
+				'attachments' in draft && Array.isArray(draft.attachments) ? draft.attachments : []
+			const files = selected.filter(
+				(file): file is File => typeof File !== 'undefined' && file instanceof File
+			)
+			if (files.length !== selected.length || files.length > 0) return false
+			const values = draft
+			const amount = parseAmountMinor(values.amount)
 			const names = (values: readonly string[]) => [...new Set(values.map(normalizedName))].sort()
 			return (
-				draft.accountId === original.accountId &&
-				draft.categoryId === original.categoryId &&
+				values.accountId === original.accountId &&
+				values.categoryId === original.categoryId &&
 				amount.kind === 'valid' &&
 				amount.amountMinor === original.money.amountMinor &&
-				draft.bookedOn === original.bookedOn &&
-				(draft.description ?? '').trim() === (original.description ?? '') &&
-				(draft.memo ?? '').trim() === (original.memo ?? '') &&
-				JSON.stringify(names(draft.tags ?? [])) === JSON.stringify(names(original.tags ?? [])) &&
-				(draft.paymentMethod || null) === original.paymentMethod &&
+				values.bookedOn === original.bookedOn &&
+				(values.description ?? '').trim() === (original.description ?? '') &&
+				(values.memo ?? '').trim() === (original.memo ?? '') &&
+				JSON.stringify(names(values.tags ?? [])) === JSON.stringify(names(original.tags ?? [])) &&
+				(values.paymentMethod || null) === original.paymentMethod &&
 				(original.paymentMethod !== PAYMENT_METHOD.CHECK ||
 					(original.check.kind === 'existing' &&
-						draft.checkId === original.check.id &&
+						values.checkId === original.check.id &&
 						(original.kind === EXPENSE ||
-							((draft.checkNumber ?? '').trim() === original.check.values?.checkNumber &&
-								draft.checkDate === original.check.values?.checkDate))))
+							((values.checkNumber ?? '').trim() === original.check.values?.checkNumber &&
+								values.checkDate === original.check.values?.checkDate))))
 			)
 		},
 		successContent: 'retain',

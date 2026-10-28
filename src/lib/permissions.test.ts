@@ -388,6 +388,34 @@ describe('tag permission integrity', () => {
 	})
 })
 
+describe('transaction attachment permissions', () => {
+	it('scopes file reads through transaction links and permits only transaction writers to add or remove links', async () => {
+		const file = await db
+			.insert(app.files, {
+				transactionId: expenseId,
+				fileName: 'receipt.webp',
+				mimeType: 'image/webp',
+				sizeBytes: 12
+			})
+			.wait({ tier: 'global' })
+		expect(await viewerDb.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeNull()
+		const link = await selectedMemberDb
+			.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
+			.wait({ tier: 'global' })
+		expect(await viewerDb.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeTruthy()
+		expect(
+			await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }))
+		).toBeTruthy()
+		await viewerDb.expectDenied((writer) =>
+			writer.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
+		)
+		await viewerDb.expectDenied((writer) => writer.delete(app.transactionAttachments, link.id))
+		await selectedMemberDb.delete(app.transactionAttachments, link.id).wait({ tier: 'global' })
+		expect(await db.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeNull()
+		expect(await db.one(app.files.where({ id: file.id }), { tier: 'local' })).toBeNull()
+	})
+})
+
 describe('income payment method permissions', () => {
 	it('allows manual income without a method on insert and update', async () => {
 		const row = await db.insert(app.transactions, transaction('income')).wait({ tier: 'global' })

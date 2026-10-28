@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, toPromise, waitFor, type SnapshotFrom } from 'xstate'
-import * as platform from '#lib/domain/avatar.js'
+import * as platform from '#lib/domain/image-processing.js'
 import { MAX_AVATAR_BYTES, profileAvatarFormSchema } from '#lib/validation/identity.js'
 import { createProfileFormOptions, profileScope } from './profile.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
@@ -23,18 +23,18 @@ function fixture() {
 	)
 	const bitmap = { width: 512, height: 256, close: vi.fn() }
 	const canvas = new OffscreenCanvas(256, 128)
-	const decode = vi.spyOn(platform, 'decodeAvatar').mockResolvedValue(bitmap)
+	const decode = vi.spyOn(platform, 'decodeImage').mockResolvedValue(bitmap)
 	const initialize = vi
-		.spyOn(platform, 'initializeAvatarResizer')
+		.spyOn(platform, 'initializeImageResizer')
 		.mockImplementation(vi.fn().mockResolvedValue(undefined))
-	const createCanvas = vi.spyOn(platform, 'createAvatarCanvas').mockReturnValue(canvas)
-	const resize = vi.spyOn(platform, 'resizeAvatarImage').mockResolvedValue(canvas)
+	const createCanvas = vi.spyOn(platform, 'createImageCanvas').mockReturnValue(canvas)
+	const resize = vi.spyOn(platform, 'resizeImage').mockResolvedValue(canvas)
 	const encode = vi
-		.spyOn(platform, 'encodeAvatar')
+		.spyOn(platform, 'encodeImage')
 		.mockResolvedValue(new Blob(['encoded'], { type: 'image/webp' }))
-	const read = vi.spyOn(platform, 'readAvatarBytes')
-	const closeBitmap = vi.spyOn(platform, 'releaseAvatarBitmap')
-	const closeCanvas = vi.spyOn(platform, 'releaseAvatarCanvas')
+	const read = vi.spyOn(platform, 'readImageBytes')
+	const closeBitmap = vi.spyOn(platform, 'releaseImageBitmap')
+	const closeCanvas = vi.spyOn(platform, 'releaseImageCanvas')
 	const binding = {}
 	let facts: ProfileObservation = {
 		identityId: 'user',
@@ -124,6 +124,12 @@ describe('avatar preparation and saving', () => {
 			value: undefined,
 			settlement: 'locallyPersisted'
 		})
+		expect(platform.createImageCanvas).toHaveBeenCalledWith(f.bitmap, {
+			maxWidth: 256,
+			maxHeight: 256,
+			mimeType: 'image/webp',
+			quality: 0.85
+		})
 		expect(f.save).toHaveBeenCalledExactlyOnceWith('profile', 'user', {
 			avatarData: new TextEncoder().encode('encoded'),
 			avatarMimeType: 'image/webp'
@@ -144,8 +150,6 @@ describe('avatar preparation and saving', () => {
 		expect(actor.getSnapshot().context).toMatchObject({
 			request: undefined,
 			draft: undefined,
-			bitmap: undefined,
-			canvas: undefined,
 			blob: undefined,
 			bytes: undefined,
 			prepared: undefined,
@@ -275,7 +279,7 @@ describe('avatar interruption and settlement', () => {
 								: f.read
 			if (stage === 'initialize')
 				f.initialize.mockReturnValue(
-					pending.promise as unknown as ReturnType<typeof platform.initializeAvatarResizer>
+					pending.promise as unknown as ReturnType<typeof platform.initializeImageResizer>
 				)
 			if (stage === 'canvas')
 				f.createCanvas.mockReturnValue(pending.promise as unknown as OffscreenCanvas)
@@ -283,7 +287,7 @@ describe('avatar interruption and settlement', () => {
 			if (stage === 'encode') f.encode.mockReturnValue(pending.promise as Promise<Blob>)
 			if (stage === 'read')
 				f.read.mockReturnValue(
-					pending.promise as unknown as ReturnType<typeof platform.readAvatarBytes>
+					pending.promise as unknown as ReturnType<typeof platform.readImageBytes>
 				)
 			const actor = f.start()
 			await vi.waitFor(() => expect(blocked).toHaveBeenCalledOnce())

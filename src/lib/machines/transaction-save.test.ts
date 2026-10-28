@@ -151,7 +151,11 @@ describe('staged transaction save', () => {
 			actors: { readCheck: fromPromise(() => Promise.resolve([persistedCheck])) }
 		})
 		const result = await toPromise(f.actor(values, logic))
-		expect(result).toMatchObject({ outcome: 'succeeded', settlement: 'locallyPersisted' })
+		expect(result).toMatchObject({
+			outcome: 'succeeded',
+			settlement: 'locallyPersisted',
+			transactionId
+		})
 		expect(f.beginTransaction).toHaveBeenCalledTimes(2)
 		expect(f.inserts[0]).toMatchObject({
 			table: app.checks,
