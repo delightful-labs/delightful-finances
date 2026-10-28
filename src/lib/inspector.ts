@@ -6,6 +6,7 @@ import {
 } from '@statelyai/inspect'
 import type { InspectionEvent, Snapshot } from 'xstate'
 import { createLogger, debugEnabled } from './logger.js'
+import { logMachineFailure } from './machine-diagnostics.js'
 
 const logger = createLogger('inspector')
 let inspector: ReturnType<typeof createBrowserInspector> | undefined
@@ -164,6 +165,7 @@ export function openStateInspector() {
 /** Attach at existing roots; XState automatically includes their descendants. */
 export function inspectActor(event: InspectionEvent) {
 	if (!browser || !debugEnabled || lifetime.signal.aborted) return
+	logMachineFailure(event)
 	try {
 		const current = getInspector()
 		// The SDK serializes snapshot events before its sanitizeContext hook runs.

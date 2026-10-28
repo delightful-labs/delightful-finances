@@ -7,7 +7,9 @@ const port = production ? 5185 : enabled ? 5182 : 5183
 export default defineConfig({
 	testDir: './tests',
 	testMatch: 'debugging.e2e.ts',
-	grep: production ? /deployed debug build/ : /debug flag controls|HMR replacement/,
+	grep: production
+		? /deployed debug build/
+		: /debug flag controls|HMR replacement|startup failure diagnostics/,
 	workers: 1,
 	timeout: 90_000,
 	expect: { timeout: 20_000 },

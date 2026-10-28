@@ -2,9 +2,18 @@ import { PUBLIC_DEBUG } from '$app/env/public'
 
 export const debugEnabled = PUBLIC_DEBUG === 'true'
 
-// Callers select non-sensitive scalar diagnostics. Never pass records, tokens,
-// credentials, provider payloads, URLs, or raw errors (including messages/stacks).
-type LogDetails = Readonly<Record<string, string | number | boolean | null | undefined>>
+export type DebugValue =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| readonly DebugValue[]
+	| { readonly [key: string]: DebugValue }
+
+// Callers select non-sensitive diagnostics. Never pass records, tokens,
+// credentials, provider payloads, unfiltered URLs, or raw errors/messages/stacks.
+type LogDetails = Readonly<Record<string, DebugValue>>
 
 export function createLogger(scope: string) {
 	return {

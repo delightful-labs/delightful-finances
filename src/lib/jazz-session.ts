@@ -4,6 +4,7 @@ import {
 	type JazzSession,
 	type JazzSessionConfig
 } from 'jazz-tools/svelte'
+import { logJazzInitializationFailure } from './machine-diagnostics.js'
 
 let sharedSession: JazzSession<JazzClient> | undefined
 let sessionPromise: Promise<JazzSession<JazzClient>> | undefined
@@ -22,6 +23,7 @@ export function getOrCreateJazzSession(config: JazzSessionConfig) {
 			})
 			.catch((error: unknown) => {
 				sessionPromise = undefined
+				logJazzInitializationFailure(config, error)
 				throw error
 			})
 	}

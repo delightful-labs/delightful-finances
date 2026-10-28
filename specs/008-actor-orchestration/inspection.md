@@ -1,5 +1,49 @@
 # Actor inspection decision
 
+## All-machine error diagnostics — reviewed and tested
+
+Requirement: when `PUBLIC_DEBUG=true`, report normal error states, failed/unavailable terminal
+results and unexpected actor failures across every existing application root and its descendants.
+Jazz initialization errors must include the available public connection configuration and retained
+error/cause details. Deploy previews enable this flag in `netlify.toml` during the next build.
+
+Design: use the existing XState inspection attachment as an observation boundary, before the
+Stately projection discards private context. The synchronous diagnostic adapter projects only
+status/permission facts, correlation counters, collection sizes and typed outcome descriptors;
+error text/source frames are redacted and bounded, and cause chains are capped. It reads only data
+properties, except the explicit SDK `getConfig` operation. It never dumps SDK objects, records,
+form values, provider responses, credentials or raw events. A weak map stores only a prior
+diagnostic fingerprint per observed actor, for duplicate suppression. It cannot discover, command
+or supervise actors and does not mirror their lifecycle. No statechart, workflow, actor ownership,
+permission, persistence or cleanup protocol is changed. The existing shared-session promise catch
+keeps its original reset/rethrow behavior and adds only a failure-isolated diagnostic leaf.
+
+The remaining account archive/delete-grant, account-order, recovery-phrase, sample-transaction and
+PWA roots now attach the same observer. This also makes their sanitized charts available through
+the explicit Stately menu action. Console diagnostic context is not transmitted to Stately.
+
+- [x] Implement startup configuration/error reporting, error-state projection and root attachment.
+- [x] User approved testing this implementation.
+- [x] Cover native failures (including initialization), handled error/unavailable
+      outcomes, error/cause/stack redaction, context projection, getter avoidance, deduplication and
+      retry, disabled debugging, and preservation of the original Jazz startup rejection.
+- [x] Inspect affected logger, inspector and Jazz session coverage before targeted checks.
+- [x] Browser verification injects a deliberate Jazz session-storage failure, checks enabled
+      diagnostics and disabled silence, confirms no automatic popup, and recovers through retry.
+- [ ] Reproduce the hosted workspace-preparation failure. These local checks do not establish
+      the cause of the Netlify preview failure.
+
+Verification in the isolated checkout: 123 unit tests passed across 11 targeted files; application
+and browser-test type checks passed. Three debug-enabled browser cases and two debug-disabled
+cases passed; disabled-mode HMR is intentionally skipped. One disabled retry run overlapped a
+unit run that regenerated development files and failed; the browser-only rerun passed. Future
+unit and browser checks in the same isolated checkout must also run sequentially.
+
+Expected denied/unavailable machine states produce error-level diagnostics, even during normal
+startup. Error properties exposed only through accessors (including DOMException messages) are
+omitted to preserve the getter-avoidance rule. No claim of complete native-error text coverage
+or hosted-deploy verification is made.
+
 The custom development trace adapter, browser API, actor wiring and dedicated tests were removed
 at the user's request in favor of using the XState tooling ecosystem when inspection is needed.
 The Stately integration below replaces that removed custom tooling.

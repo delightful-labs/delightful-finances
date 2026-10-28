@@ -202,3 +202,39 @@ test('HMR replacement disconnects the old inspector and attaches the new module'
 	)
 	expect(errors).toEqual([])
 })
+
+test('startup failure diagnostics follow the debug flag and preserve retry', async ({
+	page
+}, info) => {
+	const diagnostics: string[] = []
+	page.on('console', (message) => {
+		if (message.type() === 'error' && /\[(?:state-machine|jazz-startup)\]/.test(message.text()))
+			diagnostics.push(message.text())
+	})
+	await page.addInitScript(() => {
+		const getItem = Storage.prototype.getItem
+		let failed = false
+		Storage.prototype.getItem = function (key) {
+			if (!failed && key.startsWith('jazz-account-selection-v1:')) {
+				failed = true
+				throw new DOMException(
+					'Synthetic account storage failure token=PRIVATE_STARTUP_TOKEN',
+					'SecurityError'
+				)
+			}
+			return getItem.call(this, key)
+		}
+	})
+	await page.goto('/settings/banks')
+	await expect(page.getByText('Your finances could not be opened.', { exact: false })).toBeVisible()
+	if (info.config.metadata.debugEnabled === true) {
+		await expect.poll(() => diagnostics.join('\n')).toContain('Jazz session initialization failed')
+		expect(diagnostics.join('\n')).toContain('Machine entered an error state')
+		expect(diagnostics.join('\n')).not.toContain('PRIVATE_STARTUP_TOKEN')
+	} else {
+		expect(diagnostics).toEqual([])
+	}
+	expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
+	await page.getByRole('button', { name: 'Try again', exact: true }).click()
+	await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
+})

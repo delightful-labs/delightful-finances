@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { inspectActor } from '#lib/inspector.js'
 	import { debugEnabled } from '#lib/logger.js'
 	import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
@@ -122,7 +123,7 @@
 		}
 	})
 	let observationRevision = 0
-	const samples = createActor(sampleMachine)
+	const samples = createActor(sampleMachine, { inspect: inspectActor })
 	const sampleSnapshot = readable(samples.getSnapshot(), (set) => {
 		const subscription = samples.subscribe(set)
 		return () => subscription.unsubscribe()
