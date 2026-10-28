@@ -49,6 +49,12 @@ debug browser jobs run `playwright.debug.config.ts`; the general application sui
 file because it requires that config's metadata and inspector transport fixture. Failed general
 browser jobs retain their error-context artifacts for diagnosis.
 
+The remaining application CI failures were confined to the standalone form-presentation HTML
+fixture, which bypasses the normal SvelteKit app entry. Since the shared form controller now
+imports the environment-gated inspector, that document must load Kit's generated environment
+bootstrap before its entry module. All nine form-presentation browser scenarios passed after
+that fixture correction, verified in a checkout with separate dependencies and generated files.
+
 - [x] Install the official inspector and implement sanitized, environment-gated attachment.
 - [x] Attach the application root (including startup/workspace/bank descendants), shared scoped
       forms, and the independent transaction editor root without changing their ownership.
