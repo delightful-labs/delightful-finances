@@ -124,7 +124,9 @@ async function editor(page: Page) {
 }
 async function uploadSaved(page: Page, id: string) {
 	await page.goto(`/expenses/${id}`)
-	await page.getByLabel('Add Images', { exact: true }).setInputFiles(await receipt(page))
+	const input = page.getByLabel('Add Images', { exact: true })
+	await expect(input).toBeEnabled()
+	await input.setInputFiles(await receipt(page))
 	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await expect(page.getByRole('img', { name: 'Preview of receipt.png', exact: true })).toBeVisible()
 }
@@ -138,7 +140,9 @@ test('edits a new selection with keyboard crop handles, grayscale and contrast, 
 	await page.getByLabel('Category', { exact: true }).selectOption(ledger.categoryId)
 	await page.getByLabel('Amount', { exact: true }).fill('12.34')
 	await page.getByLabel('Description', { exact: true }).fill('Editor draft receipt')
-	await page.getByLabel('Add Images', { exact: true }).setInputFiles(await receipt(page))
+	const input = page.getByLabel('Add Images', { exact: true })
+	await expect(input).toBeEnabled()
+	await input.setInputFiles(await receipt(page))
 	const dialog = await editor(page)
 	await dialog.getByLabel('Crop shape', { exact: true }).selectOption('rectangle')
 	const corner = dialog.getByRole('button', {

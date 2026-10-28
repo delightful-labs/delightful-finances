@@ -611,7 +611,9 @@ test('adds an image to an existing transaction and restores its preview after re
 }) => {
 	const seed = await seedTransaction(page)
 	await page.goto(`/expenses/${seed.id}`)
-	await page.locator('main input[type="file"]').setInputFiles({
+	const imageInput = page.locator('main input[type="file"]')
+	await expect(imageInput).toBeEnabled()
+	await imageInput.setInputFiles({
 		name: 'edited.png',
 		mimeType: 'image/png',
 		buffer: onePixelPng
