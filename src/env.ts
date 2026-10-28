@@ -7,6 +7,11 @@ export const variables = defineEnvVars({
 		static: true,
 		schema: z.enum(['true', 'false']).default('false')
 	},
+	PUBLIC_FAKE_DATA: {
+		public: true,
+		static: true,
+		schema: z.enum(['true', 'false']).default('false')
+	},
 	PUBLIC_SIMPLEFIN_DEMO: {
 		public: true,
 		static: true,

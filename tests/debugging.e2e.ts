@@ -102,7 +102,10 @@ test('debug flag controls developer tools and sanitized state inspection', async
 test('deployed debug build starts the inspector and developer menu', async ({ page }) => {
 	const errors: string[] = []
 	page.on('pageerror', (error) => errors.push(error.message))
-	await page.goto('/')
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
 	const menu = page.getByRole('button', { name: 'Developer menu', exact: true })
 	await menu.focus()
 	await menu.press('Enter')
@@ -258,4 +261,19 @@ test('deployed debug build prepares fresh hosted Jazz workspaces', async ({ page
 	await expect(dialog.getByRole('status')).toContainText('Preview smoke account')
 	expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
 	expect(failures).toEqual([])
+})
+
+test('deployed debug build seeds fake accounts without duplicating on reload', async ({ page }) => {
+	test.skip(
+		process.env.JAZZ_HOSTED_PREVIEW_SMOKE !== 'true' || process.env.PUBLIC_FAKE_DATA !== 'true'
+	)
+	await page.goto('/accounts')
+	const main = page.getByRole('main')
+	await expect(main.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
+	await expect(main.locator('tbody tr')).toHaveCount(3)
+	const names = await main.locator('tbody tr td:first-child').allTextContents()
+	await page.reload()
+	await expect(main.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
+	await expect(main.locator('tbody tr')).toHaveCount(3)
+	expect(await main.locator('tbody tr td:first-child').allTextContents()).toEqual(names)
 })

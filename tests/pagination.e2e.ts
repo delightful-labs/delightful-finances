@@ -97,9 +97,7 @@ test('global keyboard developer menu saves both sample kinds and retains progres
 	await expect(dialog).toBeHidden()
 	await expect(trigger).toBeFocused()
 	await page.locator('aside').getByRole('link', { name: 'Expenses', exact: true }).click()
-	await expect(
-		page.getByRole('main').getByRole('link', { name: /Sample Transaction/ })
-	).toHaveCount(25)
+	await expect(page.getByRole('main').locator('a.transaction-link')).toHaveCount(25)
 	await openMenu(page)
 	await expect(dialog.getByRole('status')).toHaveText('Saved 25 of 25 sample transactions.')
 	await income.click()
@@ -110,9 +108,7 @@ test('global keyboard developer menu saves both sample kinds and retains progres
 	])
 	await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 	await page.locator('aside').getByRole('link', { name: 'Income', exact: true }).click()
-	await expect(
-		page.getByRole('main').getByRole('link', { name: /Sample Transaction/ })
-	).toHaveCount(25)
+	await expect(page.getByRole('main').locator('a.transaction-link')).toHaveCount(25)
 	await page.locator('aside').getByRole('link', { name: 'Login', exact: true }).click()
 	await expect(page.getByRole('heading', { name: 'Restore Account', exact: true })).toBeVisible()
 	await openMenu(page)
@@ -256,9 +252,7 @@ test('sample transactions save offline and synchronize after reconnection', asyn
 		await add.click()
 		await expect(dialog.getByRole('status')).toHaveText('Saved 25 of 25 sample transactions.')
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-		await expect(
-			page.getByRole('main').getByRole('link', { name: /Sample Transaction/ })
-		).toHaveCount(25)
+		await expect(page.getByRole('main').locator('a.transaction-link')).toHaveCount(25)
 	} finally {
 		await context.setOffline(false)
 	}
@@ -284,9 +278,7 @@ test('sample transactions save offline and synchronize after reconnection', asyn
 		)
 		.toBe(25)
 	await page.reload()
-	await expect(
-		page.getByRole('main').getByRole('link', { name: /Sample Transaction/ })
-	).toHaveCount(25)
+	await expect(page.getByRole('main').locator('a.transaction-link')).toHaveCount(25)
 })
 
 test('live result shrink clamps pages without rewriting the requested URL', async ({ page }) => {

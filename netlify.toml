@@ -9,3 +9,4 @@ command = "pnpm build:deploy-preview"
 
 [context.deploy-preview.environment]
 PUBLIC_DEBUG = "true"
+PUBLIC_FAKE_DATA = "true"

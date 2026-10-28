@@ -24,6 +24,21 @@ Every preview rebuild starts with fresh data. These generated apps remain unclai
 
 The preview command refuses to run unless Netlify's `CONTEXT` is `deploy-preview`. Branch deploys and local `pnpm build` remain frontend-only builds and require their own public Jazz settings.
 
+## Fake data
+
+Set `PUBLIC_FAKE_DATA=true` to fill an empty app with three fake accounts and 120 income/expense
+transactions from the last 90 days. This flag defaults to `false` independently of `PUBLIC_DEBUG`.
+Set it in `.env.local` and restart development, or as a build-scoped Netlify environment variable
+and rebuild. `netlify.toml` enables it for Deploy Previews. To test an empty preview, set it to
+`false` in that TOML context and rebuild; TOML values override Netlify UI environment settings.
+
+Startup seeds only the signed-in owner's initial workspace when there are no visible accounts or
+transactions, including archived data. Populated apps are left untouched. An authoritative read and
+an exclusive transaction guard empty-data eligibility; stable IDs and one confirmed commit prevent
+refresh duplication. Clearing all finance data makes the app eligible again while the flag is on.
+Faker generates persisted record names/descriptions; developer-menu labels remain localized. The
+manual 25-transaction action also uses Faker and remains controlled by the debug menu.
+
 ## Debug logging
 
 `PUBLIC_DEBUG` is the sole gate for application logging and the developer menu. Vite defaults it to `true` when serving in development mode and `false` otherwise, while preserving explicit shell or mode-specific `.env` values. Set `PUBLIC_DEBUG=false` in `.env.local` to disable debugging locally, then restart the development server. `netlify.toml` enables debugging for deploy previews at build time; a rebuild is required. Other deployed contexts can opt in with a build-scoped `PUBLIC_DEBUG=true` setting.

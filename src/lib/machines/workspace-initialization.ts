@@ -1,5 +1,6 @@
 import { assign, fromPromise, sendTo, setup, type OutputFrom } from 'xstate'
 import { ReadTier } from 'jazz-tools'
+import { workspaceFakeData } from './workspace-fake-data.js'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '../schema.js'
 import { m } from '../paraglide/messages.js'
@@ -14,7 +15,10 @@ import {
 	type WorkspacePersistenceResult
 } from './workspace-creation-transaction.js'
 
-type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig'>
+type Db = Pick<
+	ReturnType<typeof getDb>,
+	'all' | 'beginTransaction' | 'beginExclusiveTransaction' | 'getConfig'
+>
 type Input = { db: Db; userId: string }
 export type WorkspaceInitializationResult =
 	| { outcome: 'ready'; profileId: string }
@@ -68,6 +72,7 @@ export const workspaceInitialization = setup<
 		discover: typeof discover
 		prepareInitial: typeof prepareInitial
 		transaction: typeof workspaceCreationTransaction
+		fakeData: typeof workspaceFakeData
 	},
 	{},
 	{},
@@ -77,7 +82,12 @@ export const workspaceInitialization = setup<
 	Input,
 	WorkspaceInitializationResult
 >({
-	actors: { discover, prepareInitial, transaction: workspaceCreationTransaction }
+	actors: {
+		discover,
+		prepareInitial,
+		transaction: workspaceCreationTransaction,
+		fakeData: workspaceFakeData
+	}
 }).createMachine({
 	id: 'workspace-initialization',
 	context: ({ input }) => ({
@@ -130,7 +140,7 @@ export const workspaceInitialization = setup<
 			always: [
 				{
 					guard: ({ context }) => context.records?.profiles[0]?.initialWorkspaceId != null,
-					target: 'ready'
+					target: 'preparingFakeData'
 				},
 				{ target: 'checkingAuthority' }
 			]
@@ -173,7 +183,7 @@ export const workspaceInitialization = setup<
 				},
 				{
 					guard: ({ context }) => context.records?.profiles[0]?.initialWorkspaceId != null,
-					target: 'ready'
+					target: 'preparingFakeData'
 				},
 				{
 					guard: ({ context }) => context.records?.profiles.length === 1,
@@ -220,7 +230,42 @@ export const workspaceInitialization = setup<
 					purpose: 'bootstrap'
 				}),
 				onDone: [
-					{ guard: ({ event }) => event.output.outcome === 'succeeded', target: 'ready' },
+					{
+						guard: ({ event }) => event.output.outcome === 'succeeded',
+						target: 'preparingFakeData'
+					},
+					{ target: 'completed', actions: assign({ result: ({ event }) => event.output }) }
+				],
+				onError: {
+					target: 'failed',
+					actions: assign({
+						result: ({ event }): WorkspaceInitializationResult => ({
+							outcome: 'failed',
+							settlement: 'unresolved',
+							error: event.error
+						})
+					})
+				}
+			}
+		},
+		preparingFakeData: {
+			on: {
+				CANCEL: { actions: sendTo('fakeData', { type: 'CANCEL' }) },
+				SHUTDOWN: { actions: sendTo('fakeData', { type: 'SHUTDOWN' }) }
+			},
+			invoke: {
+				id: 'fakeData',
+				src: 'fakeData',
+				input: ({ context }) => ({
+					db: context.db,
+					userId: context.userId,
+					profileId: context.attempt?.profileId ?? required(context.records?.profiles[0]).id,
+					organizationId:
+						context.attempt?.organizationId ??
+						required(required(context.records?.profiles[0]).initialWorkspaceId ?? undefined)
+				}),
+				onDone: [
+					{ guard: ({ event }) => event.output.outcome === 'ready', target: 'ready' },
 					{ target: 'completed', actions: assign({ result: ({ event }) => event.output }) }
 				],
 				onError: {
