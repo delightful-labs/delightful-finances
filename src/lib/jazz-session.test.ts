@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	createJazzSession,
 	type JazzClient,
 	type JazzSession,
 	type JazzSessionConfig
 } from 'jazz-tools/svelte'
+
+const environment = vi.hoisted(() => ({ PUBLIC_DEBUG: 'true' }))
+vi.mock('$app/env/public', () => environment)
 
 vi.mock('jazz-tools/svelte', () => ({ createJazzSession: vi.fn() }))
 
@@ -32,8 +35,12 @@ function sessionStub(): JazzSession<JazzClient> {
 
 beforeEach(() => {
 	vi.resetModules()
+	environment.PUBLIC_DEBUG = 'true'
+	vi.spyOn(console, 'error').mockImplementation(() => {})
 	vi.mocked(createJazzSession).mockReset()
 })
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('shared session initialization', () => {
 	it('deduplicates simultaneous startup calls and caches the successful owner', async () => {
@@ -66,5 +73,23 @@ describe('shared session initialization', () => {
 		expect(getCurrentJazzSession()).toBeUndefined()
 		await expect(getOrCreateJazzSession(config)).resolves.toBe(owner)
 		expect(createJazzSession).toHaveBeenCalledTimes(3)
+		expect(console.error).toHaveBeenCalledTimes(2)
+		expect(console.error).toHaveBeenLastCalledWith(
+			'[jazz-startup] Jazz session initialization failed',
+			expect.objectContaining({
+				appId: 'test-app',
+				server: 'http://localhost:1234',
+				error: expect.objectContaining({ message: 'Network unavailable' })
+			})
+		)
 	})
+})
+
+it('preserves startup rejection without logging when debug is disabled', async () => {
+	environment.PUBLIC_DEBUG = 'false'
+	const failure = new Error('Network unavailable')
+	vi.mocked(createJazzSession).mockRejectedValueOnce(failure)
+	const { getOrCreateJazzSession } = await import('./jazz-session.js')
+	await expect(getOrCreateJazzSession(config)).rejects.toBe(failure)
+	expect(console.error).not.toHaveBeenCalled()
 })

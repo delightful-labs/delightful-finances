@@ -29,6 +29,12 @@ remain authoritative.
 
 ## Reuse disposable agent servers
 
+- When the user's development server is running, run preparation, type checks, unit tests,
+  builds and agent browser servers in a separate checkout with its own `node_modules` and generated
+  files. A different app port and in-memory Jazz server do not isolate SvelteKit's generated
+  development environment modules. Do not symlink the running checkout's `node_modules`: Vite caches
+  and framework-generated dependency files must also be isolated. Verification once overwrote the
+  running frontend's Jazz URL with a stopped test server and left workspace preparation waiting.
 - The protected environment is the user's `pnpm dev` server: app port 5173 and Jazz port 5174.
   Do not stop it, clear its browser storage, or modify/reset its Jazz data for agent tests.
 - Keeping an agent server running is allowed and preferred for successive focused test runs.

@@ -1,4 +1,6 @@
-import { dev } from '$app/env'
+import { createLogger, debugEnabled } from '../logger.js'
+
+const logger = createLogger('bank-sync')
 
 // Accept only explicitly selected scalar diagnostics. Never pass events, records,
 // WebAuthn results, provider payloads, URLs, or raw errors to console methods.
@@ -135,20 +137,18 @@ export function safeBankError(error: unknown) {
 
 export function createBankTrace(operation: string, correlationId: string = crypto.randomUUID()) {
 	function log(stage: string, details: Details = {}) {
-		if (dev)
-			console.info(`[bank-sync] ${operation} ${stage}`, { traceId: correlationId, ...details })
+		logger.info(`${operation} ${stage}`, { traceId: correlationId, ...details })
 	}
 	function failed(stage: string, error: unknown) {
-		if (dev)
-			console.warn(`[bank-sync] ${operation} ${stage}`, {
-				traceId: correlationId,
-				...safeBankError(error)
-			})
+		logger.warn(`${operation} ${stage}`, {
+			traceId: correlationId,
+			...safeBankError(error)
+		})
 	}
 	async function step<T>(stage: string, work: () => T | PromiseLike<T>): Promise<T> {
 		const start = performance.now()
 		log(`${stage}:start`)
-		const heartbeat = dev
+		const heartbeat = debugEnabled
 			? setInterval(
 					() => log(`${stage}:waiting`, { durationMs: Math.round(performance.now() - start) }),
 					10000

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import 'delightful-ui/theme.css'
+	import { inspectActor } from '#lib/inspector.js'
 	import {
 		PUBLIC_JAZZ_APP_ID,
 		PUBLIC_JAZZ_SERVER_URL,
@@ -72,7 +73,8 @@
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
 				navigate: (destination) => goto(destination)
 			}
-		)
+		),
+		{ inspect: inspectActor }
 	).start()
 	const snapshot = readable(actor.getSnapshot(), (set) => {
 		const subscription = actor.subscribe(set)

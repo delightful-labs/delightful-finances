@@ -9,7 +9,13 @@ test.beforeEach(async ({ page }) => {
 	await page.route('**/__form-presentation*', (route) =>
 		route.fulfill({
 			contentType: 'text/html',
-			body: '<!doctype html><html lang="en"><head><meta charset="UTF-8"><title>Form fixture</title></head><body><script type="module" src="/src/lib/testing/form-presentation/form-presentation-entry.ts"></script></body></html>'
+			// Shared form controllers now import the environment-gated inspector.
+			// This standalone document needs Kit's generated env bootstrap before
+			// importing those controllers, just as the normal app entry does.
+			body: `<!doctype html><html lang="en"><head><meta charset="UTF-8"><title>Form fixture</title></head><body><script type="module">
+import '/.svelte-kit/generated/dev/env/service-worker.js';
+import '/src/lib/testing/form-presentation/form-presentation-entry.ts';
+</script></body></html>`
 		})
 	)
 })

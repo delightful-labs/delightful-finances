@@ -18,7 +18,40 @@ Create and claim a hosted app in the Jazz dashboard first. In Netlify's environm
 
 `netlify.toml` runs `pnpm deploy:jazz && pnpm build` for production deployments. The Jazz command uses the installed SDK version and deploys `src/lib/schema.ts`, `src/lib/permissions.ts`, and migrations from `src/lib/migrations`. A failed database deployment stops the frontend build. A successful database deployment takes effect immediately, even if the subsequent frontend build fails, so schema and permission changes must remain compatible with the currently published app.
 
-Other Netlify contexts run only `pnpm build` and do not deploy database changes. Configure separate Jazz app settings for previews when they need database access. Local `pnpm build` also remains a frontend-only build.
+Deploy Previews run `pnpm build:deploy-preview`. Each build provisions a fresh Jazz Cloud app, waits for its admin endpoint to become available, deploys its schema and permissions, then builds the frontend with that app's public settings. Preview builds override inherited Jazz app/server settings and need no preconfigured Jazz secret. The generated admin secret is used for readiness checks and passed only to the schema-deploy child process, never written to a file, logged, or passed to the frontend build. Jazz deployment output is suppressed to avoid printing server payloads; the build log identifies the failed stage and reports HTTP status codes from recognized Jazz admin errors. Readiness checks are bounded to 12 attempts with five-second pauses; each request has a five-second timeout. Temporary 404/502/503/504 responses and request timeouts wait for another check. App creation itself is never retried automatically. A failure stops the build instead of falling back to a shared app.
+
+Every preview rebuild starts with fresh data. These generated apps remain unclaimed and Jazz automatically deletes them after 14 days, including apps left by failed or cancelled builds. Rebuild an expired preview to restore its backend. This flow intentionally does not retain admin credentials for later inspection/claiming. See [Jazz provisioning and app lifetime](https://jazz.tools/docs/getting-started/server-setup).
+
+The preview command refuses to run unless Netlify's `CONTEXT` is `deploy-preview`. Branch deploys and local `pnpm build` remain frontend-only builds and require their own public Jazz settings.
+
+## Fake data
+
+Set `PUBLIC_FAKE_DATA=true` to fill an empty app with three fake accounts and 120 income/expense
+transactions from the last 90 days. This flag defaults to `false` independently of `PUBLIC_DEBUG`.
+Set it in `.env.local` and restart development, or as a build-scoped Netlify environment variable
+and rebuild. `netlify.toml` enables it for Deploy Previews. To test an empty preview, set it to
+`false` in that TOML context and rebuild; TOML values override Netlify UI environment settings.
+
+Startup seeds only the signed-in owner's initial workspace when there are no visible accounts or
+transactions, including archived data. Populated apps are left untouched. An authoritative read and
+an exclusive transaction guard empty-data eligibility; stable IDs and one confirmed commit prevent
+refresh duplication. Clearing all finance data makes the app eligible again while the flag is on.
+Faker generates persisted record names/descriptions; developer-menu labels remain localized. The
+manual 25-transaction action also uses Faker and remains controlled by the debug menu.
+
+## Debug logging
+
+`PUBLIC_DEBUG` is the sole gate for application logging and the developer menu. Vite defaults it to `true` when serving in development mode and `false` otherwise, while preserving explicit shell or mode-specific `.env` values. Set `PUBLIC_DEBUG=false` in `.env.local` to disable debugging locally, then restart the development server. `netlify.toml` enables debugging for deploy previews at build time; a rebuild is required. Other deployed contexts can opt in with a build-scoped `PUBLIC_DEBUG=true` setting.
+
+The same setting enables the existing developer menu, including its sample transaction controls. The menu trigger retains its existing keyboard-focus behavior and appearance. Sample creation still requires the current workspace's write permissions.
+
+Use `createLogger(scope)` from `src/lib/logger.ts` for application `info`, `warn`, and `error` messages. Select only non-sensitive diagnostic fields; never pass credentials, finance records, provider payloads, or raw errors/messages/stacks. Existing bank diagnostics retain their error classification and timing heartbeats. SDK-internal logs are controlled separately.
+
+All application actor roots and their children report error-state observations through the shared observer, including normal machine failure states and unexpected actor failures. Logs contain the machine/state, triggering event type, actor correlation IDs, sanitized error/cause details and source frames, available status/permission facts, counters, collection sizes and typed failure results. Jazz initialization failures additionally report the public app ID and server origin before a database is available. Identical failure observations are suppressed until their facts change or the actor leaves the failure state. Context payloads and form values are omitted; error text is bounded and redacted rather than logging raw exceptions.
+
+Jazz's embedded inspector requires its development server integration; `PUBLIC_DEBUG` does not enable it in a deployed build. Use the [standalone Jazz Inspector](https://v2.inspector.jazz.tools/) for a hosted lower-environment app, entering its server URL, app ID, and admin secret directly into that tool. Never expose the admin secret through a `PUBLIC_` variable.
+
+With `PUBLIC_DEBUG=true`, the developer menu offers **Open Stately Inspector** and **Open Jazz inspector**. Neither opens automatically. Stately opens a separate browser tab when clicked; allow popups for the app origin if necessary. All application actor roots and their descendants are attached. Sanitized machine descriptions and current states are replayed on connection so opening the inspector after startup still shows existing machines. Inspection includes state values, event types and actor relationships, with context, event payloads, results and raw errors removed before transmission to the external inspector. Error diagnostic context stays in the application's console and is not sent to Stately.
 
 ## Native PWA
 

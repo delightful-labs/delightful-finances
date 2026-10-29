@@ -1,12 +1,13 @@
 <script lang="ts">
+	import { inspectActor } from '#lib/inspector.js'
+	import { debugEnabled } from '#lib/logger.js'
+	import { fakeTransactionDescription } from '#lib/domain/fake-data.js'
 	import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscriptionOne, QuerySubscription } from 'jazz-tools/svelte'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
-	import { m } from '#lib/paraglide/messages.js'
-	const dev = import.meta.env.DEV
 	import { createActor } from 'xstate'
 	import { readable } from 'svelte/store'
 	import { fromStore } from 'svelte/store'
@@ -43,12 +44,12 @@
 	const db = getDb()
 	const session = fromStore(getJazzSession())
 	const membership = new QuerySubscriptionOne(() =>
-		dev
+		debugEnabled
 			? organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 			: undefined
 	)
 	const grants = new QuerySubscription(() =>
-		dev && filters.activeOrganizationId && session.current.account?.id
+		debugEnabled && filters.activeOrganizationId && session.current.account?.id
 			? app.accountMemberships.where({
 					organizationId: filters.activeOrganizationId,
 					userId: session.current.account.id
@@ -85,7 +86,8 @@
 		observe: sampleObservation
 	})
 	const sampleMachine = createSampleTransactionsMachine(creation.operation, (index) => {
-		if (!dev || batchScope !== currentSampleScope()) throw new Error('Sample scope changed')
+		if (!debugEnabled || batchScope !== currentSampleScope())
+			throw new Error('Sample scope changed')
 		const observation = sampleObservation()
 		const account = writableTransactionAccounts(observation).find(
 			(account) =>
@@ -104,10 +106,7 @@
 			bookedOn,
 			amount: `${Math.floor((100 + index * 137) / 100)}.${String((100 + index * 137) % 100).padStart(2, '0')}`,
 			paymentMethod: PAYMENT_METHOD.CASH,
-			description: m['labels.sample_subject_number']({
-				subject: m['nouns.transaction']({ count: 1 }),
-				number: index + 1
-			}),
+			description: fakeTransactionDescription(),
 			tags: []
 		})
 		return {
@@ -121,7 +120,7 @@
 		}
 	})
 	let observationRevision = 0
-	const samples = createActor(sampleMachine)
+	const samples = createActor(sampleMachine, { inspect: inspectActor })
 	const sampleSnapshot = readable(samples.getSnapshot(), (set) => {
 		const subscription = samples.subscribe(set)
 		return () => subscription.unsubscribe()
