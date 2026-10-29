@@ -1,6 +1,6 @@
 # Local-first startup: first delivery plan
 
-Status: T004 approved; T005 reviewed and focused unit checks passed. Browser verification remains pending.
+Status: T004 approved; T005 reviewed; focused unit checks, type checks, and the offline owner browser workflow passed.
 Base: `feature/local-first-startup-pr26`, stacked on PR #26.
 
 ## Scope and constraints
@@ -112,6 +112,112 @@ this plan is reviewed.
 Selection readiness evaluates observed session status and identity, shared with the session region,
 rather than testing the session region while both regions traverse transient checking states.
 The navigation capability retains organization and membership states; bank and creation retain
-provenance requirements. Four focused unit suites passed (89 tests); an additional pending-provenance
-case subsequently passed in the 25-test readiness suite. Type checking remains blocked by dependency
-resolution/API mismatches outside this slice. No browser or cold-start guarantee is established.
+provenance requirements. Four focused unit suites passed (89 tests); pending-provenance and empty first-workspace cases subsequently passed in the 26-test readiness
+suite. Installing locked dependencies resolved the earlier type-check blockers; type checking now
+passes with zero errors/warnings. The existing offline owner Playwright workflow passes, covering
+local edits and reconnection in a running session. Cold restart and an unresponsive remote remain
+unverified.
+
+Browser verification exposed an early redirect while bootstrap was still creating the first workspace.
+Readiness now waits before redirecting an empty, unscoped finance route while provenance is pending.
+Explicit workspace/global routes and existing local workspaces remain independently usable. This
+wait does not authorize bootstrap or claim the local replica is complete.
+
+## T006 proposed design — independent optional seeding
+
+Status: implementation approved and focused verification passed.
+
+Initialization finishes after established provenance or successful bootstrap and returns the profile
+ID plus initial workspace ID. Startup publishes the existing ready report immediately, then owns
+optional seeding independently of that report.
+The public initialization report can remain unchanged; the extra workspace ID is internal output.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Initializing
+  Initializing --> Ready: provenance established / bootstrap succeeded
+  state Ready {
+    [*] --> Seeding
+    Seeding --> Settled: child completes or fails; preserve typed result
+    Seeding --> Replacing: identity or request replaced; drain live child
+    Seeding --> Closing: shutdown; drain live child
+    Replacing --> Closing: shutdown supersedes replacement
+  }
+  Replacing --> Initializing: cleanup settled, latest request eligible
+  Closing --> Closed: cleanup settled
+  Settled --> Initializing: request replaced
+  Settled --> Closed: shutdown
+```
+
+Keep the seed child invoked on the compound ready state so it survives transitions into its replacing
+and closing substates. Only seeding and settled states carry readiness tags; draining
+states publish waiting. Publish initialized readiness before starting the optional child. A seed
+failure must not clear the valid profile binding or turn initialization into failure. Preserve the
+seed's typed result/settlement as observed context data; the child owns explicit outcome states. The
+workspace seed adapter will expose seeded/skipped distinctly instead of translating both into an
+initialization-ready result. No seed retry is introduced; request replacement retains existing retry
+semantics and authoritative deduplication.
+
+Replacement and shutdown must check child liveness: completed/failed children cannot acknowledge
+shutdown. An active child receives shutdown and remains owned until cleanup/settlement completes.
+Shutdown supersedes replacement; late reports cannot publish readiness for the old request. Preserve
+original operation binding while draining and retain only the latest replacement request. Unexpected
+child crashes route to seed failure or complete an already requested drain; never wait for a crashed
+child's acknowledgement. Existing initialization/bootstrap drain behavior remains unchanged.
+
+Machine-first gate: this is a workflow with initialization, readiness publication, optional seeding,
+replacement, and shutdown. Model it in startup states first. Retain `fakeDataSetup` as the exclusive
+transaction owner: local populated-data skip, authoritative emptiness/ownership/categories reads,
+guarded eligibility, resource acquisition, transaction recheck, staging, commit/confirmation, and
+rollback remain there. Moving ownership must not change these safety checks or introduce promise
+orchestration. Review its resource adapters recursively before presenting implementation.
+
+Implementation scope: `workspace-initialization.ts`, `workspace-startup.ts`, and
+`workspace-fake-data.ts`; no readiness, schema, localization, or presentation changes expected.
+After exact implementation review, update initialization output assertions and startup fixtures, add
+seed waiting/failure/replacement/shutdown coverage, and inspect `workspace-fake-data.test.ts`,
+`fake-data.test.ts`, and `tests/fake-data.e2e.ts` before relevant execution. Keep seeding disabled in
+ordinary offline browser coverage; use its dedicated disposable preview environment for seed tests.
+
+T006 implementation review: startup captures its invoked seed reference in an action before raising
+a drain/replacement event; liveness guards inspect that reference. The child remains invoked on the
+compound ready state throughout cleanup. Completion routes prioritize shutdown and replacement
+before seed outcome classification. Initialization now returns its established initial workspace ID;
+seed results preserve seeded/skipped/cancelled/closed/failure and original settlement without
+translating them into initialization success. Seed failure retains valid initialized readiness.
+No new promise actors or asynchronous orchestration were introduced. The existing transaction
+resource adapters and seed workflow remain unchanged.
+
+T006 verification: six affected unit suites passed (117 tests). After preserving the generic SDK
+query signature in the new fixture, the startup suite passed again (10 tests). Application/Svelte
+and test TypeScript checks passed. The seed-enabled, debug-disabled Playwright case passed on
+disposable in-memory Jazz storage, including reload without duplicate records. Its assertions now
+wait for seed data independently of the Accounts heading. Unit tests cover a seed authority read
+that never responds, nonblocking seed failure, latest-identity replacement after commit settlement,
+and shutdown priority while seeding drains. These results do not establish full cold offline startup.
+
+## Startup simplification review
+
+Implemented the two approved simplifications in `workspace-startup.ts`. Startup now models only
+seeding, settled, replacing, and closing for seed ownership. The child retains outcome classification;
+startup preserves its typed result without repeating the child outcome states. Replacement/shutdown
+events carry the observed seed actor reference directly; no context actor reference or reset is
+needed. Liveness remains a guarded transition, and shutdown/replacement routes still precede normal
+settlement. The seed workflow and its feature-gate adapter are unchanged in this simplification.
+
+Formatting and diff checks pass. Prior T006 results precede this simplification. The startup failure test now awaits settled while retaining the failure-result and readiness
+assertions. A readiness regression test covers a failed workspace query during pending initialization;
+query failures are excluded from the empty-workspace bootstrap wait.
+
+Post-review verification: both affected readiness/startup suites pass (37 tests), including query
+failure during pending initialization and seed settlement/cleanup after simplification. Application
+and test type checks pass with zero Svelte diagnostics. The earlier seed browser result predates
+the simplification; it was not rerun for these review fixes.
+
+Latest slice verification after simplification and the loading-message fix: application and test
+type checks pass, and both focused Playwright cases pass (seed-enabled reload/deduplication and
+visible workspace loading feedback). The presentation regression mounts the real notice in its
+loading state and verifies the visible paragraph as well as its screen-reader announcement, without
+relying on startup timing. The previously passing 37 readiness/startup unit tests still cover the
+current machine changes; those files have not changed since that run. Temporary verification config
+was removed. Cold offline restart and general unresponsive-remote coverage remain later work.

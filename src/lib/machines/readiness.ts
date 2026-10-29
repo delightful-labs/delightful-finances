@@ -150,6 +150,7 @@ export function createWorkspaceReadinessMachine({
 			navigationAlive: undefined
 			navigationReady: undefined
 			navigationCanUseWorkspace: undefined
+			awaitingInitialWorkspace: undefined
 			navigationFailed: undefined
 			navigationDenied: undefined
 			invalidSelection: undefined
@@ -207,6 +208,14 @@ export function createWorkspaceReadinessMachine({
 			navigationCanUseWorkspace: stateIn({
 				active: { session: 'ready', organization: 'ready', selection: 'selected' }
 			}),
+			awaitingInitialWorkspace: and([
+				stateIn({ active: { workspace: 'waiting' } }),
+				({ context }) =>
+					context.organizations?.length === 0 &&
+					context.organizationsError == null &&
+					!workspaceRoute(context.route.search).scoped &&
+					!['/settings/workspace', '/account', '/login'].includes(context.route.pathname)
+			]),
 			navigationFailed: or([
 				stateIn({ active: { selection: 'failed' } }),
 				stateIn({ active: { organization: 'failed' } })
@@ -409,7 +418,7 @@ export function createWorkspaceReadinessMachine({
 			},
 			OBSERVE_NAVIGATION: [
 				{
-					guard: not('navigationReady'),
+					guard: or([not('navigationReady'), 'awaitingInitialWorkspace']),
 					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: false, access: 'waiting' })
 				},
 				{

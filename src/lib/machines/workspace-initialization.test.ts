@@ -28,7 +28,7 @@ describe('workspace initialization decisions', () => {
 			.mockResolvedValueOnce([{ ...profile, initialWorkspaceId: workspace.id }])
 			.mockResolvedValueOnce([])
 		const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
-		expect(done.output).toEqual({ outcome: 'ready', profileId })
+		expect(done.output).toEqual({ outcome: 'ready', profileId, organizationId: workspace.id })
 		expect(init.discover).toHaveBeenCalledTimes(2)
 		expect(init.discover.mock.calls[0]?.[1]?.tier).toBe(ReadTier.LocalFirst)
 		expect(f.beginTransaction).not.toHaveBeenCalled()
@@ -78,7 +78,11 @@ describe('workspace initialization decisions', () => {
 		const done = await waitFor(actor, (s) => s.status === 'done')
 		const expectedProfileId = await stableUuid(userId, 'profile')
 		const expectedWorkspaceId = await stableUuid(userId, 'personal-organization')
-		expect(done.output).toEqual({ outcome: 'ready', profileId: expectedProfileId })
+		expect(done.output).toEqual({
+			outcome: 'ready',
+			profileId: expectedProfileId,
+			organizationId: expectedWorkspaceId
+		})
 		expect(f.insert).toHaveBeenNthCalledWith(
 			1,
 			app.profiles,
@@ -113,7 +117,7 @@ describe('workspace initialization decisions', () => {
 			.mockResolvedValueOnce([{ ...profile, initialWorkspaceId: workspace.id }])
 			.mockResolvedValueOnce([])
 		const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
-		expect(done.output).toEqual({ outcome: 'ready', profileId })
+		expect(done.output).toEqual({ outcome: 'ready', profileId, organizationId: workspace.id })
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it.each([

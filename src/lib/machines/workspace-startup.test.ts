@@ -1,11 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createActor, waitFor } from 'xstate'
-import type { schema } from 'jazz-tools'
+import { Transaction, type schema } from 'jazz-tools'
 import { app } from '../schema.js'
 import { createWorkspaceStartupMachine } from './workspace-startup.js'
 import { workspaceReports } from './workspace-reports.fixture.js'
 import type { InitializationStatusEvent } from '../workspace-orchestration-contract.js'
 import { creationFixture, profileId, userId, workspace } from './workspace-creation.fixture.js'
+
+const environment = vi.hoisted(() => ({ PUBLIC_FAKE_DATA: 'false' }))
+vi.mock('$app/env/public', () => environment)
+beforeEach(() => {
+	environment.PUBLIC_FAKE_DATA = 'false'
+})
+
+import { seedFixture } from './fake-data.fixture.js'
 
 const secondUser = '77777777-7777-4777-8777-777777777777'
 const thirdUser = '88888888-8888-4888-8888-888888888888'
@@ -143,5 +151,125 @@ describe('startup session ownership', () => {
 		f.first.resolve([profile])
 		await waitFor(f.actor, (s) => s.status === 'done')
 		expect(f.beginTransaction).not.toHaveBeenCalled()
+	})
+})
+
+function seededStartup() {
+	environment.PUBLIC_FAKE_DATA = 'true'
+	const seed = seedFixture()
+	const creation = creationFixture()
+	const reads = new Transaction('mergeable', () => {
+		throw new Error('Unit fixture must not open a Jazz runtime')
+	})
+	const discover = vi.spyOn(reads, 'all').mockImplementation(seed.input.db.all)
+	discover.mockResolvedValueOnce([profile]).mockResolvedValueOnce([])
+	const recipient = workspaceReports<InitializationStatusEvent>()
+	const actor = createActor(
+		createWorkspaceStartupMachine({
+			...seed.input.db,
+			all: reads.all.bind(reads),
+			beginTransaction: creation.beginTransaction,
+			getConfig: () => ({ appId: userId, serverUrl: 'https://unused.invalid' })
+		}),
+		{ input: { request: { generation: 0, userId, status: 'ready' }, recipient } }
+	)
+	cleanups.push(
+		() => actor.stop(),
+		() => recipient.stop()
+	)
+	return { ...seed, actor, discover, reports: () => recipient.getSnapshot().context }
+}
+
+describe('optional seed ownership', () => {
+	it('publishes readiness while authoritative seed discovery never responds', async () => {
+		const f = seededStartup()
+		const remote = Promise.withResolvers<never[]>()
+		f.all
+			.mockReset()
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockReturnValue(remote.promise)
+		f.actor.start()
+		await vi.waitFor(() => expect(f.all).toHaveBeenCalledTimes(6))
+		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(true)
+		expect(f.reports().at(-1)?.report.status).toEqual({ kind: 'ready', profileId })
+		expect(f.beginExclusiveTransaction).not.toHaveBeenCalled()
+		f.actor.send({ type: 'SHUTDOWN' })
+		await waitFor(f.actor, (s) => s.status === 'done')
+	})
+	it('retains initialized readiness after seed failure and shuts down without waiting for a completed child', async () => {
+		const f = seededStartup()
+		const failure = new Error('Seed read failed')
+		f.all.mockReset().mockRejectedValue(failure)
+		f.actor.start()
+		await waitFor(f.actor, (s) => s.matches({ ready: 'settled' }))
+		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(true)
+		expect(f.actor.getSnapshot().context.seedResult).toEqual({
+			outcome: 'failed',
+			settlement: 'notStarted',
+			error: failure
+		})
+		expect(f.reports().at(-1)?.report.status).toEqual({ kind: 'ready', profileId })
+		f.actor.send({ type: 'SHUTDOWN' })
+		expect(f.actor.getSnapshot().status).toBe('done')
+	})
+	it('drains confirmed seed writes before initializing only the latest replacement identity', async () => {
+		const f = seededStartup()
+		const confirmation = Promise.withResolvers<void>()
+		f.wait.mockReturnValue(confirmation.promise)
+		f.actor.start()
+		await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
+		f.discover.mockResolvedValueOnce([{ ...profile, userId: thirdUser }]).mockResolvedValueOnce([])
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 1, userId: secondUser, status: 'ready' }
+		})
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 2, userId: thirdUser, status: 'ready' }
+		})
+		expect(f.actor.getSnapshot().matches({ ready: 'replacing' })).toBe(true)
+		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(false)
+		const calls = f.discover.mock.calls.length
+		expect(f.actor.getSnapshot().context.operation?.userId).toBe(userId)
+		confirmation.resolve()
+		await waitFor(
+			f.actor,
+			(s) => s.context.operation?.userId === thirdUser && s.hasTag('workspace-ready')
+		)
+		expect(f.discover.mock.calls.length).toBeGreaterThan(calls)
+		expect(
+			f
+				.reports()
+				.some((e) => e.report.request.userId === secondUser && e.report.status.kind === 'ready')
+		).toBe(false)
+		expect(f.rollback).not.toHaveBeenCalled()
+	})
+	it('preserves shutdown over seed replacement and late confirmation', async () => {
+		const f = seededStartup()
+		const confirmation = Promise.withResolvers<void>()
+		f.wait.mockReturnValue(confirmation.promise)
+		f.actor.start()
+		await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
+		const calls = f.discover.mock.calls.length
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 1, userId: secondUser, status: 'ready' }
+		})
+		f.actor.send({ type: 'SHUTDOWN' })
+		f.actor.send({
+			type: 'OBSERVED',
+			request: { generation: 2, userId: thirdUser, status: 'ready' }
+		})
+		expect(f.actor.getSnapshot().matches({ ready: 'closing' })).toBe(true)
+		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(false)
+		confirmation.resolve()
+		await waitFor(f.actor, (s) => s.status === 'done')
+		expect(f.discover).toHaveBeenCalledTimes(calls)
+		expect(f.actor.getSnapshot().context.seedResult).toEqual({
+			outcome: 'closed',
+			settlement: 'confirmed'
+		})
+		expect(f.rollback).not.toHaveBeenCalled()
 	})
 })

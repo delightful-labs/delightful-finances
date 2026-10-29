@@ -7,29 +7,11 @@ type Input = {
 	db: FakeDataDb
 	userId: string
 	organizationId: string
-	profileId: string
 }
-export type WorkspaceFakeDataResult =
-	| { outcome: 'ready'; profileId: string }
-	| { outcome: 'failed'; settlement: 'notStarted' | 'unresolved'; error: unknown }
-	| {
-			outcome: 'cancelled' | 'closed'
-			settlement: 'notStarted' | 'locallyPersisted' | 'unresolved'
-	  }
+export type WorkspaceFakeDataResult = FakeDataResult
 type Context = Input & { result: WorkspaceFakeDataResult | undefined }
 
-/** Translate the seed outcome once, preserving confirmation when shutdown follows commit. */
-function initializationResult(result: FakeDataResult, profileId: string): WorkspaceFakeDataResult {
-	if (result.outcome === 'seeded' || result.outcome === 'skipped')
-		return { outcome: 'ready', profileId }
-	if (result.outcome === 'failed') return result
-	return {
-		outcome: result.outcome,
-		settlement: result.settlement === 'confirmed' ? 'locallyPersisted' : result.settlement
-	}
-}
-
-/** Own the feature gate and seed lifecycle; expose only the initialization result to the parent. */
+/** Own the feature gate and seed lifecycle; preserve the seed outcome and settlement for the startup owner. */
 export const workspaceFakeData = setup<
 	Context,
 	WorkspacePersistenceEvent,
@@ -51,7 +33,10 @@ export const workspaceFakeData = setup<
 	},
 	states: {
 		checking: {
-			always: [{ guard: () => PUBLIC_FAKE_DATA === 'true', target: 'seeding' }, { target: 'ready' }]
+			always: [
+				{ guard: () => PUBLIC_FAKE_DATA === 'true', target: 'seeding' },
+				{ target: 'skipped' }
+			]
 		},
 		seeding: {
 			on: {
@@ -62,12 +47,29 @@ export const workspaceFakeData = setup<
 				id: 'seed',
 				src: 'seed',
 				input: ({ context }) => context,
-				onDone: {
-					target: 'completed',
-					actions: assign({
-						result: ({ context, event }) => initializationResult(event.output, context.profileId)
-					})
-				},
+				onDone: [
+					{
+						guard: ({ event }) => event.output.outcome === 'seeded',
+						target: 'seeded',
+						actions: assign({ result: ({ event }) => event.output })
+					},
+					{
+						guard: ({ event }) => event.output.outcome === 'skipped',
+						target: 'skipped',
+						actions: assign({ result: ({ event }) => event.output })
+					},
+					{
+						guard: ({ event }) => event.output.outcome === 'cancelled',
+						target: 'cancelled',
+						actions: assign({ result: ({ event }) => event.output })
+					},
+					{
+						guard: ({ event }) => event.output.outcome === 'closed',
+						target: 'closed',
+						actions: assign({ result: ({ event }) => event.output })
+					},
+					{ target: 'failed', actions: assign({ result: ({ event }) => event.output }) }
+				],
 				onError: {
 					target: 'failed',
 					actions: assign({
@@ -80,16 +82,16 @@ export const workspaceFakeData = setup<
 				}
 			}
 		},
-		ready: {
+		seeded: { type: 'final' },
+		skipped: {
 			type: 'final',
 			entry: assign({
-				result: ({ context }): WorkspaceFakeDataResult => ({
-					outcome: 'ready',
-					profileId: context.profileId
-				})
+				result: ({ context }): WorkspaceFakeDataResult =>
+					context.result ?? { outcome: 'skipped', settlement: 'notStarted' }
 			})
 		},
-		completed: { type: 'final' },
+		cancelled: { type: 'final' },
+		closed: { type: 'final' },
 		failed: { type: 'final' }
 	}
 })

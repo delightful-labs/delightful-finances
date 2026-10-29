@@ -30,19 +30,26 @@ These are lower-risk directions, not permission to remove safeguards or blindly 
 read. T005–T008 depend on the reviewed plan and applicable guidance reconciliation. A statechart must
 precede workflow code. Coverage changes follow review of the exact implementation they exercise.
 
-- [ ] T005 Decouple available local shell/data access from initialization provenance in
+- [x] T005 Decouple available local shell/data access from initialization provenance in
       `src/lib/machines/workspace-initialization.ts`, `readiness.ts`, and
       `src/lib/components/WorkspaceBootstrap.svelte`. Use explicit local-first discovery on the
       usability path; keep empty results from authorizing bootstrap or repair. Preserve current
       identity/membership/scope guards. Show the statechart and file scope before editing code.
       Implementation reviewed; test follow-up authorized. Four focused unit suites passed (89 tests),
-      then the updated readiness suite passed all 25 tests, including pending/failed provenance.
-      Selection uses observed session facts to avoid transient parallel-region ordering. Type check
-      reports 13 dependency/API errors outside changed files; browser coverage remains pending.
+      then the updated readiness suite passed all 26 tests, including pending/failed provenance
+      and empty first-workspace discovery.
+      Selection uses observed session facts to avoid transient parallel-region ordering. Locked dependency installation resolved prior dependency errors. Type checking passes with zero
+      errors/warnings; the existing offline owner Playwright workflow passes. Cold restart and a live
+      unresponsive remote remain pending T009/T013/T014 coverage.
       No cold-start or performance guarantee validated yet.
-- [ ] T006 Remove opt-in seeding from the critical readiness path in `workspace-fake-data.ts`,
+- [x] T006 Remove opt-in seeding from the critical readiness path in `workspace-fake-data.ts`,
       `workspace-initialization.ts`, and its owner. Preserve authoritative emptiness/exclusive seed
       acceptance and cancellation/resource ownership; allow ordinary local use while seeding waits.
+      Implementation approved and verified: six focused unit suites pass (117 tests), application
+      and test type checks pass, and the seed-enabled Playwright reload/deduplication case passes.
+      Startup coverage includes nonresponding seed reads, failure, replacement, and shutdown.
+      After simplification: 37 affected readiness/startup unit tests pass. Latest application/test
+      type checks and both seed reload/deduplication and visible-loading browser checks pass.
 - [ ] T007 Separate attribution-only repair progress from unrelated local capabilities in
       `workspace-integrity.ts`, `workspace-integrity-owner.ts`, and `readiness.ts`. Inspect the actual
       finance/bank consumers first; do not remove essential credential or operation-specific facts.

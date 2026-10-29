@@ -449,6 +449,34 @@ describe('workspace public capability and report currency', () => {
 		expect(f.actor.getSnapshot().children.creation).toBe(f.creation)
 		expect(f.creation.getSnapshot().matches('held')).toBe(true)
 	})
+	it('waits for initial discovery before redirecting an empty unscoped finance route', async () => {
+		const f = start()
+		f.startup.send({ type: 'HOLD' })
+		f.observe({ ...f.observation, route: { pathname: '/accounts', search: '', hash: '' } })
+		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).navigation).toBe('waiting')
+		expect(f.navigate).not.toHaveBeenCalled()
+		f.observe({
+			...f.observation,
+			organizations: records().organizations,
+			route: { pathname: '/accounts', search: '', hash: '' }
+		})
+		await waitFor(f.actor, () => f.navigate.mock.calls.length > 0)
+		expect(f.navigate).toHaveBeenCalled()
+	})
+	it('reports workspace query failure instead of hiding it behind pending initialization', async () => {
+		const f = start()
+		f.startup.send({ type: 'HOLD' })
+		f.observe({
+			...f.observation,
+			organizationsError: new Error('Workspace query failed'),
+			route: { pathname: '/accounts', search: '', hash: '' }
+		})
+		await waitFor(f.actor, (snapshot) => selectWorkspaceView(snapshot).navigation === 'failed')
+		expect(f.actor.getSnapshot().matches({ active: { workspace: 'waiting' } })).toBe(true)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
+		expect(f.navigate).not.toHaveBeenCalled()
+	})
 	it('keeps local navigation available while provenance initialization waits', async () => {
 		const f = start()
 		f.startup.send({ type: 'HOLD' })
