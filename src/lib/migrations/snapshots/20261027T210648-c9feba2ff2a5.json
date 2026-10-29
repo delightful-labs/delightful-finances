@@ -751,6 +751,34 @@
 				"references": "accounts"
 			},
 			{
+				"name": "expenseAmountMinor",
+				"column_type": {
+					"type": "BigInt"
+				},
+				"nullable": true
+			},
+			{
+				"name": "expenseCurrency",
+				"column_type": {
+					"type": "Text"
+				},
+				"nullable": true
+			},
+			{
+				"name": "incomeAmountMinor",
+				"column_type": {
+					"type": "BigInt"
+				},
+				"nullable": true
+			},
+			{
+				"name": "incomeCurrency",
+				"column_type": {
+					"type": "Text"
+				},
+				"nullable": true
+			},
+			{
 				"name": "amountMinor",
 				"column_type": {
 					"type": "BigInt"
