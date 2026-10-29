@@ -98,7 +98,12 @@ vi.mock('./bank-sync/index.js', () => ({
 		createMachine({
 			initial: 'working',
 			entry: bankStart,
-			on: { OBSERVED: { actions: bankObservation } },
+			on: {
+				WORKSPACE_ACCESS_CHANGED: { actions: bankObservation },
+				CONNECTIONS_CHANGED: { actions: bankObservation },
+				MAPPING_DATA_CHANGED: { actions: bankObservation },
+				HISTORY_CHANGED: { actions: bankObservation }
+			},
 			states: {
 				working: { on: { SHUTDOWN: 'closing', RESET: 'closed' } },
 				closing: { on: { SHUTDOWN: 'closed' } },
@@ -180,11 +185,7 @@ function start() {
 		source: {
 			userId: scope.userId,
 			organizationId: null,
-			sessionReady: true,
-			membership: undefined,
-			connections: [],
-			accounts: [],
-			links: []
+			membership: undefined
 		},
 		sessionStatus: 'ready',
 		membershipLoading: false,
@@ -199,7 +200,13 @@ function start() {
 		environment: 'test',
 		dependencies: {
 			db: vi.fn<() => WorkspaceAttachment['dependencies']['db']>()(),
-			read: () => observation.source,
+			read: () => ({
+				...observation.source,
+				sessionReady: true,
+				connections: [],
+				accounts: [],
+				links: []
+			}),
 			passkeyName: () => 'Test'
 		},
 		read: () => observation,
@@ -285,7 +292,8 @@ describe('workspace readiness supervision', () => {
 		bankObservation.mockImplementationOnce(() => {
 			throw new Error('private')
 		})
-		f.observe(f.observation)
+		bankObservation.mockClear()
+		f.observe(f.selected())
 		f.startup.send({ type: 'FINISH' })
 		expect(f.actor.getSnapshot().matches('failed')).toBe(true)
 		f.observe(f.observation)
@@ -446,5 +454,78 @@ describe('workspace public capability and report currency', () => {
 		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
 		expect(selectWorkspaceView(f.actor.getSnapshot()).navigation).toBe('directory')
 		expect(f.navigate).not.toHaveBeenCalled()
+	})
+})
+
+describe('scoped bank observations', () => {
+	it('does not republish access for route changes or equivalent workspace observations', () => {
+		const f = start()
+		const selected = f.selected()
+		f.observe(selected)
+		const revision = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
+		bankObservation.mockClear()
+		f.observe({ ...selected, route: { ...selected.route, hash: '#details' } })
+		f.observe(selected)
+		expect(bankObservation).not.toHaveBeenCalled()
+		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(revision)
+	})
+	it('forwards only the current binding’s data and ignores it during shutdown', () => {
+		const f = start()
+		const selected = f.selected()
+		f.observe(selected)
+		const revision = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
+		if (revision === undefined) throw new Error('Expected published bank access')
+		bankObservation.mockClear()
+		for (const invalid of [
+			{ revision: revision - 1, organizationId: scope.organizationId, userId: scope.userId },
+			{ revision, organizationId: scope.profileId, userId: scope.userId },
+			{ revision, organizationId: scope.organizationId, userId: scope.profileId }
+		])
+			f.actor.send({
+				type: 'BANK_OBSERVED',
+				organizationId: invalid.organizationId,
+				userId: invalid.userId,
+				event: { type: 'HISTORY_CHANGED', revision: invalid.revision, records: [] }
+			})
+		expect(bankObservation).not.toHaveBeenCalled()
+		const event = {
+			type: 'HISTORY_CHANGED',
+			revision,
+			records: []
+		} satisfies import('./bank-sync/types.js').BankObservationEvent
+		f.actor.send({
+			type: 'BANK_OBSERVED',
+			organizationId: scope.organizationId,
+			userId: scope.userId,
+			event
+		})
+		expect(bankObservation).toHaveBeenCalledOnce()
+		expect(bankObservation).toHaveBeenLastCalledWith(expect.objectContaining({ event }), undefined)
+		f.actor.send({ type: 'SHUTDOWN' })
+		f.actor.send({
+			type: 'BANK_OBSERVED',
+			organizationId: scope.organizationId,
+			userId: scope.userId,
+			event
+		})
+		expect(bankObservation).toHaveBeenCalledOnce()
+	})
+	it('advances access revisions for authority replacement and revisits, but not integrity retry', () => {
+		const f = start()
+		const selected = f.selected()
+		f.observe(selected)
+		const first = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
+		if (first === undefined) throw new Error('Expected published bank access')
+		f.observe({
+			...selected,
+			source: { ...selected.source, membership: { ...membership, role: 'admin' } }
+		})
+		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(first + 1)
+		f.observe(f.selected(scope.profileId))
+		f.observe(selected)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(first + 3)
+		f.report({ kind: 'failed', settlement: 'notStarted' })
+		f.actor.send({ type: 'RETRY_INTEGRITY' })
+		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(first + 3)
 	})
 })

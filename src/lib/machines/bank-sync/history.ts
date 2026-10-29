@@ -1,26 +1,30 @@
 import type { ActorRef, Snapshot } from 'xstate'
 import { assign, enqueueActions, setup } from 'xstate'
 import { required } from './identity.js'
-import type { Connection, LastSync } from './types.js'
+import type { BankHistoryRecord, LastSync } from './types.js'
 
 export type HistoryEvent = {
 	type: 'HISTORY_REPORTED'
-	generation: number
+	revision: number
+	connectionId: string | undefined
 	summary: LastSync | undefined
 }
-type ReportingInput = {
-	connection: Connection | undefined
-	generation: number
+type Input = {
+	revision: number
 	recipient: ActorRef<Snapshot<unknown>, HistoryEvent>
 }
-type Input = ReportingInput | Connection | undefined
-type Context = {
-	connection: Connection | undefined
+type Context = Input & {
+	records: readonly BankHistoryRecord[]
+	connectionId: string | undefined
 	summary: LastSync | undefined
-	generation: number
-	recipient: ActorRef<Snapshot<unknown>, HistoryEvent> | undefined
 }
-type Event = { type: 'OBSERVED'; connection: Connection | undefined; generation: number }
+type Event =
+	| { type: 'BINDING_CHANGED'; revision: number }
+	| { type: 'CONNECTION_SELECTED'; revision: number; connectionId: string | undefined }
+	| { type: 'HISTORY_CHANGED'; revision: number; records: readonly BankHistoryRecord[] }
+function selectedHistory(context: Context) {
+	return context.records.find((row) => row.id === context.connectionId)
+}
 type SummaryParams = { outcomeKey: LastSync['outcomeKey'] }
 
 export const bankHistoryMachine = setup<
@@ -29,22 +33,23 @@ export const bankHistoryMachine = setup<
 	{},
 	{},
 	{ summarize: SummaryParams; publish: undefined },
-	{},
+	{ currentRevision: undefined },
 	never,
 	string,
 	Input
 >({
+	guards: { currentRevision: ({ context, event }) => event.revision === context.revision },
 	actions: {
 		publish: enqueueActions(({ context, enqueue }) => {
-			if (!context.recipient) return
 			enqueue.sendTo(context.recipient, {
 				type: 'HISTORY_REPORTED',
-				generation: context.generation,
+				revision: context.revision,
+				connectionId: context.connectionId,
 				summary: context.summary
 			})
 		}),
 		summarize: assign(({ context }, params: SummaryParams) => {
-			const connection = required(context.connection)
+			const connection = required(selectedHistory(context))
 			return {
 				summary: {
 					time: required(connection.lastSyncAt),
@@ -58,46 +63,56 @@ export const bankHistoryMachine = setup<
 	}
 }).createMachine({
 	id: 'bank-history',
-	context: ({ input }) => ({
-		...(input && 'recipient' in input
-			? input
-			: { connection: input, generation: 0, recipient: undefined }),
-		summary: undefined
-	}),
+	tags: 'historical-outcome',
+	context: ({ input }) => ({ ...input, records: [], connectionId: undefined, summary: undefined }),
 	initial: 'checkingConnection',
 	on: {
-		OBSERVED: {
+		BINDING_CHANGED: {
 			target: '.checkingConnection',
 			actions: assign({
-				connection: ({ event }) => event.connection,
-				generation: ({ event }) => event.generation
+				revision: ({ event }) => event.revision,
+				records: [],
+				connectionId: undefined
 			})
+		},
+		CONNECTION_SELECTED: {
+			guard: 'currentRevision',
+			target: '.checkingConnection',
+			actions: assign({ connectionId: ({ event }) => event.connectionId })
+		},
+		HISTORY_CHANGED: {
+			guard: 'currentRevision',
+			target: '.checkingConnection',
+			actions: assign({ records: ({ event }) => event.records })
 		}
 	},
 	states: {
 		checkingConnection: {
 			always: [
-				{ guard: ({ context }) => !context.connection, target: 'absent' },
+				{ guard: ({ context }) => !selectedHistory(context), target: 'absent' },
 				{ target: 'checkingTime' }
 			]
 		},
 		checkingTime: {
 			always: [
-				{ guard: ({ context }) => !context.connection?.lastSyncAt, target: 'absent' },
+				{ guard: ({ context }) => !selectedHistory(context)?.lastSyncAt, target: 'absent' },
 				{ target: 'checkingOutcome' }
 			]
 		},
 		checkingOutcome: {
 			always: [
 				{
-					guard: ({ context }) => context.connection?.lastOutcome === 'succeeded',
+					guard: ({ context }) => selectedHistory(context)?.lastOutcome === 'succeeded',
 					target: 'succeeded'
 				},
 				{
-					guard: ({ context }) => context.connection?.lastOutcome === 'partial',
+					guard: ({ context }) => selectedHistory(context)?.lastOutcome === 'partial',
 					target: 'partial'
 				},
-				{ guard: ({ context }) => context.connection?.lastOutcome === 'failed', target: 'failed' },
+				{
+					guard: ({ context }) => selectedHistory(context)?.lastOutcome === 'failed',
+					target: 'failed'
+				},
 				{ target: 'absent' }
 			]
 		},

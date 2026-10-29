@@ -132,7 +132,20 @@ export type BankEnvironment = {
 	connected: boolean
 	connectionActive: boolean
 }
-export function bankEnvironment(current: Observation): BankEnvironment {
+export function bankCredentialFingerprint(connection: BankCredential | undefined): string {
+	return JSON.stringify([
+		connection?.id,
+		connection?.status,
+		connection?.ciphertext,
+		connection?.credentialId,
+		connection?.prfSalt,
+		connection?.iv,
+		connection?.credentialVersion
+	])
+}
+export function bankEnvironment(
+	current: Omit<Observation, 'connection'> & { connection: BankCredential | undefined }
+): BankEnvironment {
 	const connection = current.connection
 	return {
 		scopeKey: JSON.stringify([
@@ -141,15 +154,7 @@ export function bankEnvironment(current: Observation): BankEnvironment {
 			current.allowed,
 			current.sessionReady
 		]),
-		credentialFingerprint: JSON.stringify([
-			connection?.id,
-			connection?.status,
-			connection?.ciphertext,
-			connection?.credentialId,
-			connection?.prfSalt,
-			connection?.iv,
-			connection?.credentialVersion
-		]),
+		credentialFingerprint: bankCredentialFingerprint(connection),
 		allowed: current.allowed,
 		connected: current.connected,
 		connectionActive: current.connection?.status === 'active'
@@ -166,11 +171,41 @@ export type BankSource = {
 	links: readonly schema.RowOf<typeof app.simplefinAccountLinks>[]
 }
 export type BankSyncDependencies = Omit<Dependencies, 'observe'> & { read: () => BankSource }
+export type BankCredential = Pick<
+	Connection,
+	| 'id'
+	| 'organizationId'
+	| 'ownerId'
+	| 'status'
+	| 'ciphertext'
+	| 'credentialId'
+	| 'prfSalt'
+	| 'iv'
+	| 'credentialVersion'
+>
+export type BankHistoryRecord = Pick<
+	Connection,
+	'id' | 'lastSyncAt' | 'lastOutcome' | 'importedCount' | 'existingCount' | 'omittedCount'
+>
+export type BankAccess =
+	| {
+			kind: 'allowed'
+			organizationId: string
+			userId: string
+	  }
+	| { kind: 'waiting' | 'restricted'; organizationId: string | null; userId: string | undefined }
+export type BankObservationEvent =
+	| { type: 'WORKSPACE_ACCESS_CHANGED'; revision: number; access: BankAccess }
+	| { type: 'CONNECTIONS_CHANGED'; revision: number; connections: readonly BankCredential[] }
+	| { type: 'MAPPING_DATA_CHANGED'; revision: number; data: BankData }
+	| { type: 'HISTORY_CHANGED'; revision: number; records: readonly BankHistoryRecord[] }
 export type BankData = {
 	accounts: readonly Account[]
 	mappings: ReadonlyMap<string, string>
 }
-export function bankData(source: BankSource): BankData {
+export function bankData(
+	source: Pick<BankSource, 'organizationId' | 'accounts' | 'links'>
+): BankData {
 	return {
 		accounts: source.accounts.filter(
 			(account) => account.organizationId === source.organizationId && !account.archivedAt

@@ -1,3 +1,4 @@
+import { publishBankSource } from './reports.fixture.js'
 import { describe, expect, it, vi } from 'vitest'
 import { toPromise, waitFor } from 'xstate'
 import { importFixture, response, raw } from './import.fixture.js'
@@ -273,7 +274,7 @@ describe('operation/import/account/transaction ownership chain', () => {
 			if (intent === 'reset') {
 				const replacement = { ...f.initialSource, organizationId: id(99), membership: null }
 				f.read.mockReturnValue(replacement)
-				bank.send({ type: 'OBSERVED', source: replacement })
+				publishBankSource(bank, replacement, 1)
 			} else bank.send({ type: 'SHUTDOWN' })
 			const before = bank.getSnapshot().context.counts
 			bank.send({ type: 'IMPORT_PROGRESS', counts: counts(99, 99, 99) })

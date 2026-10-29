@@ -1,8 +1,9 @@
 import type { BankPresentation } from '#lib/bank-presentation-contract.js'
 import type { ActorRefFrom, EventObject, SnapshotFrom } from 'xstate'
-import { assign, raise, sendTo, setup, stateIn } from 'xstate'
+import { and, assign, not, or, raise, sendTo, setup, stateIn } from 'xstate'
 import {
 	bankAvailabilityMachine,
+	selectedBankConnection,
 	type AvailabilityEvent,
 	type AvailabilityReport
 } from './availability.js'
@@ -12,18 +13,18 @@ import { required } from './identity.js'
 import { createBankSetupMachine } from './setup.js'
 import { createBankOperationMachine } from './operation.js'
 import {
-	bankEnvironment,
+	bankCredentialFingerprint,
 	bankObservation,
-	bankData,
 	bankViewMetadata,
 	bankSetupSteps,
 	type BankSyncDependencies,
-	type BankSource,
+	type BankAccess,
+	type BankCredential,
+	type BankObservationEvent,
 	type LastSync,
 	type BankData,
 	bankErrorCode,
 	emptyCounts,
-	type BankEnvironment,
 	type BankCommand,
 	type BankEvent,
 	type BankViewMeta,
@@ -39,22 +40,17 @@ type Event =
 	| AvailabilityEvent
 	| HistoryEvent
 	| ProgressEvent
-	| { type: 'OBSERVED'; source: BankSource }
+	| BankObservationEvent
 	| { type: 'SHUTDOWN' }
 	| { type: `xstate.error.actor.${string}`; error: unknown }
-	| {
-			type: 'ENVIRONMENT_CHANGED'
-			environment: BankEnvironment
-			data: BankData
-			availability: AvailabilityReport
-	  }
 type Context = BankData & {
-	source: BankSource
+	access: BankAccess
+	revision: number
+	connection: BankCredential | undefined
 	generation: number
 	lastSync: LastSync | undefined
 	mappingActors: ReadonlyMap<string, ActorRefFrom<typeof accountOptionsMachine>>
 	availability: AvailabilityReport | undefined
-	environment: BankEnvironment
 	command: BankCommand | undefined
 	setupToken: string | undefined
 	error: unknown
@@ -81,7 +77,14 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		typeof actors,
 		{},
 		{},
-		{ isNeutral: undefined; canConnect: undefined; canOperate: undefined },
+		{
+			isNeutral: undefined
+			newAccess: undefined
+			newCredentials: undefined
+			canConnect: undefined
+			canOperate: undefined
+			acceptObservations: undefined
+		},
 		never,
 		string,
 		unknown,
@@ -91,7 +94,25 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 	>({
 		actors,
 		guards: {
+			acceptObservations: not(
+				or([stateIn({ setup: 'shuttingDown' }), stateIn({ running: 'shuttingDown' })])
+			),
 			isNeutral: stateIn({ ready: 'neutral' }),
+			newAccess: and([
+				'acceptObservations',
+				({ context, event }) =>
+					event.type === 'WORKSPACE_ACCESS_CHANGED' && event.revision > context.revision
+			]),
+			newCredentials: and([
+				'acceptObservations',
+				({ context, event }) =>
+					event.type === 'CONNECTIONS_CHANGED' &&
+					event.revision === context.revision &&
+					bankCredentialFingerprint(context.connection) !==
+						bankCredentialFingerprint(
+							selectedBankConnection({ ...context.access, connections: event.connections })
+						)
+			]),
 			canConnect: ({ context }) => context.availability?.canConnect === true,
 			canOperate: ({ context }) => context.availability?.canOperate === true
 		}
@@ -115,28 +136,69 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			)
 		}))
 	})
-	const assignEnvironment = workflow.assign(({ context, event }) =>
-		event.type === 'ENVIRONMENT_CHANGED'
-			? {
-					environment: event.environment,
-					availability: event.availability,
-					...event.data,
-					discovered:
-						context.environment.credentialFingerprint !== event.environment.credentialFingerprint
-							? []
-							: context.discovered
-				}
-			: {}
-	)
-	const updateEnvironment = workflow.enqueueActions(({ enqueue }) => {
-		enqueue(assignEnvironment)
-		enqueue.sendTo('history', ({ context, event }) => ({
-			type: 'OBSERVED',
-			generation: context.generation,
-			connection: event.type === 'ENVIRONMENT_CHANGED' ? event.availability?.connection : undefined
-		}))
+	const resetResults = workflow.enqueueActions(({ enqueue }) => {
+		enqueue.assign({ discovered: [], error: undefined, counts: emptyCounts() })
 		enqueue(refreshMappings)
 	})
+	const acceptAccess = workflow.enqueueActions(({ context, event, enqueue }) => {
+		if (event.type !== 'WORKSPACE_ACCESS_CHANGED') return
+		enqueue.assign({
+			access: event.access,
+			revision: event.revision,
+			generation: context.generation + 1,
+			connection: undefined,
+			accounts: [],
+			mappings: new Map(),
+			lastSync: undefined,
+			availability: undefined
+		})
+		enqueue(resetResults)
+		enqueue.sendTo('availability', ({ context }) => ({
+			type: 'ACCESS_CHANGED',
+			access: context.access,
+			generation: context.generation
+		}))
+		enqueue.sendTo('history', { type: 'BINDING_CHANGED', revision: event.revision })
+	})
+	const acceptConnections = workflow.enqueueActions(({ context, event, enqueue }) => {
+		if (event.type !== 'CONNECTIONS_CHANGED') return
+		const connection = selectedBankConnection({ ...context.access, connections: event.connections })
+		enqueue.assign({
+			connection,
+			generation: context.generation + 1,
+			availability: undefined,
+			discovered: []
+		})
+		enqueue(refreshMappings)
+		enqueue.sendTo('availability', ({ context }) => ({
+			type: 'CONNECTION_CHANGED',
+			connection: context.connection,
+			generation: context.generation
+		}))
+		if (connection?.id !== context.connection?.id) {
+			enqueue.assign({ lastSync: undefined })
+			enqueue.sendTo('history', {
+				type: 'CONNECTION_SELECTED',
+				revision: context.revision,
+				connectionId: connection?.id
+			})
+		}
+	})
+	const cancelSetup = workflow.enqueueActions(({ self, enqueue }) => {
+		const child = self.getSnapshot().children.setup
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'CANCEL' })
+	})
+	const notifySetupCredential = workflow.enqueueActions(({ context, self, enqueue }) => {
+		const child = self.getSnapshot().children.setup
+		if (child?.getSnapshot().status === 'active')
+			enqueue.sendTo(child, {
+				type: 'CREDENTIAL_CHANGED',
+				fingerprint: bankCredentialFingerprint(context.connection)
+			})
+	})
+	const acceptAvailability = workflow.assign(({ context, event }) => ({
+		availability: event.type === 'AVAILABILITY_REPORTED' ? event.report : context.availability
+	}))
 	return workflow.createMachine({
 		id: 'bank',
 		initial: 'ready',
@@ -146,7 +208,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				id: 'availability',
 				src: 'availability',
 				input: ({ context, self }) => ({
-					...context.source,
+					organizationId: null,
+					userId: undefined,
+					sessionReady: false,
+					membership: undefined,
+					connections: [],
 					generation: context.generation,
 					recipient: self
 				}),
@@ -156,30 +222,23 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				id: 'history',
 				src: 'history',
 				input: ({ context, self }) => ({
-					connection: undefined,
-					generation: context.generation,
+					revision: context.revision,
 					recipient: self
 				}),
 				onError: { actions: raise({ type: 'SHUTDOWN' }) }
 			}
 		],
 		context: () => {
-			const source = inputs.read()
 			return {
-				...bankData(source),
-				source,
+				accounts: [],
+				mappings: new Map(),
+				access: { kind: 'waiting', organizationId: null, userId: undefined },
+				revision: -1,
+				connection: undefined,
 				generation: 0,
 				lastSync: undefined,
 				mappingActors: new Map(),
 				availability: undefined,
-				environment: bankEnvironment({
-					organizationId: source.organizationId,
-					userId: source.userId,
-					sessionReady: source.sessionReady,
-					allowed: false,
-					connected: false,
-					connection: undefined
-				}),
 				command: undefined,
 				setupToken: undefined,
 				error: undefined,
@@ -191,51 +250,51 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			// Mapping children are pure; active resource owners still settle via SHUTDOWN.
 			'xstate.error.actor.*': { actions: raise({ type: 'SHUTDOWN' }) },
 			SHUTDOWN: { target: '.closed' },
-			OBSERVED: {
-				actions: [
-					assign(({ context, event }) => ({
-						source: event.source,
-						generation: context.generation + 1,
-						lastSync: undefined,
-						availability: undefined
-					})),
-					sendTo('availability', ({ context }) => ({
-						type: 'OBSERVED',
-						source: context.source,
-						generation: context.generation
-					}))
-				]
+			WORKSPACE_ACCESS_CHANGED: {
+				guard: 'newAccess',
+				target: '.ready.neutral',
+				actions: acceptAccess
+			},
+			CONNECTIONS_CHANGED: { guard: 'newCredentials', actions: acceptConnections },
+			MAPPING_DATA_CHANGED: {
+				guard: and([
+					'acceptObservations',
+					({ context, event }) => event.revision === context.revision
+				]),
+				actions: [assign(({ event }) => event.data), refreshMappings]
+			},
+			HISTORY_CHANGED: {
+				guard: and([
+					'acceptObservations',
+					({ context, event }) => event.revision === context.revision
+				]),
+				actions: sendTo('history', ({ event }) => event)
 			},
 			HISTORY_REPORTED: {
-				guard: ({ context, event }) => event.generation === context.generation,
+				guard: and([
+					'acceptObservations',
+					({ context, event }) =>
+						event.revision === context.revision && event.connectionId === context.connection?.id
+				]),
 				actions: assign({ lastSync: ({ event }) => event.summary })
 			},
-			AVAILABILITY_REPORTED: {
-				guard: ({ context, event }) => event.report.generation === context.generation,
-				actions: raise(({ context, event }) => ({
-					type: 'ENVIRONMENT_CHANGED',
-					availability: event.report,
-					environment: event.report.environment,
-					data: bankData(context.source)
-				}))
-			},
-			ENVIRONMENT_CHANGED: [
+			AVAILABILITY_REPORTED: [
 				{
-					guard: ({ context, event }) =>
-						context.environment.scopeKey !== event.environment.scopeKey,
+					guard: and([
+						'acceptObservations',
+						'isNeutral',
+						({ context, event }) => event.report.generation === context.generation
+					]),
 					target: '.ready.neutral',
-					actions: [
-						clear,
-						assign({ error: undefined, discovered: [], counts: emptyCounts() }),
-						updateEnvironment
-					]
+					actions: acceptAvailability
 				},
 				{
-					guard: 'isNeutral',
-					target: '.ready.neutral',
-					actions: updateEnvironment
-				},
-				{ actions: updateEnvironment }
+					guard: and([
+						'acceptObservations',
+						({ context, event }) => event.report.generation === context.generation
+					]),
+					actions: acceptAvailability
+				}
 			],
 			RESET: {
 				target: '.ready.neutral',
@@ -288,10 +347,16 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						states: {
 							checking: {
 								always: [
-									{ guard: ({ context }) => !context.environment.allowed, target: 'restricted' },
-									{ guard: ({ context }) => context.environment.connected, target: 'locked' },
 									{
-										guard: ({ context }) => context.environment.connectionActive,
+										guard: ({ context }) => context.access.kind !== 'allowed',
+										target: 'restricted'
+									},
+									{
+										guard: ({ context }) => context.availability?.mode === 'connected',
+										target: 'locked'
+									},
+									{
+										guard: ({ context }) => context.connection?.status === 'active',
 										target: 'waiting'
 									},
 									{ target: 'disconnected' }
@@ -395,8 +460,13 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				states: {
 					working: {},
 					cancelling: {},
-					resetting: { on: { CANCEL: {} } },
-					shuttingDown: { on: { CANCEL: {}, RESET: {}, SHUTDOWN: {}, ENVIRONMENT_CHANGED: {} } }
+					resetting: {
+						on: {
+							CANCEL: {},
+							CONNECTIONS_CHANGED: { guard: 'newCredentials', actions: acceptConnections }
+						}
+					},
+					shuttingDown: { on: { CANCEL: {}, RESET: {}, SHUTDOWN: {} } }
 				},
 				tags: ['setup', 'busy'],
 				meta: { status: { key: 'bank.working' }, setupView: 'creating', setupStep: 1 },
@@ -448,45 +518,21 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					]
 				},
 				on: {
-					SHUTDOWN: { target: '.shuttingDown', actions: sendTo('setup', { type: 'CANCEL' }) },
+					WORKSPACE_ACCESS_CHANGED: {
+						guard: 'newAccess',
+						target: '.resetting',
+						actions: [acceptAccess, cancelSetup]
+					},
+					SHUTDOWN: { target: '.shuttingDown', actions: cancelSetup },
 					RESET: {
 						target: '.resetting',
-						actions: [
-							assign({ discovered: [] }),
-							refreshMappings,
-							sendTo('setup', { type: 'CANCEL' })
-						]
+						actions: [assign({ discovered: [] }), refreshMappings, cancelSetup]
 					},
-					CANCEL: { target: '.cancelling', actions: sendTo('setup', { type: 'CANCEL' }) },
-					ENVIRONMENT_CHANGED: [
-						{
-							guard: ({ context, event }) =>
-								context.environment.scopeKey !== event.environment.scopeKey,
-							target: '.resetting',
-							actions: [
-								assign({ discovered: [], counts: emptyCounts() }),
-								updateEnvironment,
-								sendTo('setup', { type: 'CANCEL' })
-							]
-						},
-						{
-							actions: [
-								workflow.enqueueActions(({ event, self, enqueue }) => {
-									const child = self.getSnapshot().children.setup
-									// Completion can precede the parent's queued onDone transition.
-									if (
-										event.type === 'ENVIRONMENT_CHANGED' &&
-										child?.getSnapshot().status === 'active'
-									)
-										enqueue.sendTo(child, {
-											type: 'CREDENTIAL_CHANGED',
-											fingerprint: event.environment.credentialFingerprint
-										})
-								}),
-								updateEnvironment
-							]
-						}
-					],
+					CANCEL: { target: '.cancelling', actions: cancelSetup },
+					CONNECTIONS_CHANGED: {
+						guard: 'newCredentials',
+						actions: [acceptConnections, notifySetupCredential]
+					},
 					TEST_ENCRYPTION: { actions: sendTo('setup', { type: 'TEST_ENCRYPTION' }) },
 					VERIFY_DECRYPTION: { actions: sendTo('setup', { type: 'VERIFY_DECRYPTION' }) },
 					SAVE_CONNECTION: { actions: sendTo('setup', { type: 'SAVE_CONNECTION' }) }
@@ -497,13 +543,18 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				states: {
 					working: {},
 					cancelling: {},
-					resetting: { on: { CANCEL: {}, IMPORT_PROGRESS: {} } },
+					resetting: {
+						on: {
+							CANCEL: {},
+							IMPORT_PROGRESS: {},
+							CONNECTIONS_CHANGED: { guard: 'newCredentials', actions: acceptConnections }
+						}
+					},
 					shuttingDown: {
 						on: {
 							CANCEL: {},
 							RESET: {},
 							SHUTDOWN: {},
-							ENVIRONMENT_CHANGED: {},
 							IMPORT_PROGRESS: {}
 						}
 					}
@@ -583,28 +634,28 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					]
 				},
 				on: {
+					WORKSPACE_ACCESS_CHANGED: {
+						guard: 'newAccess',
+						target: '.resetting',
+						actions: [acceptAccess, cancelOperation]
+					},
 					SHUTDOWN: { target: '.shuttingDown', actions: cancelOperation },
 					RESET: {
 						target: '.resetting',
 						actions: [assign({ discovered: [] }), refreshMappings, cancelOperation]
 					},
 					CANCEL: { target: '.cancelling', actions: cancelOperation },
-					ENVIRONMENT_CHANGED: [
+					CONNECTIONS_CHANGED: [
 						{
-							guard: ({ context, event }) =>
-								context.environment.scopeKey !== event.environment.scopeKey,
-							target: '.resetting',
-							actions: [assign({ discovered: [] }), updateEnvironment, cancelOperation]
-						},
-						{
-							guard: ({ context, event }) =>
-								context.environment.credentialFingerprint !==
-									event.environment.credentialFingerprint &&
-								(context.command?.type === 'SYNC' || context.command?.type === 'DISCOVER'),
+							guard: and([
+								'newCredentials',
+								({ context }) =>
+									context.command?.type === 'SYNC' || context.command?.type === 'DISCOVER'
+							]),
 							target: '.cancelling',
-							actions: [updateEnvironment, cancelOperation]
+							actions: [acceptConnections, cancelOperation]
 						},
-						{ actions: updateEnvironment }
+						{ guard: 'newCredentials', actions: acceptConnections }
 					],
 					IMPORT_PROGRESS: { actions: assign({ counts: ({ event }) => event.counts }) }
 				}

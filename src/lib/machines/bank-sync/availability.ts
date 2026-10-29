@@ -1,40 +1,39 @@
 import { assign, enqueueActions, getInitialSnapshot, raise, setup, stateIn } from 'xstate'
 import type { ActorRef, Snapshot, SnapshotFrom } from 'xstate'
 import { canManageBankCredentials } from '#lib/domain/organization-permissions.js'
-import {
-	bankEnvironment,
-	type BankEnvironment,
-	type BankSource,
-	type Connection,
-	type Observation
-} from './types.js'
+import { type BankSource, type BankAccess, type BankCredential, type Observation } from './types.js'
 
 export type AvailabilityReport = {
 	generation: number
 	mode: 'restricted' | 'setup' | 'connected'
 	canConnect: boolean
 	canOperate: boolean
-	connection: Connection | undefined
-	environment: BankEnvironment
 }
 export type AvailabilityEvent = { type: 'AVAILABILITY_REPORTED'; report: AvailabilityReport }
-type Input = BankSource & {
+type AvailabilitySource = Pick<
+	BankSource,
+	'organizationId' | 'userId' | 'sessionReady' | 'membership' | 'connections'
+>
+type Input = AvailabilitySource & {
 	generation?: number
 	recipient?: ActorRef<Snapshot<unknown>, AvailabilityEvent>
 }
 type Context = {
-	source: BankSource
-	connection: Connection | undefined
+	source: AvailabilitySource
+	connection: BankCredential | undefined
+	published: AvailabilityReport | undefined
 	generation: number
 	recipient: ActorRef<Snapshot<unknown>, AvailabilityEvent> | undefined
 }
 type Event =
-	| { type: 'OBSERVED'; source: BankSource; generation?: number }
-	| { type: 'REEVALUATE' }
+	| { type: 'ACCESS_CHANGED'; access: BankAccess; generation: number }
+	| { type: 'CONNECTION_CHANGED'; connection: BankCredential | undefined; generation: number }
 	| { type: 'CHECK_CONTROLS' }
 	| { type: 'SETUP_STARTED' }
 	| { type: 'SETUP_ENDED' }
-function selectedConnection(source: BankSource) {
+export function selectedBankConnection<Credential extends BankCredential>(
+	source: Pick<BankSource, 'organizationId' | 'userId'> & { connections: readonly Credential[] }
+) {
 	const connections = source.connections.filter(
 		(row) => row.organizationId === source.organizationId && row.ownerId === source.userId
 	)
@@ -46,36 +45,47 @@ export const bankAvailabilityMachine = setup<
 	Event,
 	{},
 	{},
-	{ publish: { mode: AvailabilityReport['mode'] } },
+	{ publish: { mode: AvailabilityReport['mode'] }; acceptAccess: undefined },
 	{ accessAllowed: undefined; credentialReady: undefined },
 	never,
 	string,
 	Input
 >({
 	actions: {
+		acceptAccess: assign(({ event }) =>
+			event.type === 'ACCESS_CHANGED'
+				? {
+						source: {
+							organizationId: event.access.organizationId,
+							userId: event.access.userId,
+							sessionReady: event.access.kind === 'allowed',
+							membership: undefined,
+							connections: []
+						},
+						generation: event.generation,
+						connection: undefined
+					}
+				: {}
+		),
 		publish: enqueueActions(
 			({ context, check, enqueue }, params: { mode: AvailabilityReport['mode'] }) => {
 				if (!context.recipient) return
 				const allowed = check('accessAllowed')
-				const connected = check('credentialReady')
-				enqueue.sendTo(context.recipient, {
-					type: 'AVAILABILITY_REPORTED',
-					report: {
-						generation: context.generation,
-						mode: params.mode,
-						canConnect: allowed,
-						canOperate: params.mode === 'connected',
-						connection: context.connection,
-						environment: bankEnvironment({
-							organizationId: context.source.organizationId,
-							userId: context.source.userId,
-							sessionReady: context.source.sessionReady,
-							allowed,
-							connected,
-							connection: context.connection
-						})
-					}
-				})
+				const report: AvailabilityReport = {
+					generation: context.generation,
+					mode: params.mode,
+					canConnect: allowed,
+					canOperate: params.mode === 'connected'
+				}
+				if (
+					context.published?.generation === report.generation &&
+					context.published.mode === report.mode &&
+					context.published.canConnect === report.canConnect &&
+					context.published.canOperate === report.canOperate
+				)
+					return
+				enqueue.assign({ published: report })
+				enqueue.sendTo(context.recipient, { type: 'AVAILABILITY_REPORTED', report })
 			}
 		)
 	},
@@ -88,26 +98,24 @@ export const bankAvailabilityMachine = setup<
 	type: 'parallel',
 	context: ({ input }) => ({
 		source: input,
-		connection: selectedConnection(input),
+		connection: selectedBankConnection(input),
+		published: undefined,
 		generation: input.generation ?? 0,
 		recipient: input.recipient
 	}),
-	on: {
-		OBSERVED: {
-			actions: [
-				assign(({ event }) => ({
-					source: event.source,
-					generation: event.generation ?? 0,
-					connection: selectedConnection(event.source)
-				})),
-				raise({ type: 'REEVALUATE' })
-			]
-		}
-	},
 	states: {
 		access: {
 			initial: 'checkingSession',
-			on: { REEVALUATE: '.checkingSession' },
+			on: {
+				ACCESS_CHANGED: [
+					{
+						guard: ({ event }) => event.access.kind === 'allowed',
+						target: '.allowed',
+						actions: 'acceptAccess'
+					},
+					{ target: '.denied', actions: 'acceptAccess' }
+				]
+			},
 			states: {
 				checkingSession: {
 					always: [
@@ -171,7 +179,16 @@ export const bankAvailabilityMachine = setup<
 		},
 		credential: {
 			initial: 'checkingConnection',
-			on: { REEVALUATE: '.checkingConnection' },
+			on: {
+				ACCESS_CHANGED: '.checkingConnection',
+				CONNECTION_CHANGED: {
+					target: '.checkingConnection',
+					actions: assign({
+						connection: ({ event }) => event.connection,
+						generation: ({ event }) => event.generation
+					})
+				}
+			},
 			states: {
 				checkingConnection: {
 					always: [
@@ -271,7 +288,7 @@ export const bankAvailabilityMachine = setup<
 
 export function availabilityObservation(
 	snapshot: SnapshotFrom<typeof bankAvailabilityMachine>
-): Observation {
+): Omit<Observation, 'connection'> & { connection: BankCredential | undefined } {
 	return {
 		organizationId: snapshot.context.source.organizationId,
 		userId: snapshot.context.source.userId,
@@ -284,5 +301,8 @@ export function availabilityObservation(
 
 // Reuse guarded states when an operation needs a fresh synchronous authorization observation.
 export function bankObservation(source: BankSource): Observation {
-	return availabilityObservation(getInitialSnapshot(bankAvailabilityMachine, source))
+	return {
+		...availabilityObservation(getInitialSnapshot(bankAvailabilityMachine, source)),
+		connection: selectedBankConnection(source)
+	}
 }

@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createActor } from 'xstate'
-import { bankAvailabilityMachine, type AvailabilityEvent } from './availability.js'
+import {
+	bankAvailabilityMachine,
+	availabilityObservation,
+	type AvailabilityEvent
+} from './availability.js'
 import { bankHistoryMachine, type HistoryEvent } from './history.js'
-import { collectReports } from './reports.fixture.js'
+import { collectReports, publishAvailability } from './reports.fixture.js'
 import { connection, id, source } from './test-fixtures.js'
-import type { BankSource, Connection } from './types.js'
+import { bankCredentialFingerprint, type BankSource, type Connection } from './types.js'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -25,12 +29,14 @@ function availability(initial: BankSource = source) {
 function history(connection: Connection | undefined) {
 	const recipient = collectReports<HistoryEvent>()
 	const actor = createActor(bankHistoryMachine, {
-		input: { connection, generation: 7, recipient }
+		input: { revision: 7, recipient }
 	}).start()
 	cleanups.push(
 		() => actor.stop(),
 		() => recipient.stop()
 	)
+	actor.send({ type: 'CONNECTION_SELECTED', revision: 7, connectionId: connection?.id })
+	actor.send({ type: 'HISTORY_CHANGED', revision: 7, records: connection ? [connection] : [] })
 	return { actor, reports: () => recipient.getSnapshot().context }
 }
 
@@ -82,7 +88,7 @@ describe('public bank availability reports', () => {
 				connection
 			]
 		})
-		expect(f.reports().at(-1)?.connection).toEqual(connection)
+		expect(f.actor.getSnapshot().context.connection).toEqual(connection)
 	})
 	it('reports setup controls while retaining credential facts, then restores the current decision', () => {
 		const f = availability()
@@ -90,8 +96,11 @@ describe('public bank availability reports', () => {
 		expect(f.reports().at(-1)).toMatchObject({
 			generation: 7,
 			mode: 'setup',
-			canOperate: false,
-			environment: { allowed: true, connected: true }
+			canOperate: false
+		})
+		expect(availabilityObservation(f.actor.getSnapshot())).toMatchObject({
+			allowed: true,
+			connected: true
 		})
 		f.actor.send({ type: 'SETUP_ENDED' })
 		expect(f.reports().at(-1)).toMatchObject({ generation: 7, mode: 'connected', canOperate: true })
@@ -99,7 +108,7 @@ describe('public bank availability reports', () => {
 	it('publishes revocation and restoration with the supplied observation generations during setup', () => {
 		const f = availability()
 		f.actor.send({ type: 'SETUP_STARTED' })
-		f.actor.send({ type: 'OBSERVED', generation: 8, source: { ...source, membership: null } })
+		publishAvailability(f.actor, { ...source, membership: null }, 8)
 		expect(f.reports().at(-1)).toMatchObject({
 			generation: 8,
 			mode: 'restricted',
@@ -108,22 +117,22 @@ describe('public bank availability reports', () => {
 		})
 		f.actor.send({ type: 'SETUP_ENDED' })
 		expect(f.reports().at(-1)).toMatchObject({ generation: 8, mode: 'restricted' })
-		f.actor.send({ type: 'OBSERVED', generation: 9, source })
+		publishAvailability(f.actor, source, 9)
 		expect(f.reports().at(-1)).toMatchObject({ generation: 9, mode: 'connected', canOperate: true })
 	})
 	it('reports credential replacement without reusing the previous fingerprint', () => {
 		const f = availability()
-		const original = f.reports().at(-1)?.environment.credentialFingerprint
-		f.actor.send({
-			type: 'OBSERVED',
-			generation: 8,
-			source: { ...source, connections: [{ ...connection, ciphertext: 'new-ciphertext' }] }
-		})
+		const original = bankCredentialFingerprint(f.actor.getSnapshot().context.connection)
+		publishAvailability(
+			f.actor,
+			{ ...source, connections: [{ ...connection, ciphertext: 'new-ciphertext' }] },
+			8
+		)
 		expect(f.reports().at(-1)).toMatchObject({
 			generation: 8,
-			connection: { ciphertext: 'new-ciphertext' }
+			mode: 'connected'
 		})
-		expect(f.reports().at(-1)?.environment.credentialFingerprint).not.toBe(original)
+		expect(bankCredentialFingerprint(f.actor.getSnapshot().context.connection)).not.toBe(original)
 	})
 })
 
@@ -140,17 +149,18 @@ describe('public bank history reports', () => {
 				existingCount: 3,
 				omittedCount: 4
 			})
-			expect(f.reports()).toEqual([
-				{
-					type: 'HISTORY_REPORTED',
-					generation: 7,
-					summary: { time, outcomeKey: `bank.${lastOutcome}`, imported: 2, existing: 3, omitted: 4 }
-				}
-			])
-			f.actor.send({ type: 'OBSERVED', generation: 8, connection: undefined })
+			expect(f.reports()).toHaveLength(3)
 			expect(f.reports().at(-1)).toEqual({
 				type: 'HISTORY_REPORTED',
-				generation: 8,
+				revision: 7,
+				connectionId: connection.id,
+				summary: { time, outcomeKey: `bank.${lastOutcome}`, imported: 2, existing: 3, omitted: 4 }
+			})
+			f.actor.send({ type: 'BINDING_CHANGED', revision: 8 })
+			expect(f.reports().at(-1)).toEqual({
+				type: 'HISTORY_REPORTED',
+				revision: 8,
+				connectionId: undefined,
 				summary: undefined
 			})
 		}
@@ -159,7 +169,13 @@ describe('public bank history reports', () => {
 		'publishes absence for incomplete history',
 		(connection) => {
 			const f = history(connection)
-			expect(f.reports()).toEqual([{ type: 'HISTORY_REPORTED', generation: 7, summary: undefined }])
+			expect(f.reports()).toHaveLength(3)
+			expect(f.reports().at(-1)).toEqual({
+				type: 'HISTORY_REPORTED',
+				revision: 7,
+				connectionId: connection?.id,
+				summary: undefined
+			})
 		}
 	)
 })

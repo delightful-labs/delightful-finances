@@ -59,6 +59,57 @@ Mapping transactions and imported/disconnected writes retain original scope, act
 settlement and interruption cleanup. Dynamic rows have independent lifetimes; fixed children remain
 invoked across normal/draining substates. No automatic provider fetching or retry was introduced.
 
+### Startup observation contract — reviewed and verified
+
+The workspace coordinator's existing workspace/session/selection states and bank permission guard
+own the `WORKSPACE_ACCESS_CHANGED` report. `WorkspaceBootstrap` has separate subscription effects
+for `CONNECTIONS_CHANGED`, `MAPPING_DATA_CHANGED` and `HISTORY_CHANGED`. Its general readiness
+observation includes identity, membership, catalog and route facts, excluding bank data. Bank data
+changes therefore do not trigger workspace startup, navigation, creation or integrity assessment.
+The coordinator checks each data event's access revision and identity/workspace scope before
+forwarding it; it does not cache or compare bank rows. Bank selects the connection, availability
+assesses credential completeness, mapping receives account/link choices, and history receives
+saved outcomes without credentials. Navigation and creation contracts are outside this slice.
+
+The access payload contains the decision and identity/workspace scope. Authority change detection
+reuses the coordinator's integrity binding instead of computing another membership fingerprint.
+Access is published after that binding has been assessed. The integration observes the primitive
+published revision to resend current data after access changes, avoiding a snapshot/send dependency
+cycle. Query replacement notifications may still generate another focused data event; bank ignores
+equivalent selected credentials. Focused browser flows verify startup and scope replacement without
+reactive loops; this is not a general performance benchmark.
+
+An access report changes revision when identity, selection, eligibility, membership or allowed
+authority changes. Bank clears capabilities and old scope data immediately, and active setup or
+operation states enter `resetting`, request cancellation and await their existing settlement output.
+The state sequence remains `ready -> setup/running -> resetting -> ready`, or
+`setup/running -> shuttingDown -> closed` on shutdown. Access and selected credential events drive
+these transitions directly; there is no intermediate environment-change event or stored environment
+copy. Availability uses an assessment generation; history owns its saved records and reports the
+binding revision and selected connection ID. History is a synchronous projection with ordered
+reports, so it needs no separate counter in the bank owner. Mapping/history updates do not restart
+credential assessment. Old revisions, stale child reports and observations during shutdown cannot
+restore capabilities. Resetting retains its intent when replacement reports arrive.
+
+The fresh operation-boundary authorization statechart still reads current facts, and persistence
+retains its atomic invariant checks. No asynchronous workflow or new resource owner was added.
+Availability coalesces equivalent reports within one generation, and mapping actors are rebuilt
+for mapping/discovery changes or scope/credential invalidation rather than history updates.
+
+Diagnostics classify ordinary denied/unavailable states separately from failures. History marks its
+saved outcomes with `historical-outcome`, so a recorded failed sync does not emit a fresh machine error.
+Unexpected child crashes remain errors and are attributed to their source actor when XState reports
+a thrown transition only through the parent's error event.
+
+After review, availability/report/bank-owner/import-settlement fixtures and coordinator mocks were
+migrated, including explicit owner initialization and the history actor's scoped input/report contract.
+Controlled settlement fixtures acknowledge completion separately from repeated cancellation. The
+focused checks pass in an isolated snapshot: 214 unit tests across 14 files, 10 bank/startup browser
+checks and two workspace switch/membership browser checks, `pnpm check` and `pnpm check:tests`.
+The startup regression opens `/`, displays and reloads saved failed history, and observes no machine
+error logs or automatic provider requests. Other scenarios cover scope/revision rejection, authority
+changes, explicit operations, offline behavior, late responses, cleanup and genuine history crashes.
+
 ## Forms and domain persistence
 
 ```mermaid

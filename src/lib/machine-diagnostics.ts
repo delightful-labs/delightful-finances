@@ -5,7 +5,11 @@ type Details = Record<string, DebugValue>
 const logger = createLogger('state-machine')
 const startupLogger = createLogger('jazz-startup')
 const previousFailures = new WeakMap<object, string>()
-const failure = /error|failed|failure|invalid|unavailable|rejected|partial|denied/i
+// State names describe the current workflow position, and may include modeled
+// outcomes such as denied or unavailable. Only explicit error/failure states
+// indicate a diagnostic failure; terminal result outcomes are classified below.
+const failureState = /error|failed|failure|rejected/i
+const unsuccessfulOutcome = /error|failed|failure|invalid|unavailable|rejected|partial|denied/i
 const containers = new Set([
 	'result',
 	'records',
@@ -198,10 +202,18 @@ function statePaths(value: unknown, prefix = '', depth = 0): string[] {
 export function logMachineFailure(event: InspectionEvent) {
 	if (!debugEnabled || (event.type !== '@xstate.snapshot' && event.type !== '@xstate.event')) return
 	try {
+		// A thrown child transition can report only an error event to its parent,
+		// without publishing a final snapshot inspection event of its own.
+		const actorRef =
+			event.type === '@xstate.event' &&
+			event.event.type.startsWith('xstate.error.actor.') &&
+			event.sourceRef?.getSnapshot().status === 'error'
+				? event.sourceRef
+				: event.actorRef
 		// Initial-state failures may emit only an initialization/error event,
 		// before a root actor ever publishes its first snapshot notification.
 		const snapshot: unknown =
-			event.type === '@xstate.snapshot' ? event.snapshot : event.actorRef.getSnapshot()
+			event.type === '@xstate.snapshot' ? event.snapshot : actorRef.getSnapshot()
 		if (!snapshot || typeof snapshot !== 'object') return
 		const status = field(snapshot, 'status')
 		const states = statePaths(field(snapshot, 'value'))
@@ -211,12 +223,13 @@ export function logMachineFailure(event: InspectionEvent) {
 		const failed =
 			status === 'error' ||
 			event.event.type.startsWith('xstate.error.actor.') ||
-			states.some((state) => failure.test(state)) ||
+			(!(tags instanceof Set && tags.has('historical-outcome')) &&
+				states.some((state) => failureState.test(state))) ||
 			(tags instanceof Set &&
-				[...tags].some((tag: unknown) => typeof tag === 'string' && failure.test(tag))) ||
-			(status === 'done' && typeof outcome === 'string' && failure.test(outcome))
+				[...tags].some((tag: unknown) => typeof tag === 'string' && failureState.test(tag))) ||
+			(status === 'done' && typeof outcome === 'string' && unsuccessfulOutcome.test(outcome))
 		if (!failed) {
-			previousFailures.delete(event.actorRef)
+			previousFailures.delete(actorRef)
 			return
 		}
 		const context = field(snapshot, 'context')
@@ -226,10 +239,10 @@ export function logMachineFailure(event: InspectionEvent) {
 			field(context, 'error') ??
 			field(field(context, 'result'), 'error') ??
 			field(output, 'error')
-		const machine = identifier(field(field(field(event.actorRef, 'logic'), 'config'), 'id'))
+		const machine = identifier(field(field(field(actorRef, 'logic'), 'config'), 'id'))
 		const details: Details = {
 			machine: machine ?? 'invoked-actor',
-			actorSessionId: event.actorRef.sessionId,
+			actorSessionId: actorRef.sessionId,
 			rootSessionId: event.rootId,
 			status: identifier(status),
 			states,
@@ -240,8 +253,8 @@ export function logMachineFailure(event: InspectionEvent) {
 			result: diagnosticContext(output)
 		}
 		const fingerprint = JSON.stringify({ ...details, event: undefined })
-		if (previousFailures.get(event.actorRef) === fingerprint) return
-		previousFailures.set(event.actorRef, fingerprint)
+		if (previousFailures.get(actorRef) === fingerprint) return
+		previousFailures.set(actorRef, fingerprint)
 		logger.error('Machine entered an error state', details)
 	} catch {
 		logger.warn('Machine error diagnostics could not be collected')

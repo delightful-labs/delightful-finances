@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createActor, getInitialSnapshot } from 'xstate'
 import { bankAvailabilityMachine } from './availability.js'
 import { accountOptionsMachine } from './account-options.js'
-import { bankHistoryMachine } from './history.js'
+import { bankHistoryMachine, type HistoryEvent } from './history.js'
+import { collectReports, publishAvailability } from './reports.fixture.js'
 import { account, connection, id, source } from './test-fixtures.js'
 import type { BankSource } from './types.js'
 
@@ -27,13 +28,10 @@ describe('bank availability and presentation decisions', () => {
 	it('revokes sync controls when ciphertext becomes incomplete and restores them only from a fresh observation', () => {
 		const actor = createActor(bankAvailabilityMachine, { input: source }).start()
 		expect(actor.getSnapshot().hasTag('show-sync')).toBe(true)
-		actor.send({
-			type: 'OBSERVED',
-			source: { ...source, connections: [{ ...connection, ciphertext: null }] }
-		})
+		publishAvailability(actor, { ...source, connections: [{ ...connection, ciphertext: null }] }, 1)
 		expect(actor.getSnapshot().hasTag('show-sync')).toBe(false)
 		expect(actor.getSnapshot().hasTag('show-setup')).toBe(true)
-		actor.send({ type: 'OBSERVED', source })
+		publishAvailability(actor, source, 2)
 		expect(actor.getSnapshot().hasTag('show-sync')).toBe(true)
 		actor.stop()
 	})
@@ -42,7 +40,7 @@ describe('bank availability and presentation decisions', () => {
 		const actor = createActor(bankAvailabilityMachine, { input: source }).start()
 		actor.send({ type: 'SETUP_STARTED' })
 		expect(actor.getSnapshot().hasTag('show-sync')).toBe(false)
-		actor.send({ type: 'OBSERVED', source: { ...source, sessionReady: false } })
+		publishAvailability(actor, { ...source, sessionReady: false }, 1)
 		actor.send({ type: 'SETUP_ENDED' })
 		expect(actor.getSnapshot().hasTag('show-sync')).toBe(false)
 		actor.stop()
@@ -78,21 +76,32 @@ describe('bank availability and presentation decisions', () => {
 		(outcome) => {
 			const lastOutcome =
 				outcome === 'succeeded' ? 'succeeded' : outcome === 'partial' ? 'partial' : 'failed'
-			const state = getInitialSnapshot(bankHistoryMachine, {
-				...connection,
-				lastOutcome,
-				lastSyncAt: new Date('2026-10-17'),
-				importedCount: 2,
-				existingCount: 3,
-				omittedCount: 4
+			const recipient = collectReports<HistoryEvent>()
+			const actor = createActor(bankHistoryMachine, { input: { revision: 0, recipient } }).start()
+			actor.send({ type: 'CONNECTION_SELECTED', revision: 0, connectionId: connection.id })
+			actor.send({
+				type: 'HISTORY_CHANGED',
+				revision: 0,
+				records: [
+					{
+						...connection,
+						lastOutcome,
+						lastSyncAt: new Date('2026-10-17'),
+						importedCount: 2,
+						existingCount: 3,
+						omittedCount: 4
+					}
+				]
 			})
-			expect(state.context.summary).toEqual({
+			expect(actor.getSnapshot().context.summary).toEqual({
 				time: new Date('2026-10-17'),
 				outcomeKey: `bank.${outcome}`,
 				imported: 2,
 				existing: 3,
 				omitted: 4
 			})
+			actor.stop()
+			recipient.stop()
 		}
 	)
 })
