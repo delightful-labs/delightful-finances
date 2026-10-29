@@ -1,5 +1,5 @@
 /** Props-only contracts: no framework, schema library, or actor dependency. */
-export type FormIssue = { path: readonly PropertyKey[]; code: string }
+export type FormIssue = { path: readonly PropertyKey[]; code: string; message?: string }
 export type FormSettlement =
 	'notStarted' | 'locallyPersisted' | 'confirmed' | 'rejected' | 'unknown'
 export type FormInterruption = 'scopeChanged' | 'cancelled' | 'closed'

@@ -10,7 +10,7 @@
 		InputCurrency,
 		FieldFeedback
 	} from 'delightful-ui'
-	import { untrack, tick } from 'svelte'
+	import { untrack, tick, type Snippet } from 'svelte'
 	import { amountInputPattern, minorUnitsToInput } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { Account, Category, Tag, TransactionDetail } from '#lib/schema.js'
@@ -28,6 +28,7 @@
 	import TransactionCheckFields from './TransactionCheckFields.svelte'
 	import TransactionTagInput from './TransactionTagInput.svelte'
 	import InternalTransferSuggestions from './InternalTransferSuggestions.svelte'
+	import TransactionImageInput from './TransactionImageInput.svelte'
 
 	let {
 		kind,
@@ -45,6 +46,9 @@
 		onreset,
 		oncancel,
 		oninput,
+		onattachmentschange,
+		savedImages,
+		attachmentPickerRevision = 0,
 		onaddcategory,
 		canAddCategory = false,
 		createdCategory,
@@ -92,6 +96,9 @@
 		canAddCategory?: boolean
 		createdCategory?: Category | undefined
 		oninput?: (event: Event) => void
+		savedImages?: Snippet
+		onattachmentschange?: (files: readonly File[]) => void
+		attachmentPickerRevision?: number
 		transferSuggestions?: readonly (InternalTransferCandidate & {
 			accountName: Account['name'] | undefined
 			description: TransactionDetail['description'] | undefined
@@ -156,6 +163,8 @@
 			? view.feedback.result.issues
 			: []
 	)
+	const attachmentIssue = $derived(issues.find(({ path }) => path[0] === 'attachments'))
+
 	// Finance maps validation paths to translated messages; the UI stays independent of Zod.
 	function fieldInvalid(issues: readonly { path: readonly PropertyKey[] }[], field: string) {
 		return issues.some(
@@ -382,6 +391,23 @@
 				></Textarea>
 			{/if}
 		{/snippet}
+		{#snippet supplemental(form)}
+			{#if form.content.kind !== 'success'}
+				{#key attachmentPickerRevision}
+					<TransactionImageInput
+						disabled={!form.fieldsEditable}
+						invalid={attachmentIssue !== undefined}
+						describedby={attachmentIssue ? 'transaction-attachments-error' : undefined}
+						{savedImages}
+						onfileschange={onattachmentschange}
+					/>
+				{/key}
+				{#if attachmentIssue}
+					<p id="transaction-attachments-error" role="alert">{m['forms.validation_error']()}</p>
+				{/if}
+				<p>{m['images.formats']()} {m['images.max_count']()} {m['images.max_file_size']()}</p>
+			{/if}
+		{/snippet}
 		{#snippet controls(form)}
 			{#if mode === 'create' && oncancel}
 				<Button type="button" onclick={oncancel}>{m['actions.cancel']()}</Button>
@@ -407,7 +433,7 @@
 				{view}
 				subject={m['nouns.transaction']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
-				invalidMessage={m['transactions.validation_error']()}
+				invalidMessage={m['forms.validation_error']()}
 				section="result"
 			/>
 		{/snippet}

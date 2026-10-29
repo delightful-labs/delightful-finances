@@ -9,6 +9,7 @@
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { app, transactionDetailQuery } from '#lib/schema.js'
+	import SavedTransactionImages from './SavedTransactionImages.svelte'
 	import {
 		applicableTransactionCategories,
 		applicableTransactionTags,
@@ -29,8 +30,10 @@
 	import { getContext, onDestroy, onMount, untrack } from 'svelte'
 	import { page } from '$app/state'
 	import { orderAccounts } from '#lib/machines/account-order.js'
+	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { createTransactionEditMachine } from '#lib/machines/transaction-edit.js'
+	import { transactionAttachmentManagerMachine } from '#lib/machines/transaction-attachment-manager.js'
 	import { getReadiness } from '#lib/bank-sync.js'
 	import type { TransferWriteTracking } from '#lib/machines/internal-transfer.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -50,6 +53,8 @@
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const accountOrder = getContext<AccountOrder>(accountOrderKey)
 	const db = getDb()
+	let selectedAttachments = $state<readonly File[]>([])
+	let attachmentPickerRevision = $state(0)
 	const readiness = getReadiness()
 	const trackTransferWrite = (write: TransferWriteTracking) =>
 		readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write })
@@ -57,7 +62,12 @@
 	const routeKind = untrack(() =>
 		page.url.pathname.startsWith(transactionPages[INCOME].path) ? INCOME : EXPENSE
 	)
-	const entryForm = createTransactionEditFormOptions({ binding: db, observe, db })
+	const entryForm = createTransactionEditFormOptions({
+		binding: db,
+		observe,
+		db,
+		getAttachments: () => selectedAttachments
+	})
 	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite, {
 		send: (event) => readiness.actor.send(event)
 	})
@@ -80,8 +90,53 @@
 			transaction: null
 		}
 	})
+	const attachmentManager = createActor(transactionAttachmentManagerMachine, {
+		input: { db, transactionId: page.params.id ?? '' }
+	})
+	let attachmentManagerSnapshot = $state.raw(attachmentManager.getSnapshot())
+	const removingAttachmentIds = $derived([
+		...(attachmentManagerSnapshot.context.currentAttachmentId
+			? [attachmentManagerSnapshot.context.currentAttachmentId]
+			: []),
+		...attachmentManagerSnapshot.context.queue
+	])
+	const failedAttachmentIds = $derived(
+		attachmentManagerSnapshot.context.results.flatMap(({ attachmentId, result }) =>
+			result.outcome === 'failed' ? [attachmentId] : []
+		)
+	)
 	let editSnapshot = $state.raw(editActor.getSnapshot())
 	const formView = $derived(editWorkflow.selectFormView(editSnapshot))
+	let observedDraftRevision = $state<number | undefined>(undefined)
+	$effect(() => {
+		const revision = formView.draftRevision
+		if (observedDraftRevision === undefined) {
+			observedDraftRevision = revision
+			return
+		}
+		if (revision !== observedDraftRevision) {
+			observedDraftRevision = revision
+			selectedAttachments = []
+			attachmentPickerRevision += 1
+		}
+		const feedback = formView.feedback
+		const completedAfterSave =
+			feedback.kind === 'result' &&
+			(feedback.result.outcome === 'cancelled' ||
+				feedback.result.outcome === 'scopeChanged' ||
+				feedback.result.outcome === 'closed') &&
+			feedback.result.settlement !== 'notStarted'
+		if (
+			feedback.kind === 'result' &&
+			(feedback.result.outcome === 'succeeded' ||
+				(feedback.result.outcome === 'partial' && feedback.result.reason === 'attachmentsFailed') ||
+				completedAfterSave) &&
+			selectedAttachments.length > 0
+		) {
+			selectedAttachments = []
+			attachmentPickerRevision += 1
+		}
+	})
 	const transferEditorState = $derived(editWorkflow.selectTransferState(editSnapshot))
 	const transferSearchEnabled = $derived(
 		transferEditorState === 'searching' ||
@@ -162,6 +217,18 @@
 			: undefined
 	)
 	const transaction = $derived(observeRow(transactionQuery.current))
+	let attachmentImages = $state<{ id: string; fileId: string; name: string; source: string }[]>([])
+	$effect(() => {
+		const sources = (transaction?.attachments ?? []).flatMap(({ id, file }) => {
+			if (!file) return []
+			const parts = [...(file.parts ?? [])].sort((left, right) => left.partIndex - right.partIndex)
+			const bytes = parts.flatMap((part) => Array.from(part.data ?? []))
+			const source = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: file.mimeType }))
+			return [{ id, fileId: file.id, name: file.fileName, source }]
+		})
+		attachmentImages = sources
+		return () => sources.forEach(({ source }) => URL.revokeObjectURL(source))
+	})
 	const categoryQuery = new QuerySubscription(() =>
 		filters.activeOrganizationId && transaction?.kind
 			? app.categories
@@ -212,33 +279,37 @@
 	}
 	onMount(() => {
 		const subscription = editActor.subscribe({ next: (snapshot) => (editSnapshot = snapshot) })
+		const attachmentSubscription = attachmentManager.subscribe({
+			next: (snapshot) => (attachmentManagerSnapshot = snapshot)
+		})
 		editActor.start()
-		return () => subscription.unsubscribe()
+		attachmentManager.start()
+		return () => {
+			subscription.unsubscribe()
+			attachmentSubscription.unsubscribe()
+		}
 	})
 	$effect(() => {
 		const observation = observe()
 		untrack(() => editActor.send({ type: 'OBSERVE', observation }))
 	})
-	onDestroy(() => {
-		if (editActor.getSnapshot().status !== 'active') {
-			editActor.stop()
-			return
-		}
-		const completion = editActor.subscribe({
-			complete: () => editActor.stop(),
-			error: () => editActor.stop()
-		})
-		editActor.send({ type: 'SHUTDOWN' })
-		if (editActor.getSnapshot().status === 'done') {
-			completion.unsubscribe()
-			editActor.stop()
-		}
+	$effect(() => {
+		const transactionId = page.params.id ?? ''
+		untrack(() => attachmentManager.send({ type: 'SCOPE', transactionId }))
 	})
+	onDestroy(() => {
+		stopAfterShutdown(editActor)
+		stopAfterShutdown(attachmentManager)
+	})
+
 	function valuesFromForm(form: HTMLFormElement) {
 		const data = new FormData(form)
 		return {
 			...Object.fromEntries(data),
-			tags: data.getAll('tags')
+			tags: data.getAll('tags'),
+			attachments: data
+				.getAll('attachments')
+				.filter((file) => file instanceof File && file.size > 0)
 		}
 	}
 	function submitForm(event: SubmitEvent) {
@@ -249,6 +320,12 @@
 			type: 'FORM',
 			event: { type: 'SUBMIT', values: valuesFromForm(event.currentTarget) }
 		})
+	}
+	function updateAttachments(files: readonly File[]) {
+		selectedAttachments = files
+	}
+	function removeAttachment(attachmentId: string) {
+		attachmentManager.send({ type: 'REMOVE', attachmentId })
 	}
 	function inputForm(event: Event) {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
@@ -518,7 +595,7 @@
 					view={formView}
 					subject={m['nouns.transaction']({ count: 1 })}
 					reasonText={(reason) => formReasonText[reason]()}
-					invalidMessage={m['transactions.validation_error']()}
+					invalidMessage={m['forms.validation_error']()}
 					section="readiness"
 					onRetryReadiness={retryReadiness}
 				/>
@@ -532,6 +609,8 @@
 						paymentEntry={transactionPages[transaction.kind].paymentEntry}
 						{initialTransaction}
 						oninput={inputForm}
+						onattachmentschange={updateAttachments}
+						{attachmentPickerRevision}
 						organizationId={filters.activeOrganizationId}
 						accounts={availableAccounts}
 						defaultAccountId={initialTransaction.accountId}
@@ -558,7 +637,23 @@
 						view={formView}
 						onsubmit={submitForm}
 						onreset={resetForm}
-					/>
+					>
+						{#snippet savedImages()}
+							{#if transaction}
+								{#key `${transaction.id}:${transaction.accountId}:${transaction.organizationId}`}
+									<SavedTransactionImages
+										{db}
+										{transaction}
+										images={attachmentImages}
+										canEdit={formView.fieldsEditable}
+										removingIds={removingAttachmentIds}
+										failedIds={failedAttachmentIds}
+										onremove={removeAttachment}
+									/>
+								{/key}
+							{/if}
+						{/snippet}
+					</TransactionForm>
 				{/if}
 			{/snippet}
 		</TransactionDetails>

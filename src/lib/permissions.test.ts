@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPolicyTestApp, type PolicyTestApp, type TestDb } from 'jazz-tools/testing'
 import { app } from './schema.js'
+import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
+import {
+	transactionAttachmentReplacementMachine,
+	type AttachmentReplacementInput
+} from './machines/transaction-attachment-replacement.js'
+import { savedTransactionImageEditorMachine } from './machines/saved-transaction-image-editor.js'
+import { mockEditorPlatform } from './image-editor-tests/fixtures.js'
+import { vi } from 'vitest'
 import permissions from './permissions.js'
 
 const organizationId = crypto.randomUUID()
@@ -386,6 +394,394 @@ describe('tag permission integrity', () => {
 			)
 		}
 	})
+})
+
+describe('transaction attachment permissions', () => {
+	it('scopes file reads through transaction links and permits only transaction writers to add or remove links', async () => {
+		const file = await db
+			.insert(app.files, {
+				transactionId: expenseId,
+				fileName: 'receipt.webp',
+				mimeType: 'image/webp',
+				sizeBytes: 12
+			})
+			.wait({ tier: 'global' })
+		expect(await viewerDb.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeNull()
+		const link = await selectedMemberDb
+			.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
+			.wait({ tier: 'global' })
+		expect(await viewerDb.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeTruthy()
+		expect(
+			await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }))
+		).toBeTruthy()
+		await viewerDb.expectDenied((writer) =>
+			writer.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
+		)
+		await viewerDb.expectDenied((writer) => writer.delete(app.transactionAttachments, link.id))
+		await selectedMemberDb.delete(app.transactionAttachments, link.id).wait({ tier: 'global' })
+		expect(await db.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeNull()
+		expect(await db.one(app.files.where({ id: file.id }), { tier: 'local' })).toBeNull()
+	})
+	async function imageLink(transactionId: string = expenseId) {
+		const file = await db
+			.insert(app.files, {
+				transactionId,
+				fileName: 'receipt.png',
+				mimeType: 'image/png',
+				sizeBytes: 4
+			})
+			.wait({ tier: 'global' })
+		const link = await db
+			.insert(app.transactionAttachments, { transactionId, fileId: file.id })
+			.wait({ tier: 'global' })
+		return { file, link }
+	}
+
+	it('atomically replaces a saved image for a writer, preserving identity and other references', async () => {
+		const { file, link } = await imageLink()
+		const companion = await db
+			.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
+			.wait({ tier: 'global' })
+		const bytes = new Uint8Array([1, 2, 3, 4])
+		const replacement = await selectedMemberDb.transaction((tx) => {
+			const next = tx.insert(app.files, {
+				transactionId: expenseId,
+				fileName: 'receipt.png',
+				mimeType: 'image/png',
+				sizeBytes: bytes.byteLength
+			})
+			tx.insert(app.fileParts, {
+				fileId: next.id,
+				partIndex: 0,
+				sizeBytes: bytes.byteLength,
+				data: bytes
+			})
+			tx.update(app.transactionAttachments, link.id, { fileId: next.id })
+			return next.id
+		})
+		const newFileId = await replacement.wait({ tier: 'global' })
+		expect(
+			await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
+				tier: 'remote'
+			})
+		).toMatchObject({ id: link.id, transactionId: expenseId, fileId: newFileId })
+		expect(
+			await db.one(app.transactionAttachments.where({ id: companion.id }), { tier: 'remote' })
+		).toMatchObject({ fileId: file.id })
+		expect(await db.one(app.files.where({ id: file.id }), { tier: 'remote' })).toMatchObject({
+			fileName: 'receipt.png'
+		})
+		const part = await viewerDb.one(app.fileParts.where({ fileId: newFileId }), { tier: 'remote' })
+		expect(part?.data).toEqual(bytes)
+	})
+
+	it('denies replacement by a viewer, into another transaction file, or without an account grant', async () => {
+		const { file, link } = await imageLink()
+		const otherTransaction = await db
+			.insert(app.transactions, { ...transaction('expense'), accountId: otherAccountId })
+			.wait({ tier: 'global' })
+		const foreign = await imageLink(otherTransaction.id)
+		await viewerDb.expectDenied((writer) =>
+			writer.update(app.transactionAttachments, link.id, { fileId: file.id })
+		)
+		await selectedMemberDb.expectDenied((writer) =>
+			writer.update(app.transactionAttachments, link.id, { fileId: foreign.file.id })
+		)
+		await selectedMemberDb.expectDenied((writer) =>
+			writer.update(app.transactionAttachments, foreign.link.id, { fileId: foreign.file.id })
+		)
+		expect(
+			await db.one(app.transactionAttachments.where({ id: link.id }), { tier: 'remote' })
+		).toMatchObject({ fileId: file.id })
+	})
+	function replacementInput(
+		attachment: { id: string; fileId: string },
+		bytes = new Uint8Array([1, 2, 3, 4])
+	) {
+		return {
+			db: selectedMemberDb,
+			transaction: { id: expenseId, accountId, organizationId },
+			attachment,
+			bytes,
+			file: { name: 'receipt.png', type: 'image/png', size: bytes.byteLength }
+		}
+	}
+
+	it('runs the replacement actor against real Jazz with ordered byte chunks and stable link identity', async () => {
+		const { file, link } = await imageLink()
+		const bytes = Uint8Array.from({ length: 600 * 1024 }, (_, index) => index % 251)
+		const actor = createActor(transactionAttachmentReplacementMachine, {
+			input: replacementInput({ id: link.id, fileId: file.id }, bytes)
+		}).start()
+		try {
+			await expect(toPromise(actor)).resolves.toEqual({
+				outcome: 'replaced',
+				settlement: 'locallyPersisted'
+			})
+			const write = actor.getSnapshot().context.write
+			if (!write) throw new Error('Missing replacement settlement')
+			await write.wait({ tier: 'global' })
+			const current = await selectedMemberDb.one(
+				app.transactionAttachments.where({ id: link.id }),
+				{ tier: 'remote' }
+			)
+			expect(current?.id).toBe(link.id)
+			expect(current?.fileId).not.toBe(file.id)
+			if (!current) throw new Error('Missing replaced attachment')
+			const parts = await selectedMemberDb.all(
+				app.fileParts.where({ fileId: current.fileId }).orderBy('partIndex'),
+				{ tier: 'remote' }
+			)
+			expect(parts.map(({ sizeBytes }) => sizeBytes)).toEqual([256 * 1024, 256 * 1024, 88 * 1024])
+			expect(new Uint8Array(parts.flatMap(({ data }) => [...(data ?? [])]))).toEqual(bytes)
+		} finally {
+			actor.stop()
+		}
+	})
+
+	it('rolls back an already-observed stale file reference without replacing the attachment', async () => {
+		const { file, link } = await imageLink()
+		const next = await db
+			.insert(app.files, {
+				transactionId: expenseId,
+				fileName: 'receipt.png',
+				mimeType: 'image/png',
+				sizeBytes: 4
+			})
+			.wait({ tier: 'global' })
+		await selectedMemberDb
+			.update(app.transactionAttachments, link.id, { fileId: next.id })
+			.wait({ tier: 'global' })
+		const actor = createActor(transactionAttachmentReplacementMachine, {
+			input: replacementInput({ id: link.id, fileId: file.id })
+		}).start()
+		try {
+			await expect(toPromise(actor)).resolves.toEqual({
+				outcome: 'conflict',
+				settlement: 'notStarted'
+			})
+			expect(
+				await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
+					tier: 'local'
+				})
+			).toMatchObject({ fileId: next.id })
+		} finally {
+			actor.stop()
+		}
+	})
+
+	it('drains and rolls back a transaction acquired after shutdown', async () => {
+		const { file, link } = await imageLink()
+		const transaction = selectedMemberDb.beginTransaction()
+		const pending = Promise.withResolvers<typeof transaction>()
+		const actor = createActor(
+			transactionAttachmentReplacementMachine.provide({
+				actors: { open: fromPromise(() => pending.promise) }
+			}),
+			{ input: replacementInput({ id: link.id, fileId: file.id }) }
+		).start()
+		actor.send({ type: 'SHUTDOWN' })
+		actor.send({ type: 'CANCEL' })
+		pending.resolve(transaction)
+		try {
+			await expect(toPromise(actor)).resolves.toEqual({
+				outcome: 'closed',
+				settlement: 'notStarted'
+			})
+			expect(
+				await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
+					tier: 'local'
+				})
+			).toMatchObject({ fileId: file.id })
+		} finally {
+			actor.stop()
+		}
+	})
+
+	it('hydrates and edits a saved attachment through both real child machines', async () => {
+		const { file, link } = await imageLink()
+		await db
+			.insert(app.fileParts, {
+				fileId: file.id,
+				partIndex: 0,
+				sizeBytes: 4,
+				data: new Uint8Array([1, 2, 3, 4])
+			})
+			.wait({ tier: 'global' })
+		const platform = mockEditorPlatform()
+		const observation = {
+			editable: true,
+			images: [{ id: link.id, fileId: file.id }],
+			blockedIds: []
+		}
+		const actor = createActor(savedTransactionImageEditorMachine, {
+			input: {
+				db: selectedMemberDb,
+				transaction: { id: expenseId, accountId, organizationId },
+				observation
+			}
+		}).start()
+		try {
+			actor.send({ type: 'EDIT', attachmentId: link.id })
+			await waitFor(actor, (snapshot) => snapshot.matches({ editing: 'open' }), { timeout: 5000 })
+			const editor = actor.getSnapshot().children.editor
+			if (!editor) throw new Error('Missing saved-image editor')
+			await waitFor(editor, (snapshot) => snapshot.matches('interactive'))
+			expect(platform.decode).toHaveBeenCalledOnce()
+			const input = platform.decode.mock.calls[0]?.[0]
+			expect(input?.name).toBe('receipt.png')
+			expect(input ? [...new Uint8Array(await input.arrayBuffer())] : []).toEqual([1, 2, 3, 4])
+			editor.send({ type: 'SET_BLACK_WHITE', value: true })
+			editor.send({ type: 'APPLY' })
+			await waitFor(actor, (snapshot) => snapshot.matches('idle'), { timeout: 5000 })
+			expect(actor.getSnapshot().context.problem).toBeNull()
+			const current = await selectedMemberDb.one(
+				app.transactionAttachments.where({ id: link.id }),
+				{ tier: 'local' }
+			)
+			expect(current?.fileId).not.toBe(file.id)
+			expect(current?.id).toBe(link.id)
+		} finally {
+			actor.send({ type: 'SHUTDOWN' })
+			await toPromise(actor)
+			actor.stop()
+			vi.restoreAllMocks()
+			vi.unstubAllGlobals()
+		}
+	})
+	it('rolls back staged metadata when a staging operation fails', async () => {
+		const { file, link } = await imageLink()
+		const actor = createActor(
+			transactionAttachmentReplacementMachine.provide({
+				actors: {
+					stage: fromPromise(
+						async ({
+							input
+						}: {
+							input: {
+								tx: ReturnType<TestDb['beginTransaction']>
+								request: AttachmentReplacementInput
+							}
+						}): Promise<string> => {
+							input.tx.insert(app.files, {
+								transactionId: expenseId,
+								fileName: 'failed.png',
+								mimeType: 'image/png',
+								sizeBytes: 4
+							})
+							throw new Error('Injected part staging failure')
+						}
+					)
+				}
+			}),
+			{ input: replacementInput({ id: link.id, fileId: file.id }) }
+		).start()
+		try {
+			await expect(toPromise(actor)).resolves.toEqual({
+				outcome: 'failed',
+				settlement: 'notStarted'
+			})
+			expect(
+				await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
+					tier: 'local'
+				})
+			).toMatchObject({ fileId: file.id })
+		} finally {
+			actor.stop()
+		}
+	})
+
+	it('reports uncertain settlement without claiming that the original image is unchanged', async () => {
+		const { file, link } = await imageLink()
+		const actor = createActor(
+			transactionAttachmentReplacementMachine.provide({
+				actors: {
+					settle: fromPromise(async (): Promise<void> => {
+						throw new Error('Lost settlement acknowledgement')
+					})
+				}
+			}),
+			{ input: replacementInput({ id: link.id, fileId: file.id }) }
+		).start()
+		try {
+			await expect(toPromise(actor)).resolves.toEqual({
+				outcome: 'failed',
+				settlement: 'unresolved'
+			})
+			const write = actor.getSnapshot().context.write
+			if (!write) throw new Error('Missing issued write')
+			const [fate] = await Promise.allSettled([write.wait({ tier: 'global' })])
+			const current = await selectedMemberDb.one(
+				app.transactionAttachments.where({ id: link.id }),
+				{ tier: 'remote' }
+			)
+			expect(current?.id).toBe(link.id)
+			if (fate.status === 'fulfilled') expect(current?.fileId).not.toBe(file.id)
+			else expect(current?.fileId).toBe(file.id)
+		} finally {
+			actor.stop()
+		}
+	})
+
+	it.each(['permission', 'replacement', 'removal'])(
+		'cancels saved editing after an observed %s change',
+		async (change) => {
+			const { file, link } = await imageLink()
+			await db
+				.insert(app.fileParts, {
+					fileId: file.id,
+					partIndex: 0,
+					sizeBytes: 4,
+					data: new Uint8Array([1, 2, 3, 4])
+				})
+				.wait({ tier: 'global' })
+			const platform = mockEditorPlatform()
+			const pending = Promise.withResolvers<ImageBitmap>()
+			platform.decode.mockReturnValue(pending.promise)
+			const observation = {
+				editable: true,
+				images: [{ id: link.id, fileId: file.id }],
+				blockedIds: []
+			}
+			const actor = createActor(savedTransactionImageEditorMachine, {
+				input: {
+					db: selectedMemberDb,
+					transaction: { id: expenseId, accountId, organizationId },
+					observation
+				}
+			}).start()
+			try {
+				actor.send({ type: 'EDIT', attachmentId: link.id })
+				await waitFor(actor, (snapshot) => snapshot.matches({ editing: 'open' }), { timeout: 5000 })
+				actor.send({
+					type: 'OBSERVE',
+					observation: {
+						editable: change !== 'permission',
+						images: [
+							{ id: link.id, fileId: change === 'replacement' ? crypto.randomUUID() : file.id }
+						],
+						blockedIds: change === 'removal' ? [link.id] : []
+					}
+				})
+				pending.resolve(platform.bitmap)
+				await waitFor(actor, (snapshot) => snapshot.matches('idle'), { timeout: 5000 })
+				expect(platform.bitmap.close).toHaveBeenCalledOnce()
+				expect(platform.encode).not.toHaveBeenCalled()
+				expect(
+					await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
+						tier: 'local'
+					})
+				).toMatchObject({ fileId: file.id })
+			} finally {
+				pending.resolve(platform.bitmap)
+				if (actor.getSnapshot().status === 'active') actor.send({ type: 'SHUTDOWN' })
+				await toPromise(actor)
+				actor.stop()
+				vi.restoreAllMocks()
+				vi.unstubAllGlobals()
+			}
+		}
+	)
 })
 
 describe('income payment method permissions', () => {

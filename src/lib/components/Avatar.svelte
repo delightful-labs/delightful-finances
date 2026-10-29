@@ -13,7 +13,7 @@
 		avatarData,
 		avatarMimeType,
 		size = 32,
-		alt = m['profile.avatar_alt'](),
+		alt = m['images.avatar_alt'](),
 		error
 	}: AvatarImage & {
 		size?: number

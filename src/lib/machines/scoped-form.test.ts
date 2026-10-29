@@ -128,7 +128,13 @@ describe('scoped form ownership', () => {
 			result: {
 				outcome: 'invalid',
 				settlement: 'notStarted',
-				issues: [{ path: ['name'], code: 'too_small' }]
+				issues: [
+					{
+						path: ['name'],
+						code: 'too_small',
+						message: 'Too small: expected string to have >=1 characters'
+					}
+				]
 			}
 		})
 		expect(f.started).not.toHaveBeenCalled()

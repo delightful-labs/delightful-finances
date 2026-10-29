@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { Button, Text, InputAvatar } from 'delightful-ui'
-	import { avatarMimeType } from '#lib/validation/identity.js'
+	import { Button, Dialog, Text, InputAvatar } from 'delightful-ui'
+	import { avatarMimeType, profileAvatarFormSchema } from '#lib/validation/identity.js'
 	import type { ProfileView } from '#lib/profile-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
+	import PhotoCropper from './photo-cropper/PhotoCropper.svelte'
 	let {
 		profileId,
 		avatarData,
@@ -31,6 +32,9 @@
 	} = $props()
 	let savedFile = $state<File | null>(null)
 	let selectedFile = $state<File | null>(null)
+	let pendingFile = $state<File | null>(null)
+	let cropOpen = $state(false)
+	let selectionError = $state(false)
 	const resetRevision = $derived(view.draftRevision)
 	const recordId = $derived(profileId)
 	$effect(() => {
@@ -42,10 +46,15 @@
 				: null
 		savedFile = file
 		selectedFile = file
+		pendingFile = null
+		cropOpen = false
+		selectionError = false
 	})
 </script>
 
-<Text id="avatar-help">{m['profile.avatar_description']()}</Text>
+<Text id="avatar-help"
+	>{m['images.formats']()} {m['images.max_file_size']()} {m['images.avatar_resize']()}</Text
+>
 <FormFeedback
 	{view}
 	subject={m['nouns.profile']({ count: 1 })}
@@ -68,10 +77,25 @@
 							onRemove()
 							return
 						}
-						selectedFile = file ?? savedFile
-						onSelectionChange(file)
+						if (file) {
+							if (!profileAvatarFormSchema.safeParse({ action: 'upload', file }).success) {
+								selectedFile = savedFile
+								pendingFile = null
+								cropOpen = false
+								selectionError = true
+								onSelectionChange(savedFile)
+								return
+							}
+							selectionError = false
+							pendingFile = file
+							cropOpen = true
+							return
+						}
+						selectedFile = savedFile
+						onSelectionChange(savedFile)
 					}
 				}
+				infoLabel={m['labels.subject_details']({ subject: m['nouns.avatar']({ count: 1 }) })}
 				removeLabel={selectedFile === savedFile
 					? m['actions.remove_subject']({ subject: m['nouns.avatar']({ count: 1 }) })
 					: m['actions.clear_selected_subject']({ subject: m['nouns.image']({ count: 1 }) })}
@@ -82,6 +106,7 @@
 				required
 				disabled={!view.fieldsEditable}
 			/>
+			{#if selectionError}<p role="alert">{m['forms.validation_error']()}</p>{/if}
 		{/snippet}
 		{#snippet controls(view)}
 			{#if selectedFile && selectedFile !== savedFile}
@@ -95,7 +120,7 @@
 				{view}
 				subject={m['nouns.profile']({ count: 1 })}
 				reasonText={(reason) => formReasonText[reason]()}
-				invalidMessage={m['profile.avatar_invalid']()}
+				invalidMessage={m['forms.validation_error']()}
 				successMessage={() =>
 					m['status.saved_subject']({ subject: m['nouns.avatar']({ count: 1 }) })}
 				section="result"
@@ -103,3 +128,26 @@
 		{/snippet}
 	</FormContent>
 {/key}
+{#if pendingFile}
+	<Dialog
+		heading={m['images.crop_avatar_title']()}
+		bind:open={cropOpen}
+		closedby="any"
+		onclose={() => (pendingFile = null)}
+	>
+		<PhotoCropper
+			file={pendingFile}
+			mask="circle"
+			oncomplete={(file) => {
+				selectedFile = file
+				onSelectionChange(file)
+				pendingFile = null
+				cropOpen = false
+			}}
+			oncancel={() => {
+				pendingFile = null
+				cropOpen = false
+			}}
+		/>
+	</Dialog>
+{/if}

@@ -38,10 +38,10 @@ export const transactionCheckpointSchema = z.strictObject({
 })
 export type TransactionCheckpoint = z.output<typeof transactionCheckpointSchema>
 export function transferEditRequiresUnlink(
-	transaction: Pick<
-		TransactionDetail,
-		'internalTransferId' | 'accountId' | 'amountMinor' | 'currency'
-	> | null | undefined,
+	transaction:
+		| Pick<TransactionDetail, 'internalTransferId' | 'accountId' | 'amountMinor' | 'currency'>
+		| null
+		| undefined,
 	values: Pick<TransactionSaveValues, 'accountId' | 'money'>,
 	hasTransferRelation = false
 ) {

@@ -477,6 +477,66 @@ cases, and one repeat manual bank-sync case pass. Tests required fixture/locator
 corrections only; no production fixes. See the transaction-editing model for
 coverage and execution details. Check-object redesign remains a separate slice.
 
+## T045 Initial transaction image attachments
+
+Initial scope: JPEG, PNG, and WebP images, at most 10 MiB each and five per
+transaction. Images are proportionally resized to at most 2048 pixels per edge,
+preserving filename and MIME type. Users can select files while creating or
+editing, and transaction details provide previews, downloads, and immediate removal. The main
+transaction save is independent from attachment writes. Do not show a sync
+completion state or claim remote synchronization; visible outstanding sync,
+remote-only download, PDFs, and other file types remain deferred.
+
+### Data and authorization
+
+Keep `transactionAttachments` as the transaction-to-file association. Add a
+`data: s.bytes()` column to file parts and a reverse file-parts relationship from
+files. Store each image in ordered 256 KiB parts through the installed SDK's
+`insertStreaming` API; retain the selected filename, image MIME type, and stored
+byte size on the file row. Attachment rows inherit read access from their transaction. File rows
+are readable only through an attachment whose transaction is readable, and
+parts only through their file. Inserts require transaction edit access; cleanup
+must not delete a file that is still referenced. Update schema, permissions,
+policy tests, and the additive migration together. Do not enable generic access
+to file tables.
+
+### Machine-first workflow
+
+Attachment batch sequence: `readingExisting -> validating -> processing each image
+-> storing each file -> complete`. Validate MIME type, positive size, 10 MiB
+limit, and the five-file limit against a fresh local-first attachment read after
+the transaction save. The per-file upload actor registers metadata, writes
+ordered 256 KiB parts, then creates the relation. It owns cleanup for known or
+discoverable parts if a part write fails. If the relation write's settlement is
+uncertain, retain file data so a committed relation cannot point at deleted
+content. Return a typed attachment failure while preserving the already-saved
+transaction. Removal deletes only the authorized transaction-to-file link and
+retains file rows and parts; physical cleanup is deferred so it cannot race a
+shared reference or recovery requirement. Download/preview reads the complete
+ordered parts and creates a browser Blob; the integration owns and revokes its
+object URL. Component shutdown waits for active local writes to settle before
+releasing the actor.
+
+The transaction form integration owns its pending File selection and passes it
+to the save owner separately from validated financial values. On create, thread
+the already allocated transaction ID through the successful save result so
+attachment linking can begin only after the base transaction is locally saved.
+Attachment failures must not change that transaction-save result. On edit,
+existing attachments remain intact unless the user separately adds or removes
+one. Presentation receives attachment rows, local object URLs, limits, and
+callbacks through props; Jazz subscriptions, database binding, and actor lifetime
+remain in the transaction integration.
+
+### Review coverage inventory (tests deferred until implementation review)
+
+Add separate attachment unit tests for file validation, resizing, chunk ordering,
+permission-scoped state transitions, uncertain link settlement, retained file
+data after removal, and cancellation/cleanup. Update existing transaction-save tests for created-ID
+propagation and independent attachment failure. Add Playwright scenarios for
+create/edit/detail, unsupported and oversized files, count limit, preview/download,
+immediate removal, account-permission denial, and transaction save surviving an
+attachment failure. Update localized messages in the component message file.
+
 ### Drawer panel border API
 
 Add `--dui-drawer-panel-border-inline-end` to Delightful UI Drawer, defaulting to

@@ -8,6 +8,7 @@
 		onreset,
 		oninput,
 		fields,
+		supplemental,
 		controls,
 		controlsFill = false,
 		feedback
@@ -17,6 +18,7 @@
 		oninput?: ((event: Event) => void) | undefined
 		onreset: (event: Event) => void
 		fields: Snippet<[View]>
+		supplemental?: Snippet<[View]>
 		controls?: Snippet<[View]> | undefined
 		controlsFill?: boolean
 		feedback?: Snippet<[View]> | undefined
@@ -29,6 +31,7 @@
 			{@render fields(view)}
 		</fieldset>
 	{/key}
+	{#if supplemental}{@render supplemental(view)}{/if}
 	{#if controls}
 		<div class="form-controls" class:fill={controlsFill}>{@render controls(view)}</div>
 	{/if}

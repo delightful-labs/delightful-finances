@@ -68,3 +68,11 @@ renamed key's callers, including contracts, metadata, and existing test fixtures
 keys rather than leaving compatibility duplicates. Compile Paraglide, format touched files with the
 repository configuration, and check types. Follow the repository's implementation-review gate before
 adding or running tests; mechanical updates to existing key references do not add coverage.
+
+## Reusable component catalogs
+
+Keep strings rendered inside reusable photo components in their own component catalog (for example,
+`messages/photo-cropper/{locale}.json` and `messages/image-editor/{locale}.json`). Keep Finance-owned
+modal titles, attachment validation, persistence feedback, and other consumer labels in
+`messages/{locale}.json` under `images`. Compose shared image format and size guidance from separate messages in each consumer. Component catalogs own their internal controls and accessible labels;
+Finance consumers use Finance messages rather than reaching into a component catalog.

@@ -299,6 +299,10 @@ async function uploadAvatar(
 	replace = false
 ) {
 	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
+	const cropDialog = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
+	await expect(cropDialog).toBeVisible()
+	await cropDialog.getByRole('button', { name: 'Use this crop', exact: true }).click()
+	await expect(cropDialog).not.toBeVisible()
 	await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
 	await expect(
 		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved.' })
@@ -321,7 +325,7 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	const large = await avatarImage(page, 512, 256, true)
 	expect(large.buffer.byteLength).toBeGreaterThan(256 * 1024)
 	await uploadAvatar(page, large)
-	const firstImage = await waitForAvatar(page, 256, 128)
+	const firstImage = await waitForAvatar(page, 256, 256)
 	const firstUrl = await firstImage.getAttribute('src')
 	const first = await avatarRecord(page)
 	expect(first.mimeType).toBe('image/webp')
@@ -329,11 +333,11 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	expect(first.byteLength).toBeLessThanOrEqual(256 * 1024)
 	expect(first.displayName).toBe('Avatar owner')
 	await page.reload()
-	await waitForAvatar(page, 256, 128)
+	await waitForAvatar(page, 256, 256)
 	expect(await avatarRecord(page)).toEqual(first)
 	const reloadedUrl = await avatarPreview(page).getAttribute('src')
 	await uploadAvatar(page, await avatarImage(page, 120, 240), true)
-	await waitForAvatar(page, 120, 240)
+	await waitForAvatar(page, 120, 120)
 	await expect
 		.poll(() =>
 			page.evaluate((url) => url !== null && window.avatarRevokedUrls.includes(url), reloadedUrl)
@@ -344,7 +348,8 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	expect(replacement.id).toBe(first.id)
 	expect(replacement.displayName).toBe(first.displayName)
 	const replacementUrl = await avatarPreview(page).getAttribute('src')
-	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).click()
+	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
+	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 	await expect(avatarPreview(page)).toHaveCount(0)
 	await expect
 		.poll(() =>
@@ -365,6 +370,11 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 	test.setTimeout(120_000)
 	await page.goto('/account')
 	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+	await expect(
+		page.getByText(
+			'JPEG, PNG, or WebP images. Up to 10 MiB per image. Images are resized for your avatar.'
+		)
+	).toBeVisible()
 	const initial = await avatarRecord(page)
 	for (const file of [
 		{ name: 'avatar.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') },
@@ -372,16 +382,21 @@ test('avatar rejects invalid, oversized, and undecodable images and allows retry
 		{ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') }
 	]) {
 		await page.getByLabel('Avatar', { exact: true }).setInputFiles(file)
-		await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
-		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-			file.name === 'broken.png'
-				? 'Could not save Profile.'
-				: 'Choose a valid PNG, JPEG, or WebP image up to 10 MB.'
-		)
+		if (file.name === 'broken.png') {
+			const cropDialog = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
+			await expect(cropDialog.getByRole('alert')).toHaveText(
+				'This image could not be cropped. Choose another image and try again.'
+			)
+			await cropDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+		} else {
+			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+				'Check the form and try again.'
+			)
+		}
 		expect(await avatarRecord(page)).toEqual(initial)
 	}
 	await uploadAvatar(page, await avatarImage(page, 80, 40))
-	await waitForAvatar(page, 80, 40)
+	await waitForAvatar(page, 40, 40)
 	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 })
 
@@ -394,12 +409,13 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 	await page.context().setOffline(true)
 	try {
 		await uploadAvatar(page, first)
-		await waitForAvatar(page, 256, 128)
+		await waitForAvatar(page, 200, 200)
 		await uploadAvatar(page, second, true)
 		await waitForAvatar(page, 100, 100)
 		const local = await avatarRecord(page)
 		expect(local.byteLength).toBeGreaterThan(0)
-		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).click()
+		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
+		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 		await expect(avatarPreview(page)).toHaveCount(0)
 		expect((await avatarRecord(page)).byteLength).toBe(0)
 	} finally {
@@ -415,7 +431,7 @@ test('avatar follows account recovery on another device', async ({ page, browser
 	test.setTimeout(120_000)
 	await saveDisplayName(page, 'Recovered avatar owner')
 	await uploadAvatar(page, await avatarImage(page, 300, 600))
-	await waitForAvatar(page, 128, 256)
+	await waitForAvatar(page, 256, 256)
 	const original = await avatarRecord(page)
 	await expect.poll(() => avatarRecord(page, true)).toEqual(original)
 	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
@@ -426,13 +442,13 @@ test('avatar follows account recovery on another device', async ({ page, browser
 		const other = await context.newPage()
 		await restoreAccount(other, phrase)
 		await other.goto('/account')
-		await waitForAvatar(other, 128, 256)
+		await waitForAvatar(other, 256, 256)
 		await expect(other.getByLabel('Display name', { exact: true })).toHaveValue(
 			'Recovered avatar owner'
 		)
 		expect(await avatarRecord(other)).toEqual(original)
 		await other.reload()
-		await waitForAvatar(other, 128, 256)
+		await waitForAvatar(other, 256, 256)
 	} finally {
 		await context.close()
 	}

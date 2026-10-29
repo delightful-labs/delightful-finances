@@ -31,6 +31,8 @@
 	import TransactionForm from '#lib/components/TransactionForm.svelte'
 	import PageHeader from '#lib/components/PageHeader.svelte'
 	let { kind }: { kind: TransactionKind } = $props()
+	let selectedAttachments = $state<readonly File[]>([])
+	let attachmentPickerRevision = $state(0)
 	const config = $derived(transactionPages[kind])
 	const subject = $derived(m[config.noun]({ count: config.count }))
 	const title = $derived(m['actions.add_subject']({ subject }))
@@ -115,13 +117,46 @@
 	const options = createTransactionEntryFormOptions({
 		binding: db,
 		observe,
+		getAttachments: () => selectedAttachments,
 		navigate: (destination, signal) => {
 			signal.throwIfAborted()
 			return goto(destination, { replace: true })
 		},
 		db
 	})
-	const form = createScopedFormController({ ...options, arrayFields: () => ['tags'] })
+	const form = createScopedFormController({
+		...options,
+		arrayFields: () => ['tags', 'attachments']
+	})
+	function updateAttachments(files: readonly File[]) {
+		selectedAttachments = files
+	}
+	let observedDraftRevision = form.view.draftRevision
+	$effect(() => {
+		const revision = form.view.draftRevision
+		if (revision !== observedDraftRevision) {
+			observedDraftRevision = revision
+			selectedAttachments = []
+			attachmentPickerRevision += 1
+		}
+		const feedback = form.view.feedback
+		const completedAfterSave =
+			feedback.kind === 'result' &&
+			(feedback.result.outcome === 'cancelled' ||
+				feedback.result.outcome === 'scopeChanged' ||
+				feedback.result.outcome === 'closed') &&
+			feedback.result.settlement !== 'notStarted'
+		if (
+			feedback.kind === 'result' &&
+			(feedback.result.outcome === 'succeeded' ||
+				(feedback.result.outcome === 'partial' && feedback.result.reason === 'attachmentsFailed') ||
+				completedAfterSave) &&
+			selectedAttachments.length > 0
+		) {
+			selectedAttachments = []
+			attachmentPickerRevision += 1
+		}
+	})
 </script>
 
 <svelte:head><title>{title} · {m['app.name']()}</title></svelte:head>
@@ -131,7 +166,7 @@
 	view={form.view}
 	subject={m['nouns.transaction']({ count: 1 })}
 	reasonText={(reason) => formReasonText[reason]()}
-	invalidMessage={m['transactions.validation_error']()}
+	invalidMessage={m['forms.validation_error']()}
 	section={form.view.readiness.kind === 'ready' ? 'readiness' : 'all'}
 	onRetryReadiness={form.retryReadiness}
 />
@@ -143,6 +178,8 @@
 		paymentEntry={config.paymentEntry}
 		organizationId={filters.activeOrganizationId}
 		{accounts}
+		onattachmentschange={updateAttachments}
+		{attachmentPickerRevision}
 		{defaultAccountId}
 		categories={availableCategories}
 		defaultCategoryId={defaultCategory?.id}

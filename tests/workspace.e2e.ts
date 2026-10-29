@@ -744,8 +744,8 @@ for (const scenario of formScenarios) {
 				page
 					.getByRole('main')
 					.getByRole('alert')
-					.filter({ hasText: 'Check the transaction details and try again.' })
-			).toHaveText('Check the transaction details and try again.')
+					.filter({ hasText: 'Check the form and try again.' })
+			).toHaveText('Check the form and try again.')
 			await expect(page.getByLabel('Memo (additional notes)', { exact: true })).toHaveValue(
 				scenario.memo
 			)

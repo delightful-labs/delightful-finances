@@ -671,16 +671,39 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		policy.transactions.exists.where({ id: attachment.transactionId })
 	)
 	policy.transactionAttachments.allowInsert.where(allowedTo.update('transaction'))
+	policy.transactionAttachments.allowUpdate
+		.whereOld(allowedTo.update('transaction'))
+		.whereNew((attachment) =>
+			allOf([
+				allowedTo.update('transaction'),
+				policy.files.exists.where({
+					id: attachment.fileId,
+					transactionId: attachment.transactionId
+				})
+			])
+		)
 	policy.transactionAttachments.allowDelete.where(allowedTo.update('transaction'))
 
-	policy.files.allowRead.never()
-	policy.files.allowInsert.never()
+	policy.files.allowRead.where(allowedTo.readReferencing(policy.transactionAttachments, 'file'))
+	policy.files.allowInsert.where((file) =>
+		allOf([
+			{ transactionId: { isNull: false } },
+			allowedTo.update('transaction'),
+			policy.transactions.exists.where({ id: file.transactionId })
+		])
+	)
 	policy.files.allowUpdate.never()
-	policy.files.allowDelete.never()
-	policy.fileParts.allowRead.never()
-	policy.fileParts.allowInsert.never()
+	policy.files.allowDelete.where((file) =>
+		allOf([
+			{ transactionId: { isNull: false } },
+			allowedTo.update('transaction'),
+			policy.transactions.exists.where({ id: file.transactionId })
+		])
+	)
+	policy.fileParts.allowRead.where(allowedTo.read('file'))
+	policy.fileParts.allowInsert.where(allowedTo.insert('file'))
 	policy.fileParts.allowUpdate.never()
-	policy.fileParts.allowDelete.never()
+	policy.fileParts.allowDelete.where(allowedTo.delete('file'))
 	policy.uploads.allowRead.never()
 	policy.uploads.allowInsert.never()
 	policy.uploads.allowUpdate.never()
