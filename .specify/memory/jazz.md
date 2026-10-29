@@ -2,6 +2,36 @@
 
 Read this before designing Jazz data relationships, permissions, or persistence behavior.
 
+## Local usability is independent of remote freshness
+
+Verified against the published `jazz-tools@2.0.0-alpha.59` package and official docs during
+[startup research](../../specs/013-local-first-startup/research.md). Recheck source on SDK upgrades.
+
+- Ordinary browser reads default to local data with upstream propagation. `ReadTier.LocalFirst`
+  explicitly includes cached records and pending local writes while synchronization continues.
+  `LocalFirstUnlessEmpty` can wait for a remote first answer when empty; `Remote` waits offline.
+  Neither belongs on a path that must immediately use already available local data.
+- Ordinary mutation/mergeable-transaction completion should wait for `local` persistence, with later
+  rejection observation retained. `global` means server acceptance. Exclusive transaction `wait()`
+  confirms authority acceptance and cannot provide offline completion with a remote authority.
+- Server permission enforcement does not require an authoritative preflight for every ordinary
+  action. Use current locally known membership/grants and required records; invalidate on observed
+  changes. Offline knowledge is not proof of fresh remote permission or erasure after revocation.
+- Separate availability from completeness: an empty local result does not establish global absence,
+  first use, or permission to recreate/repair records. Keep initialization provenance, repair,
+  seeding, and uncertain-write reconciliation from blocking unrelated locally usable finance work.
+  Do not remove idempotency safeguards or blindly replace remote reads in recovery/repair workflows.
+- Persistent browser Jazz already uses a SharedWorker with IndexedDB; memory-driver and external
+  runtime defaults differ. Moving application logic into a worker requires explicit verification of
+  local-first reads, supported database access, message boundaries, and lifecycle ownership.
+- A service worker cannot construct SharedWorker (Window-only API). Cache public shell/runtime
+  assets; do not assume a supported early Jazz handoff, always-running session, or HTTP caching of
+  Jazz sync/auth/data. Runtime asset URLs and version identity require a production-build audit.
+
+The linked draft and backlog distinguish desired changes from current implementation and unverified
+optimizations. Preserve separately approved online-only sharing/permission administration and explicit
+bank-provider operations; those exceptions must not spread into ordinary local finance workflows.
+
 ## Reuse proven reference patterns; verify the exact predicate shape
 
 The Check implementation is a working precedent for validating a row's single foreign-key
