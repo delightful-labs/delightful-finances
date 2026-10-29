@@ -12,6 +12,13 @@
 - Editing a saved image replaces its immutable file reference on the existing attachment, preserving attachment identity and filename. Stage the new file, byte parts, and link update together; retain previous file contents. Local Apply is independent of the main transaction form save.
 - Manual corner selection is in scope. Automatic edge detection, OCR, curl correction, and sync-status UI are outside this change.
 
+## Image preview modal
+
+- Draft transaction images, saved transaction images, and selected/saved avatars open a DUI modal when the whole thumbnail is activated, without hover controls or an information icon.
+- The modal shows a large, uncropped preview, the filename, permitted removal and consumer-owned editing actions, and Close. Saved transaction filenames retain their download link.
+- Finance supplies Edit through an actions snippet and closes the preview before opening its existing editor. DUI does not own crop/rotate processing or persistence.
+- Read-only images remain previewable/downloadable; existing mutation capabilities remain authoritative. Avatar replacement remains available from the preview.
+
 ## Review cycles
 
 1. DUI InputRange and contrast popover example: implemented and browser-tested.

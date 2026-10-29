@@ -61,6 +61,7 @@
 	label={m['actions.add_subject']({ subject: m['nouns.image']({ count: 2 }) })}
 	uploadLabel={m['actions.select_subject']({ subject: m['nouns.image']({ count: 2 }) })}
 	infoLabel={m['labels.subject_details']({ subject: m['nouns.image']({ count: 1 }) })}
+	closeLabel={m['actions.close']()}
 	removeLabel={m['actions.remove_subject']({ subject: m['nouns.image']({ count: 1 }) })}
 	{id}
 	name="attachments"
@@ -73,14 +74,14 @@
 	{#snippet leadingImages()}
 		{#if savedImages}{@render savedImages()}{/if}
 	{/snippet}
-	{#snippet imageActions(file, popoverId)}
+	{#snippet imageActions(file, closePreview)}
 		<Button
 			type="button"
-			popovertarget={popoverId}
-			popovertargetaction="hide"
 			disabled={!selection.editableFiles.includes(file)}
-			onclick={() => send({ type: 'EDIT', file })}
-			>{m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}</Button
+			onclick={() => {
+				closePreview()
+				send({ type: 'EDIT', file })
+			}}>{m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}</Button
 		>
 	{/snippet}
 </InputImages>

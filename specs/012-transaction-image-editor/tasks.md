@@ -1,5 +1,12 @@
 # Tasks
 
+## Preview modal review cycle
+
+- [x] Replace shared DUI hover controls with a preview modal and consumer action close callback.
+- [x] Integrate existing draft/saved transaction editors and avatar cropper; preserve downloads and replacement.
+- [ ] Review the preview-modal implementation.
+- [ ] After approval, update and run relevant DUI and Finance browser coverage, including keyboard/focus, permissions, deletion, replacement, and editor cancellation.
+
 - [x] Implement DUI InputRange and contrast-popover Storybook example.
 - [x] Verify range binding, keyboard bounds/steps, disabled state, FormData/reset, and popover keyboard use in focused browser tests.
 - [x] Implement geometry, pixel rendering, and imageEditorMachine.
