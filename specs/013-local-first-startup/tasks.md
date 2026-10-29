@@ -74,8 +74,11 @@ precede workflow code. Coverage changes follow review of the exact implementatio
       WebSocket upgrades but sending no Jazz replies. See research.md for evidence and limits.
       Automated follow-up: startup-stalled-remote.e2e.ts passes with an owned in-memory backend and
       silent transport, including HTTP-cache removal and browser/SharedWorker exit. Test types pass.
-      Post-negotiation stalls and actual remote rejection/recovery remain; do not infer remote
-      acceptance from local success.
+      Actual server rejection now covered too: an isolated authority changes a disconnected
+      client's membership to viewer, the stale local client saves, and reconnect delivers the
+      rejection notice. Accepted amount remains unchanged, read-only access takes effect and reload
+      shows the accepted value. Both focused cases and test types pass. Post-negotiation stalls,
+      broader partial/access scenarios and unknown-outcome durable recovery remain separate work.
 
 ## Investigations informing later delivery
 

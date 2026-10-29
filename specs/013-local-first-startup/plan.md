@@ -442,3 +442,14 @@ not a post-server-hello query stall or a remote acceptance/rejection test.
 The suite is excluded from the ordinary dev-server config. Its explicit tests/tsconfig.json mapping
 lets Playwright resolve #lib/*.js imports to application TypeScript when initializing the backend's
 schema/permissions. It does not change application module resolution or SDK behavior.
+
+T009 late-rejection follow-up uses the same owned backend/proxy fixtures. A separate backend
+session uses the SDK's public createJazzSession API with backend admission to read authoritative
+records and change membership while the browser connection is silent. After a globally accepted
+12.34 baseline, the authority changes the owner membership to viewer with all-account read access.
+The browser still has its old local authorization and confirms a 42.13 save before reconnecting.
+Restoring forwarding causes a real serving-authority rejection, exercising the application's SDK
+observer rather than a synthetic callback. Assertions cover notice delivery/dismissal, retained
+workspace/read access, disabled write controls, unchanged server amount/membership and accepted
+12.34 after reload. Both focused cases pass; no production code change was necessary. This covers
+a known rejected outcome, not T012's durable recovery of an unknown outcome across interruption.

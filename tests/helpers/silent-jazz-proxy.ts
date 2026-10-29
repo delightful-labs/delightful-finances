@@ -81,6 +81,10 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 			mode = 'silent'
 			for (const socket of sockets) socket.destroy()
 		},
+		resume: () => {
+			mode = 'forward'
+			for (const socket of sockets) socket.destroy()
+		},
 		close: () =>
 			new Promise<void>((resolve, reject) => {
 				for (const socket of sockets) socket.destroy()

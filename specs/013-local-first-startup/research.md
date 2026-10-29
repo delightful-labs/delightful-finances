@@ -659,3 +659,29 @@ checks passed. Its initial collection failure was a Node/Playwright #lib import-
 corrected by an explicit test-only paths mapping before the successful run. No production workaround
 or dependency change was introduced. This closes the diagnostic-only automation gap for this scenario;
 the other limits above remain.
+
+### T009 real serving-authority rejection after local success
+
+The dedicated production suite now includes a second automated case with its own disposable backend
+and profile. A backend-authenticated Node session uses the SDK's public jazz-tools/backend
+createJazzSession API; no internal SDK import or browser database test hook is required. Its direct
+backend connection remains independent of the browser's proxy.
+
+The browser creates and opens an expense for 12.34. A remote authority read confirms amountMinor
+1234 before disconnection, establishing actual acceptance of the baseline. The proxy then becomes
+silent while the authority changes the sole workspace membership from owner to viewer with
+accountAccessMode all and awaits global settlement. This deliberately retains read access while
+removing server-side write permission; the disconnected browser still observes its cached owner role.
+
+The browser edits the amount to 42.13 and receives Transaction saved before reconnecting. A separate
+authority read still returns 1234. Restoring proxy forwarding reconnects the SDK, which emits an
+actual mutation rejection to the existing application observer. The browser shows the rejection
+notice, removes Save Transaction and disables the amount input as it observes the viewer role.
+The authority still reports amountMinor 1234 and membership role viewer. Dismissing the notice works;
+reload retains the same detail/workspace URL and shows 12.34 with write controls disabled.
+
+Both production cases pass (silent cold restart and late rejection); test TypeScript and formatting
+checks pass. The checked-in test setup uses only public SDK APIs. Local staging success is therefore
+observably distinct from remote acceptance in this scenario, and the app remains readable after the
+permission change. This does not establish durable unknown-outcome recovery, post-negotiation query
+stall behavior, or every partial-replica/access-change case; T009/T012 retain those boundaries.
