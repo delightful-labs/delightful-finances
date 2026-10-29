@@ -100,6 +100,8 @@ submitted row and exact tag assignments using an explicit remote read. This retr
 may wait offline and can be cancelled; ordinary saves wait only for local persistence.
 No automatic physical-check matching, deletion or remote-acceptance claim is added.
 
+[013](../013-local-first-startup/spec.md), FR-007 and T012, requires recovery to preserve operation identity and recovery information across navigation/reload while leaving unrelated local work usable. The memory-only checkpoint above describes the historical implementation; durable recovery and its scoped states remain an investigation and design task. Narrow remote verification of an uncertain prior write remains valid; it must not become an ordinary-save or application-readiness prerequisite. This paragraph does not claim reload-safe recovery has been implemented or verified.
+
 The user approved moving the attached Check automatically with its transaction, preserving identity and enforcing old/new account authority. Exclusive-assignment and shared-reference edge cases remain deferred. No data reset, physical schema cleanup or legacy
 migration is executed. Production code no longer uses embedded check details; their
 writes and references are denied. Old persistence actors have been removed.

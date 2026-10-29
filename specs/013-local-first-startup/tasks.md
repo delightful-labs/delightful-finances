@@ -16,7 +16,7 @@ Items below intentionally mix implementation candidates and bounded investigatio
 - [x] T002 Reconcile constitution I and XState/testing memory with FR-001–007/016. Clarify locally
       known authorization, partial replicas, cold restarts, and remote nonresponse; retain online-only
       access administration and provider-operation boundaries. Present this focused docs change first.
-- [ ] T003 Reconcile `specs/006-multiple-workspaces/spec.md` and `plan.md`,
+- [x] T003 Reconcile `specs/006-multiple-workspaces/spec.md` and `plan.md`,
       `specs/008-actor-orchestration/contracts/workspace-integrity-report.md` and `fake-data.md`,
       and `specs/009-independent-checks/spec.md` using the research conflict inventory. Mark historical
       descriptions clearly; add cross-references rather than claiming pending changes already work.

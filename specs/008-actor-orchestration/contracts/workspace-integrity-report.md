@@ -3,6 +3,10 @@
 Status: implemented and verified. Source contracts are in `src/lib/workspace-integrity-contract.ts`;
 the resource owner is `src/lib/machines/workspace-integrity-owner.ts`.
 
+## Local-first revision pending
+
+The table below records the historical contract, not the target finance eligibility policy. [013](../../013-local-first-startup/spec.md), FR-004/006, supersedes its blanket ineligibility descriptions for attribution-only checking, repair, or failure: those outcomes must not block unrelated locally permitted finance work. Required domain records and current locally known membership/grants still constrain each action. T007 must trace actual finance and bank consumers before changing this contract or operation-specific requirements. The revised behavior has not yet been implemented or verified; generation correlation and cleanup obligations below remain required.
+
 ## Requests and reports
 
 Readiness sends `OBSERVED` with a request containing a monotonically increasing generation and an

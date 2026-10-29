@@ -35,7 +35,7 @@ A user with access to multiple workspaces can select the intended workspace and 
 1. **Given** two accessible workspaces, **When** the user selects either, **Then** its name, accounts, categories, tags, transactions, and available actions correspond to that workspace alone.
 2. **Given** unfinished transaction input or a bank operation in workspace A, **When** the user switches to B, **Then** unfinished transaction input is discarded immediately without confirmation and is never submitted to B, no further provider requests start for A, and transient unlocked credentials are released. Already-issued writes retain their original target and are not described as undone.
 3. **Given** locally available workspace data, **When** the device is offline, **Then** selection, reads, and authorized local finance entry do not require remote confirmation.
-4. **Given** loading, failed queries, or observed access loss, **When** selection is evaluated, **Then** the app distinguishes those outcomes from a confirmed empty workspace and prevents actions based on stale access.
+4. **Given** loading, failed queries, or observed access loss, **When** selection is evaluated, **Then** the app distinguishes those outcomes from a confirmed empty workspace and prevents actions based on superseded observed access. Locally known membership and grants may permit ordinary work without remote freshness; see [013 local-first requirements](../013-local-first-startup/spec.md), FR-001–006.
 
 ### User Story 2 - Create a separate workspace (Priority: P2)
 
