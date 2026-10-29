@@ -577,3 +577,85 @@ fetches, POST documents, APIs and unsupported paths remain outside fallback. All
 verified (13 initially; two update cases after correcting fixture scope waits). This fixes the two
 T013 gaps for the tested build/Chromium scenarios without claiming all-workspace preparation or
 cross-build/browser compatibility. Implementation is committed as 5bb7225; test updates are separate.
+
+### T014 distinct-build asset availability probe
+
+An isolated Chromium context kept a controlled page open across two actual production builds at
+the same preview origin. The second build changed only a hidden marker in the isolated checkout's
+offline route, producing a different emitted module hash. No marker or probe code was added to the
+application checkout. The old tab stayed open; the new worker installed, then received the existing
+ACTIVATE_UPDATE message. HTTP cache was cleared through CDP and the context went offline before
+requesting the first build's emitted node modules with cache: no-store.
+
+Build versions were 1793298592153 and 1793298638128. The older node
+`/_app/immutable/nodes/13.QgGuLqE3.js` failed to fetch; all 18 unchanged node URLs returned HTTP 200.
+The new output instead contained `13.JXSaAu0R.js`. This establishes an old hashed-asset availability
+gap across real builds, not a completed user-level transaction navigation or draft-loss test.
+Cache names were sampled immediately after activation was requested, so the sample containing both
+names does not establish completed retention: activation deletes older caches asynchronously.
+
+Static implementation explains the gap: activation deletes every older shell cache and fetch
+handling accepts only the current build's public paths. Keeping an old cache without extending
+exact immutable-asset lookup would therefore be insufficient. A focused follow-up should preserve
+assets needed by live older clients, serve only exact same-origin hashed immutable requests from
+retained public caches, and reclaim obsolete generations when those clients no longer need them.
+Preserve explicit update consent and drafts; never broaden this to data/auth/API caching or a generic
+asset fallback. A fixed one-generation retention limit alone cannot cover a tab spanning multiple
+deployments. Review version ownership and cleanup before implementing the follow-up.
+
+Probe setup correction: Playwright waitForFunction with an async predicate was unsuitable for
+observing the waiting worker here. The completed run used expect.poll around page.evaluate, matching
+the existing PWA tests. Earlier attempts failed before activation and are not verification evidence.
+
+T026 disposition: deferred by user after scope review. No cache-retention, client-version protocol
+or new lookup machine will be implemented in this startup slice. The observed asset gap remains a
+known limitation; no failed user-navigation or draft-loss claim was established by this probe.
+
+### T009 cold restart with an open, unanswered remote transport
+
+A bounded production-browser probe passed against Jazz 2.0.0-alpha.59 in isolated Chromium.
+The production build used a disposable HTTP/WebSocket proxy at 127.0.0.1:6191 forwarding to the
+known in-memory agent backend at 127.0.0.1:61119. Both warm and cold runs used this same configured
+Jazz origin, preserving identity/registry scope. No cloud endpoint or user browser profile was used.
+
+Reproduction sequence:
+
+1. Build in the isolated checkout with PUBLIC_FAKE_DATA=false, PUBLIC_DEBUG=false,
+   PUBLIC_JAZZ_SERVER_URL=http://127.0.0.1:6191 and the existing disposable agent app ID. Serve
+   production output at 127.0.0.1:4183. Initially forward proxy HTTP and WebSocket traffic normally.
+2. In a newly created persistent Chromium profile, install/control the public shell, create a cash
+   account and an expense with amount 12.34, date 2026-03-10 and a recognizable description. Open
+   the saved detail to prepare its local data; retain its exact workspace-scoped URL.
+3. Clear only HTTP cache through CDP Network.clearBrowserCache, then close the persistent browser
+   context, exiting its browser and SharedWorker. Preserve Cache Storage, localStorage and IndexedDB.
+4. Change the proxy to accept incoming WebSocket upgrades with a valid HTTP 101 response and
+   Sec-WebSocket-Accept header, then consume incoming bytes without sending application frames.
+   Hold ordinary HTTP requests unanswered as well. The proxy does not contact the backend in this
+   mode. This external fixture covers the SDK's SharedWorker transport without relying on page routes.
+5. Relaunch the same profile with networking enabled, navigate to the original detail URL and
+   assert its document is served by the service worker, amount is 12.34 and navigator.onLine is true.
+   Change the amount to 42.13, explicitly save, assert Transaction saved, then reload and assert 42.13
+   remains. Assert no pageerror events. Close the browser and delete only the probe's temporary profile.
+
+All assertions passed. The silent proxy recorded two successful WebSocket upgrades and 2,314 bytes
+received from the client across cold startup/reload; it sent no Jazz application frames. No ordinary
+HTTP request reached its holding branch in this run. This establishes that available local detail
+data and a locally persisted edit remain usable during an open but unanswered WebSocket connection,
+including a fresh database runtime and reload, without relying on HTTP cache or browser offline mode.
+
+Limits: the fixture withholds the Jazz server hello, so this is stalled protocol negotiation rather
+than a fully negotiated Jazz session whose later query response stalls. The edit's remote acceptance
+was not checked. This is a bounded diagnostic probe, not yet a checked-in automated regression test;
+partial replicas, observed access changes, actual server rejection/recovery and a broader browser
+matrix remain separate T009 work. No production code change was needed for this scenario.
+
+Automated follow-up: `tests/startup-stalled-remote.e2e.ts` now reproduces this scenario without the
+diagnostic's pre-existing backend or manual mode change. Playwright fixtures own a fresh in-memory
+Jazz server initialized with the real schema and permissions, a silent proxy and a temporary profile.
+The cold phase asserts successful upgrades and client bytes, navigator online, saved detail values,
+local save confirmation and amount 42.13 after reload. Service-worker responses and no page errors
+are also asserted. The dedicated production suite passed (one test); test TypeScript and formatting
+checks passed. Its initial collection failure was a Node/Playwright #lib import-resolution issue,
+corrected by an explicit test-only paths mapping before the successful run. No production workaround
+or dependency change was introduced. This closes the diagnostic-only automation gap for this scenario;
+the other limits above remain.

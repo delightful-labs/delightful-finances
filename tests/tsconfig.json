@@ -2,5 +2,8 @@
 	"extends": "../tsconfig.json",
 	"include": ["./*.ts"],
 	"exclude": [],
-	"compilerOptions": { "noEmit": true }
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": { "#lib/*": ["../src/lib/*"] }
+	}
 }

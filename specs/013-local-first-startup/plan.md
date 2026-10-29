@@ -413,3 +413,32 @@ public offline shell and controlled online detail responses. Test TypeScript che
 These cases cover one production asset graph with simulated service-worker byte updates. They do
 not establish compatibility across two distinct application builds or every browser; those remaining
 T014/update-matrix scenarios are not marked complete.
+
+### T026 deferred: cross-build cache retention
+
+User deferred this work to keep the startup slice focused. The distinct-build probe remains useful
+asset-level evidence, but did not establish a failed user navigation. Do not implement client/build
+reporting, additional cache-lookup machines or retention changes in this slice. Existing activation
+and update consent remain unchanged. An older tab may lose access to a changed lazy module after
+activation; reloading into the current build is the recovery, potentially discarding unsaved edits.
+Revisit from a reproduced user workflow and storage/update measurements (T021), with a separately
+reviewed design. This deferral does not claim cross-build compatibility has been validated.
+
+### T009 repeatable silent-remote regression
+
+Run `pnpm exec playwright test --config playwright.startup.config.ts` in an isolated checkout with
+its own installed dependencies. The config builds production output with a fixed disposable Jazz
+proxy origin and serves the app on 127.0.0.1:4185. The test starts its own in-memory Jazz server on
+an available port, initializes the real schema/permissions and binds the proxy on 127.0.0.1:6193.
+Occupied ports fail rather than stopping an existing process. Playwright owns the preview lifetime;
+fixtures own the proxy/backend and temporary browser profile. No pre-existing agent backend needed.
+
+The proxy forwards during preparation, then completes WebSocket upgrades without sending Jazz
+frames. The test closes its browser before changing modes and launching the same profile online.
+It asserts client transport activity, service-worker document responses, local detail values,
+explicit save confirmation and persisted edits after reload. This is a stalled-negotiation test,
+not a post-server-hello query stall or a remote acceptance/rejection test.
+
+The suite is excluded from the ordinary dev-server config. Its explicit tests/tsconfig.json mapping
+lets Playwright resolve #lib/*.js imports to application TypeScript when initializing the backend's
+schema/permissions. It does not change application module resolution or SDK behavior.

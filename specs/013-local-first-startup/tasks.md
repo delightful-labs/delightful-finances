@@ -69,7 +69,13 @@ precede workflow code. Coverage changes follow review of the exact implementatio
       Progress: local startup, independent seeding and repair capability checks recorded above.
       Application observer callback delivery now covered for generic/tracked rejection notices,
       dismissal, retained workspace and unsubscribe; 48 application-readiness tests and type checks
-      pass. Actual remote rejection/recovery and general live-unresponsive/cold-start coverage remain.
+      pass. A bounded production probe now passes cold browser/SharedWorker restart, saved-detail
+      display, local edit/save and persisted reload with networking enabled and a proxy completing
+      WebSocket upgrades but sending no Jazz replies. See research.md for evidence and limits.
+      Automated follow-up: startup-stalled-remote.e2e.ts passes with an owned in-memory backend and
+      silent transport, including HTTP-cache removal and browser/SharedWorker exit. Test types pass.
+      Post-negotiation stalls and actual remote rejection/recovery remain; do not infer remote
+      acceptance from local success.
 
 ## Investigations informing later delivery
 
@@ -117,7 +123,8 @@ and a recommendation in `research.md`. Research does not automatically authorize
       Progress: pwa-cold-start.e2e.ts verifies emitted Wasm cache coverage and saved-account restart
       after browser/SharedWorker exit, preserving profile data with HTTP cache cleared. Dynamic
       detail links now verified for both expense/income records through T025. Real transitions
-      between distinct production asset graphs and broader browser coverage remain pending.
+      between distinct production asset graphs reproduced an old hashed-module availability gap;
+      see research.md and T026. Full update workflow and broader browser coverage remain pending.
 - [ ] T015 Measure startup and interaction baselines: first visit, warm return, cold offline restart,
       and update; representative small/large datasets and supported devices. Attribute shell, worker,
       Wasm, local query, readiness, result transformation, balance calculation, and render costs. Set
@@ -166,4 +173,8 @@ and a recommendation in `research.md`. Research does not automatically authorize
       Implementation committed as 5bb7225. Saved expense/income details survive browser-process exit
       and offline restart with HTTP cache cleared; original workspace/hash and local values remain.
       All 15 PWA cases verified (13 initially, two after canonical-scope fixture correction);
-      fallback-boundary, cache-scope and update-consent checks pass. Tests/research await commit.
+      fallback-boundary, cache-scope and update-consent checks pass. Tests committed as 0e5e1d6.
+- [ ] T026 **Deferred by user:** preserve older immutable assets across build activation. The probe
+      reproduced an asset-level failure, not a failed user navigation. Keep existing update behavior
+      for this slice; document the older-tab/reload limitation. Revisit with a concrete workflow and
+      T021 storage/update measurements before designing cache retention or client reporting.
