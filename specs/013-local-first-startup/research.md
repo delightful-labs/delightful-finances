@@ -569,3 +569,11 @@ network offline, and displayed the saved account. Existing public-cache-scope an
 cases also passed. The build was configured for the known disposable local agent backend only, so
 setup could create a new identity/workspace without cloud traffic. This establishes the tested cold
 static-route/runtime path; dynamic detail-link offline routing still requires T025.
+
+T025 post-fix evidence: the route-neutral shell passes cold offline saved-detail navigation for both
+expense and income with HTTP cache removed and browser process restarted. URL/workspace/hash and
+local field values are preserved; returned public HTML contains no finance payload. Non-navigation
+fetches, POST documents, APIs and unsupported paths remain outside fallback. All 15 PWA cases were
+verified (13 initially; two update cases after correcting fixture scope waits). This fixes the two
+T013 gaps for the tested build/Chromium scenarios without claiming all-workspace preparation or
+cross-build/browser compatibility. Implementation is committed as 5bb7225; test updates are separate.

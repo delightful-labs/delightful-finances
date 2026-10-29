@@ -344,8 +344,8 @@ detail documents remain unfixed; no claim is made that this static Accounts scen
 
 ## T025 — route-neutral offline detail shell
 
-Status: implementation ready for review; isolated application/service-worker type checks and
-production build pass. Browser/direct-link coverage awaits exact implementation approval.
+Status: implementation committed as 5bb7225; isolated build/type checks and focused PWA verification
+passed. Test/research follow-up remains uncommitted.
 
 Four implementation files: `src/service-worker/index.ts`, `src/routes/offline/+page.ts`,
 `src/routes/offline/+page.svelte`, and `vite.config.ts`. No Jazz, data, finance workflow, permission,
@@ -395,3 +395,21 @@ cache only, relaunch offline and verify correct route/component, workspace query
 Cover unknown paths and non-document fetches so APIs/data never receive the fallback shell. Rerun
 public-cache and update-consent cases. Keep missing-record/local-unavailability and actual
 cross-version compatibility claims separate from the successful shell-routing case.
+
+T025 browser verification: both expense and income cases create local records, warm their required
+detail data, clear HTTP cache, exit the persistent browser/SharedWorker process, relaunch the same
+profile offline and navigate directly to the original detail URL. Both display Transaction details
+with the original description, amount, date, workspace query and hash; offline reload also passes.
+The returned cached document contains no record description and the URL does not become /offline.
+Boundary checks confirm ordinary fetches, POST document navigation, API paths, malformed IDs, extra
+segments, uppercase route prefixes and unknown routes do not receive a generic shell.
+
+All 15 PWA cases were verified: 13 passed in the initial run, while two existing update/draft cases
+opened a form before canonical workspace/navigation scope settled and failed before their update
+assertions. Their fixture now awaits the scoped root and Accounts URLs before editing; both passed
+on targeted rerun, without a production workaround. Existing cache/update tests now include the
+public offline shell and controlled online detail responses. Test TypeScript checks pass.
+
+These cases cover one production asset graph with simulated service-worker byte updates. They do
+not establish compatibility across two distinct application builds or every browser; those remaining
+T014/update-matrix scenarios are not marked complete.

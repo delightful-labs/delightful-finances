@@ -108,3 +108,139 @@ test('reopens a saved account offline after the browser and database worker exit
 		await rm(profile, { recursive: true, force: true })
 	}
 })
+
+for (const direction of ['expenses', 'income']) {
+	test(`reopens saved ${direction} detail at its original URL after a cold offline restart`, async ({
+		playwright,
+		baseURL,
+		browserName
+	}) => {
+		test.skip(browserName !== 'chromium', 'HTTP-cache isolation uses Chromium CDP')
+		test.setTimeout(90_000)
+		if (!baseURL) throw new Error('Expected production preview URL')
+		const profile = await mkdtemp(join(tmpdir(), 'delightful-finance-cold-detail-'))
+		let current: BrowserContext | undefined
+		try {
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow'
+			})
+			const warm = current.pages()[0] ?? (await current.newPage())
+			await prepareShell(warm)
+			await openCreationModal(warm, 'Add Account')
+			const dialog = creationDialog(warm, 'Add Account')
+			await dialog.getByLabel('Account name').fill('Cold detail ledger')
+			await dialog.getByLabel('Account type').selectOption('cash')
+			await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+			await expect(dialog.getByRole('status')).toContainText('Cold detail ledger')
+			await closeCreationModal(warm)
+			const workspaceId = new URL(warm.url()).searchParams.get('workspace')
+			if (!workspaceId) throw new Error('Expected scoped workspace after startup')
+			await warm.goto(`/${direction}/new?workspace=${workspaceId}`)
+			await warm
+				.getByLabel('Account', { exact: true })
+				.selectOption({ label: 'Cold detail ledger · USD' })
+			await warm.getByLabel('Amount', { exact: true }).fill('12.34')
+			await warm.getByLabel('Date', { exact: true }).fill('2026-03-10')
+			const description = `Cold ${direction} detail`
+			await warm.getByLabel('Description', { exact: true }).fill(description)
+			await warm.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+			const link = warm
+				.getByRole('main')
+				.getByRole('link', { name: new RegExp(`Transaction details:.*${description}`) })
+			await expect(link).toBeVisible()
+			const href = await link.getAttribute('href')
+			if (!href) throw new Error('Expected saved detail URL')
+			const target = new URL(href, baseURL)
+			target.hash = 'details'
+			await warm.goto(target.href)
+			await expect(
+				warm.getByRole('heading', { name: 'Transaction details', exact: true })
+			).toBeVisible()
+			await expect(warm.getByLabel('Description', { exact: true })).toHaveValue(description)
+			const cdp = await current.newCDPSession(warm)
+			await cdp.send('Network.enable')
+			await cdp.send('Network.clearBrowserCache')
+			await current.close()
+			current = undefined
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow',
+				offline: true
+			})
+			const cold = current.pages()[0] ?? (await current.newPage())
+			const errors: string[] = []
+			cold.on('pageerror', (error) => errors.push(error.message))
+			const response = await cold.goto(target.href)
+			expect(response?.status()).toBe(200)
+			expect(response?.fromServiceWorker()).toBe(true)
+			expect(await response?.text()).not.toContain(description)
+			await expect(cold).toHaveURL(target.href)
+			await expect(
+				cold.getByRole('heading', { name: 'Transaction details', exact: true })
+			).toBeVisible({ timeout: 30000 })
+			await expect(cold.getByLabel('Description', { exact: true })).toHaveValue(description)
+			await expect(cold.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
+			await expect(cold.getByLabel('Date', { exact: true })).toHaveValue('2026-03-10')
+			expect(new URL(cold.url()).searchParams.get('workspace')).toBe(workspaceId)
+			const reload = await cold.reload()
+			expect(reload?.fromServiceWorker()).toBe(true)
+			await expect(cold.getByLabel('Description', { exact: true })).toHaveValue(description)
+			expect(errors).toEqual([])
+		} finally {
+			await current?.close()
+			await rm(profile, { recursive: true, force: true })
+		}
+	})
+}
+
+test('detail fallback excludes fetches, POST documents, APIs and unsupported paths', async ({
+	page,
+	context
+}) => {
+	await prepareShell(page)
+	const cdp = await context.newCDPSession(page)
+	await cdp.send('Network.enable')
+	await cdp.send('Network.setCacheDisabled', { cacheDisabled: true })
+	await context.setOffline(true)
+	const id = '11111111-1111-4111-8111-111111111111'
+	const detail = `/expenses/${id}`
+	for (const path of [detail, '/api/simplefin']) {
+		const result = await page.evaluate(async (path) => {
+			try {
+				const response = await fetch(path, { cache: 'no-store' })
+				return { failed: false, status: response.status }
+			} catch {
+				return { failed: true }
+			}
+		}, path)
+		expect(result.failed).toBe(true)
+	}
+	for (const path of [
+		'/unknown-offline-route',
+		'/api/simplefin',
+		'/expenses/not-a-uuid',
+		`${detail}/extra`,
+		`/EXPENSES/${id}`
+	]) {
+		const document = await context.newPage()
+		try {
+			await expect(document.goto(new URL(path, page.url()).href)).rejects.toThrow(
+				/ERR_INTERNET_DISCONNECTED/
+			)
+		} finally {
+			await document.close()
+		}
+	}
+	const failedPost = page.waitForEvent('requestfailed', {
+		predicate: (request) => request.isNavigationRequest() && request.method() === 'POST'
+	})
+	await page.evaluate((path) => {
+		const form = document.createElement('form')
+		form.method = 'POST'
+		form.action = path
+		document.body.append(form)
+		form.submit()
+	}, detail)
+	expect((await failedPost).failure()?.errorText).toContain('ERR_INTERNET_DISCONNECTED')
+})

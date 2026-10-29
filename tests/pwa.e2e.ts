@@ -17,6 +17,8 @@ test.beforeEach(async ({ page }) => {
 	await expect(
 		page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 	).toBeVisible()
+	// Update/draft scenarios begin after the local workspace scope has settled.
+	await expect(page).toHaveURL(/\/\?workspace=[a-f0-9-]+$/)
 })
 
 test('loads an unvisited page and reloads its shell offline', async ({ page, context }) => {
@@ -54,7 +56,7 @@ test('caches only same-origin public shells and build assets', async ({ page }) 
 		const url = new URL(path)
 		expect(url.origin).toBe(new URL(page.url()).origin)
 		expect(url.pathname).toMatch(
-			/^\/(?:$|_app\/immutable\/|app-icon\.svg$|favicon\.svg$|settings\/(?:categories|tags|workspace|banks)$|robots\.txt$|manifest\.webmanifest$|accounts$|account$|expenses(?:\/new)?$|income(?:\/new)?$|transfers\/new$|login$)/
+			/^\/(?:$|_app\/immutable\/|app-icon\.svg$|favicon\.svg$|settings\/(?:categories|tags|workspace|banks)$|robots\.txt$|manifest\.webmanifest$|offline$|accounts$|account$|expenses(?:\/new)?$|income(?:\/new)?$|transfers\/new$|login$)/
 		)
 	}
 })
@@ -130,8 +132,8 @@ test('serves a saved transaction detail directly and after reload in production'
 	if (!href) throw new Error('Expected a transaction detail link.')
 	const response = await page.goto(href)
 	expect(response?.status()).toBe(200)
-	expect(response?.fromServiceWorker()).toBe(false)
-	// The dynamic server response contains the public startup shell, not account data.
+	expect(response?.fromServiceWorker()).toBe(true)
+	// A controlled detail navigation receives the route-neutral public shell, not account data.
 	expect(await response?.text()).not.toContain('Production detail verification')
 	await expect(
 		page.getByRole('heading', { name: 'Transaction details', exact: true })
@@ -340,6 +342,8 @@ test('accepting an update reloads once, retains saved data, and does not check u
 	page
 }) => {
 	await navigateSidebar(page, 'Accounts')
+	await expect(page).toHaveURL(/\/accounts\?workspace=[a-f0-9-]+$/)
+	await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
 	await openCreationModal(page, 'Add Account')
 	await creationDialog(page, 'Add Account')
 		.getByLabel('Account name')
@@ -419,6 +423,8 @@ test('acceptance in one tab offers reload in the other without replacing its dra
 	context
 }) => {
 	await navigateSidebar(page, 'Accounts')
+	await expect(page).toHaveURL(/\/accounts\?workspace=[a-f0-9-]+$/)
+	await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
 	await openCreationModal(page, 'Add Account')
 	await creationDialog(page, 'Add Account')
 		.getByLabel('Account name')

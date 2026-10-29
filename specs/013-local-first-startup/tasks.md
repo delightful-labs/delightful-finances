@@ -116,7 +116,8 @@ and a recommendation in `research.md`. Research does not automatically authorize
       retaining application Cache Storage/IndexedDB, supported direct links, and update version cases.
       Progress: pwa-cold-start.e2e.ts verifies emitted Wasm cache coverage and saved-account restart
       after browser/SharedWorker exit, preserving profile data with HTTP cache cleared. Dynamic
-      detail-link and version-transition scenarios remain pending T025 and subsequent review.
+      detail links now verified for both expense/income records through T025. Real transitions
+      between distinct production asset graphs and broader browser coverage remain pending.
 - [ ] T015 Measure startup and interaction baselines: first visit, warm return, cold offline restart,
       and update; representative small/large datasets and supported devices. Attribute shell, worker,
       Wasm, local query, readiness, result transformation, balance calculation, and render costs. Set
@@ -159,9 +160,10 @@ and a recommendation in `research.md`. Research does not automatically authorize
       Precache contains worker-local Wasm; a saved account survives browser-process exit and offline
       restart with HTTP cache cleared. Public-only caching and update consent remain covered.
       Additional 19.3 MB install asset documented. See plan.md, T013 fix A.
-- [ ] T025 Map supported dynamic finance-detail document navigations to the corresponding cached
+- [x] T025 Map supported dynamic finance-detail document navigations to the corresponding cached
       public shell without caching data/auth/API responses. Review route matching and file scope
       separately; then extend T014 cold restart/direct-link coverage.
-      Four-file implementation ready for review: client-routed public /offline shell, absolute
-      asset URLs, and narrow same-origin GET detail-document mapping. Isolated build/type checks
-      pass; actual saved-detail cold/offline browser verification follows implementation approval.
+      Implementation committed as 5bb7225. Saved expense/income details survive browser-process exit
+      and offline restart with HTTP cache cleared; original workspace/hash and local values remain.
+      All 15 PWA cases verified (13 initially, two after canonical-scope fixture correction);
+      fallback-boundary, cache-scope and update-consent checks pass. Tests/research await commit.
