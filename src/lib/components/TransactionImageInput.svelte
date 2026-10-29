@@ -2,7 +2,7 @@
 	import { onMount, tick, untrack, type Snippet } from 'svelte'
 	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
-	import { Button, Dialog, InputAvatar, StatusMessage } from 'delightful-ui'
+	import { Button, Dialog, InputImages, StatusMessage } from 'delightful-ui'
 	import {
 		transactionImageSelectionMachine,
 		transactionImageSelectionPresentation
@@ -57,7 +57,7 @@
 	})
 </script>
 
-<InputAvatar
+<InputImages
 	label={m['actions.add_subject']({ subject: m['nouns.image']({ count: 2 }) })}
 	uploadLabel={m['actions.select_subject']({ subject: m['nouns.image']({ count: 2 }) })}
 	infoLabel={m['labels.subject_details']({ subject: m['nouns.image']({ count: 1 }) })}
@@ -65,11 +65,7 @@
 	{id}
 	name="attachments"
 	accept="image/jpeg,image/png,image/webp"
-	multiple
-	bind:value={
-		() => selection.files,
-		(value) => send({ type: 'SELECT', files: Array.isArray(value) ? value : value ? [value] : [] })
-	}
+	bind:value={() => selection.files, (files) => send({ type: 'SELECT', files })}
 	disabled={!selection.canSelect}
 	aria-invalid={invalid || undefined}
 	aria-describedby={describedby}
@@ -87,7 +83,7 @@
 			>{m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}</Button
 		>
 	{/snippet}
-</InputAvatar>
+</InputImages>
 {#if selection.error}
 	<StatusMessage
 		variant="error"

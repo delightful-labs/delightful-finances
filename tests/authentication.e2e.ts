@@ -285,6 +285,9 @@ function avatarPreview(page: Page) {
 async function waitForAvatar(page: Page, width: number, height: number) {
 	const image = avatarPreview(page)
 	await expect(image).toBeVisible()
+	const input = page.getByLabel('Avatar', { exact: true })
+	await expect(input).not.toHaveAttribute('multiple')
+	expect(await input.boundingBox()).toEqual(await image.boundingBox())
 	await expect
 		.poll(() =>
 			image.evaluate((element: HTMLImageElement) => [element.naturalWidth, element.naturalHeight])
