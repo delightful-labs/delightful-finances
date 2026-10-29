@@ -197,6 +197,64 @@ describe('application readiness supervision', () => {
 		expect(release).toHaveBeenCalledOnce()
 	})
 
+	it.each([false, true])(
+		'handles the registered SDK rejection callback with transfer tracking=%s',
+		(tracked) => {
+			const release = vi.fn()
+			const onMutationError = vi.fn<MutationErrorDb['onMutationError']>(() => release)
+			const current = session({ onMutationError })
+			const actor = start(async () => current.value, current.value)
+			const workspace = attach(actor)
+			if (tracked)
+				actor.send({
+					type: 'TRANSFER_WRITE_TRACKED',
+					write: {
+						transactionId: 'callback-write',
+						operation: 'link',
+						transferId: 'callback-transfer'
+					}
+				})
+			const listener = onMutationError.mock.calls[0]?.[0]
+			if (!listener) throw new Error('Expected SDK mutation rejection subscription')
+			// Invoke the native callback with a wire-shaped fixture; SDK transaction IDs are nominal.
+			Reflect.apply(listener, undefined, [
+				{
+					code: 'permission-denied',
+					reason: 'Synthetic private server detail',
+					transaction: {
+						transactionId: 'callback-write',
+						kind: 'mergeable',
+						sealed: true,
+						latestSettlement: {
+							kind: 'rejected',
+							transactionId: 'callback-write',
+							code: 'permission-denied',
+							reason: 'Synthetic private server detail'
+						}
+					}
+				}
+			])
+			expect(actor.getSnapshot().context.mutationNotice).toEqual(
+				tracked
+					? {
+							kind: 'transfer',
+							transactionId: 'callback-write',
+							operation: 'link',
+							transferId: 'callback-transfer'
+						}
+					: { kind: 'generic', transactionId: 'callback-write' }
+			)
+			expect(actor.getSnapshot().context.workspace).toBe(workspace)
+			expect(actor.getSnapshot().status).toBe('active')
+			actor.send({ type: 'DISMISS_MUTATION_REJECTION' })
+			expect(actor.getSnapshot().context.mutationNotice).toBeUndefined()
+			actor.send({ type: 'SHUTDOWN' })
+			control(workspace).close()
+			expect(release).toHaveBeenCalledOnce()
+			expect(actor.getSnapshot().status).toBe('done')
+		}
+	)
+
 	it('uses a generic notice for evicted and post-restart transfer rejections', () => {
 		const current = session()
 		const actor = start(async () => current.value, current.value)

@@ -5,6 +5,7 @@ import adapter from '@sveltejs/adapter-auto'
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import svg from '@poppanator/sveltekit-svg'
 import { jazzSvelteKit } from 'jazz-tools/dev/sveltekit'
+import { workerAssetsManifest } from './tooling/worker-assets-manifest.js'
 
 const previewing = process.env.FINANCE_PREVIEW === 'true'
 
@@ -14,6 +15,7 @@ export default defineConfig({
 	// Vendored DUI updates must be loaded from the current package, not a cached bundle.
 	optimizeDeps: { exclude: ['delightful-ui'] },
 	plugins: [
+		workerAssetsManifest(),
 		{
 			name: 'finance-debug-default',
 			config(config, { command, mode }) {

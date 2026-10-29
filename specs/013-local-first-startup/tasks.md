@@ -56,13 +56,20 @@ precede workflow code. Coverage changes follow review of the exact implementatio
       Consumer audit and design approved. Readiness now accepts explicit Sync Now through current
       bank access instead of repair results; contract updated. Implementation approved and verified:
       85 unit tests, application/test type checks, and four focused bank/readiness browser cases pass.
-- [ ] T008 Audit ordinary writes in `src/lib/data.ts` and persistence machines for local completion
+- [x] T008 Audit ordinary writes in `src/lib/data.ts` and persistence machines for local completion
       and late rejection handling. Fix only verified remote gates in a focused slice; preserve existing
       local waits, immutable operation IDs, and state ownership. Do not refactor working paths wholesale.
+      Static audit recorded in research.md: no ordinary remote completion gate found. Preserved
+      local settlement, stable IDs, late-rejection observer, and narrow uncertain-write recovery.
+      No production changes or new test execution in this audit; T009/T012 evidence remains pending.
 - [ ] T009 After each preceding implementation approval, update affected unit fixtures/assertions
       (initialization/readiness/integrity/seeding/save recovery as applicable) and Playwright coverage
       in `tests/offline-access.e2e.ts`/`tests/pwa.e2e.ts`; run only relevant checks in an isolated setup.
       Include a connection that opens but never returns data, not only browser offline mode.
+      Progress: local startup, independent seeding and repair capability checks recorded above.
+      Application observer callback delivery now covered for generic/tracked rejection notices,
+      dismissal, retained workspace and unsubscribe; 48 application-readiness tests and type checks
+      pass. Actual remote rejection/recovery and general live-unresponsive/cold-start coverage remain.
 
 ## Investigations informing later delivery
 
@@ -75,20 +82,41 @@ and a recommendation in `research.md`. Research does not automatically authorize
       an offline-safe protocol retaining stable IDs, concurrent-device safety, and no membership
       resurrection. If provenance cannot be distinguished reliably, report the SDK limitation and
       present alternatives; never infer newness from an empty cache. Present the statechart before code.
+      Investigation recorded in research.md: alpha.59 exposes no public durable automatic-identity
+      provenance result. SDK-supported handoff versus app-owned explicit identity flow requires
+      mechanism/design review; automatic offline bootstrap remains unimplemented.
 - [ ] T011 Investigate all-accessible-finance-record coverage under FR-010: active query scopes,
       relationship and offset completeness, subscriptions across workspaces, history volume,
       attachment metadata, on-demand file download/retention, storage/quota,
       and observable preparation progress. Propose background preparation without a local readiness gate.
+      Static scope audit recorded in research.md: selected-workspace warming is incomplete across
+      workspaces/relationships; list pagination is in memory; detail queries include attachment parts.
+      Metadata-only preparation design, coverage/transfer experiments, memory/quota and retention
+      evidence remain pending. No preparation or completeness guarantee implemented.
+      Runtime probe: a never-opened shared workspace had no local finance records after discovery;
+      metadata acquisition made link/file/transaction queryable without parts, then explicit parts
+      acquisition exposed bytes. Reproduction and limits recorded; cold persistence/transport/quota
+      and large-history evidence remain open.
 - [ ] T012 Investigate unknown-outcome recovery in `transaction-save.ts` and staged Check/ledger
       persistence. Establish how pending recovery survives navigation/reload without replay or blocking
       unrelated work; determine which remote checks remain necessary and propose scoped states.
-- [ ] T013 Inspect a production build's manifest, cached shell paths, Jazz worker script/imports,
+      Audit recorded: checkpoints are form-local, cleared on scope/reset, and contain a live binding
+      object; direct serialization is unsafe. Data-only journal/application ownership and write-ahead
+      review slices proposed. No durable recovery implemented; narrow remote reconciliation retained.
+- [x] T013 Inspect a production build's manifest, cached shell paths, Jazz worker script/imports,
       and Wasm URLs. Trace worker-originated fetches and query-version identity. Determine whether
       pathname normalization can serve incompatible bytes. Record specific missing assets/routing bugs.
       Build only in an isolated checkout if the user's development server is active.
+      Isolated build/runtime audit recorded: worker-local Wasm is emitted and requested but omitted
+      from precache; supported dynamic detail documents fail offline while static shells work.
+      Fixes and full cold-runtime validation remain pending review/T014. Default query identity
+      audited; no incompatible-byte response observed without overrides.
 - [ ] T014 After review of any T013 fixes, extend `tests/pwa.e2e.ts` to establish a genuine cold offline
       restart: all app clients closed, no surviving runtime, HTTP-cache masking eliminated while
       retaining application Cache Storage/IndexedDB, supported direct links, and update version cases.
+      Progress: pwa-cold-start.e2e.ts verifies emitted Wasm cache coverage and saved-account restart
+      after browser/SharedWorker exit, preserving profile data with HTTP cache cleared. Dynamic
+      detail-link and version-transition scenarios remain pending T025 and subsequent review.
 - [ ] T015 Measure startup and interaction baselines: first visit, warm return, cold offline restart,
       and update; representative small/large datasets and supported devices. Attribute shell, worker,
       Wasm, local query, readiness, result transformation, balance calculation, and render costs. Set
@@ -123,3 +151,14 @@ and a recommendation in `research.md`. Research does not automatically authorize
 - [ ] T023 Reconcile research, legacy specs, memory, and completion status after each delivery. Record
       measured results and limitations; distinguish completed research, implemented behavior, and
       validated guarantees. Do not mark this feature complete while approved investigations remain.
+
+## Reviewed runtime findings: focused fixes
+
+- [x] T024 Include emitted worker dependencies in the Vite client manifest used by SvelteKit precache.
+      Implementation approved; isolated build/type checks and four production browser checks pass.
+      Precache contains worker-local Wasm; a saved account survives browser-process exit and offline
+      restart with HTTP cache cleared. Public-only caching and update consent remain covered.
+      Additional 19.3 MB install asset documented. See plan.md, T013 fix A.
+- [ ] T025 Map supported dynamic finance-detail document navigations to the corresponding cached
+      public shell without caching data/auth/API responses. Review route matching and file scope
+      separately; then extend T014 cold restart/direct-link coverage.

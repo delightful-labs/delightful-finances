@@ -296,3 +296,48 @@ failed-history reload without machine errors or provider requests. The history f
 the canonical workspace URL instead of a removed selector and checks both drawer/page Sync Now
 buttons under the single main landmark. The first three browser cases passed initially; the history
 case passed after its stale single-button locator was corrected.
+
+## T013 fix A — include emitted worker dependencies in precache
+
+Status: implementation approved; isolated build/type checks and four focused production browser
+checks pass.
+
+Implementation scope: `tooling/worker-assets-manifest.ts` and `vite.config.ts`. No service-worker
+runtime, Jazz loader/session, schema, localized messages or update lifecycle changes.
+
+Build sequence: Vite emits client/worker outputs and its client manifest → a client-only post-order
+`generateBundle` hook adds otherwise-unlisted emitted worker assets to that manifest → SvelteKit
+collects immutable paths → existing service-worker code precaches those paths. The plugin validates
+the manifest and preserves existing fields; it uses emitted filenames under SvelteKit's immutable
+worker directory, excludes source maps, and never hardcodes content hashes or reads a stale build
+folder. It fails the build if the required client manifest is absent. This is a synchronous build
+output transformation, not an async workflow or runtime actor change.
+
+The installed SvelteKit build reads the completed Vite client manifest and collects each entry's
+file/assets/css fields. Vite emits the nested worker Wasm but omits it from that manifest. A standard
+file-only manifest entry lets SvelteKit include it without modifying framework internals, overriding
+runtime assets, or introducing a second fetch/cache implementation.
+
+Verification in the isolated worktree: application/Svelte and service-worker type checks pass;
+production build succeeds; generated client manifest adds exactly
+`_app/immutable/workers/assets/jazz_wasm_bg-ayzBUhbu.wasm` in this build; generated service-worker
+precache now lists both required Wasm URLs. The running development checkout was not rebuilt.
+
+Cost: this correctness fix adds the missing 19,342,148-byte asset to installation, alongside an
+existing identical root Wasm copy. It does not claim reduced startup time or download/storage
+usage. Avoiding that duplication needs a separate measured build/loader/cache design; do not infer
+that distinct cache keys share quota or that requesting identical bytes avoids another transfer.
+
+After review, validate actual Cache Storage coverage and cold worker/Wasm startup with HTTP cache
+masking removed. Keep update consent and public-only cache behavior covered. Dynamic finance detail
+navigation remains separate fix B; this manifest correction alone does not fix offline detail URLs.
+
+T024 verification: `tests/pwa-cold-start.e2e.ts` is included in the PWA configuration. It checks
+that all emitted Wasm URLs are in Cache Storage and serve valid Wasm offline with HTTP cache
+disabled. Its persistent-profile case creates an account online, clears HTTP cache, exits the
+browser process, relaunches the profile offline, and verifies the saved account through the cached
+Accounts shell. These two cases plus existing public-cache-scope and update-consent cases all passed
+in the isolated worktree (four tests). Test TypeScript checks passed; app/service-worker type checks
+and build had already passed for the unchanged plugin. The production build used only the known
+disposable agent backend for setup; no cloud backend or existing browser profile was used. Dynamic
+detail documents remain unfixed; no claim is made that this static Accounts scenario covers them.
