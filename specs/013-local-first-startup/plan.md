@@ -453,3 +453,71 @@ observer rather than a synthetic callback. Assertions cover notice delivery/dism
 workspace/read access, disabled write controls, unchanged server amount/membership and accepted
 12.34 after reload. Both focused cases pass; no production code change was necessary. This covers
 a known rejected outcome, not T012's durable recovery of an unknown outcome across interruption.
+
+### T011 next review: fixed preparation queries, measured before adoption
+
+The earlier per-workspace-child recommendation is not required by the query model. The installed
+SDK can subscribe to a whole table under the current user's permissions. Candidate preparation
+can therefore use a fixed dataset set across all accessible workspaces rather than multiplying
+actors/subscriptions by workspace count. This is a proposal, not implemented coverage.
+
+Candidate datasets: organizations, profiles, organizationMembers, accountMemberships, accounts,
+categories, tags, transactions (including audit fields), transactionTags, checks, internalTransfers,
+transactionBatches, batchTemplates, transactionAttachments, files, simplefinConnections and
+simplefinAccountLinks. Preserve all server policies, archived references and unrestricted history
+within those policies. File metadata queries never include parts. Exclude fileParts, uploads and
+legacy checkDetails; do not unlock encrypted credentials or make provider requests. Separate roots
+for attachments/files avoid using transactionDetailQuery, which includes file contents today.
+
+Before selecting this design, use a bounded isolated-browser experiment to establish:
+
+1. Whole-table queries acquire the same permitted rows/relationships as scoped queries for a
+   never-opened workspace, including selected grants and read-only users. Verify the exact files
+   root permission predicate rather than extrapolating from the earlier included-file probe.
+2. Metadata remains queryable after subscription release and browser/SharedWorker restart while
+   file content remains unavailable until explicitly requested. Do not infer durability from a
+   warm query or infer physical byte eviction from query visibility.
+3. Compare retained subscriptions with one-shot acquisition on controlled small/large histories and
+   multiple workspaces. Record initial acquisition, callback sizes/frequency during one ordinary
+   edit, page JS heap and responsiveness. Report page/worker measurement boundaries separately.
+   The public subscribe method materializes full result arrays on each update; its incremental
+   subscribeDelta method is private. Keeping only counts in app context does not avoid that copy.
+   Counts/heap from Node fixtures are not measurements of the browser page.
+
+Proposed ownership/state model if those checks support retained subscriptions:
+
+- Root layout integration mounts preparation alongside WorkspaceBootstrap inside the existing
+  session attachment key. It owns typed SDK subscriptions; selected workspace/navigation/provenance
+  do not determine preparation lifetime. No application worker or change to the main render path.
+- A focused machine owns a session/database generation: waitingForSession -> observing -> released.
+  Observing invokes fixed dataset children; replacement/shutdown releases subscriptions before
+  retiring the generation. Releasing has synchronous platform unsubscribe cleanup, not a domain
+  write/commit operation. Every callback is scoped to its binding generation.
+- Each dataset has starting -> observing, with a terminal subscription error -> failed. Other
+  datasets stay active on a sibling failure; retry replaces only the failed subscription. Failure
+  to acquire a subscription releases any resource already acquired. No timers infer connectivity,
+  remote absence or completeness. Local empty delivery does not mean remotely prepared.
+- Do not store entire result arrays in machine context or add a second collection cache. Do not
+  publish ready/complete from local callbacks. Public preparation status/UI and remote checkpoint
+  semantics require a later review; page readiness and ordinary saves never wait for this owner.
+
+Limit the first runtime implementation review to the root integration, one focused preparation
+integration, its machine and a typed dataset definition (approximately four files), after the
+experiment selects a viable acquisition policy. Assess unit lifecycle/failure tests and Playwright
+never-opened-workspace, authorization, metadata/content and cold-restart coverage at that review.
+No production preparation code or tests have been added for this proposal.
+
+T011 experiment disposition: do not adopt the candidate yet. A minimal browser reproduction found
+that files/attachment links and explicitly requested parts were readable even when their parent
+transaction was filtered by selected-account authorization. The attachment allowRead predicate
+checks existence rather than parent readability. T027 is the next focused repair: one predicate in
+permissions.ts, followed by reviewed unit/browser regressions. Details and fixture limits are in
+research.md. The large-history/cold-persistence experiment remains unfinished; no performance
+budget or live-subscription policy was selected from these incomplete runs.
+
+T027 disposition: the proposed allowedTo.read('transaction') predicate failed permission
+publication on Jazz alpha.59. The converted files read policy referenced accountId on
+transactionAttachments, which has no such column. The user rejected proceeding with an unsupported
+Jazz rule. The predicate and its newly added tests were reverted; no repair or deployment occurred.
+The existing authorization gap remains documented. Broad preparation remains paused until a
+supported permission design or SDK correction is established and reviewed.

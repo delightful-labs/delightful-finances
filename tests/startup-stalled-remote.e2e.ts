@@ -153,6 +153,39 @@ test('cold local reads and saves work while an open remote connection never answ
 	}
 })
 
+test('local saves continue when a fully negotiated connection stops answering', async ({
+	playwright,
+	baseURL,
+	remote,
+	authority,
+	profile
+}) => {
+	if (!baseURL) throw new Error('Expected production preview URL')
+	const context = await playwright.chromium.launchPersistentContext(profile, { baseURL })
+	try {
+		const page = context.pages()[0] ?? (await context.newPage())
+		const { transactionId } = await prepareSavedExpense(page)
+		const query = app.transactions.where({ id: transactionId })
+		await expect
+			.poll(async () => (await authority.one(query, { tier: 'remote' }))?.amountMinor)
+			.toBe(1234)
+		remote.pauseEstablished()
+		await page.getByLabel('Amount', { exact: true }).fill('42.13')
+		await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+		await expect(
+			page.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
+		).toBeVisible()
+		expect((await authority.one(query, { tier: 'remote' }))?.amountMinor).toBe(1234)
+		expect(await page.evaluate(() => navigator.onLine)).toBe(true)
+		remote.resume()
+		await expect
+			.poll(async () => (await authority.one(query, { tier: 'remote' }))?.amountMinor)
+			.toBe(4213)
+	} finally {
+		await context.close()
+	}
+})
+
 test('reports a real server rejection after a locally successful save with stale write access', async ({
 	playwright,
 	baseURL,

@@ -685,3 +685,235 @@ checks pass. The checked-in test setup uses only public SDK APIs. Local staging 
 observably distinct from remote acceptance in this scenario, and the app remains readable after the
 permission change. This does not establish durable unknown-outcome recovery, post-negotiation query
 stall behavior, or every partial-replica/access-change case; T009/T012 retain those boundaries.
+
+### T011 follow-up: simpler query topology and its remaining cost
+
+Static inspection of alpha.59 Db.subscribe confirms its public callback is adapted from an
+internal delta callback by passing update.all. The declarations mark subscribeDelta private;
+preparation cannot assume a supported counts-only or incremental public subscription. Discarding
+rows in the callback avoids retaining another app copy, but does not prevent full-result
+materialization/delivery. Performance evidence is therefore needed before mounting global live
+queries across the entire accessible history.
+
+The schema's organization-scoped read predicates also mean separate per-workspace actors are not
+intrinsically necessary: a fixed query per readable table is a simpler candidate. Files and attachment
+links have relationship-based read predicates, so test their exact root queries as part of the
+coverage experiment. The existing runtime metadata probe used an included file, not that full set.
+Plan.md now records this candidate, its session-bound lifecycle and the pre-adoption experiments.
+No coverage, durability or performance guarantee follows from this static simplification alone.
+
+### T011 bounded experiment: authorization failure blocks preparation adoption
+
+Environment: isolated checkout, agent dev server 127.0.0.1:5188, two fresh persistent Chromium
+profiles, the owned in-memory Jazz backend/proxy fixtures from startup-stalled-remote.e2e.ts,
+Jazz alpha.59 and real application schema/permissions. No production preparation code was added.
+Queries ran under each browser's own local-first identity; only fixture creation used a separate
+backend-authenticated Node session. No backend credential was passed to either browser.
+
+The performance experiment stopped on an authorization assertion. A subsequent four-transaction
+reproduction isolated the finding for both users, including a user who was not organization.ownerId.
+
+Reproduction:
+
+1. Initialize two independent identities in their own Accounts pages; never open the shared
+   workspaces' finance pages. Using the backend fixture, create two additional organizations,
+   each with two accounts, one category and two expenses, one expense per account.
+2. Give each user viewer/all membership in the first organization. Give each viewer/selected
+   membership plus a read grant for only the first account in the second organization. Keep the
+   second account archived; archiving does not remove its authorization requirement.
+3. Add file metadata, a four-byte part and an attachment link to a readable expense in the first
+   organization. Add a second set to the ungranted account's expense in the second organization,
+   using fileName denied.bin and synthetic bytes [5,6,7,8]. Await global acceptance of fixture writes.
+4. For each browser, obtain its own db through the existing development session module. Request
+   app.transactions and the denied transaction by ID at Remote. Request app.files and
+   app.transactionAttachments at Remote, then app.fileParts.where({ fileId: deniedFileId }) at Remote.
+
+Both identities produced the same result:
+
+| Observation | Result |
+| --- | --- |
+| Readable transactions | 3 of 4, as expected |
+| Denied transaction queried by ID | 0 rows, as expected |
+| File metadata | Both probe.bin and denied.bin; denied metadata should be absent |
+| Attachment links | Both links; denied link should be absent |
+| Parts for denied file | 1 row containing [5,6,7,8]; should be absent |
+
+This is an existing server-policy authorization gap, not merely an overbroad preparation result
+or stale browser replica: the profiles were fresh and the denied transaction itself was correctly
+filtered. Full table queries revealed it; the file part was then explicitly requested as part of
+the synthetic diagnostic. Do not claim background metadata queries alone downloaded those bytes.
+
+Static cause: transactionAttachments.allowRead currently uses
+policy.transactions.exists.where({ id: attachment.transactionId }). Existence does not enforce the
+referenced transaction's read policy. Files trust readable attachment links through
+allowedTo.readReferencing; fileParts in turn trust file read access. Candidate focused correction:
+transactionAttachments.allowRead.where(allowedTo.read('transaction')). This uses the existing
+declared relation and supported read-policy composition already used elsewhere in permissions.ts;
+it requires no schema, UI, lifecycle or readiness change. Do not mask it with a client-side filter.
+
+Before testing that correction, review the one-predicate implementation. Then extend the existing
+attachment permission tests with selected-account and unrelated-user negative reads for links,
+files and parts, retaining positive readable-parent and unlinked-file coverage. Re-run the minimal
+browser reproduction against the corrected server policy before resuming preparation measurements.
+Do not interpret later revocation as proof of erasure of previously downloaded bytes.
+
+Experiment setup notes: one early insert used id as a data column; corrected to the SDK's third
+insert options argument. The larger seed attempt also hit the actual serving-authority error
+"commit unit version count 9018 exceeds max 4096"; seeding per organization avoids that fixture
+limit. Neither failed setup attempt establishes a read limit. No completed 10,000-record comparison,
+heap/latency budget, whole-scope cold-persistence result or acquisition-policy recommendation was
+produced. The narrow authorization reproduction failed at its intended denial assertion, with both
+users' observed results recorded before the assertion. See T027; T011 remains incomplete.
+
+T027 compatibility result: the proposed predicate was rejected during permission publication on
+Jazz alpha.59 before any unit assertion executed. The error was: converted files read policy is
+invalid, UnknownColumn { table: transactionAttachments, column: accountId }. This establishes that
+this proposed composition does not work with the installed SDK/server; it does not establish that
+every possible permission design is unsupported. Per user direction, the predicate and new tests
+were reverted. No authorization repair shipped, and broad preparation remains paused. The browser
+reproduction was not rerun against the rejected rule.
+
+### T015 initial production startup baseline
+
+Production code at fdcf11b, isolated checkout and preview on 127.0.0.1:4185, headless Chromium,
+no CPU/network throttling, disposable in-memory Jazz behind the owned proxy. Three independent
+persistent browser profiles each supplied first-visit, warm-reload and cold-offline samples.
+PUBLIC_FAKE_DATA and PUBLIC_DEBUG were false. Numeric samples are in startup-baseline.json.
+
+| Scenario | Observed usable median (range), ms | Document response end median, ms | DOMContentLoaded median, ms | FCP median, ms |
+| --- | --- | --- | --- | --- |
+| First visit, empty workspace Accounts | 3747.6 (3325.4–4233.3) | 8.9 | 57.6 | 64 |
+| Warm saved expense detail reload | 2507.2 (2458.4–2652.6) | 3.1 | 20.7 | 72 |
+| Cold offline saved expense detail | 2780.8 (2231.8–2854.7) | 14.6 | 106.5 | 284 |
+
+Method: first visit waits for the canonical workspace Accounts URL and enabled Add Account action.
+Then create one cash account and a saved expense through the existing UI helper; open its detail.
+Warm measurement reloads that detail, then waits for its saved description and enabled amount field.
+Cold measurement clears HTTP cache, exits the persistent browser including SharedWorker, relaunches
+the same profile offline and visits the same detail URL, applying the same saved-value/control checks.
+Take Performance.now after those checks and a CDP metrics request. This includes automation/CDP
+overhead; it is an observed upper bound, not a precise first-interactive event or pure rendering cost.
+First-visit and returning cases have different data/targets and are not identical-workload comparisons.
+
+Navigation, paint and page resource entries were captured without production instrumentation. In
+sample one the page-visible Wasm response ended at 547.8 ms (first visit), 75.9 ms (warm) and 299.7 ms
+(cold offline). Those are resource-response timings, not Wasm compilation or database-ready timings.
+Worker-originated resources are not comprehensively represented by page ResourceTiming. CPU metrics
+were enabled after readiness, so do not use them to attribute startup CPU. No development timing is
+mixed into this production table. All nine usability observations passed.
+
+Recommendation: instrument/profile the session-open, local database/query and readiness-to-form
+boundaries next. The document/paint timings alone do not explain the seconds before usable local
+controls. This evidence does not identify Wasm compilation, Jazz opening, query work or application
+readiness as the dominant cause. Avoid choosing earlier downloads, application workers or numerical
+budgets from this small dataset. Large histories, update activation, supported devices, controlled
+network conditions, worker/CPU attribution and balance/render breakdown remain T015 work.
+
+### T015 session and actor timing attribution
+
+A second isolated production run used temporary performance marks at getOrCreateJazzSession's
+request/resolution boundary and the existing XState inspectActor callback. Only static machine IDs
+and finite state values were recorded; no contexts, financial values or credentials. The marks ran
+without opening Stately or changing actor ownership. All instrumentation was removed afterward.
+Three profiles supplied the same nine scenarios; raw state timings are in startup-profile.json.
+
+Median session-open duration was 373.6 ms on first visit, 111.1 ms on warm detail reload and
+167.3 ms on cold offline detail. This is the public session promise boundary, not proof that every
+later database query or form dependency has settled. In sample one, warm session readiness occurred
+at 159.8 ms, workspace membership readiness at 622.3 ms and transaction edit attachment at 686.3 ms;
+observed usable time was 2371.7 ms. Cold equivalents were 356.9, 879.0, 943.8 and 2659.2 ms.
+Initialization provenance settled later than membership in both cases, but the edit actor already
+attached before provenance settlement, consistent with the earlier decoupling change.
+
+A one-profile measurement check took timestamps before and after CDP collection. Returning-case
+overhead was 3.9 ms warm and 3.8 ms cold (27 ms first visit); it does not explain the observed gap.
+That run's pre-CDP usable readings were 1848.8 ms warm and 1996.7 ms cold, demonstrating material
+run-to-run variation without an application optimization. Do not present it as a performance gain.
+
+A final one-profile run added scoped-form/readiness state marks. It showed multiple availability
+awaiting/current transitions after transaction edit attachment (594.5 ms warm, 929.9 ms cold), with
+updates continuing near 1876.7/2195.4 ms before usable readings at 2314.6/2598.6 ms. Multiple scoped
+form actors share machine IDs, so these marks do not identify a single actor as responsible. The
+transitions themselves are brief; their repetition alone does not establish a bottleneck.
+
+Next focus: correlate individual query delivery and browser CPU/render work between session-ready
+and usable controls, including repeated observation/binding updates. These traces argue against
+attributing the entire delay to the public Jazz session-open promise. They do not yet distinguish
+database query cost, frame work, form dependency arrival and automation polling. No optimization,
+permanent diagnostics, numerical budget or SDK workaround was introduced. All focused runs passed.
+
+### T015 page CPU and direct form availability
+
+One further production profile used the same three scenarios and small fixture. CDP Profiler
+started before each measured navigation and stopped after the usability assertions. A temporary
+requestAnimationFrame probe marked the first frame observing the known synthetic saved description
+and an enabled amount input. Unlike the earlier automation-completion timestamps, that mark is
+inside the page; it still measures DOM state, not first paint or actual input latency. Source
+instrumentation was not required. Results are summarized in startup-cpu-profile.json.
+
+| Scenario | Form DOM enabled, ms | Automation capture, ms | Sampled Wasm self time, ms | Sampled idle, ms |
+| --- | --- | --- | --- | --- |
+| First visit, empty Accounts | Not applicable | 2770.0 | 976.5 | 1169.1 |
+| Warm saved detail | 2161.2 | 2648.0 | 947.4 | 1092.4 |
+| Cold offline saved detail | 2188.9 | 2642.1 | 936.7 | 1093.7 |
+
+The earlier automated readings overstate DOM availability by about 450–490 ms in these returning
+samples. They remain upper bounds; do not combine their medians with this single direct observation
+as if every run had the same delay. The form probe condition does not apply to the empty Accounts
+page. The CPU run passed all three scenario assertions.
+
+Page-target CPU samples include substantial execution in jazz_wasm_bg. Allocation/deallocation
+alone accounts for roughly 280 ms of returning sampled self time; other visible functions include
+maintained-view/query evaluation, query graph compilation, projection planning and record/string
+operations. This is execution evidence, not a measurement of Wasm download or compilation time.
+Approximately 0.94 s of sampled Wasm work in each returning profile makes query/runtime cost a useful
+next target. It does not prove which app query causes it, that subscriptions are duplicated, or that
+all allocation time belongs to query setup. Idle samples may include waits and test-driver gaps.
+
+Worker CPU was not profiled. The Performance counters accidentally read from a newly attached
+post-start session were near zero and are excluded from conclusions; the CPU sampling session was
+started before navigation. Profiling and frame probes have overhead, and one small-data profile
+cannot set a budget or establish total process CPU. Next: count/correlate query acquisition and
+updates through supported app integration boundaries, then test whether consolidating genuinely
+duplicate work reduces this measured cost. Do not patch SDK internals or change permission rules
+as a performance workaround. Temporary profiling code was removed; no optimization was shipped.
+
+## Consolidated open-item investigation
+
+The user subsequently authorized all remaining investigation/testing without per-slice review
+pauses. Current decisions and remaining feature work are in
+[investigation-results.md](investigation-results.md); that report supersedes earlier provisional
+status wording. New evidence is stored in browser-capabilities.json, worker-benchmark.json,
+runtime-cache-inventory.json, query-setup-profile.json, core-preparation-probe.json and
+cross-browser-cold.json. Historical measurements above remain tied to their stated environments.
+
+The negotiated-stall regression pauses both directions of an already established proxy connection
+after authoritative acceptance of a baseline record. A local edit completes while the authority
+still has the old value; reconnect then accepts the new value. It passed alongside real rejection,
+cold restarts and cache/update checks in the 18-case Chromium production run. The existing ten
+offline role/grant scenarios also passed. Firefox/WebKit core workflows supplied ten distinct
+passing cases; the Firefox cached-body protocol issue required the documented test-only adjustment.
+Two extra cold-runtime cases passed with the HTTP-cache limits recorded in the report.
+
+The large-history cold-query investigation **did not pass**. Warming the readable records and
+authorization facts did not establish coverage after browser exit with a silent remote; explicit
+LocalFirst still returned NotObserved. The online permitted counts and acquisition timings are
+recorded, but no all-workspace offline-preparation or byte-retention guarantee follows. The separate
+Firefox minimal routing fixture also failed to establish control; its fallback result is inconclusive
+and is not classified as an application failure. Actual Firefox app offline/update workflows passed.
+
+Primary API evidence: [WebAssembly serialization](https://webassembly.github.io/spec/web-api/) rejects
+module serialization for storage; [Service Worker routing](https://www.w3.org/TR/service-workers/)
+defines cache routing; [navigation-preload guidance](https://developer.chrome.com/docs/workbox/modules/workbox-navigation-preload)
+recommends against enabling it for precached HTML. Local browser probes and installed alpha.59 source
+were used to check applicability. No unsupported SDK override, provider fetch, permission workaround,
+worker migration or cache-retention implementation was added.
+
+Final consolidated checks: `pnpm check` passed in the restored isolated checkout with zero Svelte
+errors/warnings and service-worker TypeScript success. `tsc --project tests/tsconfig.json --noEmit`
+passed. Targeted test/artifact formatting and git diff whitespace checks passed. The seven unit
+suites passed 205 tests; 40 distinct browser workflow cases were verified across the production,
+offline-role, cross-browser and extra cold-runtime runs, with the stated Firefox rerun and WebKit
+cache limitation. The failing broad-preparation diagnostic remains explicitly unresolved rather
+than included in the passing workflow count. Temporary adapters/marks/configs and owned test servers
+were cleaned up. Changes are uncommitted; no deployment occurred.

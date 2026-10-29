@@ -102,7 +102,8 @@ test('a worker update waits without replacing or reloading the open page', async
 })
 
 test('serves a saved transaction detail directly and after reload in production', async ({
-	page
+	page,
+	browserName
 }) => {
 	await page.goto('/accounts')
 	await openCreationModal(page, 'Add Account')
@@ -134,7 +135,22 @@ test('serves a saved transaction detail directly and after reload in production'
 	expect(response?.status()).toBe(200)
 	expect(response?.fromServiceWorker()).toBe(true)
 	// A controlled detail navigation receives the route-neutral public shell, not account data.
-	expect(await response?.text()).not.toContain('Production detail verification')
+	// Firefox's protocol cannot read this cached response body (invalid content encoding).
+	// Check the mapped public shell in Cache Storage there; retain the wire-body check elsewhere.
+	const publicHtml =
+		browserName === 'firefox'
+			? await page.evaluate(async () => {
+					const names = (await caches.keys()).filter((name) =>
+						name.startsWith('delightful-finance-shell-')
+					)
+					for (const name of names) {
+						const shell = await (await caches.open(name)).match('/offline')
+						if (shell) return shell.text()
+					}
+					throw new Error('Missing cached public detail shell')
+				})
+			: await response?.text()
+	expect(publicHtml).not.toContain('Production detail verification')
 	await expect(
 		page.getByRole('heading', { name: 'Transaction details', exact: true })
 	).toBeVisible()

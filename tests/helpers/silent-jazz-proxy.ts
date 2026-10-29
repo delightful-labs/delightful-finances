@@ -7,6 +7,7 @@ import type { Duplex } from 'node:stream'
 export function createSilentJazzProxy(upstreamUrl: string) {
 	const upstream = new URL(upstreamUrl)
 	const sockets = new Set<Duplex>()
+	const upstreamSockets = new Set<Duplex>()
 	let mode: 'forward' | 'silent' = 'forward'
 	const observed = { opened: 0, clientBytes: 0, heldHttp: 0 }
 	const server = createServer((incoming, outgoing) => {
@@ -64,11 +65,18 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 			socket.pipe(remote)
 			remote.pipe(socket)
 		})
+		upstreamSockets.add(remote)
+		remote.on('close', () => upstreamSockets.delete(remote))
 		remote.on('error', () => socket.destroy())
 		socket.on('close', () => remote.destroy())
 	})
 	return {
 		observed,
+		pauseEstablished: () => {
+			mode = 'silent'
+			for (const socket of sockets) socket.pause()
+			for (const socket of upstreamSockets) socket.pause()
+		},
 		listen: () =>
 			new Promise<void>((resolve, reject) => {
 				server.once('error', reject)

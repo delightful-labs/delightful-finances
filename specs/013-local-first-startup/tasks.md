@@ -1,9 +1,10 @@
 # Draft backlog: Local-first usability and startup
 
-**Status**: Provisional specification backlog. Not generated implementation tasks; no `plan.md` yet.
-Resolve product questions and review statecharts/file scope before implementation. Work on one task
-at a time; show each change and wait for review. No tests added or run before implementation approval.
-Items below intentionally mix implementation candidates and bounded investigations as requested.
+**Status**: Implementation and consolidated investigation in progress; plan.md is present.
+The user's latest direction authorizes completing open investigations/tests without further review
+pauses. See [investigation-results.md](investigation-results.md) for the current evidence and decisions.
+The spec remains incomplete where required behavior is unbuilt or unsupported; investigations and
+rejected optimizations are not equivalent to delivery. Commit/deployment authorization is unchanged.
 
 ## Specification and guidance
 
@@ -62,7 +63,7 @@ precede workflow code. Coverage changes follow review of the exact implementatio
       Static audit recorded in research.md: no ordinary remote completion gate found. Preserved
       local settlement, stable IDs, late-rejection observer, and narrow uncertain-write recovery.
       No production changes or new test execution in this audit; T009/T012 evidence remains pending.
-- [ ] T009 After each preceding implementation approval, update affected unit fixtures/assertions
+- [x] T009 After each preceding implementation approval, update affected unit fixtures/assertions
       (initialization/readiness/integrity/seeding/save recovery as applicable) and Playwright coverage
       in `tests/offline-access.e2e.ts`/`tests/pwa.e2e.ts`; run only relevant checks in an isolated setup.
       Include a connection that opens but never returns data, not only browser offline mode.
@@ -106,6 +107,12 @@ and a recommendation in `research.md`. Research does not automatically authorize
       metadata acquisition made link/file/transaction queryable without parts, then explicit parts
       acquisition exposed bytes. Reproduction and limits recorded; cold persistence/transport/quota
       and large-history evidence remain open.
+      Next reviewed candidate: fixed permission-filtered whole-table queries rather than one actor
+      per workspace. Plan records dataset coverage, session-bound ownership and the bounded
+      coverage/durability/large-result experiment required before choosing the acquisition policy.
+      Experiment found an existing attachment authorization gap: two users could not read an
+      ungranted transaction but could read its linked metadata and explicitly requested file bytes.
+      Pause preparation adoption for T027. Large-history comparison and cold persistence remain open.
 - [ ] T012 Investigate unknown-outcome recovery in `transaction-save.ts` and staged Check/ledger
       persistence. Establish how pending recovery survives navigation/reload without replay or blocking
       unrelated work; determine which remote checks remain necessary and propose scoped states.
@@ -134,19 +141,29 @@ and a recommendation in `research.md`. Research does not automatically authorize
       performance budgets from evidence without delaying the first local-usability correction.
       Capture comparable pre-change evidence before modifying a measured path; the broader device
       matrix is not a prerequisite for correcting verified remote dependencies (approved Q3).
-- [ ] T016 Evaluate earlier page-owned initialization using `src/app.html`, `src/routes/+layout.svelte`,
+      Initial production baseline recorded in research.md/startup-baseline.json: three profiles,
+      first visit plus warm and cold-offline saved-detail usability. Next: session/query/readiness
+      attribution; large datasets/devices/update scenarios and budgets remain open.
+      Follow-up traces in startup-profile.json place returning session-open medians at 111/167 ms
+      (warm/cold), before later membership/form observation updates. CDP collection overhead checked.
+      Query delivery and browser CPU/render attribution remain unresolved; no optimization selected.
+      Page CPU follow-up captured roughly 0.94 s sampled Wasm work on returning detail startup;
+      direct enabled-form observations were approximately 2.16/2.19 s warm/cold in one profile.
+      See startup-cpu-profile.json. Query/runtime cost is the next target; duplicate work, worker
+      CPU, large histories and optimization benefit are not established by these samples.
+- [x] T016 Evaluate earlier page-owned initialization using `src/app.html`, `src/routes/+layout.svelte`,
       `src/lib/jazz-session.ts`, and `application-readiness.ts`. Establish earliest supported start,
       singleton ownership, cancellation/auth transitions, dependency payload, and measured overlap.
-- [ ] T017 Evaluate `InstallEvent.addRoutes()` for existing public precache paths: browser matrix,
+- [x] T017 Evaluate `InstallEvent.addRoutes()` for existing public precache paths: browser matrix,
       feature detection, cache key parity, cache misses, update lifecycle, and cold startup savings.
       Preserve fetch-handler fallback; adopt only with evidence of benefit and compatibility.
-- [ ] T018 Assess navigation preload only for navigation paths that actually need network HTML;
+- [x] T018 Assess navigation preload only for navigation paths that actually need network HTML;
       document why it is rejected for precached shell hits or identify a concrete beneficial case.
 - [ ] T019 Evaluate Wasm download/compilation preparation and supported `runtimeSources.wasmModule`
       reuse across page/broker realms. Inspect actual default and override loaders, stable asset scope,
       module persistence/message support, contention, and fallback. Compare elapsed startup and memory;
       do not assume a compiled module equals a running database or supported service-worker handoff.
-- [ ] T020 Profile application-worker candidates after accounting for Jazz's existing SharedWorker.
+- [x] T020 Profile application-worker candidates after accounting for Jazz's existing SharedWorker.
       Examine calculations/parsing/subscription transforms/rendering; define message payloads, explicit
       local-first defaults, supported database bridge, lifecycle and cancellation. Keep UI owners in the
       page. Do not migrate machines solely because they make asynchronous calls.
@@ -156,10 +173,10 @@ and a recommendation in `research.md`. Research does not automatically authorize
 
 ## Follow-through
 
-- [ ] T022 Turn accepted investigation outcomes into separately reviewed implementation slices and
+- [x] T022 Turn accepted investigation outcomes into separately reviewed implementation slices and
       appropriate tests after approval. Keep rejected/unproven ideas documented, with no implied
       always-running service worker, unsupported Jazz handoff, or automatic provider fetching.
-- [ ] T023 Reconcile research, legacy specs, memory, and completion status after each delivery. Record
+- [x] T023 Reconcile research, legacy specs, memory, and completion status after each delivery. Record
       measured results and limitations; distinguish completed research, implemented behavior, and
       validated guarantees. Do not mark this feature complete while approved investigations remain.
 
@@ -181,3 +198,20 @@ and a recommendation in `research.md`. Research does not automatically authorize
       reproduced an asset-level failure, not a failed user navigation. Keep existing update behavior
       for this slice; document the older-tab/reload limitation. Revisit with a concrete workflow and
       T021 storage/update measurements before designing cache retention or client reporting.
+- [ ] T027 Fix attachment read authorization before broad background preparation. The minimal
+      real-browser probe reproduced readable links/files/parts for an unreadable parent transaction.
+      Proposed one-predicate fix: require allowedTo.read('transaction') in transactionAttachments
+      allowRead instead of checking parent existence. Review implementation, then add focused
+      permission regression coverage and rerun the browser reproduction. Preserve readable-parent,
+      linked-file and account-grant semantics; no client-side filtering workaround.
+      Proposed predicate rejected by Jazz alpha.59 during permission publication (invalid generated
+      accountId reference on transactionAttachments). Implementation and its added tests reverted
+      per user direction. No repair shipped; broad preparation remains paused pending a supported fix.
+
+## Consolidated follow-through
+
+The current decisions are in investigation-results.md. T009 covers the implemented startup slice;
+T012 owns the remaining durable unknown-outcome work. T016/T017/T018/T020 are closed as evaluated
+and not adopted. T022/T023 record this batch's test follow-through and reconciliation, not feature
+completion. T010/T011/T012 remain unbuilt; T014/T015/T019/T021 retain the stated compatibility,
+measurement and storage limits. T026 stays deferred and T027 unresolved.

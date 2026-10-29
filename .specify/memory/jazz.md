@@ -32,6 +32,23 @@ The linked draft and backlog distinguish desired changes from current implementa
 optimizations. Preserve separately approved online-only sharing/permission administration and explicit
 bank-provider operations; those exceptions must not spread into ordinary local finance workflows.
 
+Consolidated spec 013 verification adds these boundaries (see
+[`investigation-results.md`](../../specs/013-local-first-startup/investigation-results.md)):
+
+- An online snapshot is not proof of cold query coverage. A never-opened shared-workspace probe
+  returned permitted rows online but encountered `NotObserved` after browser restart, including
+  with explicit LocalFirst and authorization-fact warming. Verify exact cold query shapes; do not
+  treat coverage failure as remote absence or proof of physical byte erasure.
+- A compiled WebAssembly.Module can be cloned in memory but cannot be stored in IndexedDB under
+  the current WebAssembly serialization rules. Chromium, Firefox and WebKit probes rejected it
+  with DataCloneError. Do not design a persistent compiled-module cache from older guidance.
+- The existing attachment read rule checks parent existence and has a reproduced authorization
+  gap. The proposed allowedTo.read('transaction') correction, composed through the files reverse
+  read inheritance, was rejected by alpha.59 with an invalid accountId reference on the attachment
+  table. It was reverted. This is a specific composition failure, not proof that every inherited
+  read predicate is unsupported. Broad attachment preparation remains blocked pending a supported
+  repair; do not hide the server-policy issue with a client-side filter.
+
 ## Reuse proven reference patterns; verify the exact predicate shape
 
 The Check implementation is a working precedent for validating a row's single foreign-key
