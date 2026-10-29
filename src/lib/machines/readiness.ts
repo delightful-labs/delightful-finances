@@ -149,6 +149,7 @@ export function createWorkspaceReadinessMachine({
 			bankAccessAllowed: undefined
 			navigationAlive: undefined
 			navigationReady: undefined
+			navigationCanUseWorkspace: undefined
 			navigationFailed: undefined
 			navigationDenied: undefined
 			invalidSelection: undefined
@@ -201,7 +202,11 @@ export function createWorkspaceReadinessMachine({
 					canManageBankCredentials(context.source.membership, context.source.organizationId ?? '')
 			]),
 			navigationAlive: ({ context }) => context.navigationActor?.getSnapshot().status === 'active',
-			navigationReady: stateIn({ active: { workspace: 'ready', session: 'ready' } }),
+			navigationReady: ({ context }) =>
+				context.sessionStatus === 'ready' && Boolean(context.source.userId),
+			navigationCanUseWorkspace: stateIn({
+				active: { session: 'ready', organization: 'ready', selection: 'selected' }
+			}),
 			navigationFailed: or([
 				stateIn({ active: { selection: 'failed' } }),
 				stateIn({ active: { organization: 'failed' } })
@@ -412,7 +417,7 @@ export function createWorkspaceReadinessMachine({
 					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'denied' })
 				},
 				{
-					guard: 'canUseWorkspace',
+					guard: 'navigationCanUseWorkspace',
 					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'ready' })
 				},
 				{
@@ -576,7 +581,7 @@ export function createWorkspaceReadinessMachine({
 										guard: ({ context }) => context.sessionStatus === 'transitioning',
 										target: 'transitioning'
 									},
-									{ guard: ({ context }) => Boolean(context.source.userId), target: 'ready' },
+									{ guard: 'navigationReady', target: 'ready' },
 									{ target: 'signedOut' }
 								]
 							},
@@ -660,7 +665,7 @@ export function createWorkspaceReadinessMachine({
 						states: {
 							checking: {
 								always: [
-									{ guard: 'workspaceReady', target: 'checkingQuery' },
+									{ guard: 'navigationReady', target: 'checkingQuery' },
 									{ target: 'waiting' }
 								]
 							},
@@ -886,9 +891,7 @@ export type WorkspaceCoordinatorActor = ActorRefFrom<
 export function selectWorkspaceView(snapshot: WorkspaceCoordinatorSnapshot | undefined) {
 	return {
 		bankRevision: snapshot?.context.bankAccess?.revision,
-		ready:
-			snapshot?.hasTag('workspace-ready') === true &&
-			snapshot.matches({ active: { session: 'ready' } }),
+		ready: snapshot?.matches({ active: { session: 'ready' } }) === true,
 		failed: snapshot?.hasTag('workspace-error') ?? false,
 		canRetry: snapshot?.hasTag('workspace-retryable') ?? false,
 		canSync: snapshot?.can({ type: 'BANK', event: { type: 'SYNC' } }) ?? false,

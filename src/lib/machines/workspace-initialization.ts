@@ -29,7 +29,7 @@ export type WorkspaceInitializationResult =
 	  }
 	| WorkspacePersistenceResult
 
-type ReadInput = Input & { tier: typeof ReadTier.LocalFirstUnlessEmpty | typeof ReadTier.Remote }
+type ReadInput = Input & { tier: typeof ReadTier.LocalFirst | typeof ReadTier.Remote }
 const discover = fromPromise(async ({ input }: { input: ReadInput }) => {
 	const [profiles, organizations] = await Promise.all([
 		input.db.all(app.profiles.where({ userId: input.userId }), { tier: input.tier }),
@@ -109,7 +109,7 @@ export const workspaceInitialization = setup<
 				input: ({ context }) => ({
 					db: context.db,
 					userId: context.userId,
-					tier: ReadTier.LocalFirstUnlessEmpty
+					tier: ReadTier.LocalFirst
 				}),
 				onDone: {
 					target: 'checkingProfiles',

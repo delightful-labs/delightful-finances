@@ -31,7 +31,7 @@ vi.mock('./workspace-startup.js', () => ({
 		return setup<
 			Input,
 			| { type: 'OBSERVED'; request: InitializationRequest }
-			| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' },
+			| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
 			{},
 			{},
 			{},
@@ -67,7 +67,7 @@ vi.mock('./workspace-startup.js', () => ({
 							}
 						})
 					),
-					on: { FAIL: 'failed' }
+					on: { FAIL: 'failed', HOLD: 'waiting' }
 				},
 				waiting: {
 					entry: sendTo(
@@ -448,6 +448,26 @@ describe('workspace public capability and report currency', () => {
 		f.observe(f.selected(scope.profileId))
 		expect(f.actor.getSnapshot().children.creation).toBe(f.creation)
 		expect(f.creation.getSnapshot().matches('held')).toBe(true)
+	})
+	it('keeps local navigation available while provenance initialization waits', async () => {
+		const f = start()
+		f.startup.send({ type: 'HOLD' })
+		f.observe(f.selected())
+		await waitFor(f.actor, (snapshot) => selectWorkspaceView(snapshot).navigation === 'scoped')
+		expect(f.actor.getSnapshot().matches({ active: { workspace: 'waiting' } })).toBe(true)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
+		expect(f.actor.getSnapshot().can(sync)).toBe(false)
+		expect(f.navigate).not.toHaveBeenCalled()
+	})
+	it('keeps local navigation available when provenance initialization fails', async () => {
+		const f = start()
+		f.startup.send({ type: 'FAIL' })
+		f.observe(f.selected())
+		await waitFor(f.actor, (snapshot) => selectWorkspaceView(snapshot).navigation === 'scoped')
+		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).failed).toBe(true)
+		expect(f.navigate).not.toHaveBeenCalled()
+		expect(f.actor.getSnapshot().can(sync)).toBe(false)
 	})
 	it('supports workspace management without a selected workspace or bank setup', () => {
 		const f = start()

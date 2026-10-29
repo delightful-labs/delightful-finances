@@ -102,17 +102,19 @@
 	<SessionStartup />
 {/snippet}
 
-{#if startupState.current.hasTag('startup-error')}
-	<SessionStartup />
-{:else if jazzSession}
-	<JazzSessionProvider session={jazzSession} fallback={startup}>
-		{#key startupState.current.context.attachmentRevision}
-			<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
-		{/key}
-	</JazzSessionProvider>
-{:else}
-	<JazzStartup
-		error={startupState.current.hasTag('startup-error')}
-		onRetry={() => actor.send({ type: 'RETRY' })}
-	/>
-{/if}
+<main>
+	{#if startupState.current.hasTag('startup-error')}
+		<SessionStartup />
+	{:else if jazzSession}
+		<JazzSessionProvider session={jazzSession} fallback={startup}>
+			{#key startupState.current.context.attachmentRevision}
+				<WorkspaceBootstrap>{@render children()}</WorkspaceBootstrap>
+			{/key}
+		</JazzSessionProvider>
+	{:else}
+		<JazzStartup
+			error={startupState.current.hasTag('startup-error')}
+			onRetry={() => actor.send({ type: 'RETRY' })}
+		/>
+	{/if}
+</main>

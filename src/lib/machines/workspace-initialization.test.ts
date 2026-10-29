@@ -30,6 +30,7 @@ describe('workspace initialization decisions', () => {
 		const done = await waitFor(init.actor.start(), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'ready', profileId })
 		expect(init.discover).toHaveBeenCalledTimes(2)
+		expect(init.discover.mock.calls[0]?.[1]?.tier).toBe(ReadTier.LocalFirst)
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 		expect(f.insert).not.toHaveBeenCalled()
 	})

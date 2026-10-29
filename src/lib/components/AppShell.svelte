@@ -117,9 +117,9 @@
 				/>
 			{/snippet}
 		</AppDrawer>
-		<main inert={mainInert}>
+		<div class="content" inert={mainInert}>
 			{@render children()}
-		</main>
+		</div>
 		{#if mainInert}
 			<button
 				class="drawer-dismiss"
@@ -148,7 +148,7 @@
 		min-block-size: 0;
 	}
 
-	main {
+	.content {
 		flex: 1 1 0%;
 		min-width: 0;
 		padding: var(--dui-space-sm, 1rem);
@@ -182,7 +182,7 @@
 			overflow-x: clip;
 		}
 
-		main {
+		.content {
 			box-sizing: border-box;
 			flex: 0 0 100%;
 		}

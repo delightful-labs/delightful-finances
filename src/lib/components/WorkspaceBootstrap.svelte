@@ -353,6 +353,9 @@
 						{#snippet accountCreation(trigger)}
 							<AccountCreation {trigger} />
 						{/snippet}
+						{#if setupError}
+							<JazzStartup error workspace {...retryableSetup ? { onRetry: retrySetup } : {}} />
+						{/if}
 						{#if showPageContent}
 							{#key `${session.current.account?.id}:${filters.activeOrganizationId}`}{@render pageContent()}{/key}
 						{/if}

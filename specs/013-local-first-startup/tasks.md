@@ -20,7 +20,7 @@ Items below intentionally mix implementation candidates and bounded investigatio
       `specs/008-actor-orchestration/contracts/workspace-integrity-report.md` and `fake-data.md`,
       and `specs/009-independent-checks/spec.md` using the research conflict inventory. Mark historical
       descriptions clearly; add cross-references rather than claiming pending changes already work.
-- [ ] T004 Produce a reviewed technical plan for the first implementation slice. Read XState memory;
+- [x] T004 Produce a reviewed technical plan for the first implementation slice. Read XState memory;
       model local session/data availability separately from provenance/repair/seeding/recovery, with
       cancellation, failure, identity replacement, and cleanup. Limit each implementation review batch.
 
@@ -35,6 +35,11 @@ precede workflow code. Coverage changes follow review of the exact implementatio
       `src/lib/components/WorkspaceBootstrap.svelte`. Use explicit local-first discovery on the
       usability path; keep empty results from authorizing bootstrap or repair. Preserve current
       identity/membership/scope guards. Show the statechart and file scope before editing code.
+      Implementation reviewed; test follow-up authorized. Four focused unit suites passed (89 tests),
+      then the updated readiness suite passed all 25 tests, including pending/failed provenance.
+      Selection uses observed session facts to avoid transient parallel-region ordering. Type check
+      reports 13 dependency/API errors outside changed files; browser coverage remains pending.
+      No cold-start or performance guarantee validated yet.
 - [ ] T006 Remove opt-in seeding from the critical readiness path in `workspace-fake-data.ts`,
       `workspace-initialization.ts`, and its owner. Preserve authoritative emptiness/exclusive seed
       acceptance and cancellation/resource ownership; allow ordinary local use while seeding waits.
