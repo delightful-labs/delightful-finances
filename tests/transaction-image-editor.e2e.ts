@@ -114,10 +114,16 @@ async function information(page: Page) {
 	const button = page.getByRole('button', { name: 'Image details: receipt.png', exact: true })
 	await button.focus()
 	await button.press('Enter')
+	const dialog = page.getByRole('dialog', { name: 'receipt.png', exact: true })
+	await expect(dialog).toBeVisible()
+	await expect(dialog.getByRole('img')).toBeVisible()
+	await expect(dialog.getByRole('heading', { name: 'receipt.png', exact: true })).toBeVisible()
+	return dialog
 }
 async function editor(page: Page) {
-	await information(page)
-	await page.getByRole('button', { name: 'Edit Image', exact: true }).click()
+	const preview = await information(page)
+	await preview.getByRole('button', { name: 'Edit Image', exact: true }).click()
+	await expect(preview).toBeHidden()
 	const dialog = page.getByRole('dialog', { name: 'Edit Image', exact: true })
 	await expect(dialog.getByRole('button', { name: 'Apply changes', exact: true })).toBeEnabled()
 	return dialog
@@ -269,7 +275,9 @@ test('cancels saved perspective edits, then applies grayscale offline with stabl
 	})
 })
 
-test('viewers can open saved image information and download but cannot edit', async ({ page }) => {
+test('viewers can preview and download saved images but cannot edit or delete', async ({
+	page
+}) => {
 	const ledger = await seed(page)
 	await uploadSaved(page, ledger.transactionId)
 	await page.evaluate(async () => {
@@ -290,7 +298,20 @@ test('viewers can open saved image information and download but cannot edit', as
 			.wait({ tier: 'local' })
 	})
 	await expect(page.getByLabel('Add Images', { exact: true })).toBeDisabled()
-	await information(page)
-	await expect(page.getByRole('link', { name: 'receipt.png', exact: true })).toBeVisible()
+	const dialog = await information(page)
+	await expect(dialog.getByRole('link', { name: 'receipt.png', exact: true })).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Edit Image', exact: true })).toHaveCount(0)
+	await expect(dialog.getByRole('button', { name: 'Remove receipt.png', exact: true })).toHaveCount(
+		0
+	)
+	const [download] = await Promise.all([
+		page.waitForEvent('download'),
+		dialog.getByRole('link', { name: 'receipt.png', exact: true }).click()
+	])
+	expect(download.suggestedFilename()).toBe('receipt.png')
+	await page.keyboard.press('Escape')
+	await expect(dialog).toBeHidden()
+	await expect(
+		page.getByRole('button', { name: 'Image details: receipt.png', exact: true })
+	).toBeFocused()
 })

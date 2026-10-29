@@ -4,8 +4,10 @@
 
 - [x] Replace shared DUI hover controls with a preview modal and consumer action close callback.
 - [x] Integrate existing draft/saved transaction editors and avatar cropper; preserve downloads and replacement.
-- [ ] Review the preview-modal implementation.
-- [ ] After approval, update and run relevant DUI and Finance browser coverage, including keyboard/focus, permissions, deletion, replacement, and editor cancellation.
+- [x] Review the preview-modal implementation.
+- [x] After approval, update and run relevant DUI and Finance browser coverage, including keyboard/focus, permissions, deletion, replacement, and editor cancellation.
+
+Preview-modal verification: nine DUI image/avatar browser tests, 46 Finance unit tests (avatar processing, cropper lifecycle, and draft selection), and 12 Finance browser tests passed. Browser coverage includes avatar preview/edit/cancel/apply/replacement/removal/recovery, draft and saved transaction editing, offline Apply, viewer preview/download without mutation actions, attachment deletion retaining file contents, native form submission/reset, Escape and focus restoration. Finance browser-test TypeScript checks and touched-file formatting/diff checks passed. Full suites were not run.
 
 - [x] Implement DUI InputRange and contrast-popover Storybook example.
 - [x] Verify range binding, keyboard bounds/steps, disabled state, FormData/reset, and popover keyboard use in focused browser tests.

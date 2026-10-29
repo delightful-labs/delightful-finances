@@ -287,7 +287,9 @@ async function waitForAvatar(page: Page, width: number, height: number) {
 	await expect(image).toBeVisible()
 	const input = page.getByLabel('Avatar', { exact: true })
 	await expect(input).not.toHaveAttribute('multiple')
-	expect(await input.boundingBox()).toEqual(await image.boundingBox())
+	expect(
+		await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).boundingBox()
+	).toEqual(await image.boundingBox())
 	await expect
 		.poll(() =>
 			image.evaluate((element: HTMLImageElement) => [element.naturalWidth, element.naturalHeight])
@@ -301,6 +303,10 @@ async function uploadAvatar(
 	image: Awaited<ReturnType<typeof avatarImage>>,
 	replace = false
 ) {
+	if (replace) {
+		await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
+		await expect(page.getByRole('dialog', { name: 'avatar', exact: true })).toBeVisible()
+	}
 	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
 	const cropDialog = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
 	await expect(cropDialog).toBeVisible()
@@ -351,6 +357,7 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	expect(replacement.id).toBe(first.id)
 	expect(replacement.displayName).toBe(first.displayName)
 	const replacementUrl = await avatarPreview(page).getAttribute('src')
+	await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
 	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
 	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 	await expect(avatarPreview(page)).toHaveCount(0)
@@ -365,6 +372,42 @@ test('avatar upload above 256 KB resizes, replaces, removes, and persists withou
 	const removed = await avatarRecord(page)
 	expect(removed).toEqual({ ...first, byteLength: 0, mimeType: null, checksum: null })
 	expect(firstUrl).toMatch(/^blob:/)
+})
+
+test('avatar preview opens its existing editor, cancels without saving, and applies a new crop', async ({
+	page
+}) => {
+	await page.goto('/account')
+	await uploadAvatar(page, await avatarImage(page, 100, 100))
+	await waitForAvatar(page, 100, 100)
+	const original = await avatarRecord(page)
+	const trigger = page.getByRole('button', { name: 'Avatar details: avatar', exact: true })
+	await trigger.focus()
+	await trigger.press('Enter')
+	const preview = page.getByRole('dialog', { name: 'avatar', exact: true })
+	await expect(preview.getByRole('img', { name: 'avatar', exact: true })).toBeVisible()
+	await preview.getByRole('button', { name: 'Close', exact: true }).click()
+	await expect(trigger).toBeFocused()
+	await trigger.press('Space')
+	await preview.getByRole('button', { name: 'Edit Avatar', exact: true }).click()
+	await expect(preview).toBeHidden()
+	const crop = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
+	await expect(crop).toBeVisible()
+	await crop.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await expect(crop).toBeHidden()
+	expect(await avatarRecord(page)).toEqual(original)
+	await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
+	await trigger.click()
+	await preview.getByRole('button', { name: 'Edit Avatar', exact: true }).click()
+	await crop.getByRole('button', { name: 'Use this crop', exact: true }).click()
+	await expect(crop).toBeHidden()
+	await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
+	await expect(
+		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved.' })
+	).toHaveCount(1)
+	await page.reload()
+	await waitForAvatar(page, 100, 100)
+	expect((await avatarRecord(page)).byteLength).toBeGreaterThan(0)
 })
 
 test('avatar rejects invalid, oversized, and undecodable images and allows retry', async ({
@@ -417,6 +460,7 @@ test('avatar can upload, replace, and remove while offline', async ({ page }) =>
 		await waitForAvatar(page, 100, 100)
 		const local = await avatarRecord(page)
 		expect(local.byteLength).toBeGreaterThan(0)
+		await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
 		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
 		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 		await expect(avatarPreview(page)).toHaveCount(0)
