@@ -4,6 +4,10 @@ import { assets, immutable, prerendered } from '$app/manifest'
 
 const cachePrefix = 'delightful-finance-shell-'
 const cacheName = `${cachePrefix}${version}`
+const scopePath = new URL(self.registration.scope).pathname
+const offlineShellPath = new URL('offline', self.registration.scope).pathname
+const financeDetailPath =
+	/^(?:expenses|income)\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const cachedPaths = new Set(
 	[...immutable, ...assets, ...prerendered].map(
 		({ path }) => new URL(path.replace(/^\//, ''), self.registration.scope).pathname
@@ -30,7 +34,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
 	const url = new URL(event.request.url)
-	const publicPath = url.pathname
+	const relativePath = url.pathname.startsWith(scopePath)
+		? url.pathname.slice(scopePath.length)
+		: ''
+	const publicPath =
+		event.request.mode === 'navigate' && financeDetailPath.test(relativePath)
+			? offlineShellPath
+			: url.pathname
 	// Only the build's public shell/assets are cached. Jazz and auth requests pass through.
 	if (
 		event.request.method !== 'GET' ||

@@ -27,6 +27,8 @@ export default defineConfig({
 		sveltekit({
 			adapter: adapter(),
 			preprocess: vitePreprocess(),
+			// The cached client-only shell must resolve assets at a different document URL.
+			paths: { relative: false },
 			prerender: { entries: ['*'] }
 		}),
 		...(previewing

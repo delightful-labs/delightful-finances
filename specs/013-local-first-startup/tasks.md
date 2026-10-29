@@ -162,3 +162,6 @@ and a recommendation in `research.md`. Research does not automatically authorize
 - [ ] T025 Map supported dynamic finance-detail document navigations to the corresponding cached
       public shell without caching data/auth/API responses. Review route matching and file scope
       separately; then extend T014 cold restart/direct-link coverage.
+      Four-file implementation ready for review: client-routed public /offline shell, absolute
+      asset URLs, and narrow same-origin GET detail-document mapping. Isolated build/type checks
+      pass; actual saved-detail cold/offline browser verification follows implementation approval.

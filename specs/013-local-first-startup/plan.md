@@ -341,3 +341,57 @@ in the isolated worktree (four tests). Test TypeScript checks passed; app/servic
 and build had already passed for the unchanged plugin. The production build used only the known
 disposable agent backend for setup; no cloud backend or existing browser profile was used. Dynamic
 detail documents remain unfixed; no claim is made that this static Accounts scenario covers them.
+
+## T025 — route-neutral offline detail shell
+
+Status: implementation ready for review; isolated application/service-worker type checks and
+production build pass. Browser/direct-link coverage awaits exact implementation approval.
+
+Four implementation files: `src/service-worker/index.ts`, `src/routes/offline/+page.ts`,
+`src/routes/offline/+page.svelte`, and `vite.config.ts`. No Jazz, data, finance workflow, permission,
+localization or update-consent change.
+
+A prerendered `/offline` route has SSR disabled, producing a public route-neutral client entry. It
+contains no fixed SvelteKit hydration node IDs and starts client routing from the actual document
+URL. Ordinary pages retain their existing SSR settings. The SvelteKit paths configuration uses
+`relative: false`, so imports, styles and service-worker registration resolve against configured
+absolute asset paths when this document is served at another URL. Reusing cached list HTML directly
+would incorrectly reuse route-specific hydration data and relative asset bases at deeper paths.
+
+```mermaid
+flowchart TD
+  Request[Fetch request] --> Guard{Same-origin GET?}
+  Guard -->|no| Pass[Existing network handling]
+  Guard -->|yes| Detail{Document navigation to canonical expenses/UUID or income/UUID?}
+  Detail -->|yes| Shell[Select cached offline shell path]
+  Detail -->|no| Original[Keep original pathname]
+  Shell --> Listed{Selected path in public precache?}
+  Original --> Listed
+  Listed -->|no| Pass
+  Listed -->|yes| Cache[Existing cache-first handler]
+  Cache -->|hit| Respond[Return cached public response]
+  Cache -->|miss| OriginalNetwork[Fetch original request]
+```
+
+Implementation performs synchronous URL/cache-key selection only. Existing install, cache lookup,
+network miss and activation/message adapters remain intact; no new async workflow or actor resource
+lifetime is introduced. Cross-origin/non-GET guards still precede respondWith. The mapping is limited
+to request mode `navigate` and the registered scope's exact two-segment finance detail paths, with
+canonical UUID shape. Route prefixes are case-sensitive; UUID hex accepts either case. Unsupported
+paths, API/data fetches and assets do not acquire a generic HTML fallback. Query/hash processing and
+record authorization remain in the client, not in the cached response. The requested document URL
+must remain the actual detail URL, not navigate to `/offline`.
+
+Isolated generated-output inspection confirms: offline.html exists; its boot script has no fixed
+hydration payload; client entry URLs and service-worker registration are absolute; `/offline` appears
+in the generated precache list. The generated worker includes the exact finance-detail matcher.
+Type checking reports zero errors/warnings, and the production build succeeds. These are build
+checks, not proof of saved-record offline navigation.
+
+After implementation review: update the public-cache test to include the new public shell and the
+existing online detail test to expect a service-worker public response once controlled. Extend the
+cold persistent-profile test with saved expense/income details, close every tested client, clear HTTP
+cache only, relaunch offline and verify correct route/component, workspace query and local values.
+Cover unknown paths and non-document fetches so APIs/data never receive the fallback shell. Rerun
+public-cache and update-consent cases. Keep missing-record/local-unavailability and actual
+cross-version compatibility claims separate from the successful shell-routing case.
