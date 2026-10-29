@@ -16,8 +16,8 @@ export default s.defineMigration({
 			data: s.add.bytes({ default: null })
 		}
 	},
-	fromHash: '59c8cb7d9345',
-	toHash: '0bc1995b6aa7',
+	fromHash: '42bb0362f9d0',
+	toHash: 'c9feba2ff2a5',
 	from: {
 		accountMemberships: s.table(
 			{
@@ -125,6 +125,10 @@ export default s.defineMigration({
 				incomeTransactionId: s.uuid(),
 				expenseAccountId: s.uuid().optional(),
 				incomeAccountId: s.uuid().optional(),
+				expenseAmountMinor: s.bigint().optional(),
+				expenseCurrency: s.string().optional(),
+				incomeAmountMinor: s.bigint().optional(),
+				incomeCurrency: s.string().optional(),
 				amountMinor: s.bigint().optional(),
 				currency: s.string().optional()
 			},
@@ -395,6 +399,10 @@ export default s.defineMigration({
 				incomeTransactionId: s.uuid(),
 				expenseAccountId: s.uuid().optional(),
 				incomeAccountId: s.uuid().optional(),
+				expenseAmountMinor: s.bigint().optional(),
+				expenseCurrency: s.string().optional(),
+				incomeAmountMinor: s.bigint().optional(),
+				incomeCurrency: s.string().optional(),
 				amountMinor: s.bigint().optional(),
 				currency: s.string().optional()
 			},
