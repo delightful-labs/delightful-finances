@@ -1,5 +1,11 @@
 # Editor processing design
 
+## Preview modal integration
+
+Replace DUI's shared thumbnail information popover/hover controls with a whole-tile native button and the existing DUI Dialog. Disclosure is simple local UI state; existing editor actors, resource cleanup, permissions, and persistence remain unchanged. Modal actions receive a close callback instead of a popover ID. Finance uses that callback before opening draft/saved transaction editors or the avatar cropper. Pass localized Close labels through both inputs and saved attachment tiles. Keep the avatar's native file input synchronized with its form and expose replacement inside the preview.
+
+Verification after implementation approval: update DUI image-input browser expectations and Finance transaction-image-editor, attachment, and avatar browser scenarios for preview -> edit/delete/replace, keyboard/Escape/focus, read-only downloads, and cancellation. No new async operations or changed actor helpers are introduced.
+
 ## Mandatory machine-first gate
 
 This is a workflow: decode -> read working pixels -> release bitmap -> interact -> render -> allocate export canvas -> paint -> encode -> release resources -> terminal result. Preview is a separate render invocation returning to interaction; it does not encode or persist. Independent failure and cancellation boundaries require a machine rather than a branching promise actor.

@@ -32,19 +32,21 @@
 			downloadUrl={image.source}
 			alt={m['images.preview_name']({ name: image.name })}
 			infoLabel={m['labels.subject_details']({ subject: m['nouns.image']({ count: 1 }) })}
+			closeLabel={m['actions.close']()}
 			removeLabel={m['actions.remove_subject']({ subject: m['nouns.image']({ count: 1 }) })}
 			removeAccessibleLabel={m['actions.remove_name']({ name: image.name })}
 			disabled={removingIds.includes(image.id)}
 			onremove={canEdit && onremove ? () => onremove?.(image.id) : undefined}
 		>
-			{#snippet actions(popoverId)}
+			{#snippet actions(closePreview)}
 				{#if canEdit && onedit}
 					<Button
 						type="button"
-						popovertarget={popoverId}
-						popovertargetaction="hide"
 						disabled={!editableIds.includes(image.id)}
-						onclick={() => onedit?.(image.id)}
+						onclick={() => {
+							closePreview()
+							onedit?.(image.id)
+						}}
 					>
 						{m['actions.edit_subject']({ subject: m['nouns.image']({ count: 1 }) })}
 					</Button>
