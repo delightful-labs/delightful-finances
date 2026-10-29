@@ -67,6 +67,37 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - name: Run against a disposable in-memory Jazz server
         run: pnpm exec playwright test --config=${{ matrix.config }} --workers=1 --forbid-only --reporter=line
+      - name: Retain browser failure snapshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-failures-${{ matrix.suite }}
+          path: test-results/**/error-context.md
+          retention-days: 3
+
+  debugging:
+    name: Debugging (${{ matrix.debug }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        debug: ['true', 'false']
+    env:
+      PUBLIC_DEBUG: ${{ matrix.debug }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Verify debug gating, redaction, and HMR with an isolated inspector transport
+        run: pnpm exec playwright test --config=playwright.debug.config.ts --workers=1 --forbid-only --reporter=line
 
   pwa:
     name: Production preview PWA

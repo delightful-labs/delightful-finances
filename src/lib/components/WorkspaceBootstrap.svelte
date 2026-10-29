@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { inspectActor } from '#lib/inspector.js'
 	import { app } from '#lib/schema.js'
 	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
@@ -51,7 +52,7 @@
 	}
 	const db = getDb()
 	const session = fromStore(getJazzSession())
-	const accountOrder = useMachine(accountOrderMachine)
+	const accountOrder = useMachine(accountOrderMachine, { inspect: inspectActor })
 	const orderSnapshot = accountOrder.snapshot
 	let movedOrder = $state<{ key: string; ids: readonly string[] } | undefined>()
 	const orderKey = $derived(

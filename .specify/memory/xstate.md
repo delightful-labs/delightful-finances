@@ -324,8 +324,9 @@ records the application, bank and independent form roots. Keep diagnostic instru
 actor creation boundaries; an inspection requirement does not justify reparenting actors or adding a
 registry, bus or generic supervisor. Use XState's built-in inspection API and evaluate Stately
 Inspector before adding custom tooling. The custom trace adapter was removed at the user's request.
-Any future inspection integration must exclude credentials and private finance payloads; no inspector
-is currently configured.
+Inspection integrations must exclude credentials and private finance payloads. See
+[`inspection.md`](../../specs/008-actor-orchestration/inspection.md) for the current environment-gated
+Stately integration, attached roots and verification limits.
 
 Shared SDK session ownership is distinct from a rendered layout's actor lifetime. Coordinate known
 identity-changing SDK calls after workspace drain; retain issued calls until settlement, and reattach

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { inspectActor } from '#lib/inspector.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
 	import {
 		createAccountArchiveMachine,
@@ -115,10 +116,12 @@
 					.wait({ tier: 'local' })
 	}
 	const actor = createActor(
-		createAccountArchiveMachine((request) => archiveAccount(db, request.accountId), observe)
+		createAccountArchiveMachine((request) => archiveAccount(db, request.accountId), observe),
+		{ inspect: inspectActor }
 	)
 	const deleteGrantActor = createActor(
-		createAccountDeleteGrantMachine(persistDeleteGrant, observeDeleteGrants)
+		createAccountDeleteGrantMachine(persistDeleteGrant, observeDeleteGrants),
+		{ inspect: inspectActor }
 	)
 	let archiveSnapshot = $state.raw(actor.getSnapshot())
 	let deleteGrantSnapshot = $state.raw(deleteGrantActor.getSnapshot())

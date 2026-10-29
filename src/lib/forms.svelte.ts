@@ -1,4 +1,5 @@
 import { onMount, untrack } from 'svelte'
+import { inspectActor } from '#lib/inspector.js'
 import { createActor, type Snapshot } from 'xstate'
 import {
 	createScopedFormMachine,
@@ -45,7 +46,7 @@ export function createScopedFormController<
 				AvailabilitySnapshot,
 				OperationSnapshot
 			>(bound),
-			{ input: bound.observe() }
+			{ input: bound.observe(), inspect: inspectActor }
 		)
 	)
 	let formSnapshot = $state.raw(actor.getSnapshot())

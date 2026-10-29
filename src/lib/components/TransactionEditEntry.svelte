@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { inspectActor } from '#lib/inspector.js'
+	import { createLogger } from '#lib/logger.js'
+	import { safeBankError } from '#lib/integrations/diagnostics.js'
+
+	const logger = createLogger('transfer-link')
 	import { EXPENSE, INCOME, transactionPages } from '#lib/domain/transaction-kind.js'
 	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { observeRow, observeRows } from '#lib/observations.js'
@@ -57,6 +62,7 @@
 		send: (event) => readiness.actor.send(event)
 	})
 	const editActor = createActor(editWorkflow.logic, {
+		inspect: inspectActor,
 		input: {
 			identityId: session.current.account?.id ?? null,
 			organizationId: filters.activeOrganizationId,
@@ -92,17 +98,12 @@
 	const selectedTransferCandidateId = $derived(editSnapshot.context.selectedCandidateId)
 	$effect(() => {
 		const result = transferLinkResult
-		if (!import.meta.env.DEV || result?.outcome !== 'unavailable') return
+		if (result?.outcome !== 'unavailable') return
 		const error = result.error
-		console.error('[transfer-link] operation unavailable', {
+		logger.error('operation unavailable', {
 			phase: result.phase ?? 'before commit',
 			settlement: result.settlement,
-			error:
-				error instanceof Error
-					? { name: error.name, message: error.message, stack: error.stack, cause: error.cause }
-					: error === undefined
-						? 'No error detail was returned'
-						: error
+			...safeBankError(error)
 		})
 	})
 	const transactionQuery = new QuerySubscriptionOne(() =>

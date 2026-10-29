@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { inspectActor } from '#lib/inspector.js'
 	import { onMount } from 'svelte'
 	import { dev } from '$app/env'
 	import { createActor } from 'xstate'
@@ -53,7 +54,8 @@
 						for (const worker of workers) worker.removeEventListener('statechange', inspect)
 					}
 				}
-			})
+			}),
+			{ inspect: inspectActor }
 		)
 		const subscription = actor.subscribe((snapshot) => (view = selectPwaUpdateView(snapshot)))
 		accept = () => actor.send({ type: view === 'failed' ? 'RETRY' : 'ACCEPT' })

@@ -147,8 +147,10 @@
 		"account_id": "Current account ID",
 		"browser_origin": "Browser origin",
 		"jazz_app_id": "Jazz app ID",
+		"jazz_inspector": "Jazz inspector",
 		"jazz_server_url": "Jazz server URL",
 		"menu": "Developer menu",
+		"stately_inspector": "Stately Inspector",
 		"unavailable": "Unavailable"
 	},
 	"errors": {
@@ -202,7 +204,6 @@
 		"no_subjects_yet": "No {subjects} yet.",
 		"page_number": "Page {number}",
 		"previous_subject": "Previous {subject}",
-		"sample_subject_number": "Sample {subject} {number}",
 		"selected_subjects": "Selected {subjects}",
 		"start_subject": "Start {subject}",
 		"status_subject": "{subject} status",

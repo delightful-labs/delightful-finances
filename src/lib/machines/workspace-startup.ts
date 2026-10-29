@@ -20,7 +20,10 @@ type Context = Input & {
 	operation: InitializationRequest | undefined
 	result: WorkspaceInitializationResult | undefined
 }
-type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig'>
+type Db = Pick<
+	ReturnType<typeof getDb>,
+	'all' | 'beginTransaction' | 'beginExclusiveTransaction' | 'getConfig'
+>
 
 // Snapshot replacement is a workflow: keep the old initialization child alive until cleanup finishes.
 export function createWorkspaceStartupMachine(db: Db) {
