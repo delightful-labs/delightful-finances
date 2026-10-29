@@ -1,6 +1,60 @@
-import { createActor, fromTransition, type EventObject } from 'xstate'
+import {
+	createActor,
+	fromTransition,
+	type ActorRef,
+	type ActorRefFrom,
+	type Snapshot,
+	type EventObject
+} from 'xstate'
 import { bankAvailabilityMachine, type AvailabilityEvent } from './availability.js'
-import type { BankSource } from './types.js'
+import {
+	bankData,
+	bankObservation,
+	type BankAccess,
+	type BankObservationEvent,
+	type BankSource
+} from './types.js'
+import { required } from './identity.js'
+
+export function accessFor(source: BankSource): BankAccess {
+	const observed = bankObservation(source)
+	return observed.allowed
+		? {
+				kind: 'allowed',
+				organizationId: required(observed.organizationId ?? undefined),
+				userId: required(observed.userId)
+			}
+		: {
+				kind: source.sessionReady ? 'restricted' : 'waiting',
+				organizationId: source.organizationId,
+				userId: source.userId
+			}
+}
+
+/** Simulate the coordinator's access report followed by the integration's scoped observations. */
+export function publishBankSource(
+	actor: ActorRef<Snapshot<unknown>, BankObservationEvent>,
+	source: BankSource,
+	revision: number
+) {
+	actor.send({ type: 'WORKSPACE_ACCESS_CHANGED', revision, access: accessFor(source) })
+	actor.send({ type: 'CONNECTIONS_CHANGED', revision, connections: source.connections })
+	actor.send({ type: 'MAPPING_DATA_CHANGED', revision, data: bankData(source) })
+	actor.send({ type: 'HISTORY_CHANGED', revision, records: source.connections })
+}
+
+export function publishAvailability(
+	actor: ActorRefFrom<typeof bankAvailabilityMachine>,
+	source: BankSource,
+	generation: number
+) {
+	actor.send({ type: 'ACCESS_CHANGED', generation, access: accessFor(source) })
+	actor.send({
+		type: 'CONNECTION_CHANGED',
+		generation,
+		connection: bankObservation(source).connection
+	})
+}
 
 export function collectReports<Event extends EventObject>() {
 	return createActor(

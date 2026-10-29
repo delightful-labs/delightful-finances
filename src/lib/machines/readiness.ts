@@ -1,5 +1,6 @@
 import {
 	assign,
+	enqueueActions,
 	and,
 	not,
 	or,
@@ -46,10 +47,17 @@ import type { Organization } from '#lib/schema.js'
 import { workspaceRoute } from '../domain/workspace-routes.js'
 import { createBankSyncMachine } from './bank-sync/index.js'
 import { required } from './bank-sync/identity.js'
-import type { BankEvent, BankSource, BankSyncDependencies } from './bank-sync/types.js'
+import { canManageBankCredentials } from '../domain/organization-permissions.js'
+import type {
+	BankAccess,
+	BankEvent,
+	BankObservationEvent,
+	BankSource,
+	BankSyncDependencies
+} from './bank-sync/types.js'
 
 export type ReadinessObservation = {
-	source: BankSource
+	source: Pick<BankSource, 'organizationId' | 'userId' | 'membership'>
 	sessionStatus: 'ready' | 'signed-out' | 'transitioning' | 'error' | 'closed'
 	membershipLoading: boolean
 	membershipError: unknown
@@ -65,6 +73,13 @@ export type WorkspaceAttachment = {
 	navigate: WorkspaceNavigate
 }
 type Context = ReadinessObservation & {
+	bankAccess:
+		| {
+				revision: number
+				access: BankAccess
+				authority: IntegrityBinding | undefined
+		  }
+		| undefined
 	initializationRequest: InitializationRequest
 	navigationFacts: WorkspaceNavigationFacts
 	navigationReport: NavigationReport | undefined
@@ -86,6 +101,13 @@ type Event =
 	| { type: 'OBSERVE_STARTUP'; restart?: true }
 	| { type: 'STARTUP_REQUESTED'; restart: boolean }
 	| { type: 'OBSERVE_NAVIGATION' }
+	| { type: 'OBSERVE_BANK' }
+	| {
+			type: 'BANK_OBSERVED'
+			organizationId: string | null
+			userId: string | undefined
+			event: Exclude<BankObservationEvent, { type: 'WORKSPACE_ACCESS_CHANGED' }>
+	  }
 	| { type: 'NAVIGATION_REQUESTED'; access: NavigationAccess; ready: boolean }
 	| { type: 'SELECT_WORKSPACE'; workspaceId: string }
 	| { type: 'RETRY_NAVIGATION' }
@@ -122,8 +144,9 @@ export function createWorkspaceReadinessMachine({
 		Event,
 		typeof actors,
 		{},
-		{},
+		{ publishBank: undefined },
 		{
+			bankAccessAllowed: undefined
 			navigationAlive: undefined
 			navigationReady: undefined
 			navigationFailed: undefined
@@ -142,7 +165,41 @@ export function createWorkspaceReadinessMachine({
 		}
 	>({
 		actors,
+		actions: {
+			publishBank: enqueueActions(({ context, check, enqueue }) => {
+				const access: BankAccess = check('bankAccessAllowed')
+					? {
+							kind: 'allowed',
+							organizationId: required(context.source.organizationId ?? undefined),
+							userId: required(context.source.userId)
+						}
+					: {
+							kind:
+								check('canUseWorkspace') || check('navigationDenied') ? 'restricted' : 'waiting',
+							organizationId: context.source.organizationId,
+							userId: context.source.userId
+						}
+				const previous = context.bankAccess
+				const authority = context.integrityRequest.binding
+				if (
+					previous &&
+					previous.access.kind === access.kind &&
+					previous.access.organizationId === access.organizationId &&
+					previous.access.userId === access.userId &&
+					sameIntegrityBinding(previous.authority, authority)
+				)
+					return
+				const revision = (previous?.revision ?? -1) + 1
+				enqueue.assign({ bankAccess: { revision, access, authority } })
+				enqueue.sendTo('bank', { type: 'WORKSPACE_ACCESS_CHANGED', revision, access })
+			})
+		},
 		guards: {
+			bankAccessAllowed: and([
+				'canUseWorkspace',
+				({ context }) =>
+					canManageBankCredentials(context.source.membership, context.source.organizationId ?? '')
+			]),
 			navigationAlive: ({ context }) => context.navigationActor?.getSnapshot().status === 'active',
 			navigationReady: stateIn({ active: { workspace: 'ready', session: 'ready' } }),
 			navigationFailed: or([
@@ -207,6 +264,7 @@ export function createWorkspaceReadinessMachine({
 			const observation = read()
 			return {
 				...observation,
+				bankAccess: undefined,
 				initialization: undefined,
 				initializationRequest: {
 					generation: 0,
@@ -288,6 +346,18 @@ export function createWorkspaceReadinessMachine({
 			}
 		],
 		on: {
+			OBSERVE_BANK: { guard: stateIn('active'), actions: 'publishBank' },
+			BANK_OBSERVED: {
+				guard: and([
+					stateIn('active'),
+					({ context, event }) =>
+						context.bankAccess !== undefined &&
+						event.event.revision === context.bankAccess.revision &&
+						event.organizationId === context.bankAccess.access.organizationId &&
+						event.userId === context.bankAccess.access.userId
+				]),
+				actions: sendTo('bank', ({ event }) => event.event)
+			},
 			SHUTDOWN: { target: '.closing.intent.shutdown' },
 			RETRY: {
 				guard: stateIn({ active: { workspace: 'failed' } }),
@@ -423,23 +493,27 @@ export function createWorkspaceReadinessMachine({
 				},
 				{ actions: raise({ type: 'INTEGRITY_REQUESTED', binding: undefined, restart: false }) }
 			],
-			INTEGRITY_REQUESTED: {
-				guard: ({ context, event }) =>
-					event.restart || !sameIntegrityBinding(context.integrityRequest.binding, event.binding),
-				actions: [
-					assign({
-						integrityRequest: ({ context, event }) => ({
-							generation: context.integrityRequest.generation + 1,
-							binding: event.binding
+			INTEGRITY_REQUESTED: [
+				{
+					guard: ({ context, event }) =>
+						event.restart || !sameIntegrityBinding(context.integrityRequest.binding, event.binding),
+					actions: [
+						assign({
+							integrityRequest: ({ context, event }) => ({
+								generation: context.integrityRequest.generation + 1,
+								binding: event.binding
+							}),
+							integrityReport: undefined
 						}),
-						integrityReport: undefined
-					}),
-					sendTo('integrity', ({ context }) => ({
-						type: 'OBSERVED',
-						request: context.integrityRequest
-					}))
-				]
-			},
+						sendTo('integrity', ({ context }) => ({
+							type: 'OBSERVED',
+							request: context.integrityRequest
+						})),
+						raise({ type: 'OBSERVE_BANK' })
+					]
+				},
+				{ actions: raise({ type: 'OBSERVE_BANK' }) }
+			],
 			BANK: [
 				{
 					guard: ({ event }) => event.event.type === 'CANCEL' || event.event.type === 'RESET',
@@ -458,7 +532,6 @@ export function createWorkspaceReadinessMachine({
 				actions: [
 					assign(({ event }) => event.observation),
 					raise({ type: 'OBSERVE_STARTUP' }),
-					sendTo('bank', ({ event }) => ({ type: 'OBSERVED', source: event.observation.source })),
 					raise({ type: 'REEVALUATE' }),
 					raise({ type: 'OBSERVE_INTEGRITY' }),
 					raise({ type: 'OBSERVE_CREATION' }),
@@ -657,11 +730,11 @@ export function createWorkspaceReadinessMachine({
 									{ target: 'ready' }
 								]
 							},
-							unavailable: { entry: sendTo('bank', { type: 'CANCEL' }) },
-							unselected: { entry: sendTo('bank', { type: 'CANCEL' }) },
-							loadingMembership: { entry: sendTo('bank', { type: 'CANCEL' }) },
-							denied: { entry: sendTo('bank', { type: 'CANCEL' }) },
-							failed: { entry: sendTo('bank', { type: 'CANCEL' }) },
+							unavailable: {},
+							unselected: {},
+							loadingMembership: {},
+							denied: {},
+							failed: {},
 							ready: {}
 						}
 					}
@@ -812,6 +885,7 @@ export type WorkspaceCoordinatorActor = ActorRefFrom<
 >
 export function selectWorkspaceView(snapshot: WorkspaceCoordinatorSnapshot | undefined) {
 	return {
+		bankRevision: snapshot?.context.bankAccess?.revision,
 		ready:
 			snapshot?.hasTag('workspace-ready') === true &&
 			snapshot.matches({ active: { session: 'ready' } }),

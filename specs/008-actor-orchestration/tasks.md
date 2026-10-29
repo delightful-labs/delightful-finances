@@ -55,3 +55,10 @@ combined design/implementation/verification pass. Historical validation before i
 files, 21 relevant browser checks, both static checks, Prettier, diff checks and production build.
 Browser coverage is scoped to diagnostics, shared forms and recovery; historical domain checks remain
 linked to their focused implementation plans. No full unrelated finance/PWA browser rerun is claimed.
+
+## Follow-up: startup observation contracts
+
+- [x] S001 Review the implemented scoped bank access, credential, mapping and history event contract in [architecture.md](architecture.md#startup-observation-contract--reviewed-and-verified). Preserve immediate invalidation, original operation scope and resource settlement. The full review identified a historical-result diagnostic false positive and pending fixture migration; both are addressed.
+- [x] S002 After implementation approval, migrate affected bank availability/report/owner/import-settlement fixtures and coordinator mocks, add event isolation and stale-revision coverage, and verify relevant unit and bank/workspace browser flows in an isolated checkout. Verified: 214 unit tests, 12 browser checks, application/service-worker and browser-test type checks.
+- [ ] S003 Implement and review navigation-specific updates after the bank cycle; its current source audit found broad observation/generation churn.
+- [ ] S004 Implement and review identity-bound creation eligibility events after the preceding cycles; startup and integrity already filter equivalent requests.

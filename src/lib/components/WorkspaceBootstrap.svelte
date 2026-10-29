@@ -34,6 +34,7 @@
 	import { useMachine } from '@xstate/svelte'
 	import { accountOrderMachine, orderAccounts } from '#lib/machines/account-order.js'
 	import { getReadiness } from '#lib/bank-sync.js'
+	import { bankData, type BankObservationEvent } from '#lib/machines/bank-sync/types.js'
 
 	let { children: pageContent }: { children: Snippet } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -41,6 +42,7 @@
 	const applicationState = fromStore(readiness.snapshot)
 	let workspaceState = $state.raw<WorkspaceCoordinatorSnapshot | undefined>()
 	const workspaceView = $derived(selectWorkspaceView(workspaceState))
+	const bankRevision = $derived(workspaceView.bankRevision)
 	const ready = $derived(workspaceView.ready)
 	const showPageContent = $derived(
 		['scoped', 'directory', 'global'].includes(workspaceView.navigation)
@@ -136,6 +138,11 @@
 	const linkQuery = new QuerySubscription(() =>
 		ready && organizationId ? app.simplefinAccountLinks.where({ organizationId }) : undefined
 	)
+	const scopedConnections = $derived(
+		(connectionQuery.current ?? []).filter(
+			(row) => row.organizationId === organizationId && row.ownerId === userId
+		)
+	)
 	function readSource() {
 		return {
 			organizationId,
@@ -149,7 +156,7 @@
 	}
 	function readReadiness(): ReadinessObservation {
 		return {
-			source: readSource(),
+			source: { organizationId, userId, membership: observeRow(membershipQuery.current) },
 			sessionStatus: session.current.status,
 			membershipLoading: membershipQuery.isLoading,
 			membershipError: membershipQuery.error,
@@ -201,6 +208,72 @@
 		const observation = readReadiness()
 		const actor = workspaceActor
 		untrack(() => actor?.send({ type: 'OBSERVED', observation }))
+	})
+	$effect(() => {
+		const actor = workspaceActor
+		const revision = bankRevision
+		if (!actor || revision === undefined) return
+		const connections = scopedConnections.map(
+			({
+				id,
+				organizationId,
+				ownerId,
+				status,
+				ciphertext,
+				credentialId,
+				prfSalt,
+				iv,
+				credentialVersion
+			}) => ({
+				id,
+				organizationId,
+				ownerId,
+				status,
+				ciphertext,
+				credentialId,
+				prfSalt,
+				iv,
+				credentialVersion
+			})
+		)
+		const event = {
+			type: 'CONNECTIONS_CHANGED',
+			revision,
+			connections
+		} satisfies BankObservationEvent
+		const scope = { organizationId, userId }
+		untrack(() => actor.send({ type: 'BANK_OBSERVED', ...scope, event }))
+	})
+	$effect(() => {
+		const actor = workspaceActor
+		const revision = bankRevision
+		if (!actor || revision === undefined) return
+		const records = scopedConnections.map(
+			({ id, lastSyncAt, lastOutcome, importedCount, existingCount, omittedCount }) => ({
+				id,
+				lastSyncAt,
+				lastOutcome,
+				importedCount,
+				existingCount,
+				omittedCount
+			})
+		)
+		const event = { type: 'HISTORY_CHANGED', revision, records } satisfies BankObservationEvent
+		const scope = { organizationId, userId }
+		untrack(() => actor.send({ type: 'BANK_OBSERVED', ...scope, event }))
+	})
+	$effect(() => {
+		const actor = workspaceActor
+		const revision = bankRevision
+		if (!actor || revision === undefined) return
+		const data = bankData({
+			organizationId,
+			accounts: observeRows(accountQuery.current),
+			links: linkQuery.current ?? []
+		})
+		const event = { type: 'MAPPING_DATA_CHANGED', revision, data } satisfies BankObservationEvent
+		const scope = { organizationId, userId }
+		untrack(() => actor.send({ type: 'BANK_OBSERVED', ...scope, event }))
 	})
 	onDestroy(() => readiness.actor.send({ type: 'DETACH_WORKSPACE', attachment }))
 

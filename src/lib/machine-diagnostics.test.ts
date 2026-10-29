@@ -147,6 +147,82 @@ it('captures initialization exceptions and unsuccessful final outcomes', async (
 	completed.stop()
 })
 
+it('does not log modeled denial or unavailability states as actor failures', async () => {
+	const { logMachineFailure } = await import('./machine-diagnostics.js')
+	const actor = createActor(
+		createMachine({
+			id: 'bank-availability',
+			type: 'parallel',
+			states: {
+				access: {
+					initial: 'denied',
+					states: { denied: {} }
+				},
+				credential: {
+					initial: 'unavailable',
+					states: { unavailable: {} }
+				}
+			}
+		}),
+		{ inspect: logMachineFailure }
+	).start()
+	expect(console.error).not.toHaveBeenCalled()
+	actor.stop()
+})
+
+it.each([false, true])(
+	'distinguishes a saved failed sync from a history actor crash: %s',
+	async (crash) => {
+		const { logMachineFailure } = await import('./machine-diagnostics.js')
+		const { bankHistoryMachine } = await import('./machines/bank-sync/history.js')
+		const { collectReports } = await import('./machines/bank-sync/reports.fixture.js')
+		const { connection } = await import('./machines/bank-sync/test-fixtures.js')
+		const recipient = collectReports<import('./machines/bank-sync/history.js').HistoryEvent>()
+		const machine = crash
+			? bankHistoryMachine.provide({
+					actions: {
+						summarize: () => {
+							throw new Error('History projection crashed')
+						}
+					}
+				})
+			: bankHistoryMachine
+		const supervisor = createActor(
+			createMachine({
+				id: 'history-supervisor',
+				invoke: {
+					id: 'history',
+					src: machine,
+					input: { revision: 0, recipient },
+					onError: { actions: () => {} }
+				}
+			}),
+			{
+				inspect: logMachineFailure
+			}
+		).start()
+		const actor = supervisor.getSnapshot().children.history
+		if (!actor) throw new Error('Expected supervised history actor')
+		actor.send({ type: 'CONNECTION_SELECTED', revision: 0, connectionId: connection.id })
+		actor.send({
+			type: 'HISTORY_CHANGED',
+			revision: 0,
+			records: [{ ...connection, lastSyncAt: new Date(), lastOutcome: 'failed' }]
+		})
+		if (crash)
+			expect(console.error).toHaveBeenCalledWith(
+				'[state-machine] Machine entered an error state',
+				expect.objectContaining({ machine: 'bank-history', status: 'error' })
+			)
+		else {
+			expect(actor.getSnapshot().matches('failed')).toBe(true)
+			expect(console.error).not.toHaveBeenCalled()
+		}
+		supervisor.stop()
+		recipient.stop()
+	}
+)
+
 it('projects safe connection facts without reading arbitrary getters or user payloads', async () => {
 	const { diagnosticContext } = await import('./machine-diagnostics.js')
 	const getter = vi.fn(() => {

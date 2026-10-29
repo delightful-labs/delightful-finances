@@ -1,3 +1,4 @@
+import { publishBankSource } from './reports.fixture.js'
 import { afterEach, vi } from 'vitest'
 import { createActor, fromCallback, fromPromise, type InputFrom } from 'xstate'
 import type { schema } from 'jazz-tools'
@@ -186,6 +187,7 @@ export function importFixture() {
 	function start(command: BankCommand = { type: 'SYNC' }, machine = bank) {
 		const actor = createActor(machine).start()
 		cleanups.push(() => actor.stop())
+		publishBankSource(actor, read(), 0)
 		actor.send(command)
 		const child = actor.getSnapshot().children.operation
 		if (!child) throw new Error('Expected active operation')
