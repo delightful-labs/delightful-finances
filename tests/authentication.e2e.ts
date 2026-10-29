@@ -303,11 +303,13 @@ async function uploadAvatar(
 	image: Awaited<ReturnType<typeof avatarImage>>,
 	replace = false
 ) {
+	const input = page.getByLabel('Avatar', { exact: true })
+	await expect(input).toBeEnabled()
 	if (replace) {
 		await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
 		await expect(page.getByRole('dialog', { name: 'avatar', exact: true })).toBeVisible()
 	}
-	await page.getByLabel('Avatar', { exact: true }).setInputFiles(image)
+	await input.setInputFiles(image)
 	const cropDialog = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
 	await expect(cropDialog).toBeVisible()
 	await cropDialog.getByRole('button', { name: 'Use this crop', exact: true }).click()
