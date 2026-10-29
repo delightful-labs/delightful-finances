@@ -552,7 +552,11 @@ test('creates an image attachment, downloads it, and removes only its transactio
 		mimeType: 'image/png',
 		buffer: onePixelPng
 	})
-	await expect(main.locator('input[type="file"]')).toHaveJSProperty('files.length', 1)
+	await expect
+		.poll(() =>
+			main.locator('input[type="file"]').evaluate((input: HTMLInputElement) => input.files?.length)
+		)
+		.toBe(1)
 	await main.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await page.waitForURL(/\/expenses(?:\?|$)/)
 	await expect.poll(() => findTransactionByDescription(page, 'Image receipt')).toBeTruthy()
@@ -606,7 +610,7 @@ test('creates an image attachment, downloads it, and removes only its transactio
 	expect(retained?.id).toBe(fileId)
 })
 
-test('adds an image to an existing transaction and restores its preview after reload', async ({
+test('accumulates images beside the picker, removes a draft, and restores saved previews after reload', async ({
 	page
 }) => {
 	const seed = await seedTransaction(page)
@@ -618,6 +622,19 @@ test('adds an image to an existing transaction and restores its preview after re
 		mimeType: 'image/png',
 		buffer: onePixelPng
 	})
+	await expect(imageInput).toHaveAttribute('multiple', '')
+	await imageInput.setInputFiles({ name: 'second.png', mimeType: 'image/png', buffer: onePixelPng })
+	await expect(page.getByRole('img', { name: 'edited.png', exact: true })).toBeVisible()
+	await expect(page.getByRole('img', { name: 'second.png', exact: true })).toBeVisible()
+	const inputBounds = await imageInput.boundingBox()
+	const firstBounds = await page.getByRole('img', { name: 'edited.png', exact: true }).boundingBox()
+	if (!inputBounds || !firstBounds) throw new Error('Missing picker or preview')
+	expect(firstBounds.x + firstBounds.width).toBeLessThanOrEqual(inputBounds.x)
+	await page.getByRole('button', { name: 'Remove Image: second.png', exact: true }).focus()
+	await page.keyboard.press('Enter')
+	await expect(imageInput).toBeFocused()
+	await expect(page.getByRole('img', { name: 'second.png', exact: true })).toHaveCount(0)
+
 	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
 	await expect(page.getByRole('img', { name: 'Preview of edited.png' })).toBeVisible()
 	await expect.poll(() => attachmentState(page, seed.id)).toHaveLength(1)
