@@ -1,4 +1,5 @@
 import { onMount, untrack } from 'svelte'
+import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 import { createActor, type Snapshot } from 'xstate'
 import {
 	createScopedFormMachine,
@@ -76,19 +77,7 @@ export function createScopedFormController<
 		actor.start()
 		return () => {
 			subscription.unsubscribe()
-			if (actor.getSnapshot().status !== 'active') {
-				actor.stop()
-				return
-			}
-			const completion = actor.subscribe({
-				complete: () => actor.stop(),
-				error: () => actor.stop()
-			})
-			actor.send({ type: 'SHUTDOWN' })
-			if (actor.getSnapshot().status === 'done') {
-				completion.unsubscribe()
-				actor.stop()
-			}
+			stopAfterShutdown(actor)
 		}
 	})
 	function formValues(form: HTMLFormElement) {

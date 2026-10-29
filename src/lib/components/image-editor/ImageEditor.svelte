@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte'
+	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor, type ActorRefFrom } from 'xstate'
 	import {
 		imageEditorMachine,
@@ -49,21 +50,7 @@
 		return () => {
 			subscription.unsubscribe()
 			if (!owner) return
-			if (actor.getSnapshot().status !== 'active') {
-				actor.stop()
-				return
-			}
-			const draining = actor.subscribe({
-				complete: () => {
-					draining.unsubscribe()
-					actor.stop()
-				},
-				error: () => {
-					draining.unsubscribe()
-					actor.stop()
-				}
-			})
-			actor.send({ type: 'SHUTDOWN' })
+			stopAfterShutdown(actor)
 		}
 	})
 </script>

@@ -25,6 +25,7 @@
 	import { getContext, onDestroy, onMount, untrack } from 'svelte'
 	import { page } from '$app/state'
 	import { orderAccounts } from '#lib/machines/account-order.js'
+	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { createTransactionEditMachine } from '#lib/machines/transaction-edit.js'
 	import { transactionAttachmentManagerMachine } from '#lib/machines/transaction-attachment-manager.js'
@@ -296,33 +297,10 @@
 		untrack(() => attachmentManager.send({ type: 'SCOPE', transactionId }))
 	})
 	onDestroy(() => {
-		if (editActor.getSnapshot().status !== 'active') {
-			editActor.stop()
-		} else {
-			const completion = editActor.subscribe({
-				complete: () => editActor.stop(),
-				error: () => editActor.stop()
-			})
-			editActor.send({ type: 'SHUTDOWN' })
-			if (editActor.getSnapshot().status === 'done') {
-				completion.unsubscribe()
-				editActor.stop()
-			}
-		}
-		if (attachmentManager.getSnapshot().status !== 'active') {
-			attachmentManager.stop()
-			return
-		}
-		const attachmentCompletion = attachmentManager.subscribe({
-			complete: () => attachmentManager.stop(),
-			error: () => attachmentManager.stop()
-		})
-		attachmentManager.send({ type: 'SHUTDOWN' })
-		if (attachmentManager.getSnapshot().status === 'done') {
-			attachmentCompletion.unsubscribe()
-			attachmentManager.stop()
-		}
+		stopAfterShutdown(editActor)
+		stopAfterShutdown(attachmentManager)
 	})
+
 	function valuesFromForm(form: HTMLFormElement) {
 		const data = new FormData(form)
 		return {

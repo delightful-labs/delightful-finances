@@ -4,6 +4,7 @@
 		createAccountArchiveMachine,
 		selectAccountArchiveView
 	} from '#lib/machines/account-archive.js'
+	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
@@ -148,21 +149,9 @@
 		return () => {
 			subscription.unsubscribe()
 			deleteGrantSubscription.unsubscribe()
-			// The owner must outlive the view while an issued local write settles.
-			const completion = actor.subscribe({ complete: () => actor.stop() })
-			actor.send({ type: 'SHUTDOWN' })
-			if (actor.getSnapshot().status === 'done') {
-				completion.unsubscribe()
-				actor.stop()
-			}
-			const grantCompletion = deleteGrantActor.subscribe({
-				complete: () => deleteGrantActor.stop()
-			})
-			deleteGrantActor.send({ type: 'SHUTDOWN' })
-			if (deleteGrantActor.getSnapshot().status === 'done') {
-				grantCompletion.unsubscribe()
-				deleteGrantActor.stop()
-			}
+			// Keep issued local writes alive until shutdown settles.
+			stopAfterShutdown(actor)
+			stopAfterShutdown(deleteGrantActor)
 		}
 	})
 	function onArchive(accountId: string) {

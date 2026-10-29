@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte'
+	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { Button, Dialog, InputAvatar, StatusMessage } from 'delightful-ui'
 	import {
@@ -51,21 +52,7 @@
 		actor.start()
 		return () => {
 			subscription.unsubscribe()
-			if (actor.getSnapshot().status !== 'active') {
-				actor.stop()
-				return
-			}
-			const draining = actor.subscribe({
-				complete: () => {
-					draining.unsubscribe()
-					actor.stop()
-				},
-				error: () => {
-					draining.unsubscribe()
-					actor.stop()
-				}
-			})
-			actor.send({ type: 'SHUTDOWN' })
+			stopAfterShutdown(actor)
 		}
 	})
 </script>
