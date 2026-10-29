@@ -50,9 +50,12 @@ precede workflow code. Coverage changes follow review of the exact implementatio
       Startup coverage includes nonresponding seed reads, failure, replacement, and shutdown.
       After simplification: 37 affected readiness/startup unit tests pass. Latest application/test
       type checks and both seed reload/deduplication and visible-loading browser checks pass.
-- [ ] T007 Separate attribution-only repair progress from unrelated local capabilities in
+- [x] T007 Separate attribution-only repair progress from unrelated local capabilities in
       `workspace-integrity.ts`, `workspace-integrity-owner.ts`, and `readiness.ts`. Inspect the actual
       finance/bank consumers first; do not remove essential credential or operation-specific facts.
+      Consumer audit and design approved. Readiness now accepts explicit Sync Now through current
+      bank access instead of repair results; contract updated. Implementation approved and verified:
+      85 unit tests, application/test type checks, and four focused bank/readiness browser cases pass.
 - [ ] T008 Audit ordinary writes in `src/lib/data.ts` and persistence machines for local completion
       and late rejection handling. Fix only verified remote gates in a focused slice; preserve existing
       local waits, immutable operation IDs, and state ownership. Do not refactor working paths wholesale.

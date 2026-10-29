@@ -221,3 +221,78 @@ loading state and verifies the visible paragraph as well as its screen-reader an
 relying on startup timing. The previously passing 37 readiness/startup unit tests still cover the
 current machine changes; those files have not changed since that run. Temporary verification config
 was removed. Cold offline restart and general unresponsive-remote coverage remain later work.
+
+## T007 design — attribution repair and bank capability
+
+Status: implementation approved; focused verification passed.
+
+Ordinary page navigation uses `navigationCanUseWorkspace` and does not read integrity reports.
+Bank setup commands use `canUseWorkspace`; bank access publication also checks credential-management
+role. Only Sync Now still depends on successful attribution repair: `canSync` requires a current
+complete/usable-partial integrity report. `BankSyncIntegration.svelte` consumes this capability to
+disable Sync Now. The bank availability and per-operation authorization machines separately verify
+current identity, workspace, membership, owner/admin role, credential/connection availability, and
+operation authority. No bank-sync machine reads membership `profileId`. The integrity issue is only
+profile attribution, but unavailable/conflict outcomes can also describe missing or ambiguous repair
+inputs; these must not be reinterpreted as proof of current access. Current access remains readiness
+and bank authorization's responsibility.
+
+Proposed change: remove the integrity report prerequisite from Sync Now. Keep current
+`canUseWorkspace`, the bank owner's own readiness decisions, explicit user initiation, passkey
+verification, connection ownership, and fresh per-operation authorization. Existing initialization
+requirements for bank binding remain in this slice. Changing an integrity report must neither grant
+access nor revoke otherwise eligible bank access. Observed membership/identity/scope changes still
+invalidate operation access independently.
+
+```mermaid
+stateDiagram-v2
+  state Workspace {
+    state Capability {
+      [*] --> AssessAccess
+      AssessAccess --> Unavailable: identity / scope / membership unavailable
+      AssessAccess --> LocallyEligible: initialized session, selected workspace, current membership
+      LocallyEligible --> BankChecks: explicit Sync Now
+      BankChecks --> ProviderOperation: authorized role, connection, passkey verification
+    }
+    --
+    state Attribution {
+      [*] --> AssessAttribution
+      AssessAttribution --> RepairWaiting: authoritative confirmation required
+      RepairWaiting --> RepairSettled: transaction and cleanup settle
+      AssessAttribution --> RepairSettled: no repair or unavailable inputs
+    }
+  }
+```
+
+This is a capability dependency change, not a new workflow: use existing readiness guards and bank
+child machines; introduce no actors, promises, or context lifecycle flags. Keep repair resource
+ownership, authoritative confirmation, request generations, replacement, shutdown, and repair retry
+unchanged. Integrity reports remain observable progress/diagnostics; they no longer authorize bank
+commands. No schema, permission, localization, or presentation changes are proposed.
+
+Implementation scope: `readiness.ts` and its integrity reporting contract documentation. The audit
+found no need to modify `workspace-integrity.ts` or `workspace-integrity-owner.ts`. Their historical
+finance-ready tags have no production consumers and can be considered separately rather than
+rewriting resource owners for this change.
+
+After exact implementation approval, update the readiness tests that currently expect integrity
+failure or a stale report alone to disable Sync Now; preserve stale-report rejection, current role,
+membership loss, identity changes, and scope invalidation assertions. Exercise bank availability and
+operation authorization tests so repair independence cannot weaken provider requirements. Inspect
+`tests/readiness.e2e.ts` and `tests/bank-sync-offline.e2e.ts` before relevant browser checks. No bank
+provider request should occur merely because repair finishes, startup runs, or connectivity changes.
+
+T007 implementation: explicit SYNC forwarding reuses the existing `bankAccessAllowed` guard, which
+requires current initialized workspace access and credential-management role. Removed the unused
+integrity-based canSync guard; the public canSync selector still asks whether the SYNC event is
+accepted. Integrity report correlation, repair/retry/cleanup, and all bank child authorization and
+credential checks remain unchanged. No new actors or effects were introduced. Readiness tests now assert repair-independent SYNC eligibility while preserving report currency,
+role requirements and observed membership invalidation.
+
+T007 verification: readiness and bank authorization/availability/owner suites pass (85 unit tests).
+Application and test type checks pass. All four focused browser cases pass: offline setup, offline
+sync controls with no provider request on reconnection, explicit startup-storage recovery, and
+failed-history reload without machine errors or provider requests. The history fixture now reads
+the canonical workspace URL instead of a removed selector and checks both drawer/page Sync Now
+buttons under the single main landmark. The first three browser cases passed initially; the history
+case passed after its stale single-button locator was corrected.

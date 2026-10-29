@@ -162,7 +162,6 @@ export function createWorkspaceReadinessMachine({
 			integrityAlive: undefined
 			canObserveIntegrity: undefined
 			canObserveCreation: undefined
-			canSync: undefined
 			creationAlive: undefined
 		}
 	>({
@@ -244,19 +243,6 @@ export function createWorkspaceReadinessMachine({
 			bankAlive: ({ context }) => context.bankActor?.getSnapshot().status === 'active',
 			startupAlive: ({ context }) => context.startupActor?.getSnapshot().status === 'active',
 			integrityAlive: ({ context }) => context.integrityActor?.getSnapshot().status === 'active',
-			canSync: and([
-				'canUseWorkspace',
-				'canObserveIntegrity',
-				({ context }) => {
-					const report = context.integrityReport
-					return (
-						report !== undefined &&
-						sameIntegrityRequest(report.request, context.integrityRequest) &&
-						(report.status.kind === 'complete' ||
-							(report.status.kind === 'partial' && report.status.access === 'usable'))
-					)
-				}
-			]),
 			creationAlive: ({ context }) => context.creationActor?.getSnapshot().status === 'active',
 			canObserveCreation: and([
 				stateIn({ active: { session: 'ready', workspace: 'ready' } }),
@@ -534,7 +520,7 @@ export function createWorkspaceReadinessMachine({
 					actions: sendTo('bank', ({ event }) => event.event)
 				},
 				{
-					guard: and(['canSync', ({ event }) => event.event.type === 'SYNC']),
+					guard: and(['bankAccessAllowed', ({ event }) => event.event.type === 'SYNC']),
 					actions: sendTo('bank', ({ event }) => event.event)
 				},
 				{

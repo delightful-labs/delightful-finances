@@ -331,22 +331,49 @@ describe('workspace readiness supervision', () => {
 	})
 })
 describe('workspace public capability and report currency', () => {
-	it('requires current integrity and keeps profile-attribution issues usable', () => {
-		const f = start()
-		f.observe(f.selected())
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
-		f.report({ kind: 'complete', settlement: 'notStarted' })
-		expect(f.actor.getSnapshot().can(sync)).toBe(true)
-		f.report({
-			kind: 'partial',
-			settlement: 'notStarted',
-			issues: ['profileLink'],
-			access: 'usable'
-		})
-		expect(f.actor.getSnapshot().can(sync)).toBe(true)
-		f.report({ kind: 'unavailable', settlement: 'notStarted' })
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
-	})
+	it.each([
+		{ kind: 'waiting' },
+		{ kind: 'checking' },
+		{ kind: 'complete', settlement: 'notStarted' },
+		{ kind: 'partial', settlement: 'notStarted', issues: ['profileLink'], access: 'usable' },
+		{ kind: 'unavailable', settlement: 'notStarted' },
+		{ kind: 'conflict', settlement: 'notStarted' },
+		{ kind: 'failed', settlement: 'notStarted' },
+		{ kind: 'unresolved', settlement: 'unresolved' },
+		{ kind: 'closed', settlement: 'notStarted' }
+	] satisfies IntegrityStatus[])(
+		'keeps sync eligibility independent of $kind repair status',
+		(status) => {
+			const f = start()
+			f.observe(f.selected())
+			expect(f.actor.getSnapshot().can(sync)).toBe(true)
+			const revision = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
+			bankObservation.mockClear()
+			f.report(status)
+			expect(f.actor.getSnapshot().can(sync)).toBe(true)
+			expect(f.actor.getSnapshot().context.integrityReport?.status).toEqual(status)
+			expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(revision)
+			expect(bankObservation).not.toHaveBeenCalled()
+		}
+	)
+	it.each([
+		{ role: 'owner', allowed: true },
+		{ role: 'admin', allowed: true },
+		{ role: 'member', allowed: false },
+		{ role: 'viewer', allowed: false }
+	] satisfies { role: typeof membership.role; allowed: boolean }[])(
+		'requires bank-management role $role regardless of repair completion',
+		({ role, allowed }) => {
+			const f = start()
+			const selected = f.selected()
+			f.observe({
+				...selected,
+				source: { ...selected.source, membership: { ...membership, role } }
+			})
+			f.report({ kind: 'complete', settlement: 'notStarted' })
+			expect(f.actor.getSnapshot().can(sync)).toBe(allowed)
+		}
+	)
 	it('rejects prior-visit reports after A → B → A', () => {
 		const f = start()
 		f.observe(f.selected())
@@ -354,7 +381,8 @@ describe('workspace public capability and report currency', () => {
 		f.observe(f.selected(scope.profileId))
 		f.observe(f.selected())
 		f.actor.send({ type: 'INTEGRITY_STATUS', report: old })
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
+		expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
+		expect(f.actor.getSnapshot().can(sync)).toBe(true)
 		f.report({ kind: 'complete', settlement: 'notStarted' })
 		expect(f.actor.getSnapshot().can(sync)).toBe(true)
 	})
@@ -375,9 +403,11 @@ describe('workspace public capability and report currency', () => {
 								source: { ...selected.source, membership: { ...membership, role: 'member' } }
 							}
 			f.observe(changed)
+			expect(f.actor.getSnapshot().can(sync)).toBe(false)
 			f.observe(selected)
 			f.actor.send({ type: 'INTEGRITY_STATUS', report: old })
-			expect(f.actor.getSnapshot().can(sync)).toBe(false)
+			expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
+			expect(f.actor.getSnapshot().can(sync)).toBe(true)
 			f.report({ kind: 'complete', settlement: 'notStarted' })
 			expect(f.actor.getSnapshot().can(sync)).toBe(true)
 		}
@@ -393,6 +423,7 @@ describe('workspace public capability and report currency', () => {
 		f.actor.send({ type: 'RETRY_INTEGRITY' })
 		expect(f.actor.getSnapshot().context.integrityRequest.generation).toBe(before.generation + 1)
 		expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
+		expect(f.actor.getSnapshot().can(sync)).toBe(true)
 	})
 	it('rejects a report for another binding even if its generation matches', () => {
 		const f = start()
@@ -403,7 +434,8 @@ describe('workspace public capability and report currency', () => {
 			{ kind: 'complete', settlement: 'notStarted' },
 			{ ...request, binding: { ...request.binding, organizationId: scope.profileId } }
 		)
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
+		expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
+		expect(f.actor.getSnapshot().can(sync)).toBe(true)
 	})
 	it.each([
 		'?workspace=invalid',
