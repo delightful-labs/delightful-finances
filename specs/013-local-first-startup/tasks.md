@@ -13,7 +13,7 @@ Items below intentionally mix implementation candidates and bounded investigatio
       automatically create replacements from incomplete local data. Q3: measure representative
       devices/datasets before choosing numerical budgets, without delaying local-first corrections.
       New consequential product questions discovered during research must still be asked individually.
-- [ ] T002 Reconcile constitution I and XState/testing memory with FR-001–007/016. Clarify locally
+- [x] T002 Reconcile constitution I and XState/testing memory with FR-001–007/016. Clarify locally
       known authorization, partial replicas, cold restarts, and remote nonresponse; retain online-only
       access administration and provider-operation boundaries. Present this focused docs change first.
 - [ ] T003 Reconcile `specs/006-multiple-workspaces/spec.md` and `plan.md`,

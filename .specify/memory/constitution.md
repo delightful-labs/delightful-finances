@@ -5,6 +5,7 @@
 ### I. Local-First Finance
 
 Jazz is the durable application data and authorization layer. Reads and writes must remain useful offline; local writes are optimistic and synchronize when connectivity returns. Do not make ordinary finance workflows depend on a network round trip.
+Locally available records and locally known permissions determine ordinary finance usability, even when a remote connection opens but does not answer. Keep local availability, remote freshness, local persistence, and remote acceptance distinct. Missing or partial local data does not prove global absence and must not trigger replacement, access restoration, or destructive repair. Observed identity, membership, grant, and workspace changes must invalidate affected capabilities. Previously approved online-only access administration and explicit provider operations retain their own requirements.
 
 ### II. Safe, Explicit TypeScript
 

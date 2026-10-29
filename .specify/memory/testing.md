@@ -22,6 +22,10 @@ remain authoritative.
   the implementation is wrong.
 - Static inspection complements execution. Run the smallest relevant checks after correcting
   the issues visible in code; do not launch a broad suite simply to discover stale expectations.
+- For local-first startup changes, cover a cold restart with every app client closed and an online
+  connection that opens but never answers, as well as browser offline mode. Check available local
+  data and writes, partial replicas, observed access changes, and later rejection or recovery.
+  A warm tab or browser online status does not prove cold-start availability or remote acceptance.
   Expand verification when shared behavior changed or evidence justifies it.
 - On failure, inspect the error, page snapshot, fixture, and implementation before the next
   attempt. Avoid blind retries and longer timeouts as substitutes for diagnosis. Track any
