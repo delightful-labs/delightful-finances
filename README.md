@@ -2,6 +2,14 @@
 
 Delightful Finance is a local-first personal finance app using Jazz, Svelte 5, and SvelteKit 3.
 
+## Pull request titles
+
+Use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) for pull request titles: `<type>[optional scope][!]: <description>`.
+
+Examples: `feat(details): animate opening and closing`, `fix: restore keyboard focus`, and `docs: clarify setup`. Use `!` for a breaking change and explain the change in the PR description. Choose a title that describes the complete change being merged.
+
+The `Conventional PR title` GitHub Actions check validates titles when a PR is opened, edited, reopened, updated with commits, or marked ready for review. The `Conventional PR titles` repository ruleset requires this check before merging into `main`.
+
 ## Development
 
 Use Node 22.17 or newer and pnpm. Start the shared development server with `pnpm dev`; its URL is printed by Vite. `pnpm check` checks application and service-worker types without starting another Jazz server. `pnpm build` produces the production app and native service worker.
