@@ -39,10 +39,13 @@ these tests do not establish that live sync is logged yet.
 - [ ] T006 Extend import result ownership with per-account results and stable
       attempt/account identities; wire local start and terminal persistence.
 
-T006 progress: account-result projection implemented through account import,
-multi-account import and operation outputs; awaits focused review and coverage.
-No log persistence is wired into live sync yet. Lifecycle tests from the prior
-review cycle pass (eight actor cases plus six validation cases).
+T006 progress: account-result projection reviewed and committed as 5f1e287.
+All 52 focused operation, import-settlement and logging lifecycle tests pass.
+Assertions cover first/repeated multi-account sync counts and account names,
+and cancellation with settled versus unresolved account writes. Exact operation
+failure outputs explicitly include empty account reports. No production changes
+were needed in this verification cycle. Start/terminal/account-result persistence
+is not wired into live sync yet; that remains the next focused slice.
 
 - [ ] T007 Present recording changes and recursively audit actor helpers.
 - [ ] T008 After approval, verify success/partial/failure/cancellation, interrupted

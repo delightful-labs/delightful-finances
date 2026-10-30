@@ -171,6 +171,7 @@ describe('operation actor failure boundaries', () => {
 				error: new Error('locking_unavailable'),
 				counts,
 				discovered: undefined,
+				accountResults: [],
 				settlement: 'settled'
 			})
 			expect(actor.getSnapshot().context).toMatchObject({
@@ -224,6 +225,7 @@ describe('operation actor failure boundaries', () => {
 				error: new Error(code),
 				counts,
 				discovered: undefined,
+				accountResults: [],
 				settlement: 'settled'
 			})
 			expect(failed).toHaveBeenCalledWith('operation.failed', new Error(code))
