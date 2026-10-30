@@ -45,7 +45,6 @@ export type {
 	BankSetupView,
 	BankStatus,
 	BankStatusKey,
-	BankStepLabelKey,
 	LastSync
 } from '#lib/bank-presentation-contract.js'
 import type { BankSetupView, BankStatus } from '#lib/bank-presentation-contract.js'

@@ -6,6 +6,7 @@
 	"scripts": {
 		"paraglide": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie baseLocale --emit-ts-declarations",
 		"dev": "vite dev",
+		"dev:network": "vite dev --host 0.0.0.0",
 		"dev:agent": "vite dev --config vite.e2e.config.ts --port 5180",
 		"precheck": "pnpm paraglide",
 		"prebuild": "pnpm paraglide",
@@ -53,7 +54,7 @@
 		"@opentelemetry/api": "^1.9.1",
 		"@statelyai/inspect": "^0.7.2",
 		"@xstate/svelte": "^5.0.0",
-		"delightful-ui": "file:vendor/delightful-ui-0.0.24-single-image-avatar.tgz",
+		"delightful-ui": "file:vendor/delightful-ui-0.0.24-image-preview-modal.tgz",
 		"jazz-tools": "2.0.0-alpha.59",
 		"layerchart": "^2.9.0",
 		"pica": "^10.0.3",

@@ -19,7 +19,10 @@
 		InternalTransferLinkResult,
 		InternalTransferUnlinkResult
 	} from '#lib/machines/internal-transfer.js'
-	import type { TransactionEditTransferState } from '#lib/machines/transaction-edit.js'
+	import type {
+		TransactionEditTransferState,
+		TransferStatusLabel
+	} from '#lib/machines/transaction-edit.js'
 	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -55,10 +58,12 @@
 		transferSuggestions = [],
 		transferSearchEnabled = false,
 		transferEditorState = 'unselected',
+		transferConflict = false,
 		selectedTransferCandidateId = null,
 		writableTransferSuggestionIds = new Set<string>(),
 		transferLinkPending = false,
 		transferLinkResult = null,
+		transferStatusLabel = null,
 		transferUnlinkAvailable = false,
 		transferUnlinkWritable = false,
 		transferUnlinkPending = false,
@@ -105,12 +110,14 @@
 		})[]
 		transferSearchEnabled?: boolean
 		transferEditorState?: TransactionEditTransferState
+		transferConflict?: boolean
 		selectedTransferCandidateId?: string | null
 		onTransferSearchEnabledChange?: (enabled: boolean) => void
 		onSelectTransferCandidate?: (transactionId: string) => void
 		writableTransferSuggestionIds?: ReadonlySet<string>
 		transferLinkPending?: boolean
 		transferLinkResult?: InternalTransferLinkResult | null
+		transferStatusLabel?: TransferStatusLabel | null
 		transferUnlinkAvailable?: boolean
 		transferUnlinkWritable?: boolean
 		transferUnlinkPending?: boolean
@@ -349,7 +356,7 @@
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
-				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked' && transferEditorState !== 'conflicted'}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked' && transferEditorState !== 'conflicted' && !transferConflict}
 					<label>
 						<input
 							type="checkbox"
@@ -363,15 +370,14 @@
 					<InternalTransferSuggestions
 						suggestions={transferSuggestions}
 						writableSuggestionIds={writableTransferSuggestionIds}
-						editorState={transferEditorState}
+						editorState={transferConflict ? 'conflicted' : transferEditorState}
 						selectedId={selectedTransferCandidateId}
 						onSelect={onSelectTransferCandidate}
 						pending={transferLinkPending}
-						result={transferLinkResult}
+						statusLabel={transferStatusLabel}
 						unlinkAvailable={transferUnlinkAvailable}
 						unlinkWritable={transferUnlinkWritable}
 						unlinkPending={transferUnlinkPending}
-						unlinkResult={transferUnlinkResult}
 						{linkedCounterpartHref}
 						onLink={onLinkCounterpart}
 						onUnlink={onUnlinkTransfer}

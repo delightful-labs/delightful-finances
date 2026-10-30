@@ -19,7 +19,7 @@
 	} = $props()
 </script>
 
-<TopNavigation sticky class="site-header">
+<TopNavigation class="site-header">
 	<Button
 		class="navigation-toggle"
 		appearance="flat"
@@ -44,26 +44,20 @@
 	:global {
 		.site-header {
 			--dui-top-navigation-padding: 0;
-			inline-size: 100%;
-		}
-
-		.site-header .app-logo {
-			inline-size: auto;
-			max-inline-size: 100%;
-			block-size: 44px;
-			flex-shrink: 0;
-			color: var(--dui-color-foreground, #646464);
 		}
 
 		.site-header .navigation-toggle {
 			--dui-button-padding: 0;
 			--dui-button-border-width: 0;
 			--dui-button-min-height: 2.75rem;
-			inline-size: 2.75rem;
-			block-size: 2.75rem;
-			display: inline-grid;
-			place-items: center;
+			aspect-ratio: 1;
 			touch-action: manipulation;
+		}
+
+		.app-logo {
+			inline-size: auto;
+			max-inline-size: 100%;
+			block-size: 44px;
 		}
 	}
 </style>

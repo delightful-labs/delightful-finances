@@ -96,6 +96,7 @@
 					}
 				}
 				infoLabel={m['labels.subject_details']({ subject: m['nouns.avatar']({ count: 1 }) })}
+				closeLabel={m['actions.close']()}
 				removeLabel={selectedFile === savedFile
 					? m['actions.remove_subject']({ subject: m['nouns.avatar']({ count: 1 }) })
 					: m['actions.clear_selected_subject']({ subject: m['nouns.image']({ count: 1 }) })}
@@ -105,7 +106,19 @@
 				aria-describedby="avatar-help"
 				required
 				disabled={!view.fieldsEditable}
-			/>
+			>
+				{#snippet imageActions(file, closePreview)}
+					<Button
+						type="button"
+						disabled={!view.fieldsEditable}
+						onclick={() => {
+							closePreview()
+							pendingFile = file
+							cropOpen = true
+						}}>{m['actions.edit_subject']({ subject: m['nouns.avatar']({ count: 1 }) })}</Button
+					>
+				{/snippet}
+			</InputAvatar>
 			{#if selectionError}<p role="alert">{m['forms.validation_error']()}</p>{/if}
 		{/snippet}
 		{#snippet controls(view)}

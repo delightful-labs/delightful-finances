@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js'
 import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 import {
 	findInternalTransferCounterparts,
@@ -48,6 +49,12 @@ import type { TransferMutationResult } from './internal-transfer-mutation-owner.
 export type TransactionEditOptions = ReturnType<typeof createTransactionEditFormOptions>
 export type TransactionEditTransferState =
 	'unselected' | 'searching' | 'matches' | 'empty' | 'failed' | 'linked' | 'conflicted'
+export type TransferStatusLabel = () => string
+export type TransferDeleteFeedback = {
+	label: () => string
+	variant: 'loading' | 'success' | 'error'
+}
+
 type TransferObservation = {
 	rows: readonly InternalTransferCandidate[]
 	scope: TransactionEntryScope
@@ -573,6 +580,11 @@ export function createTransactionEditMachine(
 							unselected: { on: { ENABLE_SEARCH: 'searching' } },
 							conflicted: {},
 							searching: {
+								meta: {
+									transferStatus: () =>
+										m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) }),
+									priority: 3
+								},
 								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
 							},
 							matches: {
@@ -582,6 +594,11 @@ export function createTransactionEditMachine(
 								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
 							},
 							failed: {
+								meta: {
+									transferStatus: () =>
+										m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) }),
+									priority: 3
+								},
 								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
 							},
 							linked: {},
@@ -603,6 +620,7 @@ export function createTransactionEditMachine(
 								}
 							},
 							operating: {
+								meta: { transferStatus: () => m['forms.settling'](), priority: 1 },
 								initial: 'active',
 								invoke: {
 									id: 'linkOperation',
@@ -688,6 +706,11 @@ export function createTransactionEditMachine(
 								}
 							},
 							succeeded: {
+								meta: {
+									transferStatus: () =>
+										m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) }),
+									priority: 1
+								},
 								on: {
 									LINK_COUNTERPART: {
 										guard: and(['canLink', 'transferMatches']),
@@ -699,6 +722,31 @@ export function createTransactionEditMachine(
 								}
 							},
 							rejected: {
+								initial: 'classifying',
+								states: {
+									classifying: {
+										always: [
+											{
+												guard: ({ context }) =>
+													context.linkResult?.outcome === 'cancelled' ||
+													context.linkResult?.outcome === 'closed',
+												target: 'cancelled'
+											},
+
+											{ target: 'failed' }
+										]
+									},
+									cancelled: {
+										meta: { transferStatus: () => m['status.cancelled'](), priority: 1 }
+									},
+									failed: {
+										meta: {
+											transferStatus: () =>
+												m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) }),
+											priority: 1
+										}
+									}
+								},
 								on: {
 									LINK_COUNTERPART: {
 										guard: and(['canLink', 'transferMatches']),
@@ -727,6 +775,7 @@ export function createTransactionEditMachine(
 								}
 							},
 							operating: {
+								meta: { transferStatus: () => m['forms.settling'](), priority: 2 },
 								initial: 'active',
 								invoke: {
 									id: 'unlinkOperation',
@@ -812,6 +861,11 @@ export function createTransactionEditMachine(
 								}
 							},
 							succeeded: {
+								meta: {
+									transferStatus: () =>
+										m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) }),
+									priority: 2
+								},
 								on: {
 									UNLINK_TRANSFER: {
 										guard: and(['canUnlink', 'transferLinked']),
@@ -823,6 +877,38 @@ export function createTransactionEditMachine(
 								}
 							},
 							rejected: {
+								initial: 'classifying',
+								states: {
+									classifying: {
+										always: [
+											{
+												guard: ({ context }) =>
+													context.unlinkResult?.outcome === 'cancelled' ||
+													context.unlinkResult?.outcome === 'closed',
+												target: 'cancelled'
+											},
+											{
+												guard: ({ context }) =>
+													context.unlinkResult?.outcome === 'recoveryRequired',
+												target: 'recoveryRequired'
+											},
+											{ target: 'failed' }
+										]
+									},
+									cancelled: {
+										meta: { transferStatus: () => m['status.cancelled'](), priority: 2 }
+									},
+									recoveryRequired: {
+										meta: { transferStatus: () => m['transfers.recovery_required'](), priority: 2 }
+									},
+									failed: {
+										meta: {
+											transferStatus: () =>
+												m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) }),
+											priority: 2
+										}
+									}
+								},
 								on: {
 									UNLINK_TRANSFER: {
 										guard: and(['canUnlink', 'transferLinked']),
@@ -851,6 +937,9 @@ export function createTransactionEditMachine(
 								}
 							},
 							operating: {
+								meta: {
+									deleteFeedback: { label: () => m['forms.settling'](), variant: 'loading' }
+								},
 								initial: 'active',
 								invoke: {
 									id: 'deleteOperation',
@@ -927,6 +1016,36 @@ export function createTransactionEditMachine(
 								}
 							},
 							succeeded: {
+								initial: 'classifying',
+								states: {
+									classifying: {
+										always: [
+											{
+												guard: ({ context }) =>
+													context.deleteResult?.outcome === 'succeeded' &&
+													context.deleteResult.choice.kind === 'both',
+												target: 'both'
+											},
+											{ target: 'selected' }
+										]
+									},
+									both: {
+										meta: {
+											deleteFeedback: {
+												label: () => m['transfers.delete_saved_both'](),
+												variant: 'success'
+											}
+										}
+									},
+									selected: {
+										meta: {
+											deleteFeedback: {
+												label: () => m['transfers.delete_saved_selected'](),
+												variant: 'success'
+											}
+										}
+									}
+								},
 								on: {
 									DELETE_LINKED_TRANSFER: {
 										guard: 'canDelete',
@@ -938,6 +1057,45 @@ export function createTransactionEditMachine(
 								}
 							},
 							rejected: {
+								initial: 'classifying',
+								states: {
+									classifying: {
+										always: [
+											{
+												guard: ({ context }) =>
+													context.deleteResult?.outcome === 'cancelled' ||
+													context.deleteResult?.outcome === 'closed',
+												target: 'cancelled'
+											},
+											{
+												guard: ({ context }) =>
+													context.deleteResult?.outcome === 'recoveryRequired',
+												target: 'recoveryRequired'
+											},
+											{ target: 'failed' }
+										]
+									},
+									cancelled: {},
+									recoveryRequired: {
+										meta: {
+											deleteFeedback: {
+												label: () => m['transfers.recovery_required'](),
+												variant: 'error'
+											}
+										}
+									},
+									failed: {
+										meta: {
+											deleteFeedback: {
+												label: () =>
+													m['errors.save_subject']({
+														subject: m['nouns.transaction']({ count: 2 })
+													}),
+												variant: 'error'
+											}
+										}
+									}
+								},
 								on: {
 									DELETE_LINKED_TRANSFER: {
 										guard: 'canDelete',
@@ -986,6 +1144,15 @@ export function createTransactionEditMachine(
 	return {
 		logic,
 		selectFormView,
+		selectTransferStatus: (snapshot: EditSnapshot): TransferStatusLabel | null => {
+			const metadata = Object.values(snapshot.getMeta()).filter((meta) => meta?.transferStatus)
+			const entries = metadata.flatMap((meta) => (meta?.transferStatus ? [meta] : []))
+			entries.sort((a, b) => (b?.priority ?? 0) - (a?.priority ?? 0))
+			return entries[0]?.transferStatus ?? null
+		},
+		selectDeleteFeedback: (snapshot: EditSnapshot): TransferDeleteFeedback | null =>
+			Object.values(snapshot.getMeta()).find((meta) => meta?.deleteFeedback)?.deleteFeedback ??
+			null,
 		selectTransferState,
 		isLinkPending: (snapshot: EditSnapshot) => snapshot.context.linkInput !== undefined,
 		isUnlinkPending: (snapshot: EditSnapshot) => snapshot.context.unlinkInput !== undefined,

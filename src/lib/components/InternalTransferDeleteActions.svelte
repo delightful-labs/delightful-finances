@@ -1,41 +1,23 @@
 <script lang="ts">
 	import { Button, Dialog, StatusMessage } from 'delightful-ui'
-	import type {
-		InternalTransferDeleteChoice,
-		InternalTransferDeleteResult
-	} from '#lib/machines/internal-transfer.js'
+	import type { InternalTransferDeleteChoice } from '#lib/machines/internal-transfer.js'
+	import type { TransferDeleteFeedback } from '#lib/machines/transaction-edit.js'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let {
 		transactionId,
 		available,
 		pending,
-		result,
+		feedback,
 		onDelete
 	}: {
 		transactionId: string
 		available: boolean
 		pending: boolean
-		result: InternalTransferDeleteResult | null
+		feedback: TransferDeleteFeedback | null
 		onDelete: (choice: InternalTransferDeleteChoice) => void
 	} = $props()
 	let open = $state(false)
-	const feedbackText = $derived(
-		result?.outcome === 'succeeded'
-			? result.choice.kind === 'both'
-				? m['transfers.delete_saved_both']()
-				: m['transfers.delete_saved_selected']()
-			: result?.outcome === 'recoveryRequired'
-				? m['transfers.recovery_required']()
-				: result && result.outcome !== 'cancelled' && result.outcome !== 'closed'
-					? m['errors.save_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
-					: undefined
-	)
-	const feedbackVariant = $derived(
-		result?.outcome === 'succeeded' && result.settlement === 'locallyPersisted'
-			? 'success'
-			: 'error'
-	)
 	function choose(choice: InternalTransferDeleteChoice) {
 		open = false
 		onDelete(choice)
@@ -48,10 +30,8 @@
 	</Button>
 {/if}
 
-{#if pending}
-	<StatusMessage variant="loading" text={m['forms.settling']()} />
-{:else if feedbackText}
-	<StatusMessage variant={feedbackVariant} text={feedbackText} />
+{#if feedback}
+	<StatusMessage variant={feedback.variant} text={feedback.label()} />
 {/if}
 
 <Dialog

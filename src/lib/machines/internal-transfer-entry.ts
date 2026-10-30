@@ -1,3 +1,5 @@
+import { m } from '#lib/paraglide/messages.js'
+import { formReasonText } from '#lib/form-messages.js'
 import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 import { EXPENSE, INCOME } from '#lib/domain/transaction-kind.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
@@ -451,3 +453,11 @@ export function createInternalTransferEntryFormOptions(dependencies: Dependencie
 		persistence
 	})
 }
+
+export const internalTransferEntryReasonLabels = {
+	...formReasonText,
+	insufficientAccounts: () => m['transfers.insufficient_accounts'](),
+	permissionChanged: () => m['forms.read_only'](),
+	incompatible: () => m['transfers.incompatible'](),
+	unavailable: () => m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
+} satisfies Record<InternalTransferEntryReason, () => string>

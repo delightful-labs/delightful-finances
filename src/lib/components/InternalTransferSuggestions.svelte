@@ -5,10 +5,9 @@
 	import type { InternalTransferCandidate } from '#lib/domain/internal-transfer.js'
 	import type { TransactionRow } from '#lib/schema.js'
 	import type {
-		InternalTransferLinkResult,
-		InternalTransferUnlinkResult
-	} from '#lib/machines/internal-transfer.js'
-	import type { TransactionEditTransferState } from '#lib/machines/transaction-edit.js'
+		TransactionEditTransferState,
+		TransferStatusLabel
+	} from '#lib/machines/transaction-edit.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -23,12 +22,11 @@
 		selectedId,
 		onSelect,
 		pending,
-		result,
+		statusLabel,
 		onLink,
 		unlinkAvailable,
 		unlinkWritable,
 		unlinkPending,
-		unlinkResult,
 		linkedCounterpartHref,
 		onUnlink
 	}: {
@@ -38,12 +36,11 @@
 		selectedId: string | null
 		onSelect: ((transactionId: string) => void) | undefined
 		pending: boolean
-		result: InternalTransferLinkResult | null
+		statusLabel: TransferStatusLabel | null
 		onLink: (transactionId: string) => void
 		unlinkAvailable: boolean
 		unlinkWritable: boolean
 		unlinkPending: boolean
-		unlinkResult: InternalTransferUnlinkResult | null
 		linkedCounterpartHref: string | null
 		onUnlink: (() => void) | undefined
 	} = $props()
@@ -57,33 +54,7 @@
 	function formatDate(value: string) {
 		return dates.format(new Date(`${value}T00:00:00.000Z`))
 	}
-	const resultMessage = $derived.by(() => {
-		if (!result) return ''
-		if (result.outcome === 'succeeded')
-			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		if (result.outcome === 'cancelled' || result.outcome === 'closed')
-			return m['status.cancelled']()
-		return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-	})
-	const unlinkResultMessage = $derived.by(() => {
-		if (!unlinkResult) return ''
-		if (unlinkResult.outcome === 'succeeded')
-			return m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		if (unlinkResult.outcome === 'recoveryRequired') return m['transfers.recovery_required']()
-		if (unlinkResult.outcome === 'cancelled' || unlinkResult.outcome === 'closed')
-			return m['status.cancelled']()
-		return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-	})
-	const statusMessage = $derived.by(() => {
-		if (editorState === 'searching')
-			return m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
-		if (editorState === 'failed')
-			return m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
-		if (unlinkPending) return m['forms.settling']()
-		if (unlinkResultMessage) return unlinkResultMessage
-		if (pending) return m['forms.settling']()
-		return resultMessage
-	})
+	const statusMessage = $derived(statusLabel?.() ?? '')
 </script>
 
 <section aria-labelledby="transfer-suggestions-heading">
@@ -118,24 +89,28 @@
 			<legend
 				>{m['actions.select_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</legend
 			>
-			{#each suggestions as suggestion (suggestion.id)}
-				<label>
-					<input
-						type="radio"
-						name="transfer-counterpart"
-						value={suggestion.id}
-						checked={selectedId === suggestion.id}
-						onchange={() => onSelect?.(suggestion.id)}
-					/>
-					<span>
-						{formatDate(suggestion.bookedOn)} · {suggestion.accountName ??
-							m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
-						{#if suggestion.description}
-							· {suggestion.description}{/if}
-					</span>
-					<span>{formatMoney(suggestion.amountMinor, suggestion.currency, getLocale())}</span>
-				</label>
-			{/each}
+			<ul>
+				{#each suggestions as suggestion (suggestion.id)}
+					<li>
+						<label>
+							<input
+								type="radio"
+								name="transfer-counterpart"
+								value={suggestion.id}
+								checked={selectedId === suggestion.id}
+								onchange={() => onSelect?.(suggestion.id)}
+							/>
+							<span>
+								{formatDate(suggestion.bookedOn)} · {suggestion.accountName ??
+									m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
+								{#if suggestion.description}
+									· {suggestion.description}{/if}
+							</span>
+							<span>{formatMoney(suggestion.amountMinor, suggestion.currency, getLocale())}</span>
+						</label>
+					</li>
+				{/each}
+			</ul>
 		</fieldset>
 		<Button
 			type="button"
@@ -152,3 +127,24 @@
 	{/if}
 	<p>{statusMessage}</p>
 </section>
+
+<style>
+	fieldset {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	ul {
+		list-style: none;
+		padding: 0;
+		display: grid;
+		gap: var(--dui-space-sm);
+	}
+
+	label {
+		display: flex;
+		align-items: start;
+		gap: var(--dui-space-xs);
+	}
+</style>
