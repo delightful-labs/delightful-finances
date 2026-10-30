@@ -10,15 +10,17 @@ Execute one review cycle at a time. Review gates precede tests for each slice.
       row types; implement scoped read/insert/settlement policies with immutable
       identities and default-denied retention deletion.
 - [x] T003 Present T002 for implementation review before tests (user approved commit and continuation).
-- [ ] T004 After approval, add full-app permission/validation coverage, verify
+- [x] T004 After approval, add full-app permission/validation coverage, verify
       schema publication and generate the reviewed additive migration.
 
 T004 progress: eight focused validation/full-policy tests pass, and SDK validation
 accepts all 22 tables. The full-policy harness publishes the schema and policy to
 its disposable test authority. Tests exposed optional-count decoding receiving
 null; fixed by making the underlying column optional before its transform and
-validating nullable numbers in both directions. That fix awaits review; additive
-migration generation remains pending. No deployed environment was changed.
+validating nullable numbers in both directions. The user approved and committed
+the fix as d9dbb48. Generated the additive c9feba2ff2a5 -> e5a4d82f6013 migration:
+only the two log tables are added; all 20 existing table definitions are unchanged.
+The migration awaits focused review. No deployed environment was changed.
 
 ## Recording
 
