@@ -42,6 +42,22 @@ describe('calculateAccountBalances', () => {
 		expect(result.get(account.id)).toBe(7_475n)
 	})
 
+	it('accepts only the fields required for balance calculation', () => {
+		const result = calculateAccountBalances(
+			[account],
+			[
+				{
+					accountId: account.id,
+					amountMinor: 1_250,
+					currency: account.currency,
+					kind: 'income'
+				}
+			]
+		)
+
+		expect(result.get(account.id)).toBe(1_250n)
+	})
+
 	it('returns zero for accounts without transactions and ignores other accounts or currencies', () => {
 		const result = calculateAccountBalances(
 			[account, { ...account, id: id(21), currency: 'EUR' }],

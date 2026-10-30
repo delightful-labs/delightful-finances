@@ -34,6 +34,15 @@ export type TransactionRow = s.RowOf<typeof app.transactions>
 export type InternalTransfer = s.RowOf<typeof app.internalTransfers>
 export type Check = s.RowOf<typeof app.checks>
 
+export const transactionSummaryQuery = app.transactions.select(
+	'id',
+	'accountId',
+	'categoryId',
+	'amountMinor',
+	'currency',
+	'kind'
+)
+
 export const transactionDetailQuery = app.transactions
 	.select('*', '$createdBy', '$createdAt', '$updatedBy', '$updatedAt')
 	.include({

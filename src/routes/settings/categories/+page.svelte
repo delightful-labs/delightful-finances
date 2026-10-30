@@ -8,7 +8,7 @@
 	import type { ManagementObservation } from '#lib/management-contract.js'
 	import { categoryArchiveSchema, categoryFormSchema } from '#lib/validation/categories.js'
 	import { archiveCategory, createCategory } from '#lib/data.js'
-	import { app } from '#lib/schema.js'
+	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
@@ -32,7 +32,7 @@
 	// Count all readable history, regardless of sidebar account selection or tag archive state.
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
-			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 	const tags = new QuerySubscription(() =>

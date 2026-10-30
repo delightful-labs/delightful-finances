@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { inspectActor } from '#lib/inspector.js'
-	import { app } from '#lib/schema.js'
+	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
@@ -115,7 +115,7 @@
 	)
 	const balanceTransactions = new QuerySubscription(() =>
 		ready && filters.activeOrganizationId
-			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 	const accountBalances = $derived(

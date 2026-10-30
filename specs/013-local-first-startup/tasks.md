@@ -284,6 +284,44 @@ If an audit finds no applicable waste, record that outcome rather than adding an
       T030 and T031 slices validated with the results above. T033 remains open for later approved slices and
       broader measurements; no T029/T032 implementation was included in these review cycles.
 
+## Balance reads, repeated calculations, and transaction-list cost
+
+These are application-side candidates supported by the installed Jazz APIs. Take one focused slice
+at a time, review it, then use T033 for relevant correctness/performance checks. Fewer selected
+columns or less repeated code is not by itself evidence of faster startup, fewer wire bytes, or
+smaller persisted replicas.
+
+- [x] T034 [US1] Narrow transaction results used only for account balances and category counts.
+      All three consumers share transactionSummaryQuery selecting id/accountId/categoryId/amountMinor/
+      currency/kind; the balance helper accepts its four required fields. Existing workspace predicates,
+      local-first tier and calculation algorithm are preserved. Verification: 3 balance unit tests,
+      both sidebar viewport cases and both category count/access cases passed; Svelte/type checks,
+      formatting and whitespace checks passed. Fixed the category archive assertion to select its
+      confirmation instead of unrelated status messages. Per user direction, performance measurement
+      was omitted. No startup-time, heap, network or storage improvement is claimed. Dedicated cold
+      projection/update-delete probes were not run in this focused verification.
+- [ ] T035 [US1] After T034 review/verification, profile repeated `calculateAccountBalances` work in
+      `src/lib/components/WorkspaceBootstrap.svelte` and `src/routes/accounts/+page.svelte` using
+      `src/lib/domain/account-balances.ts`. Establish call frequency and large-history CPU cost before
+      adding shared ownership. If worthwhile, design one scope/generation-bound read-only calculation
+      source through the existing integration/context boundary; share only matching account/currency
+      and transaction inputs, without sharing authorization decisions. Preserve loading/error versus
+      zero, live edits, archive/filter/order behavior and identity/workspace invalidation. Record
+      exact paths and ownership in `plan.md` before implementation; use a statechart if a new workflow
+      is introduced. Verify focused balances/account-order/role/offline cases after implementation
+      approval and report measured CPU/usable-time benefit or close as evaluated without a change.
+- [ ] T036 [US1] After the preceding focused review cycles, profile acquisition/materialization,
+      filtering, grouping and rendering for large histories in `src/lib/components/TransactionView.svelte`,
+      `src/lib/components/TransactionList.svelte`, and their route/domain callers. Record exact hot
+      paths and comparable production traces in `research.md`. Evaluate current Jazz where/orderBy/
+      limit/offset APIs against existing URL pagination, date groups, account filters, archives,
+      transfers, live insert/edit/delete and navigation semantics before choosing a change. Keep
+      balance totals independently correct across the full readable history; a visible page is not
+      proof of complete data. Do not add a pagination owner, app worker or speculative memoization
+      without a measured case and machine-first review of any acquisition/growth lifecycle. Inspect
+      affected fixtures after review, then run focused correctness/cold/update checks and report
+      measured response/render cost, memory, and usable-time changes with their limits.
+
 ## Consolidated follow-through
 
 The current decisions are in investigation-results.md. T009 covers the implemented startup slice;

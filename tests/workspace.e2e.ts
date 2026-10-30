@@ -1422,9 +1422,9 @@ test('category page counts connections, archives offline, protects system catego
 	await context.setOffline(true)
 	try {
 		await row.getByRole('button', { name: 'Archive Counted category', exact: true }).click()
-		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
-			'Category Counted category archived.'
-		)
+		await expect(
+			main.getByRole('status').filter({ hasText: 'Category Counted category archived.' })
+		).toHaveText('Category Counted category archived.')
 		await expect(row).toHaveCount(0)
 	} finally {
 		await context.setOffline(false)

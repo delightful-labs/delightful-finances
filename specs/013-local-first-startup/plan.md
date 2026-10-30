@@ -669,3 +669,30 @@ App/test types and formatting pass. One post-change timing sample does not estab
 speedup. Read tiers and writer actors remain unchanged; no new statechart or SDK override was added.
 See the final research disposition and dialogDemandVerification in subscription-audit-results.json.
 This reviewed slice remains uncommitted. Do not expand into another cleanup without its own review.
+
+### T034 first balance-read slice
+
+The balance helper reads only accountId, kind, amountMinor and currency. Both the shell and Accounts
+page currently request complete transaction rows. Categories also shares their un-ordered full
+workspace query to read categoryId for usage counts; changing only the two balance consumers would
+introduce an extra query key there. Preserve sharing through a canonical transactionSummaryQuery
+in schema.ts selecting id, accountId, categoryId, amountMinor, currency and kind. Explicit id retains
+the SDK subscription/delta identity. All three consumers apply their existing organization predicate.
+The pure helper accepts only its four required transaction fields; no account-row contract changes.
+
+Implementation scope: schema.ts, domain/account-balances.ts, WorkspaceBootstrap.svelte,
+routes/accounts/+page.svelte and routes/settings/categories/+page.svelte. No persistent schema,
+permission, actor, asynchronous workflow, read-tier, query lifetime, archive or calculation algorithm
+changes. This is a declarative projection plus a structural type restriction; no machine is needed.
+
+Verification completed after implementation approval: all 3 balance unit cases passed, including
+minimal-field input; both sidebar viewport cases passed, covering live/offline edits, reload,
+currencies, filtering and workspace changes. Both category usage/history and selected-account access
+cases passed after narrowing the archive confirmation locator. Svelte/type checks, formatting and
+whitespace checks passed. The agent server used disposable in-memory Jazz with explicit blank server
+URL/admin-secret overrides so local development environment settings could not redirect it to 5174.
+
+The user explicitly omitted performance measurements. No startup latency, heap, network or storage
+benefit is claimed; dedicated cold projection and update/delete probes were not run. Jazz can retain
+or replicate full records despite projected application results. T035 calculation sharing and T036
+transaction-list work remain separate tasks.

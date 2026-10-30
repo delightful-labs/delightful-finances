@@ -8,7 +8,7 @@
 	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
-	import { app } from '#lib/schema.js'
+	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
@@ -63,7 +63,7 @@
 	)
 	const transactions = new QuerySubscription(() =>
 		filters.activeOrganizationId
-			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 

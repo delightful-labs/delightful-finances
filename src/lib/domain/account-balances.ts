@@ -1,9 +1,11 @@
 import { INCOME } from './transaction-kind.js'
 import type { Account, TransactionRow } from '#lib/schema.js'
 
+type BalanceTransaction = Pick<TransactionRow, 'accountId' | 'amountMinor' | 'currency' | 'kind'>
+
 export function calculateAccountBalances(
 	accounts: readonly Account[],
-	transactions: readonly TransactionRow[]
+	transactions: readonly BalanceTransaction[]
 ): ReadonlyMap<string, bigint> {
 	const balances = new Map(accounts.map((account) => [account.id, 0n]))
 	const currencies = new Map(accounts.map((account) => [account.id, account.currency]))
