@@ -22,12 +22,16 @@ async function provision(signal: AbortSignal): Promise<PreviewJazzApp> {
 }
 
 async function waitForApp(app: PreviewJazzApp, signal: AbortSignal): Promise<'ready' | 'pending'> {
+	const startedAt = performance.now()
 	try {
 		const response = await fetch(`${serverUrl}apps/${app.appId}/admin/permissions/head`, {
 			headers: { 'X-Jazz-Admin-Secret': app.adminSecret },
 			redirect: 'error',
 			signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)])
 		})
+		console.info(
+			`[preview-build] Jazz readiness HTTP ${response.status} after ${Math.round(performance.now() - startedAt)}ms.`
+		)
 		await response.body?.cancel()
 		if (
 			response.status === 404 ||
@@ -43,8 +47,12 @@ async function waitForApp(app: PreviewJazzApp, signal: AbortSignal): Promise<'re
 		return 'ready'
 	} catch (error) {
 		// A cold app can take longer than an individual request deadline to start.
-		if (!signal.aborted && error instanceof DOMException && error.name === 'TimeoutError')
+		if (!signal.aborted && error instanceof DOMException && error.name === 'TimeoutError') {
+			console.info('[preview-build] Jazz readiness request timed out.')
 			return 'pending'
+		}
+		if (!signal.aborted)
+			console.error('[preview-build] Jazz readiness request failed; details withheld.')
 		throw error
 	}
 }

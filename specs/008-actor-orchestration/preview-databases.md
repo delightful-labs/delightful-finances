@@ -84,3 +84,24 @@ app or the user's development server/data was changed. Run the hosted browser sm
 real preview build, with `PUBLIC_DEBUG=true DEBUG_PRODUCTION_SMOKE=true
 JAZZ_HOSTED_PREVIEW_SMOKE=true pnpm exec playwright test --config playwright.debug.config.ts`.
 The opt-in test is skipped during normal debug runs and creates data only in the newly built app.
+
+## PR #33 readiness investigation (2026-10-30)
+
+Netlify CLI logs show two consecutive previews provisioning successfully, then exhausting all 12
+readiness checks without reaching schema deployment or the frontend build. Historical logs do not
+record the pending HTTP status. The documented Cloud URL matches the configured URL, and a newly
+generated disposable app returned HTTP 200 from both permissions head (`head: null`) and schemas
+(empty catalogue). Provisioning returns appId, adminSecret, backendSecret and expiresAt, with no
+regional URL or readiness metadata. An unknown app returns HTTP 404; 404 alone therefore cannot
+establish a propagation delay. The earlier successful Netlify deploy used the production build path.
+
+Add safe HTTP status/elapsed-time logging and static timeout/request-failure messages to the existing
+readiness leaf adapter. Preserve the machine's retry, cancellation and failure policy. Do not log
+response bodies, credentials, raw exceptions or request headers. No workflow states or actor contracts
+change; the adapter still makes one request per invocation. The underlying historical Cloud failure
+remains unconfirmed, so do not increase the retry window on this evidence.
+
+Pending implementation review: extend the process-fixture assertions in
+`src/lib/testing/deployment/netlify-preview.test.ts` for HTTP status, timeout and secret-safe failure
+output. Existing machine tests retain the unchanged 12-attempt boundary; browser fixtures are
+unaffected. No tests have been added or run for this diagnostic change.
