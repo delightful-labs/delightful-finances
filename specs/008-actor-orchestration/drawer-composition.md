@@ -1,5 +1,13 @@
 # Drawer presentation composition
 
+## Sidebar link typography
+
+Use the shared mono font token (`--dui-font-family`, falling back to Source Code
+Pro and monospace) in AppNavigationLink. This applies consistently to primary,
+account-management and settings links on mobile and desktop. No interaction or
+workflow changes are needed. Implementation reviewed and approved for commit;
+formatting checks pass. No new tests are needed for this font-only adjustment.
+
 ## Requirements and plan
 
 Break the large AppDrawer into focused components composed as children in AppShell,

@@ -32,6 +32,7 @@
 
 <style>
 	.navigation-link {
+		font-family: var(--dui-font-family, 'Source Code Pro', monospace);
 		padding-inline: 1rem;
 	}
 
