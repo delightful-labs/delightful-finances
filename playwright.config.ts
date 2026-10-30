@@ -17,6 +17,7 @@ export default defineConfig({
 	},
 	testMatch: '**/*.e2e.{ts,js}',
 	testIgnore: [
+		'**/tests/startup-stalled-remote.e2e.ts',
 		'**/tests/debugging.e2e.ts',
 		'**/tests/fake-data.e2e.ts',
 		'**/.delta/**',

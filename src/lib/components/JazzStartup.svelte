@@ -16,7 +16,7 @@
 	} = $props()
 </script>
 
-<main class:recoverable={error && Boolean(onRetry)}>
+<div class:recoverable={error && Boolean(onRetry)}>
 	<LoadingContent
 		style={error && onRetry ? '--dui-loading-screen-min-height: auto' : undefined}
 		variant={error ? 'error' : 'loading'}
@@ -34,11 +34,10 @@
 			{m['actions.retry']()}
 		</Button>
 	{/if}
-</main>
+</div>
 
 <style>
 	.recoverable {
-		min-block-size: 100dvh;
 		display: grid;
 		align-content: center;
 		justify-items: center;

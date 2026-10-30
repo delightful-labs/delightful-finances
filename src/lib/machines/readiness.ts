@@ -149,6 +149,8 @@ export function createWorkspaceReadinessMachine({
 			bankAccessAllowed: undefined
 			navigationAlive: undefined
 			navigationReady: undefined
+			navigationCanUseWorkspace: undefined
+			awaitingInitialWorkspace: undefined
 			navigationFailed: undefined
 			navigationDenied: undefined
 			invalidSelection: undefined
@@ -160,7 +162,6 @@ export function createWorkspaceReadinessMachine({
 			integrityAlive: undefined
 			canObserveIntegrity: undefined
 			canObserveCreation: undefined
-			canSync: undefined
 			creationAlive: undefined
 		}
 	>({
@@ -201,7 +202,19 @@ export function createWorkspaceReadinessMachine({
 					canManageBankCredentials(context.source.membership, context.source.organizationId ?? '')
 			]),
 			navigationAlive: ({ context }) => context.navigationActor?.getSnapshot().status === 'active',
-			navigationReady: stateIn({ active: { workspace: 'ready', session: 'ready' } }),
+			navigationReady: ({ context }) =>
+				context.sessionStatus === 'ready' && Boolean(context.source.userId),
+			navigationCanUseWorkspace: stateIn({
+				active: { session: 'ready', organization: 'ready', selection: 'selected' }
+			}),
+			awaitingInitialWorkspace: and([
+				stateIn({ active: { workspace: 'waiting' } }),
+				({ context }) =>
+					context.organizations?.length === 0 &&
+					context.organizationsError == null &&
+					!workspaceRoute(context.route.search).scoped &&
+					!['/settings/workspace', '/account', '/login'].includes(context.route.pathname)
+			]),
 			navigationFailed: or([
 				stateIn({ active: { selection: 'failed' } }),
 				stateIn({ active: { organization: 'failed' } })
@@ -230,19 +243,6 @@ export function createWorkspaceReadinessMachine({
 			bankAlive: ({ context }) => context.bankActor?.getSnapshot().status === 'active',
 			startupAlive: ({ context }) => context.startupActor?.getSnapshot().status === 'active',
 			integrityAlive: ({ context }) => context.integrityActor?.getSnapshot().status === 'active',
-			canSync: and([
-				'canUseWorkspace',
-				'canObserveIntegrity',
-				({ context }) => {
-					const report = context.integrityReport
-					return (
-						report !== undefined &&
-						sameIntegrityRequest(report.request, context.integrityRequest) &&
-						(report.status.kind === 'complete' ||
-							(report.status.kind === 'partial' && report.status.access === 'usable'))
-					)
-				}
-			]),
 			creationAlive: ({ context }) => context.creationActor?.getSnapshot().status === 'active',
 			canObserveCreation: and([
 				stateIn({ active: { session: 'ready', workspace: 'ready' } }),
@@ -404,7 +404,7 @@ export function createWorkspaceReadinessMachine({
 			},
 			OBSERVE_NAVIGATION: [
 				{
-					guard: not('navigationReady'),
+					guard: or([not('navigationReady'), 'awaitingInitialWorkspace']),
 					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: false, access: 'waiting' })
 				},
 				{
@@ -412,7 +412,7 @@ export function createWorkspaceReadinessMachine({
 					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'denied' })
 				},
 				{
-					guard: 'canUseWorkspace',
+					guard: 'navigationCanUseWorkspace',
 					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'ready' })
 				},
 				{
@@ -520,7 +520,7 @@ export function createWorkspaceReadinessMachine({
 					actions: sendTo('bank', ({ event }) => event.event)
 				},
 				{
-					guard: and(['canSync', ({ event }) => event.event.type === 'SYNC']),
+					guard: and(['bankAccessAllowed', ({ event }) => event.event.type === 'SYNC']),
 					actions: sendTo('bank', ({ event }) => event.event)
 				},
 				{
@@ -576,7 +576,7 @@ export function createWorkspaceReadinessMachine({
 										guard: ({ context }) => context.sessionStatus === 'transitioning',
 										target: 'transitioning'
 									},
-									{ guard: ({ context }) => Boolean(context.source.userId), target: 'ready' },
+									{ guard: 'navigationReady', target: 'ready' },
 									{ target: 'signedOut' }
 								]
 							},
@@ -660,7 +660,7 @@ export function createWorkspaceReadinessMachine({
 						states: {
 							checking: {
 								always: [
-									{ guard: 'workspaceReady', target: 'checkingQuery' },
+									{ guard: 'navigationReady', target: 'checkingQuery' },
 									{ target: 'waiting' }
 								]
 							},
@@ -886,9 +886,7 @@ export type WorkspaceCoordinatorActor = ActorRefFrom<
 export function selectWorkspaceView(snapshot: WorkspaceCoordinatorSnapshot | undefined) {
 	return {
 		bankRevision: snapshot?.context.bankAccess?.revision,
-		ready:
-			snapshot?.hasTag('workspace-ready') === true &&
-			snapshot.matches({ active: { session: 'ready' } }),
+		ready: snapshot?.matches({ active: { session: 'ready' } }) === true,
 		failed: snapshot?.hasTag('workspace-error') ?? false,
 		canRetry: snapshot?.hasTag('workspace-retryable') ?? false,
 		canSync: snapshot?.can({ type: 'BANK', event: { type: 'SYNC' } }) ?? false,

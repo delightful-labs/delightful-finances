@@ -177,6 +177,35 @@ test('localized manifest keeps the install URL and declares its language', async
 	})
 })
 
+test('workspace loading feedback is visible while page content waits', async ({ page }) => {
+	await page.goto('/accounts')
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+	).toBeVisible()
+	await page.evaluate(async () => {
+		const sveltePath = '/node_modules/svelte/src/index-client.js'
+		const componentPath = '/src/lib/components/WorkspaceScopeNotice.svelte'
+		const { mount }: typeof import('svelte') = await import(sveltePath)
+		const {
+			default: WorkspaceScopeNotice
+		}: typeof import('../src/lib/components/WorkspaceScopeNotice.svelte') = await import(
+			componentPath
+		)
+		const target = document.createElement('section')
+		target.id = 'workspace-loading-feedback'
+		document.body.append(target)
+		mount(WorkspaceScopeNotice, {
+			target,
+			props: { active: true, loading: true, onRetry: () => {} }
+		})
+	})
+	const notice = page.locator('#workspace-loading-feedback')
+	await expect(notice.locator('p')).toBeVisible()
+	await expect(notice.locator('p')).toHaveText('Loading Workspaces…')
+	await expect(notice.getByRole('status')).toHaveText('Loading Workspaces…')
+	await expect(notice.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0)
+})
+
 test.describe('active application locale', () => {
 	test.use({ locale: 'de-DE', timezoneId: 'America/Los_Angeles' })
 	test('formats category counts, tag summaries and money with the app locale', async ({ page }) => {

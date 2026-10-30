@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createActor, toPromise, waitFor } from 'xstate'
-import { seedFixture, profileId } from './fake-data.fixture.js'
+import { seedFixture } from './fake-data.fixture.js'
 
 const environment = vi.hoisted(() => ({ PUBLIC_FAKE_DATA: 'false', PUBLIC_DEBUG: 'false' }))
 vi.mock('$app/env/public', () => environment)
@@ -17,10 +17,11 @@ it.each([
 	environment.PUBLIC_DEBUG = debug
 	const { workspaceFakeData } = await import('./workspace-fake-data.js')
 	const f = seedFixture()
-	expect(await toPromise(createActor(workspaceFakeData, { input: f.input }).start())).toEqual({
-		outcome: 'ready',
-		profileId
-	})
+	expect(await toPromise(createActor(workspaceFakeData, { input: f.input }).start())).toEqual(
+		writes === 0
+			? { outcome: 'skipped', settlement: 'notStarted' }
+			: { outcome: 'seeded', settlement: 'confirmed', accountCount: 3, transactionCount: 120 }
+	)
 	expect(f.insert).toHaveBeenCalledTimes(writes)
 	if (writes === 0) expect(f.all).not.toHaveBeenCalled()
 })
@@ -36,7 +37,7 @@ it('preserves confirmed settlement while draining shutdown through the child', a
 	actor.send({ type: 'SHUTDOWN' })
 	expect(actor.getSnapshot().status).toBe('active')
 	confirmation.resolve()
-	expect(await toPromise(actor)).toEqual({ outcome: 'closed', settlement: 'locallyPersisted' })
+	expect(await toPromise(actor)).toEqual({ outcome: 'closed', settlement: 'confirmed' })
 })
 
 it('returns child failure without disguising it as initialized', async () => {

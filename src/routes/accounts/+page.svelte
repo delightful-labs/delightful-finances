@@ -9,11 +9,15 @@
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
-	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext, onMount } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import {
+		accountBalancesKey,
+		type AccountBalances,
+		financeFiltersKey,
+		type FinanceFilters
+	} from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import {
@@ -28,9 +32,11 @@
 	import PageHeader from '#lib/components/PageHeader.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+	const sharedBalances = getContext<AccountBalances>(accountBalancesKey)
 
 	const db = getDb()
 	const session = fromStore(getJazzSession())
+	let accountActionsOpen = $state(false)
 	const accounts = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
@@ -51,18 +57,13 @@
 			: undefined
 	})
 	const organizationMembers = new QuerySubscription(() =>
-		filters.activeOrganizationId
+		accountActionsOpen && filters.activeOrganizationId
 			? app.organizationMembers.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 	const allAccountGrants = new QuerySubscription(() =>
-		filters.activeOrganizationId
+		accountActionsOpen && filters.activeOrganizationId
 			? app.accountMemberships.where({ organizationId: filters.activeOrganizationId })
-			: undefined
-	)
-	const transactions = new QuerySubscription(() =>
-		filters.activeOrganizationId
-			? app.transactions.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 
@@ -128,14 +129,8 @@
 	let deleteGrantSnapshot = $state.raw(deleteGrantActor.getSnapshot())
 	const view = $derived(selectAccountArchiveView(archiveSnapshot))
 	const deleteGrantView = $derived(selectAccountDeleteGrantView(deleteGrantSnapshot))
-	const balances = $derived(
-		transactions.isLoading || transactions.error
-			? null
-			: calculateAccountBalances(
-					view.rows.map((row) => row.account),
-					transactions.current ?? []
-				)
-	)
+	const balances = $derived(sharedBalances.current)
+
 	$effect(() => {
 		actor.send({ type: 'OBSERVE', observation: observe() })
 		deleteGrantActor.send({ type: 'OBSERVE', observation: observeDeleteGrants() })
@@ -175,6 +170,8 @@
 	{view}
 	{onArchive}
 	{balances}
+	onActionsOpenChange={(open) => (accountActionsOpen = open)}
+	grantQueries={[organizationMembers, allAccountGrants]}
 	deleteGrantView={{
 		canManage:
 			membership.current?.role === ORGANIZATION_ROLE.OWNER ||

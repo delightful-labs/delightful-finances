@@ -8,13 +8,16 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import { formatSignedMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
+	import { onDestroy, untrack, type ComponentProps } from 'svelte'
 
 	let {
 		view,
 		onArchive,
 		deleteGrantView,
 		onDeleteGrant,
-		balances
+		balances,
+		grantQueries,
+		onActionsOpenChange
 	}: {
 		view: AccountArchiveView
 		onArchive: (accountId: string) => void
@@ -25,6 +28,8 @@
 		}
 		onDeleteGrant: (accountId: string, userId: string, canDelete: boolean) => void
 		balances: ReadonlyMap<string, bigint> | null
+		grantQueries: ComponentProps<typeof AccountActionsDialog>['grantQueries']
+		onActionsOpenChange: (open: boolean) => void
 	} = $props()
 	const feedbackText = $derived(
 		view.feedback?.outcome === 'succeeded'
@@ -42,6 +47,11 @@
 	)
 	let selectedAccountId = $state<string | null>(null)
 	let dialogOpen = $state(false)
+	$effect(() => {
+		const open = dialogOpen
+		untrack(() => onActionsOpenChange(open))
+	})
+	onDestroy(() => onActionsOpenChange(false))
 	const selectedAccount = $derived(
 		view.kind === 'ready'
 			? view.rows.find((row) => row.account.id === selectedAccountId)?.account
@@ -133,6 +143,7 @@
 				? view.rows.find((row) => row.account.id === selectedAccount.id)?.action
 				: undefined}
 			{deleteGrantView}
+			{grantQueries}
 			bind:open={dialogOpen}
 			onArchive={() => selectedAccount && onArchive(selectedAccount.id)}
 			{onDeleteGrant}

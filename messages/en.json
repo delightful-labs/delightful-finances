@@ -398,6 +398,16 @@
 				}
 			}
 		],
+		"permission": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": {
+					"countPlural=one": "Permission",
+					"countPlural=*": "Permissions"
+				}
+			}
+		],
 		"profile": [
 			{
 				"declarations": ["input count", "local countPlural = count: plural"],

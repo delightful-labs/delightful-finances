@@ -37,14 +37,18 @@
 	const visibleGroups = $derived.by(() => {
 		let offset = 0
 		const start = (page - 1) * pageSize
-		return groups.flatMap((group) => {
-			const transactions = group.transactions.slice(
-				Math.max(0, start - offset),
-				Math.max(0, start + pageSize - offset)
-			)
-			offset += group.transactions.length
-			return transactions.length ? [{ ...group, transactions }] : []
-		})
+		const end = start + pageSize
+		const visible: TransactionDay[] = []
+		for (const group of groups) {
+			if (offset >= end) break
+			const groupEnd = offset + group.transactions.length
+			if (groupEnd > start) {
+				const transactions = group.transactions.slice(Math.max(0, start - offset), end - offset)
+				visible.push({ ...group, transactions })
+			}
+			offset = groupEnd
+		}
+		return visible
 	})
 	const pageNumbers = $derived.by(() => {
 		// Five slots, including ellipses. Near either boundary, use the spare

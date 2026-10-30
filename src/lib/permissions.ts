@@ -667,9 +667,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((link) => validBankMapping(link))
 	policy.simplefinAccountLinks.allowDelete.where((link) => isAdmin(link.organizationId))
 
-	policy.transactionAttachments.allowRead.where((attachment) =>
-		policy.transactions.exists.where({ id: attachment.transactionId })
-	)
+	policy.transactionAttachments.allowRead.where(allowedTo.read('transaction'))
 	policy.transactionAttachments.allowInsert.where(allowedTo.update('transaction'))
 	policy.transactionAttachments.allowUpdate
 		.whereOld(allowedTo.update('transaction'))
@@ -684,7 +682,15 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		)
 	policy.transactionAttachments.allowDelete.where(allowedTo.update('transaction'))
 
-	policy.files.allowRead.where(allowedTo.readReferencing(policy.transactionAttachments, 'file'))
+	policy.files.allowRead.where((file) =>
+		allOf([
+			allowedTo.read('transaction'),
+			policy.transactionAttachments.exists.where({
+				fileId: file.id,
+				transactionId: file.transactionId
+			})
+		])
+	)
 	policy.files.allowInsert.where((file) =>
 		allOf([
 			{ transactionId: { isNull: false } },

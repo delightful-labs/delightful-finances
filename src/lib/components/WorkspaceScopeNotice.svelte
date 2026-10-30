@@ -19,8 +19,10 @@
 
 <ScreenReaderText role="status">{failed ? '' : message}</ScreenReaderText>
 <ScreenReaderText role="alert">{failed ? message : ''}</ScreenReaderText>
-{#if active && !loading}
+{#if active}
 	<p aria-hidden="true">{message}</p>
+{/if}
+{#if active && !loading}
 	<p>
 		<AppLink href="/settings/workspace"
 			>{m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}</AppLink

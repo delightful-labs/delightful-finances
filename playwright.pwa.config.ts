@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
 	testDir: './tests',
-	testMatch: 'pwa.e2e.ts',
+	testMatch: ['pwa.e2e.ts', 'pwa-cold-start.e2e.ts'],
 	workers: 1,
 	timeout: 60_000,
 	expect: { timeout: 15_000 },

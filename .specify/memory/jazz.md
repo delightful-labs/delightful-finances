@@ -32,6 +32,42 @@ The linked draft and backlog distinguish desired changes from current implementa
 optimizations. Preserve separately approved online-only sharing/permission administration and explicit
 bank-provider operations; those exceptions must not spread into ordinary local finance workflows.
 
+Consolidated spec 013 verification adds these boundaries (see
+[`investigation-results.md`](../../specs/013-local-first-startup/investigation-results.md)):
+
+- An online snapshot is not proof of cold query coverage. A never-opened shared-workspace probe
+  returned permitted rows online but encountered `NotObserved` after browser restart, including
+  with explicit LocalFirst and authorization-fact warming. Verify exact cold query shapes; do not
+  treat coverage failure as remote absence or proof of physical byte erasure. Later controlled
+  two-identity probes on the same SDK retain 5,000 permitted of 10,000 records across cold restart
+  with an unanswered connection, including root/scoped/ID queries. Metadata-only roots also retain
+  permitted references without bytes; a later explicit online request fetches content. The earlier
+  failure remains unexplained. See cold-query-follow-up.json; neither probe establishes coverage
+  for every relationship, permission scope or history.
+- A compiled WebAssembly.Module can be cloned in memory but cannot be stored in IndexedDB under
+  the current WebAssembly serialization rules. Chromium, Firefox and WebKit probes rejected it
+  with DataCloneError. Do not design a persistent compiled-module cache from older guidance.
+- Attachment links must inherit transaction read access, not merely check parent existence. The
+  reverse files-read inheritance composed with that rule fails publication on alpha.59 for the
+  current organization/account predicate. The supported alternative uses files' existing direct
+  transaction relation: files require transaction read access AND an attachment matching both
+  fileId and transactionId. Parts inherit file reads. The full-app permission suite verifies
+  owner/admin, all-account member/viewer, selected grants, denied accounts, unrelated users,
+  mismatched-organization grants and cross-transaction links. Unlinked files remain unreadable.
+  Preserve both the direct read and matching-link checks; publication alone does not prove access
+  correctness. See spec 013 reproductions/README.md for the rejected expression and alternative.
+  Cold coverage remains unproven; this authorization repair does not enable broad preparation.
+
+Retained background query choice also needs a projection check. In spec 013's controlled alpha.59
+probes, one-shot snapshots stayed stale after the observed one-second remote-edit window. Public
+select('id') subscriptions retained updated/new full transaction fields and audit metadata across
+cold restart; ID-only file/link queries retained full metadata without file-part acquisition. At
+5,000 readable transactions, retained ID queries added 10.3 MiB page heap versus 21 MiB for full/audit
+rows. Both public subscriptions still deliver full result arrays per update. These are page-only,
+single-sample measurements, not worker/storage budgets or guarantees for every relationship. See
+preparation-cost-follow-up.json under spec 013. Prefer testing public ID projection before accepting
+full-row global materialization or assuming a private counts-only subscription is necessary.
+
 ## Reuse proven reference patterns; verify the exact predicate shape
 
 The Check implementation is a working precedent for validating a row's single foreign-key
@@ -70,3 +106,31 @@ the installed Jazz version before changing either expression.
 Before relying on a new policy shape, validate it against the installed Jazz version and its actual
 policy test/runtime path. Include both accepted and rejected cases for the precise relationship and
 correlation being introduced.
+
+Spec 013's final acquisition investigation supersedes its initial LocalFirst background proposal:
+use Remote-tier ID subscriptions only for independent server-facing acquisition, leaving foreground
+reads/saves LocalFirst/local. Global LocalFirst views stayed stale after observed grant removal;
+Remote subscriptions passed grant/member/admin/profile/link changes in all three browser engines.
+Use a real wire proxy for silent-transport tests: page routeWebSocket mocking did not reliably block
+the SharedWorker. Real-proxy subscription-only tests retain full fields/audit/inserts/deletes and
+on-demand file metadata cold. See remaining-investigation-results.json under spec 013.
+
+Correct replication does not qualify a startup sweep: 5,006 initial records caused a roughly
+three-second main-thread long task. Public retained orderBy(id)/offset/limit pages reduce individual
+stalls and retain tested cold coverage/live boundary behavior, but increase acquisition time greatly.
+Budgeted paging/growth/scheduling requires a statechart and focused review before production adoption.
+Never equate a local callback, a count, or independently timed page results with global completeness.
+Namespace deletion retained identity in the disposable test, but does not certify OS eviction or
+whole-origin recovery. The Chrome quota override allowed writes over its reported quota, so actual
+quota-failure handling remains unverified. No private storage/SDK workaround was used.
+
+Dedicated-worker preparation was tested on alpha.59 in all three desktop browser engines. Public
+createAccountManager with a custom AccountStore, restoreLocalFirst and createDb can open a worker
+client and receive authorized live queries. However, both persistent and memory worker settings
+left zero records available to a cold page; the matched persistent page control retained all records.
+The SDK's window-based runtime detection selects a direct worker client rather than the browser
+persistent SharedWorker path. A matching identity/app/env/dbName does not establish shared storage.
+Public runtime asset overrides do not supply a replica attachment; inspector ports and static worker
+factory methods are internal, not application APIs. A 5,000-row worker sample avoided the page's
+roughly 2.7-second stall, but failed the persistent preparation purpose. Do not implement this worker
+owner or copy rows back through application writes. See spec 013 worker-preparation-results.json.

@@ -120,7 +120,7 @@ test('owner can rename, reject whitespace, retry, and retain the name after relo
 	await expect(save).toBeDisabled()
 	expect(await page.evaluate(() => sessionStorage.getItem('workspace-action-warning'))).toBeNull()
 
-	const currency = page.getByRole('main').getByLabel('Currency', { exact: true })
+	const currency = page.locator('#workspace-default-currency')
 	await expect(currency).toHaveValue('USD')
 	await currency.selectOption('TZS')
 	await save.click()
@@ -369,7 +369,7 @@ test('transaction list shows empty income and expense views', async ({ page }) =
 	await page.goto('/expenses')
 	const main = page.getByRole('main')
 	await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
-	await expect(main.getByRole('listitem')).toHaveCount(0)
+	await expect(main.locator('section ul.entries').getByRole('listitem')).toHaveCount(0)
 	await expect(main.getByRole('link', { name: 'Add Expenses' })).toHaveAttribute(
 		'href',
 		/^\/expenses\/new\?workspace=[\da-f-]+$/i
@@ -500,14 +500,16 @@ test('transaction list follows kind, date order, account filters, and workspace 
 		.getByRole('listitem')
 		.getByText(/^(Recent expense|Older expense|Salary|Business expense|Live expense)$/)
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
-	await expect(main.getByRole('listitem').getByText('$12.34', { exact: true })).toHaveCount(2)
+	await expect(
+		main.locator('section ul.entries').getByRole('listitem').getByText('$12.34', { exact: true })
+	).toHaveCount(2)
 	await page.getByRole('checkbox', { name: 'Cash', exact: true }).uncheck()
 	await expect(memos).toHaveText(['Older expense'])
 	await page.getByRole('checkbox', { name: 'All Accounts', exact: true }).check()
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
 	await page.getByRole('checkbox', { name: 'All Accounts', exact: true }).uncheck()
 	await expect(main.getByText('Turn on an account to see its transactions.')).toBeVisible()
-	await expect(main.getByRole('listitem')).toHaveCount(0)
+	await expect(main.locator('section ul.entries').getByRole('listitem')).toHaveCount(0)
 	await page.getByRole('checkbox', { name: 'All Accounts', exact: true }).check()
 	await expect(memos).toHaveText(['Recent expense', 'Older expense'])
 	await navigation.getByRole('link', { name: 'Income', exact: true }).click()
@@ -1007,9 +1009,9 @@ test('account archive works offline, retains history, and excludes new-entry opt
 	await context.setOffline(true)
 	try {
 		await accountActions.getByRole('button', { name: 'Archive', exact: true }).click()
-		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
-			'Account Archive checking archived.'
-		)
+		await expect(
+			main.getByRole('status').filter({ hasText: 'Account Archive checking archived.' })
+		).toHaveText('Account Archive checking archived.')
 		await expect(main.getByRole('cell', { name: 'Archive checking', exact: true })).toHaveCount(0)
 		await expect(
 			page.getByRole('checkbox', { name: 'Show Archive checking', exact: true })
@@ -1206,7 +1208,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 			await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
 			await selectWorkspace(selector, organizationId)
 			const name = subject.getByRole('textbox', { name: 'Workspace name', exact: true })
-			const currency = subject.getByRole('main').getByLabel('Currency', { exact: true })
+			const currency = subject.locator('#workspace-default-currency')
 			const save = subject.getByRole('button', { name: 'Save', exact: true })
 			await expect(name).toHaveValue('Shared workspace')
 			await expect(currency).toHaveValue('USD')
@@ -1217,7 +1219,10 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await name.fill('Admin renamed workspace')
 				await save.click()
 				await expect(
-					subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
+					subject
+						.getByRole('main')
+						.getByRole('status')
+						.filter({ hasText: 'Workspace settings saved.' })
 				).toHaveText('Workspace settings saved.')
 				await expect(
 					page.getByRole('textbox', { name: 'Workspace name', exact: true })
@@ -1422,9 +1427,9 @@ test('category page counts connections, archives offline, protects system catego
 	await context.setOffline(true)
 	try {
 		await row.getByRole('button', { name: 'Archive Counted category', exact: true }).click()
-		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
-			'Category Counted category archived.'
-		)
+		await expect(
+			main.getByRole('status').filter({ hasText: 'Category Counted category archived.' })
+		).toHaveText('Category Counted category archived.')
 		await expect(row).toHaveCount(0)
 	} finally {
 		await context.setOffline(false)
@@ -1819,9 +1824,9 @@ test('tag page switches workspace drafts and archives offline without removing c
 	await context.setOffline(true)
 	try {
 		await row.getByRole('button', { name: 'Archive Archive tag', exact: true }).click()
-		await expect(main.locator('[role="status"]:not(.screen-reader-text)')).toHaveText(
-			'Tag Archive tag archived.'
-		)
+		await expect(
+			main.getByRole('status').filter({ hasText: 'Tag Archive tag archived.' })
+		).toHaveText('Tag Archive tag archived.')
 		await expect(row).toHaveCount(0)
 	} finally {
 		await context.setOffline(false)
@@ -2640,7 +2645,12 @@ test('transaction details hide rows from another active workspace and handle mis
 		return { id: transaction.id, otherId: org.id }
 	}, organizationId)
 	await navigateSidebar(page, 'Expenses')
-	await page.getByRole('main').getByRole('listitem').getByRole('link').click()
+	await page
+		.getByRole('main')
+		.locator('section ul.entries')
+		.getByRole('listitem')
+		.getByRole('link')
+		.click()
 	const main = page.getByRole('main')
 	const memo = main.getByLabel('Memo (additional notes)', { exact: true })
 	await expect(memo).toHaveValue('Scoped detail')
@@ -3011,7 +3021,10 @@ test('profile name edits are owner-only even for members of a shared workspace',
 		await subject.getByLabel('Display name', { exact: true }).fill('Shared workspace member')
 		await subject.getByRole('button', { name: 'Save', exact: true }).click()
 		await expect(
-			subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
+			subject
+				.getByRole('main')
+				.getByRole('status')
+				.filter({ hasText: 'Profile Display name saved.' })
 		).toHaveText('Profile Display name saved.')
 		const outcome = await subject.evaluate(async (owner) => {
 			const { app, db, userId } = window.workspaceSettingsTest

@@ -33,6 +33,8 @@ test('fake data follows its own flag and survives refresh without duplication', 
 	await expect(
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()
+	// Readiness is independent of optional seeding; wait for its observable data result.
+	if (enabled) await expect.poll(async () => (await records(page)).transactionIds.length).toBe(120)
 	const initial = await records(page)
 	expect(initial.accountIds).toHaveLength(enabled ? 3 : 0)
 	expect(initial.transactionIds).toHaveLength(enabled ? 120 : 0)

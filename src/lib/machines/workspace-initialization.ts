@@ -1,6 +1,5 @@
 import { assign, fromPromise, sendTo, setup, type OutputFrom } from 'xstate'
 import { ReadTier } from 'jazz-tools'
-import { workspaceFakeData } from './workspace-fake-data.js'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '../schema.js'
 import { m } from '../paraglide/messages.js'
@@ -21,7 +20,7 @@ type Db = Pick<
 >
 type Input = { db: Db; userId: string }
 export type WorkspaceInitializationResult =
-	| { outcome: 'ready'; profileId: string }
+	| { outcome: 'ready'; profileId: string; organizationId: string }
 	| {
 			outcome: 'unavailable'
 			reason:
@@ -29,7 +28,7 @@ export type WorkspaceInitializationResult =
 	  }
 	| WorkspacePersistenceResult
 
-type ReadInput = Input & { tier: typeof ReadTier.LocalFirstUnlessEmpty | typeof ReadTier.Remote }
+type ReadInput = Input & { tier: typeof ReadTier.LocalFirst | typeof ReadTier.Remote }
 const discover = fromPromise(async ({ input }: { input: ReadInput }) => {
 	const [profiles, organizations] = await Promise.all([
 		input.db.all(app.profiles.where({ userId: input.userId }), { tier: input.tier }),
@@ -72,7 +71,6 @@ export const workspaceInitialization = setup<
 		discover: typeof discover
 		prepareInitial: typeof prepareInitial
 		transaction: typeof workspaceCreationTransaction
-		fakeData: typeof workspaceFakeData
 	},
 	{},
 	{},
@@ -85,8 +83,7 @@ export const workspaceInitialization = setup<
 	actors: {
 		discover,
 		prepareInitial,
-		transaction: workspaceCreationTransaction,
-		fakeData: workspaceFakeData
+		transaction: workspaceCreationTransaction
 	}
 }).createMachine({
 	id: 'workspace-initialization',
@@ -109,7 +106,7 @@ export const workspaceInitialization = setup<
 				input: ({ context }) => ({
 					db: context.db,
 					userId: context.userId,
-					tier: ReadTier.LocalFirstUnlessEmpty
+					tier: ReadTier.LocalFirst
 				}),
 				onDone: {
 					target: 'checkingProfiles',
@@ -140,7 +137,7 @@ export const workspaceInitialization = setup<
 			always: [
 				{
 					guard: ({ context }) => context.records?.profiles[0]?.initialWorkspaceId != null,
-					target: 'preparingFakeData'
+					target: 'ready'
 				},
 				{ target: 'checkingAuthority' }
 			]
@@ -183,7 +180,7 @@ export const workspaceInitialization = setup<
 				},
 				{
 					guard: ({ context }) => context.records?.profiles[0]?.initialWorkspaceId != null,
-					target: 'preparingFakeData'
+					target: 'ready'
 				},
 				{
 					guard: ({ context }) => context.records?.profiles.length === 1,
@@ -232,40 +229,8 @@ export const workspaceInitialization = setup<
 				onDone: [
 					{
 						guard: ({ event }) => event.output.outcome === 'succeeded',
-						target: 'preparingFakeData'
+						target: 'ready'
 					},
-					{ target: 'completed', actions: assign({ result: ({ event }) => event.output }) }
-				],
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): WorkspaceInitializationResult => ({
-							outcome: 'failed',
-							settlement: 'unresolved',
-							error: event.error
-						})
-					})
-				}
-			}
-		},
-		preparingFakeData: {
-			on: {
-				CANCEL: { actions: sendTo('fakeData', { type: 'CANCEL' }) },
-				SHUTDOWN: { actions: sendTo('fakeData', { type: 'SHUTDOWN' }) }
-			},
-			invoke: {
-				id: 'fakeData',
-				src: 'fakeData',
-				input: ({ context }) => ({
-					db: context.db,
-					userId: context.userId,
-					profileId: context.attempt?.profileId ?? required(context.records?.profiles[0]).id,
-					organizationId:
-						context.attempt?.organizationId ??
-						required(required(context.records?.profiles[0]).initialWorkspaceId ?? undefined)
-				}),
-				onDone: [
-					{ guard: ({ event }) => event.output.outcome === 'ready', target: 'ready' },
 					{ target: 'completed', actions: assign({ result: ({ event }) => event.output }) }
 				],
 				onError: {
@@ -285,7 +250,10 @@ export const workspaceInitialization = setup<
 			entry: assign({
 				result: ({ context }): WorkspaceInitializationResult => ({
 					outcome: 'ready',
-					profileId: context.attempt?.profileId ?? required(context.records?.profiles[0]).id
+					profileId: context.attempt?.profileId ?? required(context.records?.profiles[0]).id,
+					organizationId:
+						context.attempt?.organizationId ??
+						required(required(context.records?.profiles[0]).initialWorkspaceId ?? undefined)
 				})
 			})
 		},

@@ -55,6 +55,8 @@ The [orchestration spec](../008-actor-orchestration/spec.md) defines these respo
 
 ## Initialization
 
+The following describes the historical initialization implementation. [013](../013-local-first-startup/spec.md), FR-004–006, supersedes remote provenance discovery as a prerequisite for unrelated local usability. Available local data and known permissions must permit ordinary work while provenance discovery waits. Empty replicas must not authorize replacement bootstrap. Offline bootstrap for a genuinely new identity requires supported provenance and a reviewed concurrency protocol (013 T010); that protocol is not implemented or verified here.
+
 Local discovery accepts a profile's existing `initialWorkspaceId` marker without requiring access
 to its original workspace. Otherwise, authoritative discovery is required before bootstrap.
 Only no profiles plus no accessible workspaces permits first-use creation. An existing profile

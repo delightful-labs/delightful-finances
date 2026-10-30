@@ -1,5 +1,9 @@
 # Opt-in fake data for empty applications
 
+## Local-first revision pending
+
+This document records the prior seeding design and its historical verification. [013](../013-local-first-startup/spec.md), FR-004, requires optional seeding to run independently of ordinary local readiness, including when remote emptiness confirmation or exclusive acceptance waits indefinitely. T006 owns that pending change. Preserve authoritative emptiness checks, owner authorization, stable IDs, exclusive seed acceptance, and cancellation/resource cleanup; local absence alone must never authorize seeding. Earlier verification below does not establish this new readiness behavior.
+
 ## Requirements and design
 
 `PUBLIC_FAKE_DATA=true` enables automatic finance data seeding independently of `PUBLIC_DEBUG`.

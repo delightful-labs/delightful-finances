@@ -1,7 +1,19 @@
 # Workspace integrity reporting contract
 
-Status: implemented and verified. Source contracts are in `src/lib/workspace-integrity-contract.ts`;
-the resource owner is `src/lib/machines/workspace-integrity-owner.ts`.
+Status: local-first capability revision implemented and focused verification passed. Source contracts
+are in `src/lib/workspace-integrity-contract.ts`; the resource owner is
+`src/lib/machines/workspace-integrity-owner.ts`.
+
+## Local-first capability boundary
+
+[013](../../013-local-first-startup/spec.md), FR-004/006, makes attribution repair independent of
+ordinary local usability. Integrity reports describe repair progress and settlement, not finance
+or bank authorization. Readiness uses the current initialized session, selected workspace,
+organization membership and credential-management role to accept explicit Sync Now commands. The
+bank child retains credential readiness, passkey verification and per-operation authorization.
+Repair completion, failure or retry alone neither grants nor revokes access and never initiates sync.
+Missing/ambiguous repair inputs must not be treated as proof of current permission loss; actual
+access observations invalidate capabilities through the separate readiness/bank owners.
 
 ## Requests and reports
 
@@ -11,33 +23,34 @@ binding means no eligible selected workspace. Database/environment is fixed for 
 Reports target the typed recipient passed through input and contain the original request plus status.
 Generation is a correlation token, not a persisted workspace ID.
 
-| Status             | Payload                                           | Finance eligibility / presentation                            |
-| ------------------ | ------------------------------------------------- | ------------------------------------------------------------- |
-| waiting / checking | No extra payload                                  | Ineligible; waiting / working                                 |
-| complete           | Actual settlement                                 | Eligible under current access rules; no retry                 |
-| partial            | Profile-link issues, settlement, `access: usable` | Eligible under current access rules; partial notice and retry |
-| unavailable        | Actual settlement                                 | Ineligible; failure notice and retry                          |
-| conflict           | Actual settlement                                 | Ineligible; conflict notice and retry                         |
-| failed             | Actual settlement                                 | Ineligible; failure notice and retry                          |
-| unresolved         | Unresolved settlement                             | Ineligible; failure notice and retry                          |
-| closed             | Actual terminal settlement                        | Ineligible; waiting presentation                              |
+| Status             | Payload                                                  | Repair presentation       |
+| ------------------ | -------------------------------------------------------- | ------------------------- |
+| waiting / checking | No extra payload                                         | Waiting / working         |
+| complete           | Actual settlement                                        | Complete; no retry        |
+| partial            | Profile-link issues, settlement, legacy `access: usable` | Partial notice and retry  |
+| unavailable        | Actual settlement                                        | Failure notice and retry  |
+| conflict           | Actual settlement                                        | Conflict notice and retry |
+| failed             | Actual settlement                                        | Failure notice and retry  |
+| unresolved         | Unresolved settlement                                    | Failure notice and retry  |
+| closed             | Actual terminal settlement                               | Waiting presentation      |
 
 The sole integrity issue is profile attribution. No blocked-partial variation or category repair
-remains. The owner classifies policy; consumers do not reconstruct eligibility from issue arrays.
-Reports carry no raw errors, transaction resources or private child snapshots.
+remains. The legacy partial `access` field is retained for contract compatibility; capability
+decisions do not consume it. Reports carry no raw errors, transaction resources or private child
+snapshots.
 
 ## Currency and invalidation
 
 - Identity, profile, selection, authority-relevant binding changes or lost eligibility invalidate the
-  accepted report and advance the request generation before new actions can use stale capabilities.
+  accepted report and advance its request generation. Access owners independently invalidate
+  affected capabilities before new actions can use superseded authorization.
 - Equivalent integrity observations do not restart repairs. Explicit accepted retry advances the
   generation. Unrelated bank/account observations do not restart integrity.
 - Loading/error recovery creates a fresh eligible request even if the IDs match an earlier visit.
   A → B → A cannot reuse the earlier A result.
 - A draining operation retains its original request. It must never relabel completion with a newer
   generation. During replacement the owner retains only the latest pending request.
-- Readiness accepts only a current matching request and combines its status with current membership
-  access. `selectWorkspaceIntegrityView` projects the public status for pure presentation.
+- Readiness accepts only a current matching request for repair progress/diagnostics. `selectWorkspaceIntegrityView` projects the public status for pure presentation.
 
 ## Lifecycle
 

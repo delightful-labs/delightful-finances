@@ -6,11 +6,14 @@
 	import type { AccountDeleteGrantView } from '#lib/machines/account-delete-grants.js'
 	import type { Account, AccountMembership, OrganizationMember } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import type { ComponentProps } from 'svelte'
+	import QueryContent from './QueryContent.svelte'
 
 	let {
 		account,
 		archiveAction,
 		deleteGrantView,
+		grantQueries,
 		open = $bindable(false),
 		onArchive,
 		onDeleteGrant
@@ -22,6 +25,7 @@
 			members: readonly OrganizationMember[]
 			grants: readonly AccountMembership[]
 		}
+		grantQueries: ComponentProps<typeof QueryContent>['queries']
 		open?: boolean
 		onArchive: () => void
 		onDeleteGrant: (accountId: string, userId: string, canDelete: boolean) => void
@@ -57,30 +61,42 @@
 				<p>{m['accounts.archive_restricted']()}</p>
 			{/if}
 			{#if deleteGrantView.canManage}
-				<fieldset>
-					<legend
-						>{m['actions.delete_subject']({
-							subject: m['nouns.transaction']({ count: 2 })
-						})}</legend
-					>
-					<p>{m['accounts.delete_access_description']()}</p>
-					{#each deleteGrantView.members as member (member.id)}
-						{@const granted = deleteGrantView.grants.some(
-							(grant) =>
-								grant.accountId === account.id && grant.userId === member.userId && grant.canDelete
-						)}
-						<label>
-							<input
-								type="checkbox"
-								checked={granted}
-								disabled={deleteGrantView.busy}
-								onchange={(event) =>
-									onDeleteGrant(account.id, member.userId, event.currentTarget.checked)}
-							/>
-							{m['accounts.delete_access_for_name']({ name: member.userId })}
-						</label>
-					{/each}
-				</fieldset>
+				<QueryContent
+					queries={grantQueries}
+					loadingMessage={m['status.loading_subject']({
+						subject: m['nouns.permission']({ count: 2 })
+					})}
+					errorMessage={m['errors.load_subject']({
+						subject: m['nouns.permission']({ count: 2 })
+					})}
+				>
+					<fieldset>
+						<legend
+							>{m['actions.delete_subject']({
+								subject: m['nouns.transaction']({ count: 2 })
+							})}</legend
+						>
+						<p>{m['accounts.delete_access_description']()}</p>
+						{#each deleteGrantView.members as member (member.id)}
+							{@const granted = deleteGrantView.grants.some(
+								(grant) =>
+									grant.accountId === account.id &&
+									grant.userId === member.userId &&
+									grant.canDelete
+							)}
+							<label>
+								<input
+									type="checkbox"
+									checked={granted}
+									disabled={deleteGrantView.busy}
+									onchange={(event) =>
+										onDeleteGrant(account.id, member.userId, event.currentTarget.checked)}
+								/>
+								{m['accounts.delete_access_for_name']({ name: member.userId })}
+							</label>
+						{/each}
+					</fieldset>
+				</QueryContent>
 			{:else}
 				<p>{m['permissions.manage_restricted']()}</p>
 			{/if}

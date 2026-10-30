@@ -91,6 +91,15 @@ Application readiness starts before SDK initialization. It owns startup and the 
 subtree once dependencies become available. Keep identity, workspace, membership, and credential
 readiness distinct. Model supported observations only: browser online status is not proof of Jazz
 sync connectivity, and a missing SDK observer is a reason to omit that state.
+Model available local data and locally known authorization independently from initialization
+provenance, optional seeding, attribution repair, reconciliation, and remote freshness. A known
+local membership and grant may permit an ordinary action without a remote response; an empty or
+partial replica cannot authorize bootstrap, restoration, or repair. A recovered identity must not
+be treated as new because its local query is empty. Identity, workspace, membership, or grant
+replacement invalidates scoped decisions immediately; later observations can restore them.
+Local persistence is an observed outcome distinct from remote acceptance, rejection, or an
+unknown remote outcome. Preserve operation identity and recovery facts across interruption;
+do not replay an unknown write or block unrelated local work while seeking remote resolution.
 
 ## State-first UI and form ownership
 

@@ -37,10 +37,11 @@ test('opening / and reloading saved failed bank history causes no machine errors
 		await route.fulfill({ status: 502, json: { error: 'Unexpected automatic provider request' } })
 	})
 	await page.goto('/')
-	const selector = page.getByLabel('Current Workspace', { exact: true })
-	await expect(selector).toBeAttached()
-	await expect.poll(() => selector.inputValue()).not.toBe('')
-	const organizationId = await selector.inputValue()
+	await expect(
+		page.getByRole('main').getByRole('heading', { name: 'Overview', exact: true })
+	).toBeVisible()
+	const organizationId = new URL(page.url()).searchParams.get('workspace')
+	if (!organizationId) throw new Error('Expected scoped workspace after startup')
 	await page.evaluate(async (organizationId) => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
@@ -76,9 +77,11 @@ test('opening / and reloading saved failed bank history causes no machine errors
 	await expect(history).toBeVisible()
 	await page.reload()
 	await expect(history).toBeVisible()
-	await expect(
-		page.getByRole('main').getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
-	).toBeEnabled()
+	const syncButtons = page
+		.getByRole('main')
+		.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+	await expect(syncButtons).toHaveCount(2)
+	for (const button of await syncButtons.all()) await expect(button).toBeEnabled()
 	expect(providerRequests).toEqual([])
 	expect(errors).toEqual([])
 })

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { inspectActor } from '#lib/inspector.js'
-	import { app } from '#lib/schema.js'
+	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
 	import { QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
@@ -24,8 +24,10 @@
 	import {
 		financeFiltersKey,
 		accountOrderKey,
+		accountBalancesKey,
 		type FinanceFilters,
-		type AccountOrder
+		type AccountOrder,
+		type AccountBalances
 	} from '#lib/finance-filters.js'
 	import BankSyncIntegration from './BankSyncIntegration.svelte'
 	import AppShell from './AppShell.svelte'
@@ -115,14 +117,23 @@
 	)
 	const balanceTransactions = new QuerySubscription(() =>
 		ready && filters.activeOrganizationId
-			? app.transactions.where({ organizationId: filters.activeOrganizationId })
+			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 	const accountBalances = $derived(
-		balanceTransactions.isLoading || balanceTransactions.error
+		!ready ||
+			accountQuery.isLoading ||
+			accountQuery.error ||
+			balanceTransactions.isLoading ||
+			balanceTransactions.error
 			? null
 			: calculateAccountBalances(accountQuery.current ?? [], balanceTransactions.current ?? [])
 	)
+	setContext<AccountBalances>(accountBalancesKey, {
+		get current() {
+			return accountBalances
+		}
+	})
 	const organizations = $derived(organizationQuery.current ?? [])
 	const activeAccounts = $derived(orderAccounts(accountQuery.current ?? [], preferredOrder))
 	const userId = $derived(session.current.account?.id)
@@ -353,6 +364,9 @@
 						{#snippet accountCreation(trigger)}
 							<AccountCreation {trigger} />
 						{/snippet}
+						{#if setupError}
+							<JazzStartup error workspace {...retryableSetup ? { onRetry: retrySetup } : {}} />
+						{/if}
 						{#if showPageContent}
 							{#key `${session.current.account?.id}:${filters.activeOrganizationId}`}{@render pageContent()}{/key}
 						{/if}

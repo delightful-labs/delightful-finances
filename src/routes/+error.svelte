@@ -15,7 +15,7 @@
 	<title>{page.status} · {title} · {m['app.name']()}</title>
 </svelte:head>
 
-<main>
+<div>
 	<PageHeader title={`${page.status} · ${title}`} />
 	<Text>
 		{page.status === 404
@@ -27,4 +27,4 @@
 			>{m['actions.back_to_subject']({ subject: m['navigation.overview']() })}</AppLink
 		></Text
 	>
-</main>
+</div>
