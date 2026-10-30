@@ -1,3 +1,4 @@
+import type { FormFeedbackLabel } from './machines/form-feedback.js'
 /** Props-only contracts: no framework, schema library, or actor dependency. */
 export type FormIssue = { path: readonly PropertyKey[]; code: string; message?: string }
 export type FormSettlement =
@@ -32,6 +33,7 @@ export type FormResult<Result, Reason> =
 	| FormOperationResult<Result, Reason>
 	| (FormRecovery & { outcome: 'invalid'; issues: readonly FormIssue[]; settlement: 'notStarted' })
 export type ScopedFormView<Result, Reason> = {
+	feedbackLabels?: readonly FormFeedbackLabel<Result, Reason>[]
 	readiness: FormReadiness<Reason> | { kind: 'observing' | 'failed' | 'closed' }
 	content: { kind: 'fields' } | { kind: 'success'; value: Result }
 	activity:

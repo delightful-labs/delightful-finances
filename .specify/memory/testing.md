@@ -50,3 +50,7 @@ remain authoritative.
 - A sandbox denial when binding a local server is an environment/startup failure, not a failing
   test. Use the available permission mechanism for the authorized local-server operation; do not
   repeatedly retry unchanged tests in a sandbox that cannot start their server.
+
+## Missing dependencies
+
+- Missing `node_modules` is not a reason to skip checks or tests. Install the lockfile-pinned dependencies with `pnpm install --frozen-lockfile`, then continue with the relevant checks and tests. Report only a concrete installation failure as a blocker.

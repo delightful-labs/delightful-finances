@@ -5,10 +5,7 @@
 		createInternalTransferEntryFormOptions,
 		selectInternalTransferEntryAccounts
 	} from '#lib/machines/internal-transfer-entry.js'
-	import type {
-		InternalTransferEntryObservation,
-		InternalTransferEntryReason
-	} from '#lib/transfer-create-contract.js'
+	import type { InternalTransferEntryObservation } from '#lib/transfer-create-contract.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
@@ -16,8 +13,6 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import { readinessKey, type ReadinessContext } from '#lib/bank-sync.js'
-	import { m } from '#lib/paraglide/messages.js'
-	import { formReasonText } from '#lib/form-messages.js'
 	import PairedTransferForm from './PairedTransferForm.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -73,20 +68,11 @@
 		})
 	)
 	const writableAccounts = $derived(selectInternalTransferEntryAccounts(observe()))
-	function reasonText(reason: InternalTransferEntryReason) {
-		if (reason === 'insufficientAccounts') return m['transfers.insufficient_accounts']()
-		if (reason === 'permissionChanged') return m['forms.read_only']()
-		if (reason === 'incompatible') return m['transfers.incompatible']()
-		if (reason === 'unavailable')
-			return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		return formReasonText[reason]()
-	}
 </script>
 
 <PairedTransferForm
 	accounts={writableAccounts}
 	view={form.view}
-	{reasonText}
 	onsubmit={form.submit}
 	onreset={form.reset}
 	oninput={form.input}

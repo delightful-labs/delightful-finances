@@ -586,7 +586,7 @@
 						transferDeleteResult?.outcome !== 'succeeded'
 					)}
 					pending={transferDeletePending}
-					result={transferDeleteResult}
+					feedback={editWorkflow.selectDeleteFeedback(editSnapshot)}
 					onDelete={deleteLinkedTransfer}
 				/>
 			{/snippet}
@@ -619,6 +619,7 @@
 						{tagSuggestions}
 						{transferSuggestions}
 						{transferEditorState}
+						{transferConflict}
 						{selectedTransferCandidateId}
 						onSelectTransferCandidate={selectTransferCandidate}
 						{transferSearchEnabled}
@@ -627,6 +628,7 @@
 							editActor.send({ type: enabled ? 'ENABLE_SEARCH' : 'DISABLE_SEARCH' })}
 						{transferLinkPending}
 						{transferLinkResult}
+						transferStatusLabel={editWorkflow.selectTransferStatus(editSnapshot)}
 						transferUnlinkAvailable={linkedTransfer !== null}
 						{transferUnlinkWritable}
 						{transferUnlinkPending}
