@@ -19,7 +19,10 @@
 		InternalTransferLinkResult,
 		InternalTransferUnlinkResult
 	} from '#lib/machines/internal-transfer.js'
-	import type { TransactionEditTransferState } from '#lib/machines/transaction-edit.js'
+	import type {
+		TransactionEditTransferState,
+		TransferStatusLabel
+	} from '#lib/machines/transaction-edit.js'
 	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
@@ -59,6 +62,7 @@
 		writableTransferSuggestionIds = new Set<string>(),
 		transferLinkPending = false,
 		transferLinkResult = null,
+		transferStatusLabel = null,
 		transferUnlinkAvailable = false,
 		transferUnlinkWritable = false,
 		transferUnlinkPending = false,
@@ -111,6 +115,7 @@
 		writableTransferSuggestionIds?: ReadonlySet<string>
 		transferLinkPending?: boolean
 		transferLinkResult?: InternalTransferLinkResult | null
+		transferStatusLabel?: TransferStatusLabel | null
 		transferUnlinkAvailable?: boolean
 		transferUnlinkWritable?: boolean
 		transferUnlinkPending?: boolean
@@ -367,11 +372,10 @@
 						selectedId={selectedTransferCandidateId}
 						onSelect={onSelectTransferCandidate}
 						pending={transferLinkPending}
-						result={transferLinkResult}
+						statusLabel={transferStatusLabel}
 						unlinkAvailable={transferUnlinkAvailable}
 						unlinkWritable={transferUnlinkWritable}
 						unlinkPending={transferUnlinkPending}
-						unlinkResult={transferUnlinkResult}
 						{linkedCounterpartHref}
 						onLink={onLinkCounterpart}
 						onUnlink={onUnlinkTransfer}

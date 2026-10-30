@@ -6,11 +6,7 @@
 	import WifiNoIcon from 'tdesign-icons-svg/src/wifi-no.svg?component'
 	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
-	import {
-		bankSetupSteps,
-		type BankPresentation,
-		type BankStepLabelKey
-	} from '#lib/bank-presentation-contract.js'
+	import { bankSetupSteps, type BankPresentation } from '#lib/bank-presentation-contract.js'
 	let {
 		browserOffline,
 		view,
@@ -48,18 +44,7 @@
 	const setupView = $derived(view.mode.kind === 'setup' ? view.mode.stage : null)
 
 	let token = $state('')
-	function stepLabel(key: BankStepLabelKey) {
-		return key === 'actions.create_subject'
-			? m[key]({ subject: m['nouns.passkey']({ count: 1 }) })
-			: m[key]()
-	}
-	const statusText = $derived(
-		status?.key === 'bank.idle_step'
-			? m[status.key]({ step: stepLabel(status.stepKey) })
-			: status
-				? m[status.key]()
-				: ''
-	)
+	const statusText = $derived(status?.label() ?? '')
 	const outcomeText = $derived(
 		outcome
 			? m['bank.result_time_outcome_imported_existing_omitted']({
@@ -74,7 +59,7 @@
 	const setupSteps = $derived<ComponentProps<typeof Stepper>['steps']>(
 		bankSetupSteps.map((step, index) => ({
 			...step,
-			label: stepLabel(step.labelKey),
+			label: step.label(),
 			status: index < setupStep ? 'completed' : index === setupStep ? 'current' : 'upcoming'
 		}))
 	)

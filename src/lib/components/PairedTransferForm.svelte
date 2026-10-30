@@ -2,13 +2,12 @@
 	import { Button, FieldFeedback, InputCurrency, InputDate, Select } from 'delightful-ui'
 	import { untrack } from 'svelte'
 	import type { Account } from '#lib/schema.js'
-	import type {
-		InternalTransferEntryReason,
-		InternalTransferEntryView
-	} from '#lib/transfer-create-contract.js'
+	import type { InternalTransferEntryView } from '#lib/transfer-create-contract.js'
 	import { amountInputPattern } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import { m } from '#lib/paraglide/messages.js'
+	import { internalTransferEntryReasonLabels } from '#lib/machines/internal-transfer-entry.js'
+	import FormFeedback from './FormFeedback.svelte'
 	import FormContent from './FormContent.svelte'
 
 	let {
@@ -16,15 +15,13 @@
 		view,
 		onsubmit,
 		onreset,
-		oninput,
-		reasonText
+		oninput
 	}: {
 		accounts: readonly Account[]
 		view: InternalTransferEntryView
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
 		oninput: (event: Event) => void
-		reasonText: (reason: InternalTransferEntryReason) => string
 	} = $props()
 	let expenseAccountId = $state('')
 	let incomeAccountId = $state('')
@@ -44,18 +41,6 @@
 	const differentCurrencies = $derived(
 		Boolean(expenseAccount && incomeAccount && expenseAccount.currency !== incomeAccount.currency)
 	)
-	function alertText() {
-		if (view.readiness.kind === 'failed')
-			return m['errors.load_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		if (view.feedback.kind !== 'result') return ''
-		const result = view.feedback.result
-		if (result.outcome === 'invalid') return m['forms.validation_error']()
-		if (result.outcome === 'denied' || result.outcome === 'unavailable')
-			return reasonText(result.reason)
-		if (result.outcome === 'failed')
-			return m['errors.save_subject']({ subject: m['nouns.transfer']({ count: 1 }) })
-		return ''
-	}
 	function fieldInvalid(path: string) {
 		return (
 			view.feedback.kind === 'result' &&
@@ -179,10 +164,11 @@
 		{/if}
 	{/snippet}
 	{#snippet feedback()}
-		{#if view.feedback.kind === 'result' && view.feedback.result.outcome === 'succeeded'}
-			<p role="status">
-				{m['status.saved_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
-			</p>
-		{:else}<p role="alert" aria-live="assertive" aria-atomic="true">{alertText()}</p>{/if}
+		<FormFeedback
+			{view}
+			subject={m['nouns.transfer']({ count: 1 })}
+			reasonText={(reason) => internalTransferEntryReasonLabels[reason]()}
+			invalidMessage={m['forms.validation_error']()}
+		/>
 	{/snippet}
 </FormContent>

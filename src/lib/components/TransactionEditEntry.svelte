@@ -586,7 +586,7 @@
 						transferDeleteResult?.outcome !== 'succeeded'
 					)}
 					pending={transferDeletePending}
-					result={transferDeleteResult}
+					feedback={editWorkflow.selectDeleteFeedback(editSnapshot)}
 					onDelete={deleteLinkedTransfer}
 				/>
 			{/snippet}
@@ -627,6 +627,7 @@
 							editActor.send({ type: enabled ? 'ENABLE_SEARCH' : 'DISABLE_SEARCH' })}
 						{transferLinkPending}
 						{transferLinkResult}
+						transferStatusLabel={editWorkflow.selectTransferStatus(editSnapshot)}
 						transferUnlinkAvailable={linkedTransfer !== null}
 						{transferUnlinkWritable}
 						{transferUnlinkPending}

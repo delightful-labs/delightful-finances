@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js'
 import type { BankPresentation } from '#lib/bank-presentation-contract.js'
 import type { ActorRefFrom, EventObject, SnapshotFrom } from 'xstate'
 import { and, assign, not, or, raise, sendTo, setup, stateIn } from 'xstate'
@@ -363,21 +364,38 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 								]
 							},
 							disconnected: {
-								meta: { status: { key: 'bank.idle_step', stepKey: bankSetupSteps[0].labelKey } }
+								meta: {
+									status: {
+										key: 'bank.idle_step',
+										label: () => m['bank.idle_step']({ step: bankSetupSteps[0].label() })
+									}
+								}
 							},
-							locked: { meta: { status: { key: 'bank.locked' } } },
-							waiting: { meta: { status: { key: 'bank.waiting' } } },
-							restricted: { meta: { status: { key: 'bank.restricted' } } }
+							locked: { meta: { status: { key: 'bank.locked', label: () => m['bank.locked']() } } },
+							waiting: {
+								meta: { status: { key: 'bank.waiting', label: () => m['bank.waiting']() } }
+							},
+							restricted: {
+								meta: { status: { key: 'bank.restricted', label: () => m['bank.restricted']() } }
+							}
 						}
 					},
 					success: {
 						initial: 'complete',
 						states: {
-							complete: { meta: { status: { key: 'bank.success' } } },
-							partial: { meta: { status: { key: 'bank.partial_success' } } }
+							complete: {
+								meta: { status: { key: 'bank.success', label: () => m['bank.success']() } }
+							},
+							partial: {
+								meta: {
+									status: { key: 'bank.partial_success', label: () => m['bank.partial_success']() }
+								}
+							}
 						}
 					},
-					cancelled: { meta: { status: { key: 'bank.cancelled' } } },
+					cancelled: {
+						meta: { status: { key: 'bank.cancelled', label: () => m['bank.cancelled']() } }
+					},
 					failure: {
 						initial: 'classifying',
 						states: {
@@ -431,18 +449,74 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 									{ target: 'unexpected' }
 								]
 							},
-							modeMismatch: { meta: { status: { key: 'bank.mode_mismatch' } } },
-							passkey: { meta: { status: { key: 'bank.passkey_failure' } } },
-							claim: { meta: { status: { key: 'bank.claim_failure' } } },
-							invalidToken: { meta: { status: { key: 'bank.invalid_setup_token' } } },
-							accountConflict: { meta: { status: { key: 'bank.account_already_linked' } } },
-							save: { meta: { status: { key: 'bank.save_failure' } } },
-							otherTab: { meta: { status: { key: 'bank.other_tab' } } },
-							lockingUnavailable: { meta: { status: { key: 'bank.locking_unavailable' } } },
-							unlock: { meta: { status: { key: 'bank.unlock_failure' } } },
-							provider: { meta: { status: { key: 'bank.provider_failure' } } },
-							mapping: { meta: { status: { key: 'bank.mapping_failure' } } },
-							unexpected: { meta: { status: { key: 'bank.failure' } } }
+							modeMismatch: {
+								meta: {
+									status: { key: 'bank.mode_mismatch', label: () => m['bank.mode_mismatch']() }
+								}
+							},
+							passkey: {
+								meta: {
+									status: { key: 'bank.passkey_failure', label: () => m['bank.passkey_failure']() }
+								}
+							},
+							claim: {
+								meta: {
+									status: { key: 'bank.claim_failure', label: () => m['bank.claim_failure']() }
+								}
+							},
+							invalidToken: {
+								meta: {
+									status: {
+										key: 'bank.invalid_setup_token',
+										label: () => m['bank.invalid_setup_token']()
+									}
+								}
+							},
+							accountConflict: {
+								meta: {
+									status: {
+										key: 'bank.account_already_linked',
+										label: () => m['bank.account_already_linked']()
+									}
+								}
+							},
+							save: {
+								meta: {
+									status: { key: 'bank.save_failure', label: () => m['bank.save_failure']() }
+								}
+							},
+							otherTab: {
+								meta: { status: { key: 'bank.other_tab', label: () => m['bank.other_tab']() } }
+							},
+							lockingUnavailable: {
+								meta: {
+									status: {
+										key: 'bank.locking_unavailable',
+										label: () => m['bank.locking_unavailable']()
+									}
+								}
+							},
+							unlock: {
+								meta: {
+									status: { key: 'bank.unlock_failure', label: () => m['bank.unlock_failure']() }
+								}
+							},
+							provider: {
+								meta: {
+									status: {
+										key: 'bank.provider_failure',
+										label: () => m['bank.provider_failure']()
+									}
+								}
+							},
+							mapping: {
+								meta: {
+									status: { key: 'bank.mapping_failure', label: () => m['bank.mapping_failure']() }
+								}
+							},
+							unexpected: {
+								meta: { status: { key: 'bank.failure', label: () => m['bank.failure']() } }
+							}
 						}
 					}
 				}
@@ -469,7 +543,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					shuttingDown: { on: { CANCEL: {}, RESET: {}, SHUTDOWN: {} } }
 				},
 				tags: ['setup', 'busy'],
-				meta: { status: { key: 'bank.working' }, setupView: 'creating', setupStep: 1 },
+				meta: {
+					status: { key: 'bank.working', label: () => m['bank.working']() },
+					setupView: 'creating',
+					setupStep: 1
+				},
 				entry: [assign({ error: undefined }), sendTo('availability', { type: 'SETUP_STARTED' })],
 				exit: [clear, sendTo('availability', { type: 'SETUP_ENDED' })],
 				invoke: {
@@ -560,7 +638,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					}
 				},
 				tags: ['operating', 'busy'],
-				meta: { status: { key: 'bank.working' } },
+				meta: { status: { key: 'bank.working', label: () => m['bank.working']() } },
 				entry: assign({ error: undefined, counts: emptyCounts() }),
 				exit: clear,
 				invoke: {

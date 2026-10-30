@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js'
 import type { Account } from './schema.js'
 export type BankSetupView =
 	| 'creating'
@@ -28,23 +29,18 @@ export type BankStatusKey =
 	| 'bank.unlock_failure'
 	| 'bank.provider_failure'
 	| 'bank.mapping_failure'
-export type BankStepLabelKey =
-	| 'bank.step_token'
-	| 'actions.create_subject'
-	| 'bank.step_encrypt'
-	| 'bank.step_verify'
-	| 'bank.step_connect'
-type SetupStep = { id: string; labelKey: BankStepLabelKey }
+type SetupStep = { id: string; label: () => string }
 export const bankSetupSteps = [
-	{ id: 'token', labelKey: 'bank.step_token' },
-	{ id: 'create', labelKey: 'actions.create_subject' },
-	{ id: 'encrypt', labelKey: 'bank.step_encrypt' },
-	{ id: 'verify', labelKey: 'bank.step_verify' },
-	{ id: 'connect', labelKey: 'bank.step_connect' }
+	{ id: 'token', label: () => m['bank.step_token']() },
+	{
+		id: 'create',
+		label: () => m['actions.create_subject']({ subject: m['nouns.passkey']({ count: 1 }) })
+	},
+	{ id: 'encrypt', label: () => m['bank.step_encrypt']() },
+	{ id: 'verify', label: () => m['bank.step_verify']() },
+	{ id: 'connect', label: () => m['bank.step_connect']() }
 ] satisfies [SetupStep, ...SetupStep[]]
-export type BankStatus =
-	| { key: 'bank.idle_step'; stepKey: BankStepLabelKey }
-	| { key: Exclude<BankStatusKey, 'bank.idle_step'> }
+export type BankStatus = { key: BankStatusKey; label: () => string }
 export type LastSync = {
 	time: Date
 	outcomeKey: 'bank.succeeded' | 'bank.partial' | 'bank.failed'
