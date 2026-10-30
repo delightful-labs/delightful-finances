@@ -619,6 +619,7 @@
 						{tagSuggestions}
 						{transferSuggestions}
 						{transferEditorState}
+						{transferConflict}
 						{selectedTransferCandidateId}
 						onSelectTransferCandidate={selectTransferCandidate}
 						{transferSearchEnabled}

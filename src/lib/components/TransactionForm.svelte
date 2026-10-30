@@ -58,6 +58,7 @@
 		transferSuggestions = [],
 		transferSearchEnabled = false,
 		transferEditorState = 'unselected',
+		transferConflict = false,
 		selectedTransferCandidateId = null,
 		writableTransferSuggestionIds = new Set<string>(),
 		transferLinkPending = false,
@@ -109,6 +110,7 @@
 		})[]
 		transferSearchEnabled?: boolean
 		transferEditorState?: TransactionEditTransferState
+		transferConflict?: boolean
 		selectedTransferCandidateId?: string | null
 		onTransferSearchEnabledChange?: (enabled: boolean) => void
 		onSelectTransferCandidate?: (transactionId: string) => void
@@ -354,7 +356,7 @@
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
-				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked' && transferEditorState !== 'conflicted'}
+				{#if mode === 'edit' && onLinkCounterpart && transferEditorState !== 'linked' && transferEditorState !== 'conflicted' && !transferConflict}
 					<label>
 						<input
 							type="checkbox"
@@ -368,7 +370,7 @@
 					<InternalTransferSuggestions
 						suggestions={transferSuggestions}
 						writableSuggestionIds={writableTransferSuggestionIds}
-						editorState={transferEditorState}
+						editorState={transferConflict ? 'conflicted' : transferEditorState}
 						selectedId={selectedTransferCandidateId}
 						onSelect={onSelectTransferCandidate}
 						pending={transferLinkPending}
