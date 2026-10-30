@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process'
 import { createActor, toPromise } from 'xstate'
 import { z } from 'zod'
-import { jazzPreviewBuild, type PreviewJazzApp } from './src/lib/machines/jazz-preview-build.ts'
+import {
+	jazzPreviewBuild,
+	type PreviewJazzApp
+} from './src/lib/machines/persistence/jazz-preview-build.ts'
 
 const serverUrl = 'https://v2.sync.jazz.tools/'
 const provisionUrl = 'https://v2.dashboard.jazz.tools/api/apps/generate'

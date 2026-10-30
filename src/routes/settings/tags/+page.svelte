@@ -1,24 +1,24 @@
 <script lang="ts">
-	import { observeRow, observeRows } from '#lib/observations.js'
-	import { createScopedFormController } from '#lib/forms.svelte.js'
+	import { observeRow, observeRows } from '#lib/runtime/observations.js'
+	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import { tagArchiveSchema, tagFormSchema } from '#lib/validation/tags.js'
 	import {
 		createManagementFormOptions,
 		selectManagementArchiveIds
-	} from '#lib/machines/management.js'
-	import type { ManagementObservation } from '#lib/management-contract.js'
+	} from '#lib/machines/management/management.js'
+	import type { ManagementObservation } from '#lib/contracts/management-contract.js'
 	import { archiveTag, createTag } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
-	import TagForm from '#lib/components/TagForm.svelte'
-	import TagList from '#lib/components/TagList.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
-	import QueryContent from '#lib/components/QueryContent.svelte'
+	import TagForm from '#lib/components/classification/TagForm.svelte'
+	import TagList from '#lib/components/classification/TagList.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
+	import QueryContent from '#lib/components/shared/QueryContent.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 

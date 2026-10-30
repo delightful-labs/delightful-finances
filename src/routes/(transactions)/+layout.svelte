@@ -4,8 +4,8 @@
 	import type { Snippet } from 'svelte'
 	import { onNavigate } from '$app/navigation'
 	import { page } from '$app/state'
-	import TransactionWorkspace from '#lib/components/TransactionWorkspace.svelte'
-	import TransactionView from '#lib/components/TransactionView.svelte'
+	import TransactionWorkspace from '#lib/components/transactions/TransactionWorkspace.svelte'
+	import TransactionView from '#lib/components/transactions/TransactionView.svelte'
 
 	let { children }: { children: Snippet } = $props()
 	const pathname = $derived(page.url.pathname)

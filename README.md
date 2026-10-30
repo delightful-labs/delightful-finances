@@ -53,7 +53,7 @@ manual 25-transaction action also uses Faker and remains controlled by the debug
 
 The same setting enables the existing developer menu, including its sample transaction controls. The menu trigger retains its existing keyboard-focus behavior and appearance. Sample creation still requires the current workspace's write permissions.
 
-Use `createLogger(scope)` from `src/lib/logger.ts` for application `info`, `warn`, and `error` messages. Select only non-sensitive diagnostic fields; never pass credentials, finance records, provider payloads, or raw errors/messages/stacks. Existing bank diagnostics retain their error classification and timing heartbeats. SDK-internal logs are controlled separately.
+Use `createLogger(scope)` from `src/lib/diagnostics/logger.ts` for application `info`, `warn`, and `error` messages. Select only non-sensitive diagnostic fields; never pass credentials, finance records, provider payloads, or raw errors/messages/stacks. Existing bank diagnostics retain their error classification and timing heartbeats. SDK-internal logs are controlled separately.
 
 All application actor roots and their children report error-state observations through the shared observer, including normal machine failure states and unexpected actor failures. Logs contain the machine/state, triggering event type, actor correlation IDs, sanitized error/cause details and source frames, available status/permission facts, counters, collection sizes and typed failure results. Jazz initialization failures additionally report the public app ID and server origin before a database is available. Identical failure observations are suppressed until their facts change or the actor leaves the failure state. Context payloads and form values are omitted; error text is bounded and redacted rather than logging raw exceptions.
 
@@ -106,3 +106,47 @@ The approved bank-sync design encrypts the SimpleFIN Access URL locally using a 
 Before consuming a SimpleFIN setup token, the app will verify encryption and subsequent decryption with a harmless sample. Each manual sync will require passkey verification, use the credential transiently, then lock again. Setup tokens, plaintext credentials, and usable decryption keys will not be persisted or replicated. There will be no automatic transaction fetching or retries. Lost-passkey recovery initially means reconnecting SimpleFIN; invalidating a previously copied Access URL requires provider-side revocation.
 
 This is planned behavior, not an implemented bank integration. Sharing credentials with other organization members and additional recovery mechanisms are out of scope. An initial passkey prototype demonstrated successful sample recovery in the reported browser trial and has been removed. Physical-device passkey synchronization and production Jazz credential replication remain unverified.
+
+## Source organization and browser tests
+
+Feature browser regressions live in `tests/features/`; shared workspace and transaction
+fixtures live in `tests/helpers/`. Shared workflow contracts live in `src/lib/contracts/`;
+application shell and navigation components live in `src/lib/components/navigation/`. Keep schema and permission deployment
+entry points in `src/lib/schema.ts` and `src/lib/permissions.ts`.
+
+Components and machines use feature folders such as `accounts/`, `identity/`, `workspaces/`,
+`transactions/`, and `transfers/`. Machines retain their colocated tests and fixtures.
+Shared logging and inspection live in `src/lib/diagnostics/`; session/context/lifecycle
+helpers live in `src/lib/runtime/`. Form, filter, and authorization helpers have their own
+library directories. Keep new files with the feature or responsibility they implement.
+
+`pnpm test:e2e` runs all development-server scenarios through four disjoint projects:
+`application`, `authentication`, `permissions`, and `workspace`. CI uses these same projects
+and shards the application project across two jobs. Local runs default to one worker;
+CI uses up to two workers with isolated browser contexts. Authentication retains its serial
+60-second budget; production and flag-specific environments stay serial. Production PWA,
+stalled-remote startup, debug, and fake-data flag scenarios use their own runtime configurations under `tests/config/`.
+
+Use `pnpm test:attachments`, `pnpm test:description`, or a config in `tests/config/` for focused
+runs. Cross-cutting selections use scenario tags, so moving or renaming a scenario does not
+silently remove it from a feature selection. `pnpm check:e2e` verifies that projects
+are disjoint and that every tagged feature selection exactly matches its coverage in the
+canonical run; CI runs this discovery check without launching a browser or server. For example:
+
+```sh
+pnpm test:e2e --grep @attachments
+pnpm test:e2e --grep @account-archive
+pnpm test:e2e --project workspace
+pnpm exec playwright test --config tests/config/playwright.transaction-workspace.config.ts
+```
+
+The default agent port is 5180. Set `FINANCE_E2E_PORT` to choose another port. Start a known
+agent server with `pnpm dev:agent --host 127.0.0.1 --port 5182 --strictPort`, then set
+`FINANCE_E2E_PORT=5182 FINANCE_E2E_REUSE_SERVER=true` to reuse it across focused runs.
+Reuse is opt-in and disabled in CI; do not reuse unidentified servers. Run tooling in a
+separate checkout with its own dependencies while the user's development server is running.
+
+Failure screenshots and a machine-readable duration report are written to `test-results/`.
+CI also retains failure traces. For local traces, pass `--trace retain-on-failure`; local
+development runs leave tracing off by default. Override concurrency with `--workers`. Use `pnpm test:pwa`, `pnpm test:startup`, and the CI feature-flag
+matrix for the separate production and flag-dependent environments.

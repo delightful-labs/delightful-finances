@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte'
-	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
+	import { stopAfterShutdown } from '#lib/runtime/actor-lifecycle.js'
 	import { createActor, type ActorRefFrom } from 'xstate'
 	import {
 		imageEditorMachine,
 		imageEditorPresentation,
 		type ImageEditorEvent
-	} from '#lib/machines/image-editor.js'
+	} from '#lib/machines/images/image-editor.js'
 	import type { ImageSelectionMode } from '#lib/domain/image-editor-geometry.js'
 	import ImageEditorView from './ImageEditorView.svelte'
 

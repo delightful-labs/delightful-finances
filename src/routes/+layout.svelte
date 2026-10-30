@@ -1,6 +1,6 @@
 <script lang="ts">
 	import 'delightful-ui/theme.css'
-	import { inspectActor } from '#lib/inspector.js'
+	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import {
 		PUBLIC_JAZZ_APP_ID,
 		PUBLIC_JAZZ_SERVER_URL,
@@ -9,22 +9,22 @@
 	import { onDestroy, onMount, setContext, type Snippet } from 'svelte'
 	import { createActor } from 'xstate'
 	import { fromStore, readable } from 'svelte/store'
-	import { createApplicationReadinessMachine } from '#lib/machines/application-readiness.js'
-	import { readinessKey, type ReadinessContext } from '#lib/bank-sync.js'
+	import { createApplicationReadinessMachine } from '#lib/machines/runtime/application-readiness.js'
+	import { readinessKey, type ReadinessContext } from '#lib/runtime/bank-sync.js'
 	import { JazzSessionProvider, type JazzSessionConfig } from 'jazz-tools/svelte'
-	import DeveloperMenu from '#lib/components/DeveloperMenu.svelte'
-	import DemoViewport from '#lib/components/DemoViewport.svelte'
-	import JazzStartup from '#lib/components/JazzStartup.svelte'
-	import SessionStartup from '#lib/components/SessionStartup.svelte'
-	import WorkspaceBootstrap from '#lib/components/WorkspaceBootstrap.svelte'
-	import MutationRejectionNotice from '#lib/components/MutationRejectionNotice.svelte'
+	import DeveloperMenu from '#lib/components/diagnostics/DeveloperMenu.svelte'
+	import DemoViewport from '#lib/components/diagnostics/DemoViewport.svelte'
+	import JazzStartup from '#lib/components/startup/JazzStartup.svelte'
+	import SessionStartup from '#lib/components/startup/SessionStartup.svelte'
+	import WorkspaceBootstrap from '#lib/components/workspaces/WorkspaceBootstrap.svelte'
+	import MutationRejectionNotice from '#lib/components/shared/MutationRejectionNotice.svelte'
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
-	import { queryLinksKey, type QueryLinkContext } from '#lib/query-links.js'
+	import { queryLinksKey, type QueryLinkContext } from '#lib/filters/query-links.js'
 	import { browser } from '$app/env'
 	import { workspaceRoute } from '#lib/domain/workspace-routes.js'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
-	import { getCurrentJazzSession, getOrCreateJazzSession } from '#lib/jazz-session.js'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
+	import { getCurrentJazzSession, getOrCreateJazzSession } from '#lib/runtime/jazz-session.js'
 
 	let { children }: { children: Snippet } = $props()
 	const routeWorkspaceId = $derived(browser ? workspaceRoute(page.url.search).workspaceId : null)

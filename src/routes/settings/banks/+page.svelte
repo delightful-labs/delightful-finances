@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte'
-	import { getBankSync } from '#lib/bank-sync.js'
+	import { getBankSync } from '#lib/runtime/bank-sync.js'
 	import { m } from '#lib/paraglide/messages.js'
 
 	const bankSync = getBankSync()
