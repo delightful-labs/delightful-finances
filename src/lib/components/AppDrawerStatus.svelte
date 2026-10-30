@@ -1,18 +1,15 @@
 <script lang="ts">
-	import { Button, StatusMessage } from 'delightful-ui'
+	import { Button, ButtonContent, StatusMessage } from 'delightful-ui'
 	import type { BankSyncControls } from '#lib/bank-sync.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import Icon from './AppIcon.svelte'
 	import SyncIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import AppDrawerContentSection from './AppDrawerContentSection.svelte'
 	import PwaUpdateIntegration from './PwaUpdateIntegration.svelte'
 	let {
 		bankSync,
 		browserOffline,
-		syncConfigured,
-		onNavigate
+		syncConfigured
 	}: {
-		onNavigate: () => void
 		bankSync: BankSyncControls
 		syncConfigured: boolean
 		browserOffline: boolean
@@ -23,12 +20,12 @@
 	{#if bankSync.visible}
 		<Button
 			disabled={browserOffline || bankSync.disabled}
+			aria-busy={bankSync.loading}
 			aria-describedby={browserOffline ? 'sidebar-bank-sync-offline' : undefined}
-			onclick={() => {
-				onNavigate()
-				bankSync.sync()
-			}}><Icon navigation icon={SyncIcon} />{m['bank.sync']()}</Button
+			onclick={() => bankSync.sync()}
 		>
+			<ButtonContent icon={SyncIcon} text={m['bank.sync']()} loading={bankSync.loading} />
+		</Button>
 		{#if browserOffline}
 			<p id="sidebar-bank-sync-offline">{m['bank.sync_offline']()}</p>
 		{/if}

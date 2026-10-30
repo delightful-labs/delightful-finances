@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { EXPENSE } from '#lib/domain/transaction-kind.js'
-	import Icon from './AppIcon.svelte'
-	import { Button, Table } from 'delightful-ui'
+	import { Button, ButtonContent, Table } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Category } from '#lib/schema.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -85,9 +84,8 @@
 								disabled={!archiveView.canSubmit}
 								aria-label={m['actions.archive_subject']({ subject: category.name })}
 								onclick={() => onArchive(category.id)}
-								><Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />{m[
-									'actions.archive_button'
-								]()}
+							>
+								<ButtonContent icon={ArchiveIcon} text={m['actions.archive_button']()} />
 							</Button>
 						{/if}</td
 					>

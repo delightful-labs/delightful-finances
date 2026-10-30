@@ -109,12 +109,7 @@
 				/>
 			</AppDrawerNavigation>
 			{#snippet footer()}
-				<AppDrawerStatus
-					{bankSync}
-					{browserOffline}
-					{syncConfigured}
-					onNavigate={dismissMobileDrawer}
-				/>
+				<AppDrawerStatus {bankSync} {browserOffline} {syncConfigured} />
 			{/snippet}
 		</AppDrawer>
 		<div class="content" inert={mainInert}>

@@ -79,6 +79,9 @@
 		get disabled() {
 			return view.activity.kind === 'working' || syncDisabled
 		},
+		get loading() {
+			return view.activity.kind === 'working'
+		},
 		sync: () => dispatch({ type: 'SYNC' }),
 		cancel: () => dispatch({ type: 'CANCEL' }),
 		get view() {
