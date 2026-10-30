@@ -141,8 +141,10 @@ test('HMR replacement disconnects the old inspector and attaches the new module'
 	const latestEvent = await page.evaluate(() => JSON.stringify(window.debugFixture.messages.at(-1)))
 	expect(latestEvent).toBeDefined()
 	await page.evaluate(async () => {
-		const originalPath = '/src/lib/inspector.ts'
-		const original: typeof import('../src/lib/inspector.js') = await import(originalPath)
+		const originalPath = '/src/lib/diagnostics/inspector.ts'
+		const original: typeof import('../src/lib/diagnostics/inspector.js') = await import(
+			originalPath
+		)
 		const clientPath = '/@vite/client'
 		const { createHotContext }: { createHotContext: (path: string) => unknown } = await import(
 			clientPath
@@ -164,17 +166,19 @@ test('HMR replacement disconnects the old inspector and attaches the new module'
 			typeof client.queueUpdate !== 'function'
 		)
 			throw new Error('Vite live update API is unavailable')
-		context.accept('/src/lib/inspector.ts', () => {})
+		context.accept('/src/lib/diagnostics/inspector.ts', () => {})
 		const timestamp = Date.now()
 		await client.queueUpdate({
 			type: 'js-update',
 			path: '/__inspector_hmr_test__',
-			acceptedPath: '/src/lib/inspector.ts',
+			acceptedPath: '/src/lib/diagnostics/inspector.ts',
 			timestamp
 		})
-		const inspectorPath = `/src/lib/inspector.ts?t=${timestamp}`
-		const { inspectActor, openStateInspector }: typeof import('../src/lib/inspector.js') =
-			await import(inspectorPath)
+		const inspectorPath = `/src/lib/diagnostics/inspector.ts?t=${timestamp}`
+		const {
+			inspectActor,
+			openStateInspector
+		}: typeof import('../src/lib/diagnostics/inspector.js') = await import(inspectorPath)
 		const xstatePath = '/node_modules/.vite/deps/xstate.js'
 		const { createActor, createMachine }: typeof import('xstate') = await import(xstatePath)
 		const actor = createActor(
@@ -242,26 +246,30 @@ test('startup failure diagnostics follow the debug flag and preserve retry', asy
 	await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
 })
 
-test('deployed debug build prepares fresh hosted Jazz workspaces', async ({ page }) => {
-	test.skip(process.env.JAZZ_HOSTED_PREVIEW_SMOKE !== 'true')
-	const failures: string[] = []
-	page.on('pageerror', (error) => failures.push(error.message))
-	await page.goto('/accounts')
-	await expect(
-		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
-	).toBeVisible()
-	await expect(
-		page.getByText('Your workspaces could not be prepared.', { exact: false })
-	).toHaveCount(0)
-	await openCreationModal(page, 'Add Account')
-	const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true })
-	await dialog.getByLabel('Account name', { exact: true }).fill('Preview smoke account')
-	await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
-	await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
-	await expect(dialog.getByRole('status')).toContainText('Preview smoke account')
-	expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
-	expect(failures).toEqual([])
-})
+test(
+	'deployed debug build prepares fresh hosted Jazz workspaces',
+	{ tag: ['@workspaces'] },
+	async ({ page }) => {
+		test.skip(process.env.JAZZ_HOSTED_PREVIEW_SMOKE !== 'true')
+		const failures: string[] = []
+		page.on('pageerror', (error) => failures.push(error.message))
+		await page.goto('/accounts')
+		await expect(
+			page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
+		).toBeVisible()
+		await expect(
+			page.getByText('Your workspaces could not be prepared.', { exact: false })
+		).toHaveCount(0)
+		await openCreationModal(page, 'Add Account')
+		const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true })
+		await dialog.getByLabel('Account name', { exact: true }).fill('Preview smoke account')
+		await dialog.getByLabel('Account type', { exact: true }).selectOption('bank')
+		await dialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+		await expect(dialog.getByRole('status')).toContainText('Preview smoke account')
+		expect(await page.evaluate(() => window.debugFixture.opens)).toBe(0)
+		expect(failures).toEqual([])
+	}
+)
 
 test('deployed debug build seeds fake accounts without duplicating on reload', async ({ page }) => {
 	test.skip(

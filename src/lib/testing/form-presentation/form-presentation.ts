@@ -6,8 +6,8 @@ import type {
 	FormObservation,
 	FormOperationInput,
 	FormOperationResult
-} from '../../form-contract.js'
-import type { ScopedFormOptions } from '../../machines/scoped-form.js'
+} from '../../contracts/form-contract.js'
+import type { ScopedFormOptions } from '../../machines/forms/scoped-form.js'
 
 export type Facts = { scope: string; allowed: boolean; publish?: boolean; broken?: boolean }
 type Values = { name: string }

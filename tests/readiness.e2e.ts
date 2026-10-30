@@ -44,11 +44,10 @@ test('opening / and reloading saved failed bank history causes no machine errors
 	if (!organizationId) throw new Error('Expected scoped workspace after startup')
 	await page.evaluate(async (organizationId) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const session = getCurrentJazzSession()?.getSnapshot()
 		if (!session?.client || !session.account) throw new Error('Expected initialized session')
 		await session.client.db

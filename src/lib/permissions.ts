@@ -10,7 +10,7 @@ import {
 	type Tag,
 	type TransactionRow
 } from './schema.js'
-import { checkReferenceCondition } from './check-reference-permissions.js'
+import { checkReferenceCondition } from './authorization/check-reference-permissions.js'
 
 type Role = NonNullable<OrganizationMember['role']>
 type IdExpression = string | RowRefValue

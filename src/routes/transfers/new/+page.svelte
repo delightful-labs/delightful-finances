@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages.js'
-	import PageHeader from '#lib/components/PageHeader.svelte'
-	import InternalTransferEntry from '#lib/components/InternalTransferEntry.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
+	import InternalTransferEntry from '#lib/components/transfers/InternalTransferEntry.svelte'
 </script>
 
 <svelte:head><title>{m['nouns.transfer']({ count: 1 })} · {m['app.name']()}</title></svelte:head>

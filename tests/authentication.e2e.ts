@@ -31,125 +31,143 @@ const invalidPhrases = [
 ]
 
 for (const { name, phrase } of invalidPhrases) {
-	test(`rejects ${name} without replacing the current account or data`, async ({ page }) => {
-		// Confirm each fixture is invalid using Jazz's own recovery validator.
-		expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
-		await createAccount(page, 'Retained checking')
-		const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
-		await page.goto(`/login?workspace=${workspaceId}`)
-		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-		await page.getByRole('button', { name: 'Login', exact: true }).click()
-		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-			'The account could not be restored. Check the recovery phrase and try again.'
-		)
-		await expect(page).toHaveURL(`/login?workspace=${workspaceId}`)
-		await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
-		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
-		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
+	test(
+		`rejects ${name} without replacing the current account or data`,
+		{ tag: ['@identity'] },
+		async ({ page }) => {
+			// Confirm each fixture is invalid using Jazz's own recovery validator.
+			expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
+			await createAccount(page, 'Retained checking')
+			const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+			await page.goto(`/login?workspace=${workspaceId}`)
+			await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+			await page.getByRole('button', { name: 'Login', exact: true }).click()
+			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+				'The account could not be restored. Check the recovery phrase and try again.'
+			)
+			await expect(page).toHaveURL(`/login?workspace=${workspaceId}`)
+			await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
+			await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
+			await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
 
-		await page.goto(`/accounts?workspace=${workspaceId}`)
-		await page.reload()
-		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
-		await expect(
-			page.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
-		).toHaveCount(1)
-		await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(1)
-	})
+			await page.goto(`/accounts?workspace=${workspaceId}`)
+			await page.reload()
+			await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
+			await expect(
+				page.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
+			).toHaveCount(1)
+			await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(
+				1
+			)
+		}
+	)
 }
 
-test('restores existing workspace data without duplicates or previous identity accounts', async ({
-	page,
-	browser,
-	baseURL
-}) => {
-	await createAccount(page, 'Original checking')
-	const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
-	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
-	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
+test(
+	'restores existing workspace data without duplicates or previous identity accounts',
+	{ tag: ['@identity', '@workspaces'] },
+	async ({ page, browser, baseURL }) => {
+		await createAccount(page, 'Original checking')
+		const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+		await page.goto('/account')
+		await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
+		const phrase = await page.getByLabel('Your recovery phrase').inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
 
-	const otherContext = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
-	try {
-		const otherPage = await otherContext.newPage()
-		await createAccount(otherPage, 'Previous identity checking')
-		await restoreAccount(otherPage, phrase)
-		await expect(otherPage).toHaveURL(`/?workspace=${workspaceId}`)
-		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
-			workspaceId
-		)
-		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
-		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
-			workspaceId
-		)
-		await expect(
-			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
-		).toHaveCount(1)
-		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
-		await expect(
-			otherPage.getByRole('cell', { name: 'Original checking', exact: true })
-		).toBeVisible()
-		await expect(otherPage.getByText('Previous identity checking', { exact: true })).toHaveCount(0)
+		const otherContext = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
+		try {
+			const otherPage = await otherContext.newPage()
+			await createAccount(otherPage, 'Previous identity checking')
+			await restoreAccount(otherPage, phrase)
+			await expect(otherPage).toHaveURL(`/?workspace=${workspaceId}`)
+			await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
+				workspaceId
+			)
+			await otherPage.goto(`/accounts?workspace=${workspaceId}`)
+			await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
+				workspaceId
+			)
+			await expect(
+				otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
+			).toHaveCount(1)
+			await otherPage.goto(`/accounts?workspace=${workspaceId}`)
+			await expect(
+				otherPage.getByRole('cell', { name: 'Original checking', exact: true })
+			).toBeVisible()
+			await expect(otherPage.getByText('Previous identity checking', { exact: true })).toHaveCount(
+				0
+			)
 
-		await restoreAccount(otherPage, phrase)
-		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
-		await otherPage.reload()
-		await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
-			workspaceId
-		)
-		await expect(
-			otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
-		).toHaveCount(1)
-		await otherPage.goto(`/accounts?workspace=${workspaceId}`)
-		await expect(
-			otherPage.getByRole('cell', { name: 'Original checking', exact: true })
-		).toHaveCount(1)
-		await expect(otherPage.getByText('Previous identity checking', { exact: true })).toHaveCount(0)
-		await otherPage.goto(`/expenses/new?workspace=${workspaceId}`)
-		await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(6)
-		await otherPage.goto(`/income/new?workspace=${workspaceId}`)
-		await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(4)
-	} finally {
-		await otherContext.close()
-	}
-})
-
-test('recovery modal clears its content and confirmation on every dismissal', async ({ page }) => {
-	await createAccount(page, 'Recovery modal checking')
-	await page.goto('/account')
-	const show = page.getByRole('button', { name: 'Show Recovery phrase' })
-	const dialog = page.getByRole('dialog', { name: 'Account recovery' })
-	const phrase = page.getByLabel('Your recovery phrase', { exact: true })
-	const confirmation = page.getByLabel('I saved this phrase somewhere safe.')
-	const complete = page.getByRole('button', { name: 'I saved the phrase', exact: true })
-
-	for (const dismissal of ['close', 'escape', 'backdrop', 'complete']) {
-		await show.click()
-		await expect(dialog).toBeVisible()
-		// Never include recovery secrets in assertion output or test artifacts.
-		expect(await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)).toBe(
-			true
-		)
-		await expect(confirmation).not.toBeChecked()
-		await expect(complete).toBeDisabled()
-		await phrase.click()
-		await expect(dialog).toBeVisible()
-		if (dismissal === 'complete') {
-			await confirmation.check()
-			await complete.click()
-		} else if (dismissal === 'escape') {
-			await confirmation.check()
-			await page.keyboard.press('Escape')
-		} else if (dismissal === 'backdrop') {
-			await page.mouse.click(1, 1)
-		} else {
-			await page.getByRole('button', { name: 'Close', exact: true }).click()
+			await restoreAccount(otherPage, phrase)
+			await otherPage.goto(`/accounts?workspace=${workspaceId}`)
+			await otherPage.reload()
+			await expect(otherPage.getByLabel('Current Workspace', { exact: true })).toHaveValue(
+				workspaceId
+			)
+			await expect(
+				otherPage.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
+			).toHaveCount(1)
+			await otherPage.goto(`/accounts?workspace=${workspaceId}`)
+			await expect(
+				otherPage.getByRole('cell', { name: 'Original checking', exact: true })
+			).toHaveCount(1)
+			await expect(otherPage.getByText('Previous identity checking', { exact: true })).toHaveCount(
+				0
+			)
+			await otherPage.goto(`/expenses/new?workspace=${workspaceId}`)
+			await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(
+				6
+			)
+			await otherPage.goto(`/income/new?workspace=${workspaceId}`)
+			await expect(otherPage.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(
+				4
+			)
+		} finally {
+			await otherContext.close()
 		}
-		await expect(dialog).not.toBeVisible()
-		await expect(phrase).toHaveCount(0)
-		await expect(show).toBeFocused()
 	}
-})
+)
+
+test(
+	'recovery modal clears its content and confirmation on every dismissal',
+	{ tag: ['@workflow-completion', '@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Recovery modal checking')
+		await page.goto('/account')
+		const show = page.getByRole('button', { name: 'Show Recovery phrase' })
+		const dialog = page.getByRole('dialog', { name: 'Account recovery' })
+		const phrase = page.getByLabel('Your recovery phrase', { exact: true })
+		const confirmation = page.getByLabel('I saved this phrase somewhere safe.')
+		const complete = page.getByRole('button', { name: 'I saved the phrase', exact: true })
+
+		for (const dismissal of ['close', 'escape', 'backdrop', 'complete']) {
+			await show.click()
+			await expect(dialog).toBeVisible()
+			// Never include recovery secrets in assertion output or test artifacts.
+			expect(
+				await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)
+			).toBe(true)
+			await expect(confirmation).not.toBeChecked()
+			await expect(complete).toBeDisabled()
+			await phrase.click()
+			await expect(dialog).toBeVisible()
+			if (dismissal === 'complete') {
+				await confirmation.check()
+				await complete.click()
+			} else if (dismissal === 'escape') {
+				await confirmation.check()
+				await page.keyboard.press('Escape')
+			} else if (dismissal === 'backdrop') {
+				await page.mouse.click(1, 1)
+			} else {
+				await page.getByRole('button', { name: 'Close', exact: true }).click()
+			}
+			await expect(dialog).not.toBeVisible()
+			await expect(phrase).toHaveCount(0)
+			await expect(show).toBeFocused()
+		}
+	}
+)
 
 async function saveDisplayName(page: Page, name: string) {
 	await page.goto('/account')
@@ -161,73 +179,75 @@ async function saveDisplayName(page: Page, name: string) {
 	).toHaveCount(1)
 }
 
-test('profile name trims, survives reload, and can be cleared', async ({ page }) => {
-	await saveDisplayName(page, '  Profile owner  ')
-	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
-	await page.reload()
-	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
-	await page.getByLabel('Display name', { exact: true }).fill('  ')
-	await page.getByRole('button', { name: 'Save', exact: true }).click()
-	await expect(
-		page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
-	).toHaveCount(1)
-	await page.reload()
-	await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
-})
-
-test('profile name follows the recovered identity across devices', async ({
-	page,
-	browser,
-	baseURL
-}) => {
-	await saveDisplayName(page, 'Recovered owner')
-	// Confirm synchronization without including recovery secrets in output.
-	await expect
-		.poll(() =>
-			page.evaluate(async () => {
-				const schemaPath = '/src/lib/schema.ts'
-				const sessionPath = '/src/lib/jazz-session.ts'
-				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-					sessionPath
-				)
-				const snapshot = getCurrentJazzSession()?.getSnapshot()
-				if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
-				return (
-					await snapshot.client.db.one(app.profiles.where({ userId: snapshot.account.id }), {
-						tier: 'remote'
-					})
-				)?.displayName
-			})
-		)
-		.toBe('Recovered owner')
-	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
-	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
-	const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
-	try {
-		const other = await context.newPage()
-		await saveDisplayName(other, 'Previous identity')
-		await restoreAccount(other, phrase)
-		await other.goto('/account')
-		await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
-		await other.reload()
-		await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+test(
+	'profile name trims, survives reload, and can be cleared',
+	{ tag: ['@workflow-completion', '@identity'] },
+	async ({ page }) => {
+		await saveDisplayName(page, '  Profile owner  ')
+		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
 		await page.reload()
-		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
-	} finally {
-		await context.close()
+		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Profile owner')
+		await page.getByLabel('Display name', { exact: true }).fill('  ')
+		await page.getByRole('button', { name: 'Save', exact: true }).click()
+		await expect(
+			page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+		).toHaveCount(1)
+		await page.reload()
+		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('')
 	}
-})
+)
+
+test(
+	'profile name follows the recovered identity across devices',
+	{ tag: ['@identity'] },
+	async ({ page, browser, baseURL }) => {
+		await saveDisplayName(page, 'Recovered owner')
+		// Confirm synchronization without including recovery secrets in output.
+		await expect
+			.poll(() =>
+				page.evaluate(async () => {
+					const schemaPath = '/src/lib/schema.ts'
+					const sessionPath = '/src/lib/runtime/jazz-session.ts'
+					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+						await import(sessionPath)
+					const snapshot = getCurrentJazzSession()?.getSnapshot()
+					if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
+					return (
+						await snapshot.client.db.one(app.profiles.where({ userId: snapshot.account.id }), {
+							tier: 'remote'
+						})
+					)?.displayName
+				})
+			)
+			.toBe('Recovered owner')
+		await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
+		const phrase = await page.getByLabel('Your recovery phrase').inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
+		try {
+			const other = await context.newPage()
+			await saveDisplayName(other, 'Previous identity')
+			await restoreAccount(other, phrase)
+			await other.goto('/account')
+			await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+			await other.reload()
+			await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+			await page.reload()
+			await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Recovered owner')
+		} finally {
+			await context.close()
+		}
+	}
+)
 
 async function avatarRecord(page: Page, remote = false) {
 	return page.evaluate(async (remote) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
 		const profile = await snapshot.client.db.one(
@@ -320,188 +340,205 @@ async function uploadAvatar(
 	).toHaveCount(1)
 }
 
-test('avatar upload above 256 KB resizes, replaces, removes, and persists without changing the name', async ({
-	page
-}) => {
-	test.setTimeout(120_000)
-	await page.addInitScript(() => {
-		const revoke = URL.revokeObjectURL.bind(URL)
-		window.avatarRevokedUrls = []
-		URL.revokeObjectURL = (url) => {
-			window.avatarRevokedUrls.push(url)
-			revoke(url)
-		}
-	})
-	await saveDisplayName(page, 'Avatar owner')
-	const large = await avatarImage(page, 512, 256, true)
-	expect(large.buffer.byteLength).toBeGreaterThan(256 * 1024)
-	await uploadAvatar(page, large)
-	const firstImage = await waitForAvatar(page, 256, 256)
-	const firstUrl = await firstImage.getAttribute('src')
-	const first = await avatarRecord(page)
-	expect(first.mimeType).toBe('image/webp')
-	expect(first.byteLength).toBeGreaterThan(0)
-	expect(first.byteLength).toBeLessThanOrEqual(256 * 1024)
-	expect(first.displayName).toBe('Avatar owner')
-	await page.reload()
-	await waitForAvatar(page, 256, 256)
-	expect(await avatarRecord(page)).toEqual(first)
-	const reloadedUrl = await avatarPreview(page).getAttribute('src')
-	await uploadAvatar(page, await avatarImage(page, 120, 240), true)
-	await waitForAvatar(page, 120, 120)
-	await expect
-		.poll(() =>
-			page.evaluate((url) => url !== null && window.avatarRevokedUrls.includes(url), reloadedUrl)
-		)
-		.toBe(true)
-	const replacement = await avatarRecord(page)
-	expect(replacement.checksum).not.toBe(first.checksum)
-	expect(replacement.id).toBe(first.id)
-	expect(replacement.displayName).toBe(first.displayName)
-	const replacementUrl = await avatarPreview(page).getAttribute('src')
-	await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
-	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
-	await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
-	await expect(avatarPreview(page)).toHaveCount(0)
-	await expect
-		.poll(() =>
-			page.evaluate((url) => url !== null && window.avatarRevokedUrls.includes(url), replacementUrl)
-		)
-		.toBe(true)
-	await page.reload()
-	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
-	await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
-	const removed = await avatarRecord(page)
-	expect(removed).toEqual({ ...first, byteLength: 0, mimeType: null, checksum: null })
-	expect(firstUrl).toMatch(/^blob:/)
-})
-
-test('avatar preview opens its existing editor, cancels without saving, and applies a new crop', async ({
-	page
-}) => {
-	await page.goto('/account')
-	await uploadAvatar(page, await avatarImage(page, 100, 100))
-	await waitForAvatar(page, 100, 100)
-	const original = await avatarRecord(page)
-	const trigger = page.getByRole('button', { name: 'Avatar details: avatar', exact: true })
-	await trigger.focus()
-	await trigger.press('Enter')
-	const preview = page.getByRole('dialog', { name: 'avatar', exact: true })
-	await expect(preview.getByRole('img', { name: 'avatar', exact: true })).toBeVisible()
-	await preview.getByRole('button', { name: 'Close', exact: true }).click()
-	await expect(trigger).toBeFocused()
-	await trigger.press('Space')
-	await preview.getByRole('button', { name: 'Edit Avatar', exact: true }).click()
-	await expect(preview).toBeHidden()
-	const crop = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
-	await expect(crop).toBeVisible()
-	await crop.getByRole('button', { name: 'Cancel', exact: true }).click()
-	await expect(crop).toBeHidden()
-	expect(await avatarRecord(page)).toEqual(original)
-	await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
-	await trigger.click()
-	await preview.getByRole('button', { name: 'Edit Avatar', exact: true }).click()
-	await crop.getByRole('button', { name: 'Use this crop', exact: true }).click()
-	await expect(crop).toBeHidden()
-	await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
-	await expect(
-		page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved.' })
-	).toHaveCount(1)
-	await page.reload()
-	await waitForAvatar(page, 100, 100)
-	expect((await avatarRecord(page)).byteLength).toBeGreaterThan(0)
-})
-
-test('avatar rejects invalid, oversized, and undecodable images and allows retry', async ({
-	page
-}) => {
-	test.setTimeout(120_000)
-	await page.goto('/account')
-	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
-	await expect(
-		page.getByText(
-			'JPEG, PNG, or WebP images. Up to 10 MiB per image. Images are resized for your avatar.'
-		)
-	).toBeVisible()
-	const initial = await avatarRecord(page)
-	for (const file of [
-		{ name: 'avatar.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') },
-		{ name: 'large.png', mimeType: 'image/png', buffer: Buffer.alloc(10 * 1024 * 1024 + 1) },
-		{ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') }
-	]) {
-		await page.getByLabel('Avatar', { exact: true }).setInputFiles(file)
-		if (file.name === 'broken.png') {
-			const cropDialog = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
-			await expect(cropDialog.getByRole('alert')).toHaveText(
-				'This image could not be cropped. Choose another image and try again.'
+test(
+	'avatar upload above 256 KB resizes, replaces, removes, and persists without changing the name',
+	{ tag: ['@workflow-completion', '@identity'] },
+	async ({ page }) => {
+		test.setTimeout(120_000)
+		await page.addInitScript(() => {
+			const revoke = URL.revokeObjectURL.bind(URL)
+			window.avatarRevokedUrls = []
+			URL.revokeObjectURL = (url) => {
+				window.avatarRevokedUrls.push(url)
+				revoke(url)
+			}
+		})
+		await saveDisplayName(page, 'Avatar owner')
+		const large = await avatarImage(page, 512, 256, true)
+		expect(large.buffer.byteLength).toBeGreaterThan(256 * 1024)
+		await uploadAvatar(page, large)
+		const firstImage = await waitForAvatar(page, 256, 256)
+		const firstUrl = await firstImage.getAttribute('src')
+		const first = await avatarRecord(page)
+		expect(first.mimeType).toBe('image/webp')
+		expect(first.byteLength).toBeGreaterThan(0)
+		expect(first.byteLength).toBeLessThanOrEqual(256 * 1024)
+		expect(first.displayName).toBe('Avatar owner')
+		await page.reload()
+		await waitForAvatar(page, 256, 256)
+		expect(await avatarRecord(page)).toEqual(first)
+		const reloadedUrl = await avatarPreview(page).getAttribute('src')
+		await uploadAvatar(page, await avatarImage(page, 120, 240), true)
+		await waitForAvatar(page, 120, 120)
+		await expect
+			.poll(() =>
+				page.evaluate((url) => url !== null && window.avatarRevokedUrls.includes(url), reloadedUrl)
 			)
-			await cropDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-		} else {
-			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-				'Check the form and try again.'
-			)
-		}
-		expect(await avatarRecord(page)).toEqual(initial)
-	}
-	await uploadAvatar(page, await avatarImage(page, 80, 40))
-	await waitForAvatar(page, 40, 40)
-	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
-})
-
-test('avatar can upload, replace, and remove while offline', async ({ page }) => {
-	test.setTimeout(120_000)
-	await page.goto('/account')
-	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
-	const first = await avatarImage(page, 400, 200)
-	const second = await avatarImage(page, 100, 100)
-	await page.context().setOffline(true)
-	try {
-		await uploadAvatar(page, first)
-		await waitForAvatar(page, 200, 200)
-		await uploadAvatar(page, second, true)
-		await waitForAvatar(page, 100, 100)
-		const local = await avatarRecord(page)
-		expect(local.byteLength).toBeGreaterThan(0)
+			.toBe(true)
+		const replacement = await avatarRecord(page)
+		expect(replacement.checksum).not.toBe(first.checksum)
+		expect(replacement.id).toBe(first.id)
+		expect(replacement.displayName).toBe(first.displayName)
+		const replacementUrl = await avatarPreview(page).getAttribute('src')
 		await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
 		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
 		await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
 		await expect(avatarPreview(page)).toHaveCount(0)
-		expect((await avatarRecord(page)).byteLength).toBe(0)
-	} finally {
-		await page.context().setOffline(false)
+		await expect
+			.poll(() =>
+				page.evaluate(
+					(url) => url !== null && window.avatarRevokedUrls.includes(url),
+					replacementUrl
+				)
+			)
+			.toBe(true)
+		await page.reload()
+		await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+		await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
+		const removed = await avatarRecord(page)
+		expect(removed).toEqual({ ...first, byteLength: 0, mimeType: null, checksum: null })
+		expect(firstUrl).toMatch(/^blob:/)
 	}
-	await expect.poll(async () => (await avatarRecord(page, true)).byteLength).toBe(0)
-	await page.reload()
-	await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
-	await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
-})
+)
 
-test('avatar follows account recovery on another device', async ({ page, browser, baseURL }) => {
-	test.setTimeout(120_000)
-	await saveDisplayName(page, 'Recovered avatar owner')
-	await uploadAvatar(page, await avatarImage(page, 300, 600))
-	await waitForAvatar(page, 256, 256)
-	const original = await avatarRecord(page)
-	await expect.poll(() => avatarRecord(page, true)).toEqual(original)
-	await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
-	const phrase = await page.getByLabel('Your recovery phrase').inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
-	const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
-	try {
-		const other = await context.newPage()
-		await restoreAccount(other, phrase)
-		await other.goto('/account')
-		await waitForAvatar(other, 256, 256)
-		await expect(other.getByLabel('Display name', { exact: true })).toHaveValue(
-			'Recovered avatar owner'
-		)
-		expect(await avatarRecord(other)).toEqual(original)
-		await other.reload()
-		await waitForAvatar(other, 256, 256)
-	} finally {
-		await context.close()
+test(
+	'avatar preview opens its existing editor, cancels without saving, and applies a new crop',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await page.goto('/account')
+		await uploadAvatar(page, await avatarImage(page, 100, 100))
+		await waitForAvatar(page, 100, 100)
+		const original = await avatarRecord(page)
+		const trigger = page.getByRole('button', { name: 'Avatar details: avatar', exact: true })
+		await trigger.focus()
+		await trigger.press('Enter')
+		const preview = page.getByRole('dialog', { name: 'avatar', exact: true })
+		await expect(preview.getByRole('img', { name: 'avatar', exact: true })).toBeVisible()
+		await preview.getByRole('button', { name: 'Close', exact: true }).click()
+		await expect(trigger).toBeFocused()
+		await trigger.press('Space')
+		await preview.getByRole('button', { name: 'Edit Avatar', exact: true }).click()
+		await expect(preview).toBeHidden()
+		const crop = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
+		await expect(crop).toBeVisible()
+		await crop.getByRole('button', { name: 'Cancel', exact: true }).click()
+		await expect(crop).toBeHidden()
+		expect(await avatarRecord(page)).toEqual(original)
+		await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
+		await trigger.click()
+		await preview.getByRole('button', { name: 'Edit Avatar', exact: true }).click()
+		await crop.getByRole('button', { name: 'Use this crop', exact: true }).click()
+		await expect(crop).toBeHidden()
+		await page.getByRole('button', { name: 'Save Avatar', exact: true }).click()
+		await expect(
+			page.getByRole('main').getByRole('status').filter({ hasText: 'Avatar saved.' })
+		).toHaveCount(1)
+		await page.reload()
+		await waitForAvatar(page, 100, 100)
+		expect((await avatarRecord(page)).byteLength).toBeGreaterThan(0)
 	}
-})
+)
+
+test(
+	'avatar rejects invalid, oversized, and undecodable images and allows retry',
+	{ tag: ['@workflow-completion', '@identity'] },
+	async ({ page }) => {
+		test.setTimeout(120_000)
+		await page.goto('/account')
+		await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+		await expect(
+			page.getByText(
+				'JPEG, PNG, or WebP images. Up to 10 MiB per image. Images are resized for your avatar.'
+			)
+		).toBeVisible()
+		const initial = await avatarRecord(page)
+		for (const file of [
+			{ name: 'avatar.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') },
+			{ name: 'large.png', mimeType: 'image/png', buffer: Buffer.alloc(10 * 1024 * 1024 + 1) },
+			{ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') }
+		]) {
+			await page.getByLabel('Avatar', { exact: true }).setInputFiles(file)
+			if (file.name === 'broken.png') {
+				const cropDialog = page.getByRole('dialog', { name: 'Crop your avatar', exact: true })
+				await expect(cropDialog.getByRole('alert')).toHaveText(
+					'This image could not be cropped. Choose another image and try again.'
+				)
+				await cropDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+			} else {
+				await expect(
+					page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })
+				).toHaveText('Check the form and try again.')
+			}
+			expect(await avatarRecord(page)).toEqual(initial)
+		}
+		await uploadAvatar(page, await avatarImage(page, 80, 40))
+		await waitForAvatar(page, 40, 40)
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
+	}
+)
+
+test(
+	'avatar can upload, replace, and remove while offline',
+	{ tag: ['@workflow-completion', '@identity'] },
+	async ({ page }) => {
+		test.setTimeout(120_000)
+		await page.goto('/account')
+		await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+		const first = await avatarImage(page, 400, 200)
+		const second = await avatarImage(page, 100, 100)
+		await page.context().setOffline(true)
+		try {
+			await uploadAvatar(page, first)
+			await waitForAvatar(page, 200, 200)
+			await uploadAvatar(page, second, true)
+			await waitForAvatar(page, 100, 100)
+			const local = await avatarRecord(page)
+			expect(local.byteLength).toBeGreaterThan(0)
+			await page.getByRole('button', { name: 'Avatar details: avatar', exact: true }).click()
+			await page.getByRole('button', { name: 'Remove Avatar', exact: true }).focus()
+			await page.getByRole('button', { name: 'Remove Avatar', exact: true }).press('Enter')
+			await expect(avatarPreview(page)).toHaveCount(0)
+			expect((await avatarRecord(page)).byteLength).toBe(0)
+		} finally {
+			await page.context().setOffline(false)
+		}
+		await expect.poll(async () => (await avatarRecord(page, true)).byteLength).toBe(0)
+		await page.reload()
+		await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
+		await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
+	}
+)
+
+test(
+	'avatar follows account recovery on another device',
+	{ tag: ['@identity'] },
+	async ({ page, browser, baseURL }) => {
+		test.setTimeout(120_000)
+		await saveDisplayName(page, 'Recovered avatar owner')
+		await uploadAvatar(page, await avatarImage(page, 300, 600))
+		await waitForAvatar(page, 256, 256)
+		const original = await avatarRecord(page)
+		await expect.poll(() => avatarRecord(page, true)).toEqual(original)
+		await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
+		const phrase = await page.getByLabel('Your recovery phrase').inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		const context = await browser.newContext({ baseURL: baseURL ?? 'http://127.0.0.1:5173' })
+		try {
+			const other = await context.newPage()
+			await restoreAccount(other, phrase)
+			await other.goto('/account')
+			await waitForAvatar(other, 256, 256)
+			await expect(other.getByLabel('Display name', { exact: true })).toHaveValue(
+				'Recovered avatar owner'
+			)
+			expect(await avatarRecord(other)).toEqual(original)
+			await other.reload()
+			await waitForAvatar(other, 256, 256)
+		} finally {
+			await context.close()
+		}
+	}
+)
 
 declare global {
 	interface Window {
@@ -521,215 +558,221 @@ declare global {
 
 async function currentIdentity(page: Page) {
 	return page.evaluate(async () => {
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		return getCurrentJazzSession()?.getSnapshot().account?.id
 	})
 }
 
-test('startup network failures can retry repeatedly without replacing the saved identity', async ({
-	page,
-	context
-}) => {
-	await createAccount(page, 'Network retained checking')
-	const identity = await currentIdentity(page)
-	expect(identity).toBeTruthy()
-	let blocked = 0
-	let failing = true
-	await context.route(/\.wasm(?:\?|$)/, async (route) => {
-		if (failing) {
-			blocked += 1
-			await route.abort('internetdisconnected')
-		} else await route.continue()
-	})
-	await page.reload()
-	const retry = page.getByRole('button', { name: 'Try again', exact: true })
-	await expect(retry).toBeVisible()
-	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened.')
-	expect(blocked).toBeGreaterThan(0)
-	await retry.click()
-	await expect(retry).toBeVisible()
-	failing = false
-	await retry.click()
-	await expect(
-		page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
-	).toBeVisible()
-	expect(await currentIdentity(page)).toBe(identity)
-	await page.goto('/accounts')
-	await expect(
-		page.getByRole('cell', { name: 'Network retained checking', exact: true })
-	).toBeVisible()
-})
-
-test('restore session failures retain identity and retry without exposing the recovery phrase', async ({
-	page
-}) => {
-	await createAccount(page, 'Session retained checking')
-	const identity = await currentIdentity(page)
-	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
-	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
-	const messages: string[] = []
-	const urls: string[] = []
-	page.on('console', (message) => messages.push(message.text()))
-	page.on('pageerror', (error) => messages.push(error.message))
-	page.on('request', (request) => urls.push(request.url()))
-	await page.goto('/login')
-	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.evaluate(async () => {
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
-		const client = getCurrentJazzSession()?.getSnapshot().client
-		if (!client) throw new Error('Test session is not ready.')
-		window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
-		const shutdown = client.shutdown.bind(client)
-		client.shutdown = async (options) => {
-			window.authFailureTest.shutdownAttempts += 1
-			if (window.authFailureTest.shutdownAttempts <= 2)
-				throw new Error('Private simulated shutdown failure')
-			return shutdown(options)
-		}
-	})
-	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	const retry = page.getByRole('button', { name: 'Try again', exact: true })
-	await expect(retry).toBeVisible()
-	await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened.')
-	expect(await currentIdentity(page)).toBe(identity)
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
-	await retry.click()
-	await expect.poll(() => page.evaluate(() => window.authFailureTest.shutdownAttempts)).toBe(2)
-	await expect(retry).toBeVisible()
-	await retry.click()
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
-	expect(await currentIdentity(page)).toBe(identity)
-	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
-	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
-	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL((url) => url.pathname === '/')
-	expect(await currentIdentity(page)).toBe(identity)
-	await page.goto('/accounts')
-	await expect(
-		page.getByRole('cell', { name: 'Session retained checking', exact: true })
-	).toBeVisible()
-	for (const value of [...messages, ...urls]) {
-		expect(value.includes(phrase), 'Recovery phrase must not appear in diagnostics or URLs').toBe(
-			false
-		)
-		expect(
-			value.includes(encodeURIComponent(phrase)),
-			'Encoded phrase must not appear in URLs'
-		).toBe(false)
-		expect(
-			value.includes('Private simulated shutdown failure'),
-			'Raw SDK failures must not be rendered or logged'
-		).toBe(false)
-	}
-})
-
-test('session retry completes a selected identity after local selection storage fails', async ({
-	page
-}) => {
-	await createAccount(page, 'Previous selection checking')
-	const previous = await currentIdentity(page)
-	const phrase = RecoveryPhrase.fromSecret(generateAuthSecret())
-	await page.goto('/login')
-	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.evaluate(() => {
-		window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
-		const setItem = Storage.prototype.setItem
-		Storage.prototype.setItem = function (key, value) {
-			if (key.startsWith('jazz-account-selection-v1:')) {
-				Storage.prototype.setItem = setItem
-				window.authFailureTest.storageFailures += 1
-				throw new DOMException('Simulated local selection failure', 'QuotaExceededError')
-			}
-			return setItem.call(this, key, value)
-		}
-	})
-	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	const retry = page.getByRole('button', { name: 'Try again', exact: true })
-	await expect(retry).toBeVisible()
-	expect(await page.evaluate(() => window.authFailureTest.storageFailures)).toBe(1)
-	const selected = await currentIdentity(page)
-	expect(selected).toBeTruthy()
-	expect(selected).not.toBe(previous)
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
-	await retry.click()
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
-	expect(await currentIdentity(page)).toBe(selected)
-	expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
-	await page.reload()
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
-	expect(await currentIdentity(page)).toBe(selected)
-	await page.goto('/accounts')
-	await expect(
-		page.getByRole('cell', { name: 'Previous selection checking', exact: true })
-	).toHaveCount(0)
-})
-
-test('recoverable restore failure keeps the original client and generic feedback after remount', async ({
-	page
-}) => {
-	await createAccount(page, 'Recoverable checking')
-	const identity = await currentIdentity(page)
-	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
-	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
-	await page.goto('/login')
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
-	await page.evaluate(async () => {
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
-		const snapshot = getCurrentJazzSession()?.getSnapshot()
-		if (!snapshot?.client || !snapshot.account) throw new Error('Test session is not ready.')
-		// Use the same public SDK module URL as the application to share its client registry.
-		const moduleSource = await (await fetch(sessionPath)).text()
-		const sdkPath = moduleSource.match(/from\s*['"]([^'"]*jazz-tools[^'"]*)['"]/)?.[1]
-		if (!sdkPath) throw new Error('Could not find the application SDK module.')
-		const { createJazzClient }: typeof import('jazz-tools/svelte') = await import(sdkPath)
-		const config = snapshot.client.db.getConfig()
-		if (!config.serverUrl) throw new Error('Test database URL is missing.')
-		const holder = await createJazzClient({
-			appId: config.appId,
-			serverUrl: config.serverUrl,
-			account: snapshot.account
+test(
+	'startup network failures can retry repeatedly without replacing the saved identity',
+	{ tag: ['@identity'] },
+	async ({ page, context }) => {
+		await createAccount(page, 'Network retained checking')
+		const identity = await currentIdentity(page)
+		expect(identity).toBeTruthy()
+		let blocked = 0
+		let failing = true
+		await context.route(/\.wasm(?:\?|$)/, async (route) => {
+			if (failing) {
+				blocked += 1
+				await route.abort('internetdisconnected')
+			} else await route.continue()
 		})
-		window.authFailureTest = {
-			shutdownAttempts: 0,
-			storageFailures: 0,
-			releaseSharedClient: () => holder.shutdown()
-		}
-	})
-	try {
+		await page.reload()
+		const retry = page.getByRole('button', { name: 'Try again', exact: true })
+		await expect(retry).toBeVisible()
+		await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened.')
+		expect(blocked).toBeGreaterThan(0)
+		await retry.click()
+		await expect(retry).toBeVisible()
+		failing = false
+		await retry.click()
+		await expect(
+			page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
+		).toBeVisible()
+		expect(await currentIdentity(page)).toBe(identity)
+		await page.goto('/accounts')
+		await expect(
+			page.getByRole('cell', { name: 'Network retained checking', exact: true })
+		).toBeVisible()
+	}
+)
+
+test(
+	'restore session failures retain identity and retry without exposing the recovery phrase',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Session retained checking')
+		const identity = await currentIdentity(page)
+		await page.goto('/account')
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		const messages: string[] = []
+		const urls: string[] = []
+		page.on('console', (message) => messages.push(message.text()))
+		page.on('pageerror', (error) => messages.push(error.message))
+		page.on('request', (request) => urls.push(request.url()))
+		await page.goto('/login')
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.evaluate(async () => {
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const client = getCurrentJazzSession()?.getSnapshot().client
+			if (!client) throw new Error('Test session is not ready.')
+			window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
+			const shutdown = client.shutdown.bind(client)
+			client.shutdown = async (options) => {
+				window.authFailureTest.shutdownAttempts += 1
+				if (window.authFailureTest.shutdownAttempts <= 2)
+					throw new Error('Private simulated shutdown failure')
+				return shutdown(options)
+			}
+		})
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
-		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-			'The account could not be restored. Please try again.'
-		)
+		const retry = page.getByRole('button', { name: 'Try again', exact: true })
+		await expect(retry).toBeVisible()
+		await expect(page.getByRole('alert')).toHaveText('Your finances could not be opened.')
+		expect(await currentIdentity(page)).toBe(identity)
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
+		await retry.click()
+		await expect.poll(() => page.evaluate(() => window.authFailureTest.shutdownAttempts)).toBe(2)
+		await expect(retry).toBeVisible()
+		await retry.click()
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		expect(await currentIdentity(page)).toBe(identity)
 		expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
-		await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
-	} finally {
-		await page.evaluate(async () => {
-			await window.authFailureTest.releaseSharedClient?.()
-		})
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
+		await expect(page).toHaveURL((url) => url.pathname === '/')
+		expect(await currentIdentity(page)).toBe(identity)
+		await page.goto('/accounts')
+		await expect(
+			page.getByRole('cell', { name: 'Session retained checking', exact: true })
+		).toBeVisible()
+		for (const value of [...messages, ...urls]) {
+			expect(value.includes(phrase), 'Recovery phrase must not appear in diagnostics or URLs').toBe(
+				false
+			)
+			expect(
+				value.includes(encodeURIComponent(phrase)),
+				'Encoded phrase must not appear in URLs'
+			).toBe(false)
+			expect(
+				value.includes('Private simulated shutdown failure'),
+				'Raw SDK failures must not be rendered or logged'
+			).toBe(false)
+		}
 	}
-	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL((url) => url.pathname === '/')
-	expect(await currentIdentity(page)).toBe(identity)
-	await page.goto('/accounts')
-	await expect(page.getByRole('cell', { name: 'Recoverable checking', exact: true })).toBeVisible()
-})
+)
+
+test(
+	'session retry completes a selected identity after local selection storage fails',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Previous selection checking')
+		const previous = await currentIdentity(page)
+		const phrase = RecoveryPhrase.fromSecret(generateAuthSecret())
+		await page.goto('/login')
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.evaluate(() => {
+			window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
+			const setItem = Storage.prototype.setItem
+			Storage.prototype.setItem = function (key, value) {
+				if (key.startsWith('jazz-account-selection-v1:')) {
+					Storage.prototype.setItem = setItem
+					window.authFailureTest.storageFailures += 1
+					throw new DOMException('Simulated local selection failure', 'QuotaExceededError')
+				}
+				return setItem.call(this, key, value)
+			}
+		})
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
+		const retry = page.getByRole('button', { name: 'Try again', exact: true })
+		await expect(retry).toBeVisible()
+		expect(await page.evaluate(() => window.authFailureTest.storageFailures)).toBe(1)
+		const selected = await currentIdentity(page)
+		expect(selected).toBeTruthy()
+		expect(selected).not.toBe(previous)
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveCount(0)
+		await retry.click()
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+		expect(await currentIdentity(page)).toBe(selected)
+		expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+		await page.reload()
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+		expect(await currentIdentity(page)).toBe(selected)
+		await page.goto('/accounts')
+		await expect(
+			page.getByRole('cell', { name: 'Previous selection checking', exact: true })
+		).toHaveCount(0)
+	}
+)
+
+test(
+	'recoverable restore failure keeps the original client and generic feedback after remount',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Recoverable checking')
+		const identity = await currentIdentity(page)
+		await page.goto('/account')
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		await page.goto('/login')
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+		await page.evaluate(async () => {
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const snapshot = getCurrentJazzSession()?.getSnapshot()
+			if (!snapshot?.client || !snapshot.account) throw new Error('Test session is not ready.')
+			// Use the same public SDK module URL as the application to share its client registry.
+			const moduleSource = await (await fetch(sessionPath)).text()
+			const sdkPath = moduleSource.match(/from\s*['"]([^'"]*jazz-tools[^'"]*)['"]/)?.[1]
+			if (!sdkPath) throw new Error('Could not find the application SDK module.')
+			const { createJazzClient }: typeof import('jazz-tools/svelte') = await import(sdkPath)
+			const config = snapshot.client.db.getConfig()
+			if (!config.serverUrl) throw new Error('Test database URL is missing.')
+			const holder = await createJazzClient({
+				appId: config.appId,
+				serverUrl: config.serverUrl,
+				account: snapshot.account
+			})
+			window.authFailureTest = {
+				shutdownAttempts: 0,
+				storageFailures: 0,
+				releaseSharedClient: () => holder.shutdown()
+			}
+		})
+		try {
+			await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+			await page.getByRole('button', { name: 'Login', exact: true }).click()
+			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+				'The account could not be restored. Please try again.'
+			)
+			expect(await currentIdentity(page)).toBe(identity)
+			expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+			await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
+		} finally {
+			await page.evaluate(async () => {
+				await window.authFailureTest.releaseSharedClient?.()
+			})
+		}
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
+		await expect(page).toHaveURL((url) => url.pathname === '/')
+		expect(await currentIdentity(page)).toBe(identity)
+		await page.goto('/accounts')
+		await expect(
+			page.getByRole('cell', { name: 'Recoverable checking', exact: true })
+		).toBeVisible()
+	}
+)
 
 declare global {
 	interface Window {
@@ -737,108 +780,110 @@ declare global {
 	}
 }
 
-test('recovery navigation failure retries navigation without restoring the account again', async ({
-	page
-}) => {
-	await createAccount(page, 'Navigation retained checking')
-	const identity = await currentIdentity(page)
-	const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
-	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
-	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
-	await page.goto('/login')
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
-	await page.evaluate(async () => {
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
-		const session = getCurrentJazzSession()
-		if (!session) throw new Error('Session unavailable')
-		window.recoveryNavigationTest = { restoreCalls: 0, navigationFailures: 0 }
-		// Count each SDK restore transition through its public subscription.
-		session.subscribe(() => {
-			if (session.getSnapshot().pending === 'restoreLocalFirst')
-				window.recoveryNavigationTest.restoreCalls += 1
-		})
+test(
+	'recovery navigation failure retries navigation without restoring the account again',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Navigation retained checking')
+		const identity = await currentIdentity(page)
+		const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+		await page.goto('/account')
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		await page.goto('/login')
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
+		await page.evaluate(async () => {
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const session = getCurrentJazzSession()
+			if (!session) throw new Error('Session unavailable')
+			window.recoveryNavigationTest = { restoreCalls: 0, navigationFailures: 0 }
+			// Count each SDK restore transition through its public subscription.
+			session.subscribe(() => {
+				if (session.getSnapshot().pending === 'restoreLocalFirst')
+					window.recoveryNavigationTest.restoreCalls += 1
+			})
 
-		const NativeURL = URL
-		window.URL = class extends NativeURL {
-			constructor(url: string | URL, base?: string | URL) {
-				// Fail before the router starts committing history or updating its internal route state.
-				if (url === '/') {
-					window.URL = NativeURL
-					window.recoveryNavigationTest.navigationFailures += 1
-					throw new TypeError('Simulated destination parsing failure')
+			const NativeURL = URL
+			window.URL = class extends NativeURL {
+				constructor(url: string | URL, base?: string | URL) {
+					// Fail before the router starts committing history or updating its internal route state.
+					if (url === '/') {
+						window.URL = NativeURL
+						window.recoveryNavigationTest.navigationFailures += 1
+						throw new TypeError('Simulated destination parsing failure')
+					}
+					super(url, base)
 				}
-				super(url, base)
 			}
-		}
-	})
-	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-		'Your account was restored, but the destination could not be opened. Try again or use the navigation links.'
-	)
-	expect(await currentIdentity(page)).toBe(identity)
-	await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue('')
-	await page.getByRole('button', { name: 'Try again', exact: true }).click()
-	await expect(page).toHaveURL((url) => url.pathname === '/')
-	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
-	expect(await page.evaluate(() => window.recoveryNavigationTest)).toEqual({
-		restoreCalls: 1,
-		navigationFailures: 1
-	})
-	await page.goto(`/accounts?workspace=${workspaceId}`)
-	await expect(
-		page.getByRole('cell', { name: 'Navigation retained checking', exact: true })
-	).toBeVisible()
-})
-
-test('sign-in with several workspaces clears the previous selection and opens the chooser', async ({
-	page
-}) => {
-	await createAccount(page, 'Original identity ledger')
-	await page.goto('/account')
-	await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
-	const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
-	await page.getByRole('button', { name: 'Close', exact: true }).click()
-	const previousWorkspace = await page.evaluate(async () => {
-		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
+		})
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
+		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
+			'Your account was restored, but the destination could not be opened. Try again or use the navigation links.'
 		)
-		const snapshot = getCurrentJazzSession()?.getSnapshot()
-		if (!snapshot?.client || !snapshot.account) throw new Error('Missing session')
-		const db = snapshot.client.db
-		const workspace = await db
-			.insert(app.organizations, {
-				name: 'Additional workspace',
-				kind: 'business',
-				defaultCurrency: 'USD',
-				ownerId: snapshot.account.id
-			})
-			.wait({ tier: 'local' })
-		await db
-			.insert(app.organizationMembers, {
-				organizationId: workspace.id,
-				userId: snapshot.account.id,
-				role: 'owner',
-				accountAccessMode: 'all'
-			})
-			.wait({ tier: 'local' })
-		return workspace.id
-	})
-	await page.goto(`/login?workspace=${previousWorkspace}`)
-	await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-	await page.getByRole('button', { name: 'Login', exact: true }).click()
-	await expect(page).toHaveURL('/settings/workspace')
-	await expect(
-		page.getByRole('main').getByRole('heading', { name: 'Workspaces', exact: true })
-	).toBeVisible()
-	await prepareSidebar(page)
-	await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue('')
-})
+		expect(await currentIdentity(page)).toBe(identity)
+		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue('')
+		await page.getByRole('button', { name: 'Try again', exact: true }).click()
+		await expect(page).toHaveURL((url) => url.pathname === '/')
+		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
+		expect(await page.evaluate(() => window.recoveryNavigationTest)).toEqual({
+			restoreCalls: 1,
+			navigationFailures: 1
+		})
+		await page.goto(`/accounts?workspace=${workspaceId}`)
+		await expect(
+			page.getByRole('cell', { name: 'Navigation retained checking', exact: true })
+		).toBeVisible()
+	}
+)
+
+test(
+	'sign-in with several workspaces clears the previous selection and opens the chooser',
+	{ tag: ['@identity', '@workspaces'] },
+	async ({ page }) => {
+		await createAccount(page, 'Original identity ledger')
+		await page.goto('/account')
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		const previousWorkspace = await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const snapshot = getCurrentJazzSession()?.getSnapshot()
+			if (!snapshot?.client || !snapshot.account) throw new Error('Missing session')
+			const db = snapshot.client.db
+			const workspace = await db
+				.insert(app.organizations, {
+					name: 'Additional workspace',
+					kind: 'business',
+					defaultCurrency: 'USD',
+					ownerId: snapshot.account.id
+				})
+				.wait({ tier: 'local' })
+			await db
+				.insert(app.organizationMembers, {
+					organizationId: workspace.id,
+					userId: snapshot.account.id,
+					role: 'owner',
+					accountAccessMode: 'all'
+				})
+				.wait({ tier: 'local' })
+			return workspace.id
+		})
+		await page.goto(`/login?workspace=${previousWorkspace}`)
+		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
+		await expect(page).toHaveURL('/settings/workspace')
+		await expect(
+			page.getByRole('main').getByRole('heading', { name: 'Workspaces', exact: true })
+		).toBeVisible()
+		await prepareSidebar(page)
+		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue('')
+	}
+)

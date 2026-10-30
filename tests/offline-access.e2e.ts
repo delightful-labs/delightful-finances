@@ -55,10 +55,9 @@ async function start(page: Page) {
 		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
 	).toBeEnabled()
 	return page.evaluate(async () => {
-		const path = '/src/lib/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			path
-		)
+		const path = '/src/lib/runtime/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(path)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.account) throw new Error('Missing offline fixture identity')
 		const organizationId = new URL(location.href).searchParams.get('workspace')
@@ -77,9 +76,9 @@ for (const scenario of scenarios) {
 			const fixture = await page.evaluate(
 				async ({ owner, identity, scenario }) => {
 					const schemaPath = '/src/lib/schema.ts'
-					const sessionPath = '/src/lib/jazz-session.ts'
+					const sessionPath = '/src/lib/runtime/jazz-session.ts'
 					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 						await import(sessionPath)
 					const db = getCurrentJazzSession()?.getSnapshot().client?.db
 					if (!db) throw new Error('Missing owner database')
@@ -151,9 +150,9 @@ for (const scenario of scenarios) {
 			const online = await subject.evaluate(
 				async ({ organizationId, fixture }) => {
 					const schemaPath = '/src/lib/schema.ts'
-					const sessionPath = '/src/lib/jazz-session.ts'
+					const sessionPath = '/src/lib/runtime/jazz-session.ts'
 					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 						await import(sessionPath)
 					const db = getCurrentJazzSession()?.getSnapshot().client?.db
 					if (!db) throw new Error('Missing subject database')
@@ -179,9 +178,9 @@ for (const scenario of scenarios) {
 			const cached = await subject.evaluate(
 				async ({ organizationId, fixture }) => {
 					const schemaPath = '/src/lib/schema.ts'
-					const sessionPath = '/src/lib/jazz-session.ts'
+					const sessionPath = '/src/lib/runtime/jazz-session.ts'
 					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 						await import(sessionPath)
 					const db = getCurrentJazzSession()?.getSnapshot().client?.db
 					if (!db) throw new Error('Missing offline database')
@@ -215,9 +214,9 @@ for (const scenario of scenarios) {
 				.poll(() =>
 					page.evaluate(async (id) => {
 						const schemaPath = '/src/lib/schema.ts'
-						const sessionPath = '/src/lib/jazz-session.ts'
+						const sessionPath = '/src/lib/runtime/jazz-session.ts'
 						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-						const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+						const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 							await import(sessionPath)
 						const db = getCurrentJazzSession()?.getSnapshot().client?.db
 						if (!db) throw new Error('Missing owner verification database')

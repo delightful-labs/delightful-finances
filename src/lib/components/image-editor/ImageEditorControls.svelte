@@ -2,7 +2,10 @@
 	import { Button, Checkbox, InputRange, Popover, Select } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
-	import type { ImageEditorEvent, ImageEditorPresentation } from '#lib/machines/image-editor.js'
+	import type {
+		ImageEditorEvent,
+		ImageEditorPresentation
+	} from '#lib/machines/images/image-editor.js'
 
 	let {
 		view,

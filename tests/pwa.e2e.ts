@@ -101,70 +101,71 @@ test('a worker update waits without replacing or reloading the open page', async
 	}
 })
 
-test('serves a saved transaction detail directly and after reload in production', async ({
-	page,
-	browserName
-}) => {
-	await page.goto('/accounts')
-	await openCreationModal(page, 'Add Account')
-	await creationDialog(page, 'Add Account')
-		.getByLabel('Account name')
-		.fill('Production detail checking')
-	await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
-	await creationDialog(page, 'Add Account')
-		.getByRole('button', { name: 'Add Account', exact: true })
-		.click()
-	await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
-		'Production detail checking'
-	)
-	await page.goto('/expenses/new')
-	await page
-		.getByLabel('Account', { exact: true })
-		.selectOption({ label: 'Production detail checking · USD' })
-	await page.getByLabel('Amount', { exact: true }).fill('12.34')
-	await page.getByLabel('Date', { exact: true }).fill('2026-03-10')
-	await page.getByLabel('Description', { exact: true }).fill('Production detail verification')
-	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-	await expect(page).toHaveURL(/\/expenses\?workspace=[a-f0-9-]+$/)
-	const link = page
-		.getByRole('main')
-		.getByRole('link', { name: /Transaction details:.*Production detail verification/ })
-	const href = await link.getAttribute('href')
-	if (!href) throw new Error('Expected a transaction detail link.')
-	const response = await page.goto(href)
-	expect(response?.status()).toBe(200)
-	expect(response?.fromServiceWorker()).toBe(true)
-	// A controlled detail navigation receives the route-neutral public shell, not account data.
-	// Firefox's protocol cannot read this cached response body (invalid content encoding).
-	// Check the mapped public shell in Cache Storage there; retain the wire-body check elsewhere.
-	const publicHtml =
-		browserName === 'firefox'
-			? await page.evaluate(async () => {
-					const names = (await caches.keys()).filter((name) =>
-						name.startsWith('delightful-finance-shell-')
-					)
-					for (const name of names) {
-						const shell = await (await caches.open(name)).match('/offline')
-						if (shell) return shell.text()
-					}
-					throw new Error('Missing cached public detail shell')
-				})
-			: await response?.text()
-	expect(publicHtml).not.toContain('Production detail verification')
-	await expect(
-		page.getByRole('heading', { name: 'Transaction details', exact: true })
-	).toBeVisible()
-	await expect(page.getByLabel('Description', { exact: true })).toHaveValue(
-		'Production detail verification'
-	)
-	await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
-	await expect(page.getByLabel('Date', { exact: true })).toHaveValue('2026-03-10')
-	const reload = await page.reload()
-	expect(reload?.status()).toBe(200)
-	await expect(page.getByLabel('Description', { exact: true })).toHaveValue(
-		'Production detail verification'
-	)
-})
+test(
+	'serves a saved transaction detail directly and after reload in production',
+	{ tag: [] },
+	async ({ page, browserName }) => {
+		await page.goto('/accounts')
+		await openCreationModal(page, 'Add Account')
+		await creationDialog(page, 'Add Account')
+			.getByLabel('Account name')
+			.fill('Production detail checking')
+		await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
+		await creationDialog(page, 'Add Account')
+			.getByRole('button', { name: 'Add Account', exact: true })
+			.click()
+		await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
+			'Production detail checking'
+		)
+		await page.goto('/expenses/new')
+		await page
+			.getByLabel('Account', { exact: true })
+			.selectOption({ label: 'Production detail checking · USD' })
+		await page.getByLabel('Amount', { exact: true }).fill('12.34')
+		await page.getByLabel('Date', { exact: true }).fill('2026-03-10')
+		await page.getByLabel('Description', { exact: true }).fill('Production detail verification')
+		await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+		await expect(page).toHaveURL(/\/expenses\?workspace=[a-f0-9-]+$/)
+		const link = page
+			.getByRole('main')
+			.getByRole('link', { name: /Transaction details:.*Production detail verification/ })
+		const href = await link.getAttribute('href')
+		if (!href) throw new Error('Expected a transaction detail link.')
+		const response = await page.goto(href)
+		expect(response?.status()).toBe(200)
+		expect(response?.fromServiceWorker()).toBe(true)
+		// A controlled detail navigation receives the route-neutral public shell, not account data.
+		// Firefox's protocol cannot read this cached response body (invalid content encoding).
+		// Check the mapped public shell in Cache Storage there; retain the wire-body check elsewhere.
+		const publicHtml =
+			browserName === 'firefox'
+				? await page.evaluate(async () => {
+						const names = (await caches.keys()).filter((name) =>
+							name.startsWith('delightful-finance-shell-')
+						)
+						for (const name of names) {
+							const shell = await (await caches.open(name)).match('/offline')
+							if (shell) return shell.text()
+						}
+						throw new Error('Missing cached public detail shell')
+					})
+				: await response?.text()
+		expect(publicHtml).not.toContain('Production detail verification')
+		await expect(
+			page.getByRole('heading', { name: 'Transaction details', exact: true })
+		).toBeVisible()
+		await expect(page.getByLabel('Description', { exact: true })).toHaveValue(
+			'Production detail verification'
+		)
+		await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
+		await expect(page.getByLabel('Date', { exact: true })).toHaveValue('2026-03-10')
+		const reload = await page.reload()
+		expect(reload?.status()).toBe(200)
+		await expect(page.getByLabel('Description', { exact: true })).toHaveValue(
+			'Production detail verification'
+		)
+	}
+)
 
 test('serves the localized install manifest from the service worker while offline', async ({
 	page,
@@ -354,56 +355,58 @@ test('update status stays mounted, Later survives navigation, and reload redisco
 	})
 })
 
-test('accepting an update reloads once, retains saved data, and does not check unsaved edits', async ({
-	page
-}) => {
-	await navigateSidebar(page, 'Accounts')
-	await expect(page).toHaveURL(/\/accounts\?workspace=[a-f0-9-]+$/)
-	await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
-	await openCreationModal(page, 'Add Account')
-	await creationDialog(page, 'Add Account')
-		.getByLabel('Account name')
-		.fill('Update persistence account')
-	await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
-	await creationDialog(page, 'Add Account')
-		.getByRole('button', { name: 'Add Account', exact: true })
-		.click()
-	await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
-		'Update persistence account'
-	)
-	await page.goto('/expenses/new')
-	await page.getByLabel('Amount', { exact: true }).fill('42.13')
-	await page.getByLabel('Description', { exact: true }).fill('Unsubmitted update draft')
-	let navigations = 0
-	let dialogs = 0
-	page.on('framenavigated', (frame) => {
-		if (frame === page.mainFrame()) navigations += 1
-	})
-	page.on('dialog', async (dialog) => {
-		dialogs += 1
-		await dialog.dismiss()
-	})
-	await withReadyUpdate(page, async () => {
-		await expect(updateAction(page)).toBeVisible()
-		await updateAction(page).click()
-		await expect(page.getByLabel('Description', { exact: true })).toHaveValue('')
-		await expect(page.getByLabel('Account', { exact: true })).toContainText(
+test(
+	'accepting an update reloads once, retains saved data, and does not check unsaved edits',
+	{ tag: [] },
+	async ({ page }) => {
+		await navigateSidebar(page, 'Accounts')
+		await expect(page).toHaveURL(/\/accounts\?workspace=[a-f0-9-]+$/)
+		await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
+		await openCreationModal(page, 'Add Account')
+		await creationDialog(page, 'Add Account')
+			.getByLabel('Account name')
+			.fill('Update persistence account')
+		await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
+		await creationDialog(page, 'Add Account')
+			.getByRole('button', { name: 'Add Account', exact: true })
+			.click()
+		await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
 			'Update persistence account'
 		)
-		await expect(updateStatus(page)).toBeEmpty()
-		expect(navigations).toBe(1)
-		expect(dialogs).toBe(0)
-		expect(
-			await page.evaluate(async () => {
-				const registration = await navigator.serviceWorker.ready
-				return (
-					registration.waiting === null &&
-					navigator.serviceWorker.controller === registration.active
-				)
-			})
-		).toBe(true)
-	})
-})
+		await page.goto('/expenses/new')
+		await page.getByLabel('Amount', { exact: true }).fill('42.13')
+		await page.getByLabel('Description', { exact: true }).fill('Unsubmitted update draft')
+		let navigations = 0
+		let dialogs = 0
+		page.on('framenavigated', (frame) => {
+			if (frame === page.mainFrame()) navigations += 1
+		})
+		page.on('dialog', async (dialog) => {
+			dialogs += 1
+			await dialog.dismiss()
+		})
+		await withReadyUpdate(page, async () => {
+			await expect(updateAction(page)).toBeVisible()
+			await updateAction(page).click()
+			await expect(page.getByLabel('Description', { exact: true })).toHaveValue('')
+			await expect(page.getByLabel('Account', { exact: true })).toContainText(
+				'Update persistence account'
+			)
+			await expect(updateStatus(page)).toBeEmpty()
+			expect(navigations).toBe(1)
+			expect(dialogs).toBe(0)
+			expect(
+				await page.evaluate(async () => {
+					const registration = await navigator.serviceWorker.ready
+					return (
+						registration.waiting === null &&
+						navigator.serviceWorker.controller === registration.active
+					)
+				})
+			).toBe(true)
+		})
+	}
+)
 
 test('an activation error shows retry and retry activates the waiting update', async ({ page }) => {
 	await withReadyUpdate(page, async () => {
@@ -434,54 +437,55 @@ test('an activation error shows retry and retry activates the waiting update', a
 	})
 })
 
-test('acceptance in one tab offers reload in the other without replacing its draft', async ({
-	page,
-	context
-}) => {
-	await navigateSidebar(page, 'Accounts')
-	await expect(page).toHaveURL(/\/accounts\?workspace=[a-f0-9-]+$/)
-	await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
-	await openCreationModal(page, 'Add Account')
-	await creationDialog(page, 'Add Account')
-		.getByLabel('Account name')
-		.fill('Multi-tab update account')
-	await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
-	await creationDialog(page, 'Add Account')
-		.getByRole('button', { name: 'Add Account', exact: true })
-		.click()
-	await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
-		'Multi-tab update account'
-	)
-	await page.goto('/accounts')
-	const second = await context.newPage()
-	try {
-		await second.goto('/expenses/new')
-		await second.getByLabel('Description', { exact: true }).fill('Second tab keeps this draft')
-		let firstNavigations = 0
-		let secondNavigations = 0
-		page.on('framenavigated', (frame) => {
-			if (frame === page.mainFrame()) firstNavigations += 1
-		})
-		second.on('framenavigated', (frame) => {
-			if (frame === second.mainFrame()) secondNavigations += 1
-		})
-		await withReadyUpdate(page, async () => {
-			await expect(updateAction(page)).toBeVisible()
-			await expect(updateAction(second)).toBeVisible()
-			await updateAction(page).click()
-			await expect(updateStatus(page)).toBeEmpty()
-			await expect(updateStatus(second)).toHaveText('A new version is active. Reload to use it.')
-			await expect(second.getByLabel('Description', { exact: true })).toHaveValue(
-				'Second tab keeps this draft'
-			)
-			expect(firstNavigations).toBe(1)
-			expect(secondNavigations).toBe(0)
-			await updateAction(second).click()
-			await expect(second.getByLabel('Description', { exact: true })).toHaveValue('')
-			await expect(updateStatus(second)).toBeEmpty()
-			expect(secondNavigations).toBe(1)
-		})
-	} finally {
-		await second.close()
+test(
+	'acceptance in one tab offers reload in the other without replacing its draft',
+	{ tag: [] },
+	async ({ page, context }) => {
+		await navigateSidebar(page, 'Accounts')
+		await expect(page).toHaveURL(/\/accounts\?workspace=[a-f0-9-]+$/)
+		await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
+		await openCreationModal(page, 'Add Account')
+		await creationDialog(page, 'Add Account')
+			.getByLabel('Account name')
+			.fill('Multi-tab update account')
+		await creationDialog(page, 'Add Account').getByLabel('Account type').selectOption('bank')
+		await creationDialog(page, 'Add Account')
+			.getByRole('button', { name: 'Add Account', exact: true })
+			.click()
+		await expect(creationDialog(page, 'Add Account').getByRole('status')).toContainText(
+			'Multi-tab update account'
+		)
+		await page.goto('/accounts')
+		const second = await context.newPage()
+		try {
+			await second.goto('/expenses/new')
+			await second.getByLabel('Description', { exact: true }).fill('Second tab keeps this draft')
+			let firstNavigations = 0
+			let secondNavigations = 0
+			page.on('framenavigated', (frame) => {
+				if (frame === page.mainFrame()) firstNavigations += 1
+			})
+			second.on('framenavigated', (frame) => {
+				if (frame === second.mainFrame()) secondNavigations += 1
+			})
+			await withReadyUpdate(page, async () => {
+				await expect(updateAction(page)).toBeVisible()
+				await expect(updateAction(second)).toBeVisible()
+				await updateAction(page).click()
+				await expect(updateStatus(page)).toBeEmpty()
+				await expect(updateStatus(second)).toHaveText('A new version is active. Reload to use it.')
+				await expect(second.getByLabel('Description', { exact: true })).toHaveValue(
+					'Second tab keeps this draft'
+				)
+				expect(firstNavigations).toBe(1)
+				expect(secondNavigations).toBe(0)
+				await updateAction(second).click()
+				await expect(second.getByLabel('Description', { exact: true })).toHaveValue('')
+				await expect(updateStatus(second)).toBeEmpty()
+				expect(secondNavigations).toBe(1)
+			})
+		} finally {
+			await second.close()
+		}
 	}
-})
+)

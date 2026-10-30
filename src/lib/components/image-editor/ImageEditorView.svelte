@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { StatusMessage } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
-	import type { ImageEditorEvent, ImageEditorPresentation } from '#lib/machines/image-editor.js'
+	import type {
+		ImageEditorEvent,
+		ImageEditorPresentation
+	} from '#lib/machines/images/image-editor.js'
 	import ImageEditorControls from './ImageEditorControls.svelte'
 	import ImageEditorSurface from './ImageEditorSurface.svelte'
 

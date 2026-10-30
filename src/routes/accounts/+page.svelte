@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { inspectActor } from '#lib/inspector.js'
-	import { observeRow, observeRows } from '#lib/observations.js'
+	import { inspectActor } from '#lib/diagnostics/inspector.js'
+	import { observeRow, observeRows } from '#lib/runtime/observations.js'
 	import {
 		createAccountArchiveMachine,
 		selectAccountArchiveView
-	} from '#lib/machines/account-archive.js'
-	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
+	} from '#lib/machines/accounts/account-archive.js'
+	import { stopAfterShutdown } from '#lib/runtime/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
@@ -17,7 +17,7 @@
 		type AccountBalances,
 		financeFiltersKey,
 		type FinanceFilters
-	} from '#lib/finance-filters.js'
+	} from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import {
@@ -25,11 +25,11 @@
 		selectAccountDeleteGrantView,
 		type DeleteGrantObservation,
 		type GrantWrite
-	} from '#lib/machines/account-delete-grants.js'
+	} from '#lib/machines/accounts/account-delete-grants.js'
 	import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
-	import AccountCreation from '#lib/components/AccountCreation.svelte'
-	import AccountList from '#lib/components/AccountList.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import AccountCreation from '#lib/components/accounts/AccountCreation.svelte'
+	import AccountList from '#lib/components/accounts/AccountList.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const sharedBalances = getContext<AccountBalances>(accountBalancesKey)
