@@ -112,7 +112,7 @@ and a recommendation in `research.md`. Research does not automatically authorize
       coverage/durability/large-result experiment required before choosing the acquisition policy.
       Experiment found an existing attachment authorization gap: two users could not read an
       ungranted transaction but could read its linked metadata and explicitly requested file bytes.
-      Pause preparation adoption for T027. Large-history comparison and cold persistence remain open.
+      The T027 follow-up repairs authorization. Large-history comparison and cold persistence remain open.
 - [ ] T012 Investigate unknown-outcome recovery in `transaction-save.ts` and staged Check/ledger
       persistence. Establish how pending recovery survives navigation/reload without replay or blocking
       unrelated work; determine which remote checks remain necessary and propose scoped states.
@@ -198,15 +198,16 @@ and a recommendation in `research.md`. Research does not automatically authorize
       reproduced an asset-level failure, not a failed user navigation. Keep existing update behavior
       for this slice; document the older-tab/reload limitation. Revisit with a concrete workflow and
       T021 storage/update measurements before designing cache retention or client reporting.
-- [ ] T027 Fix attachment read authorization before broad background preparation. The minimal
-      real-browser probe reproduced readable links/files/parts for an unreadable parent transaction.
-      Proposed one-predicate fix: require allowedTo.read('transaction') in transactionAttachments
-      allowRead instead of checking parent existence. Review implementation, then add focused
-      permission regression coverage and rerun the browser reproduction. Preserve readable-parent,
-      linked-file and account-grant semantics; no client-side filtering workaround.
-      Proposed predicate rejected by Jazz alpha.59 during permission publication (invalid generated
-      accountId reference on transactionAttachments). Implementation and its added tests reverted
-      per user direction. No repair shipped; broad preparation remains paused pending a supported fix.
+- [x] T027 Fix attachment read authorization before broad background preparation. Links now
+      require allowedTo.read('transaction'). Files inherit reads directly from their existing
+      transaction relation AND require an attachment matching both fileId and transactionId;
+      parts retain file-read inheritance. This avoids the rejected reverse-inheritance composition
+      without changing parent organization, role or grant checks. No schema change or SDK fix.
+      Full-app permission suite: 73 passed, including role modes, wrong-organization grants,
+      unrelated users, denied accounts and cross-transaction file links. Five attachment/image
+      browser checks passed, including offline edit/reload and viewer download. Type checks report
+      zero errors/warnings. See reproductions/README.md for the rejected expression and alternative.
+      Broad preparation remains unbuilt pending T011 cold query coverage and storage investigation.
 
 ## Consolidated follow-through
 
@@ -214,4 +215,4 @@ The current decisions are in investigation-results.md. T009 covers the implement
 T012 owns the remaining durable unknown-outcome work. T016/T017/T018/T020 are closed as evaluated
 and not adopted. T022/T023 record this batch's test follow-through and reconciliation, not feature
 completion. T010/T011/T012 remain unbuilt; T014/T015/T019/T021 retain the stated compatibility,
-measurement and storage limits. T026 stays deferred and T027 unresolved.
+measurement and storage limits. T026 stays deferred; T027 authorization repair is implemented and verified.

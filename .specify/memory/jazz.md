@@ -42,12 +42,16 @@ Consolidated spec 013 verification adds these boundaries (see
 - A compiled WebAssembly.Module can be cloned in memory but cannot be stored in IndexedDB under
   the current WebAssembly serialization rules. Chromium, Firefox and WebKit probes rejected it
   with DataCloneError. Do not design a persistent compiled-module cache from older guidance.
-- The existing attachment read rule checks parent existence and has a reproduced authorization
-  gap. The proposed allowedTo.read('transaction') correction, composed through the files reverse
-  read inheritance, was rejected by alpha.59 with an invalid accountId reference on the attachment
-  table. It was reverted. This is a specific composition failure, not proof that every inherited
-  read predicate is unsupported. Broad attachment preparation remains blocked pending a supported
-  repair; do not hide the server-policy issue with a client-side filter.
+- Attachment links must inherit transaction read access, not merely check parent existence. The
+  reverse files-read inheritance composed with that rule fails publication on alpha.59 for the
+  current organization/account predicate. The supported alternative uses files' existing direct
+  transaction relation: files require transaction read access AND an attachment matching both
+  fileId and transactionId. Parts inherit file reads. The full-app permission suite verifies
+  owner/admin, all-account member/viewer, selected grants, denied accounts, unrelated users,
+  mismatched-organization grants and cross-transaction links. Unlinked files remain unreadable.
+  Preserve both the direct read and matching-link checks; publication alone does not prove access
+  correctness. See spec 013 reproductions/README.md for the rejected expression and alternative.
+  Cold coverage remains unproven; this authorization repair does not enable broad preparation.
 
 ## Reuse proven reference patterns; verify the exact predicate shape
 

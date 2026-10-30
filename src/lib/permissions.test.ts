@@ -422,6 +422,117 @@ describe('transaction attachment permissions', () => {
 		expect(await db.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeNull()
 		expect(await db.one(app.files.where({ id: file.id }), { tier: 'local' })).toBeNull()
 	})
+	it('enforces parent account and organization boundaries for links, files and parts', async () => {
+		const deniedTransaction = await db
+			.insert(app.transactions, { ...transaction('expense'), accountId: otherAccountId })
+			.wait({ tier: 'global' })
+		const allowed = await imageLink()
+		const denied = await imageLink(deniedTransaction.id)
+		const part = await db
+			.insert(app.fileParts, {
+				fileId: denied.file.id,
+				partIndex: 0,
+				sizeBytes: 4,
+				data: new Uint8Array([5, 6, 7, 8])
+			})
+			.wait({ tier: 'global' })
+		const stranger = fixture.as({
+			user_id: 'attachment-stranger',
+			authMode: 'local-first',
+			claims: {}
+		})
+		// A grant for another organization must not authorize this transaction.
+		await fixture.seed((seed) =>
+			seed.insert(app.accountMemberships, {
+				organizationId: otherOrganizationId,
+				accountId: otherAccountId,
+				userId: selectedMemberId,
+				access: 'write',
+				canDelete: false
+			})
+		)
+		for (const reader of [selectedMemberDb, stranger]) {
+			expect(
+				await reader.one(app.transactions.where({ id: deniedTransaction.id }), { tier: 'remote' })
+			).toBeNull()
+			expect(
+				await reader.one(app.transactionAttachments.where({ id: denied.link.id }), {
+					tier: 'remote'
+				})
+			).toBeNull()
+			expect(
+				await reader.one(app.files.where({ id: denied.file.id }), { tier: 'remote' })
+			).toBeNull()
+			expect(await reader.one(app.fileParts.where({ id: part.id }), { tier: 'remote' })).toBeNull()
+		}
+		for (const reader of [db, viewerDb]) {
+			expect(
+				await reader.one(app.transactionAttachments.where({ id: denied.link.id }), {
+					tier: 'remote'
+				})
+			).toBeTruthy()
+			expect(
+				await reader.one(app.files.where({ id: denied.file.id }), { tier: 'remote' })
+			).toBeTruthy()
+			expect(
+				(await reader.one(app.fileParts.where({ id: part.id }), { tier: 'remote' }))?.data
+			).toEqual(new Uint8Array([5, 6, 7, 8]))
+		}
+		expect(
+			await selectedMemberDb.one(app.files.where({ id: allowed.file.id }), { tier: 'remote' })
+		).toBeTruthy()
+		for (const [role, mode, grant, readable] of [
+			['admin', 'selected', false, true],
+			['member', 'all', false, true],
+			['viewer', 'selected', true, true],
+			['viewer', 'selected', false, false]
+		] satisfies ['admin' | 'member' | 'viewer', 'all' | 'selected', boolean, boolean][]) {
+			const identity = {
+				user_id: `attachment-${role}-${mode}-${grant}`,
+				authMode: 'local-first',
+				claims: {}
+			} satisfies import('jazz-tools/testing').PolicyTestSession
+			const reader = fixture.as(identity)
+			const userId = fixture.accountFor(identity)
+			await fixture.seed((seed) =>
+				seed.insert(app.organizationMembers, {
+					organizationId,
+					userId,
+					role,
+					accountAccessMode: mode
+				})
+			)
+			if (grant)
+				await fixture.seed((seed) =>
+					seed.insert(app.accountMemberships, {
+						organizationId,
+						accountId: otherAccountId,
+						userId,
+						access: 'read',
+						canDelete: false
+					})
+				)
+			const link = await reader.one(app.transactionAttachments.where({ id: denied.link.id }), {
+				tier: 'remote'
+			})
+			const file = await reader.one(app.files.where({ id: denied.file.id }), { tier: 'remote' })
+			const bytes = await reader.one(app.fileParts.where({ id: part.id }), { tier: 'remote' })
+			expect(Boolean(link)).toBe(readable)
+			expect(Boolean(file)).toBe(readable)
+			expect(Boolean(bytes)).toBe(readable)
+		}
+
+		// A readable transaction link must not expose a different transaction's file.
+		await selectedMemberDb
+			.insert(app.transactionAttachments, { transactionId: expenseId, fileId: denied.file.id })
+			.wait({ tier: 'global' })
+		expect(
+			await selectedMemberDb.one(app.files.where({ id: denied.file.id }), { tier: 'remote' })
+		).toBeNull()
+		expect(
+			await selectedMemberDb.one(app.fileParts.where({ id: part.id }), { tier: 'remote' })
+		).toBeNull()
+	})
 	async function imageLink(transactionId: string = expenseId) {
 		const file = await db
 			.insert(app.files, {
@@ -487,9 +598,11 @@ describe('transaction attachment permissions', () => {
 		await selectedMemberDb.expectDenied((writer) =>
 			writer.update(app.transactionAttachments, link.id, { fileId: foreign.file.id })
 		)
-		await selectedMemberDb.expectDenied((writer) =>
-			writer.update(app.transactionAttachments, foreign.link.id, { fileId: foreign.file.id })
-		)
+		await expect(async () => {
+			await selectedMemberDb
+				.update(app.transactionAttachments, foreign.link.id, { fileId: foreign.file.id })
+				.wait({ tier: 'global' })
+		}).rejects.toThrow(/read policy denied UPDATE on table transactionAttachments/)
 		expect(
 			await db.one(app.transactionAttachments.where({ id: link.id }), { tier: 'remote' })
 		).toMatchObject({ fileId: file.id })

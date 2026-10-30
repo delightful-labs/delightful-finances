@@ -773,6 +773,33 @@ every possible permission design is unsupported. Per user direction, the predica
 were reverted. No authorization repair shipped, and broad preparation remains paused. The browser
 reproduction was not rerun against the rejected rule.
 
+Follow-up isolation: `reproductions/attachment-read-inheritance.repro.ts` reduces the publication
+failure to six tables and three policy variants on an identical schema. Existence-based links
+publish. Parent-read links with reverse file inheritance also publish when the transaction grant
+predicate correlates only accountId (plus current user). Adding the organizationId correlation
+rejects the converted files read policy with UnknownColumn on links, naming organizationId or
+accountId. The standalone run reproduced these outcomes and cleaned up its disposable servers.
+It checks publication, not data filtering. Earlier exploratory selected-grant reads showed an
+account-only explicit join can publish/filter a reduced fixture, but that expression does not
+establish full organization and role semantics. Neither dropping organization checks nor adopting
+that partial join is a supported repair. T027 remains open. See reproductions/README.md for the
+command, recorded output and verification boundary.
+
+T027 supported alternative: retain links' allowedTo.read('transaction'), but replace files' reverse
+read inheritance with allOf(allowedTo.read('transaction'), matching attachment existence).
+The matching attachment must have both fileId = file.id and transactionId = file.transactionId.
+The existing files.transaction relation supplies the complete parent policy without copying role
+or grant logic. No schema change or weakened organization predicate is needed. Unlinked files and
+files referenced only through a different transaction remain unreadable. This deliberately enforces
+the existing file-to-transaction association rather than allowing cross-transaction references to
+confer file access. The full app permission suite passes all 73 cases, including new positive/negative
+link, metadata and part reads for role modes, denied accounts, unrelated users, a wrong-organization
+grant and a cross-transaction link. Existing replacement denial now occurs at local read enforcement;
+its assertion checks that specific rejection. Five browser cases also pass: attachment upload/download/
+removal, draft removal and preview reload, new image edits, saved offline replacement/reload, and
+viewer download without edit access. Type checks report zero errors/warnings. This repair does not
+establish cold query coverage.
+
 ### T015 initial production startup baseline
 
 Production code at fdcf11b, isolated checkout and preview on 127.0.0.1:4185, headless Chromium,
