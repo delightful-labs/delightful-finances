@@ -2645,7 +2645,12 @@ test('transaction details hide rows from another active workspace and handle mis
 		return { id: transaction.id, otherId: org.id }
 	}, organizationId)
 	await navigateSidebar(page, 'Expenses')
-	await page.getByRole('main').getByRole('listitem').getByRole('link').click()
+	await page
+		.getByRole('main')
+		.locator('section ul.entries')
+		.getByRole('listitem')
+		.getByRole('link')
+		.click()
 	const main = page.getByRole('main')
 	const memo = main.getByLabel('Memo (additional notes)', { exact: true })
 	await expect(memo).toHaveValue('Scoped detail')
@@ -3016,7 +3021,10 @@ test('profile name edits are owner-only even for members of a shared workspace',
 		await subject.getByLabel('Display name', { exact: true }).fill('Shared workspace member')
 		await subject.getByRole('button', { name: 'Save', exact: true }).click()
 		await expect(
-			subject.getByRole('main').locator('[role="status"]:not(.screen-reader-text)')
+			subject
+				.getByRole('main')
+				.getByRole('status')
+				.filter({ hasText: 'Profile Display name saved.' })
 		).toHaveText('Profile Display name saved.')
 		const outcome = await subject.evaluate(async (owner) => {
 			const { app, db, userId } = window.workspaceSettingsTest
