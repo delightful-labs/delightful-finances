@@ -7,11 +7,10 @@ async function seed(page: Page, count = 0) {
 	).toBeEnabled({ timeout: 30_000 })
 	return page.evaluate(async (count) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		const [organization] = await db.all(app.organizations)
@@ -64,11 +63,10 @@ async function expectWorkspaceUrl(
 async function savedCount(page: Page, description: string) {
 	return page.evaluate(async (description) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		return (await db.all(app.transactions)).filter((row) => row.description === description).length
@@ -282,10 +280,11 @@ for (const kind of ['income', 'expense']) {
 						.poll(() =>
 							page.evaluate(async (kind) => {
 								const schemaPath = '/src/lib/schema.ts'
-								const sessionPath = '/src/lib/jazz-session.ts'
+								const sessionPath = '/src/lib/runtime/jazz-session.ts'
 								const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-								const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
-									await import(sessionPath)
+								const {
+									getCurrentJazzSession
+								}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 								const db = getCurrentJazzSession()?.getSnapshot().client?.db
 								if (!db) throw new Error('Missing database')
 								return (await db.all(app.transactions)).filter((row) => row.kind === kind).length

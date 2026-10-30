@@ -8,7 +8,7 @@
 	import { formatSignedMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import AppDrawerContentSection from './AppDrawerContentSection.svelte'
-	import QueryContent from '../QueryContent.svelte'
+	import QueryContent from '../shared/QueryContent.svelte'
 	import ExpensesIcon from 'tdesign-icons-svg/src/arrow-up.svg?component'
 	import IncomeIcon from 'tdesign-icons-svg/src/arrow-down.svg?component'
 	import AccountsIcon from 'tdesign-icons-svg/src/wallet.svg?component'

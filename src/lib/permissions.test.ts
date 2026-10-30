@@ -5,9 +5,9 @@ import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import {
 	transactionAttachmentReplacementMachine,
 	type AttachmentReplacementInput
-} from './machines/transaction-attachment-replacement.js'
-import { savedTransactionImageEditorMachine } from './machines/saved-transaction-image-editor.js'
-import { mockEditorPlatform } from './image-editor-tests/fixtures.js'
+} from './machines/transactions/attachments/transaction-attachment-replacement.js'
+import { savedTransactionImageEditorMachine } from './machines/transactions/attachments/saved-transaction-image-editor.js'
+import { mockEditorPlatform } from './testing/image-editor/fixtures.js'
 import { vi } from 'vitest'
 import permissions from './permissions.js'
 

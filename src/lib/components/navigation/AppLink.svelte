@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext, type Snippet } from 'svelte'
 	import type { HTMLAnchorAttributes } from 'svelte/elements'
-	import { queryLinksKey, type QueryLinkContext } from '#lib/query-links.js'
+	import { queryLinksKey, type QueryLinkContext } from '#lib/filters/query-links.js'
 	import { inheritedQueryHref, type QueryUpdates } from '#lib/domain/query-params.js'
 	import Anchor from './Anchor.svelte'
 

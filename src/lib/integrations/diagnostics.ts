@@ -1,4 +1,4 @@
-import { createLogger, debugEnabled } from '../logger.js'
+import { createLogger, debugEnabled } from '../diagnostics/logger.js'
 
 const logger = createLogger('bank-sync')
 

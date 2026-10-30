@@ -114,10 +114,9 @@ test(
 		).toBeVisible()
 		const status = page.locator('aside.inline-drawer').locator('[role="status"]').nth(1)
 		await page.evaluate(async () => {
-			const sessionPath = '/src/lib/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Test session is not ready.')
 			await db.disconnect()
@@ -195,13 +194,12 @@ test(
 		).toBeVisible()
 		await page.evaluate(async () => {
 			const sveltePath = '/node_modules/svelte/src/index-client.js'
-			const componentPath = '/src/lib/components/WorkspaceScopeNotice.svelte'
+			const componentPath = '/src/lib/components/workspaces/WorkspaceScopeNotice.svelte'
 			const { mount }: typeof import('svelte') = await import(sveltePath)
 			const {
 				default: WorkspaceScopeNotice
-			}: typeof import('../src/lib/components/WorkspaceScopeNotice.svelte') = await import(
-				componentPath
-			)
+			}: typeof import('../src/lib/components/workspaces/WorkspaceScopeNotice.svelte') =
+				await import(componentPath)
 			const target = document.createElement('section')
 			target.id = 'workspace-loading-feedback'
 			document.body.append(target)
@@ -227,16 +225,18 @@ test.describe('active application locale', () => {
 		).toBeVisible()
 		await page.evaluate(async () => {
 			const sveltePath = '/node_modules/svelte/src/index-client.js'
-			const categoryPath = '/src/lib/components/CategoryList.svelte'
-			const transactionPath = '/src/lib/components/TransactionListItem.svelte'
+			const categoryPath = '/src/lib/components/classification/CategoryList.svelte'
+			const transactionPath = '/src/lib/components/transactions/TransactionListItem.svelte'
 			const { mount }: typeof import('svelte') = await import(sveltePath)
-			const { default: CategoryList }: typeof import('../src/lib/components/CategoryList.svelte') =
-				await import(categoryPath)
+			const {
+				default: CategoryList
+			}: typeof import('../src/lib/components/classification/CategoryList.svelte') = await import(
+				categoryPath
+			)
 			const {
 				default: TransactionListItem
-			}: typeof import('../src/lib/components/TransactionListItem.svelte') = await import(
-				transactionPath
-			)
+			}: typeof import('../src/lib/components/transactions/TransactionListItem.svelte') =
+				await import(transactionPath)
 			const target = document.createElement('section')
 			target.id = 'locale-presentation-fixture'
 			document.body.append(target)

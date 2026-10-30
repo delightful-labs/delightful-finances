@@ -7,11 +7,10 @@ async function seedAccounts(page: Page) {
 	).toBeEnabled({ timeout: 30_000 })
 	return page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.client) throw new Error('Test session is not ready.')
 		const db = snapshot.client.db
@@ -48,11 +47,10 @@ async function seedAccounts(page: Page) {
 async function persistedTransfer(page: Page, accountId: string) {
 	return page.evaluate(async (accountId) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		const rows = await db.all(app.transactions.where({ accountId }))

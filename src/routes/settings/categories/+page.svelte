@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { observeRow, observeRows } from '#lib/observations.js'
-	import { createScopedFormController } from '#lib/forms.svelte.js'
+	import { observeRow, observeRows } from '#lib/runtime/observations.js'
+	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import {
 		createManagementFormOptions,
 		selectManagementArchiveIds
-	} from '#lib/machines/management.js'
+	} from '#lib/machines/management/management.js'
 	import type { ManagementObservation } from '#lib/contracts/management-contract.js'
 	import { categoryArchiveSchema, categoryFormSchema } from '#lib/validation/categories.js'
 	import { archiveCategory, createCategory } from '#lib/data.js'
@@ -12,13 +12,13 @@
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
-	import CategoryForm from '#lib/components/CategoryForm.svelte'
-	import CategoryList from '#lib/components/CategoryList.svelte'
+	import CategoryForm from '#lib/components/classification/CategoryForm.svelte'
+	import CategoryList from '#lib/components/classification/CategoryList.svelte'
 	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
-	import QueryContent from '#lib/components/QueryContent.svelte'
+	import QueryContent from '#lib/components/shared/QueryContent.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 

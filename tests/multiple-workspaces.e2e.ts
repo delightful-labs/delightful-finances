@@ -14,11 +14,10 @@ function workspaceId(href: string) {
 async function harness(page: Page) {
 	await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.client || !snapshot.account) throw new Error('Missing test session')
 		window.workspaceSettingsTest = { db: snapshot.client.db, app, userId: snapshot.account.id }
@@ -387,14 +386,13 @@ test(
 		const organizationId = await page.evaluate(async () => {
 			const { db, app, userId } = window.workspaceSettingsTest
 			const preparationPath = '/src/lib/domain/workspace-creation.ts'
-			const journalPath = '/src/lib/machines/workspace-creation-journal.ts'
+			const journalPath = '/src/lib/machines/workspaces/workspace-creation-journal.ts'
 			const { prepareWorkspaceCreation }: typeof import('../src/lib/domain/workspace-creation.js') =
 				await import(preparationPath)
 			const {
 				workspaceCreationJournal
-			}: typeof import('../src/lib/machines/workspace-creation-journal.js') = await import(
-				journalPath
-			)
+			}: typeof import('../src/lib/machines/workspaces/workspace-creation-journal.js') =
+				await import(journalPath)
 			const xstatePath = '/node_modules/.vite/deps/xstate.js'
 			const { createActor, waitFor }: typeof import('xstate') = await import(xstatePath)
 			const profile = (await db.all(app.profiles.where({ userId })))[0]

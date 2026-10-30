@@ -207,9 +207,9 @@ test(
 			.poll(() =>
 				page.evaluate(async () => {
 					const schemaPath = '/src/lib/schema.ts'
-					const sessionPath = '/src/lib/jazz-session.ts'
+					const sessionPath = '/src/lib/runtime/jazz-session.ts'
 					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 						await import(sessionPath)
 					const snapshot = getCurrentJazzSession()?.getSnapshot()
 					if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
@@ -244,11 +244,10 @@ test(
 async function avatarRecord(page: Page, remote = false) {
 	return page.evaluate(async (remote) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
 		const profile = await snapshot.client.db.one(
@@ -559,10 +558,9 @@ declare global {
 
 async function currentIdentity(page: Page) {
 	return page.evaluate(async () => {
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		return getCurrentJazzSession()?.getSnapshot().account?.id
 	})
 }
@@ -620,10 +618,9 @@ test(
 		await page.goto('/login')
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.evaluate(async () => {
-			const sessionPath = '/src/lib/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const client = getCurrentJazzSession()?.getSnapshot().client
 			if (!client) throw new Error('Test session is not ready.')
 			window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
@@ -729,10 +726,9 @@ test(
 		await page.goto('/login')
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		await page.evaluate(async () => {
-			const sessionPath = '/src/lib/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const snapshot = getCurrentJazzSession()?.getSnapshot()
 			if (!snapshot?.client || !snapshot.account) throw new Error('Test session is not ready.')
 			// Use the same public SDK module URL as the application to share its client registry.
@@ -798,10 +794,9 @@ test(
 		await page.goto('/login')
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		await page.evaluate(async () => {
-			const sessionPath = '/src/lib/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const session = getCurrentJazzSession()
 			if (!session) throw new Error('Session unavailable')
 			window.recoveryNavigationTest = { restoreCalls: 0, navigationFailures: 0 }
@@ -856,11 +851,10 @@ test(
 		await page.getByRole('button', { name: 'Close', exact: true }).click()
 		const previousWorkspace = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts'
-			const sessionPath = '/src/lib/jazz-session.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const snapshot = getCurrentJazzSession()?.getSnapshot()
 			if (!snapshot?.client || !snapshot.account) throw new Error('Missing session')
 			const db = snapshot.client.db

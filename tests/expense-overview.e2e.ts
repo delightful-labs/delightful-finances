@@ -7,11 +7,10 @@ async function seed(page: Page) {
 	).toBeEnabled()
 	await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		const [org] = await db.all(app.organizations)

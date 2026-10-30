@@ -11,11 +11,14 @@ test(
 		await page.evaluate(async () => {
 			const sveltePath = '/node_modules/.vite/deps/svelte.js'
 			const reactivityPath = '/node_modules/.vite/deps/svelte_reactivity.js'
-			const componentPath = '/src/lib/components/QueryContent.svelte'
+			const componentPath = '/src/lib/components/shared/QueryContent.svelte'
 			const { mount, createRawSnippet }: typeof import('svelte') = await import(sveltePath)
 			const { SvelteMap }: typeof import('svelte/reactivity') = await import(reactivityPath)
-			const { default: QueryContent }: typeof import('../src/lib/components/QueryContent.svelte') =
-				await import(componentPath)
+			const {
+				default: QueryContent
+			}: typeof import('../src/lib/components/shared/QueryContent.svelte') = await import(
+				componentPath
+			)
 			const state = new SvelteMap([['loading', true]])
 			const target = document.createElement('section')
 			target.id = 'loading-test'

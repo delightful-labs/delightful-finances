@@ -1,4 +1,4 @@
-import type { FormFeedbackLabel } from '../machines/form-feedback.js'
+import type { FormFeedbackLabel } from '../machines/forms/form-feedback.js'
 /** Props-only contracts: no framework, schema library, or actor dependency. */
 export type FormIssue = { path: readonly PropertyKey[]; code: string; message?: string }
 export type FormSettlement =

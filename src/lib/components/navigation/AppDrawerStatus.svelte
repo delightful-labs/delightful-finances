@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { Button, StatusMessage } from 'delightful-ui'
-	import type { BankSyncControls } from '#lib/bank-sync.js'
+	import type { BankSyncControls } from '#lib/runtime/bank-sync.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import Icon from './AppIcon.svelte'
 	import SyncIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import AppDrawerContentSection from './AppDrawerContentSection.svelte'
-	import PwaUpdateIntegration from '../PwaUpdateIntegration.svelte'
+	import PwaUpdateIntegration from '../pwa/PwaUpdateIntegration.svelte'
 	let {
 		bankSync,
 		browserOffline,

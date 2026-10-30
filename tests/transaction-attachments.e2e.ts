@@ -4,11 +4,10 @@ import { seedTransaction } from './helpers/transactions.js'
 async function attachmentState(page: Page, transactionId: string) {
 	return page.evaluate(async (transactionId) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		const links = await db.all(app.transactionAttachments.where({ transactionId }))
@@ -31,11 +30,10 @@ async function attachmentState(page: Page, transactionId: string) {
 async function findTransactionByDescription(page: Page, description: string) {
 	return page.evaluate(async (description) => {
 		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
+		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
 		const db = getCurrentJazzSession()?.getSnapshot().client?.db
 		if (!db) throw new Error('Missing database')
 		return (await db.all(app.transactions.where({ description })))[0]?.id
@@ -98,11 +96,10 @@ test(
 		await page.evaluate(
 			async ({ fileId, transactionId }) => {
 				const schemaPath = '/src/lib/schema.ts',
-					sessionPath = '/src/lib/jazz-session.ts'
+					sessionPath = '/src/lib/runtime/jazz-session.ts'
 				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-					sessionPath
-				)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
 				const db = getCurrentJazzSession()?.getSnapshot().client?.db
 				if (!db) throw new Error('Missing database')
 				await db
@@ -120,11 +117,10 @@ test(
 		if (!fileId) throw new Error('Uploaded file was not found')
 		const retained = await page.evaluate(async (fileId) => {
 			const schemaPath = '/src/lib/schema.ts'
-			const sessionPath = '/src/lib/jazz-session.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing database')
 			return db.one(app.files.where({ id: fileId }), { tier: 'local' })

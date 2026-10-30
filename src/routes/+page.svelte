@@ -5,17 +5,17 @@
 	import { getContext, onMount } from 'svelte'
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
-	import QueryContent from '#lib/components/QueryContent.svelte'
-	import ExpenseOverview from '#lib/components/ExpenseOverview.svelte'
+	import QueryContent from '#lib/components/shared/QueryContent.svelte'
+	import ExpenseOverview from '#lib/components/reports/ExpenseOverview.svelte'
 	import { browser } from '$app/env'
 	import {
 		loadOverviewFilters,
 		saveOverviewFilters,
 		type OverviewFilters
-	} from '#lib/overview-filters.js'
+	} from '#lib/filters/overview-filters.js'
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const overviewFiltersKey = $derived(
 		`finance-overview-filters:${filters.activeOrganizationId ?? 'none'}`

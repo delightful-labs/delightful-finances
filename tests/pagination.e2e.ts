@@ -9,11 +9,10 @@ async function seed(page: Page, count = 0, acrossDates = false) {
 	await page.evaluate(
 		async ({ count, acrossDates }) => {
 			const schemaPath = '/src/lib/schema.ts'
-			const sessionPath = '/src/lib/jazz-session.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const snapshot = getCurrentJazzSession()?.getSnapshot()
 			if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
 			const db = snapshot.client.db
@@ -294,11 +293,10 @@ test('sample transactions save offline and synchronize after reconnection', asyn
 	await expect
 		.poll(() =>
 			page.evaluate(async () => {
-				const sessionPath = '/src/lib/jazz-session.ts'
+				const sessionPath = '/src/lib/runtime/jazz-session.ts'
 				const schemaPath = '/src/lib/schema.ts'
-				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-					sessionPath
-				)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
 				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
 				const db = getCurrentJazzSession()?.getSnapshot().client?.db
 				if (!db) throw new Error('Missing sample session')
@@ -325,11 +323,10 @@ test('live result shrink clamps pages without rewriting the requested URL', asyn
 	await expect(navigation.locator('[aria-current="page"]')).toHaveText('4')
 	async function retain(count: number) {
 		await page.evaluate(async (count) => {
-			const sessionPath = '/src/lib/jazz-session.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const schemaPath = '/src/lib/schema.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing pagination session')
@@ -368,11 +365,10 @@ test(
 	async ({ page }) => {
 		await seed(page)
 		const fixture = await page.evaluate(async () => {
-			const sessionPath = '/src/lib/jazz-session.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const schemaPath = '/src/lib/schema.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
 			const snapshot = getCurrentJazzSession()?.getSnapshot()
 			if (!snapshot?.client || !snapshot.account) throw new Error('Missing sample session')
@@ -464,9 +460,9 @@ test(
 			await expect
 				.poll(() =>
 					page.evaluate(async ({ sourceId, destinationId }) => {
-						const sessionPath = '/src/lib/jazz-session.ts'
+						const sessionPath = '/src/lib/runtime/jazz-session.ts'
 						const schemaPath = '/src/lib/schema.ts'
-						const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+						const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 							await import(sessionPath)
 						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
 						const db = getCurrentJazzSession()?.getSnapshot().client?.db

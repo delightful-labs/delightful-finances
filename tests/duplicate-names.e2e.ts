@@ -122,11 +122,10 @@ test(
 		).toBeEnabled()
 		const seed = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts',
-				sessionPath = '/src/lib/jazz-session.ts'
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing database')
 			const [organization] = await db.all(app.organizations)
@@ -228,11 +227,10 @@ test(
 		}
 		const persisted = await page.evaluate(async (seed) => {
 			const schemaPath = '/src/lib/schema.ts',
-				sessionPath = '/src/lib/jazz-session.ts'
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing database')
 			return {
@@ -278,11 +276,10 @@ for (const entity of ['Category', 'Tag'] satisfies readonly ('Category' | 'Tag')
 			await expect(main.getByRole('button', { name: `Add ${entity}`, exact: true })).toBeEnabled()
 			const secondId = await page.evaluate(async (entity) => {
 				const schemaPath = '/src/lib/schema.ts',
-					sessionPath = '/src/lib/jazz-session.ts'
+					sessionPath = '/src/lib/runtime/jazz-session.ts'
 				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-					sessionPath
-				)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
 				const session = getCurrentJazzSession()?.getSnapshot()
 				const db = session?.client?.db
 				const userId = session?.account?.id

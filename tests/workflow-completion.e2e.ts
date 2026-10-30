@@ -99,8 +99,8 @@ for (const role of ['admin', 'member', 'viewer']) {
 				await expect(subject.getByRole('complementary').getByRole('navigation')).toBeVisible()
 				await prepareSidebar(subject)
 				const subjectId = await subject.evaluate(async () => {
-					const path = '/src/lib/jazz-session.ts'
-					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+					const path = '/src/lib/runtime/jazz-session.ts'
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 						await import(path)
 					const id = getCurrentJazzSession()?.getSnapshot().account?.id
 					if (!id) throw new Error('Missing subject identity')
@@ -109,9 +109,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				const membershipId = await page.evaluate(
 					async ({ organizationId, subjectId, role }) => {
 						const schemaPath = '/src/lib/schema.ts',
-							sessionPath = '/src/lib/jazz-session.ts'
+							sessionPath = '/src/lib/runtime/jazz-session.ts'
 						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-						const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+						const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 							await import(sessionPath)
 						const db = getCurrentJazzSession()?.getSnapshot().client?.db
 						if (!db) throw new Error('Missing owner database')
@@ -169,9 +169,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 					await expect(name).toBeEditable()
 					await page.evaluate(async (membershipId) => {
 						const schemaPath = '/src/lib/schema.ts',
-							sessionPath = '/src/lib/jazz-session.ts'
+							sessionPath = '/src/lib/runtime/jazz-session.ts'
 						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-						const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+						const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 							await import(sessionPath)
 						const db = getCurrentJazzSession()?.getSnapshot().client?.db
 						if (!db) throw new Error('Missing owner database')
@@ -192,9 +192,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 					).toBeVisible()
 					const denied = await subject.evaluate(async (organizationId) => {
 						const schemaPath = '/src/lib/schema.ts',
-							sessionPath = '/src/lib/jazz-session.ts'
+							sessionPath = '/src/lib/runtime/jazz-session.ts'
 						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-						const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+						const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 							await import(sessionPath)
 						const db = getCurrentJazzSession()?.getSnapshot().client?.db
 						if (!db) throw new Error('Missing subject database')

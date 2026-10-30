@@ -45,7 +45,7 @@ manual 25-transaction action also uses Faker and remains controlled by the debug
 
 The same setting enables the existing developer menu, including its sample transaction controls. The menu trigger retains its existing keyboard-focus behavior and appearance. Sample creation still requires the current workspace's write permissions.
 
-Use `createLogger(scope)` from `src/lib/logger.ts` for application `info`, `warn`, and `error` messages. Select only non-sensitive diagnostic fields; never pass credentials, finance records, provider payloads, or raw errors/messages/stacks. Existing bank diagnostics retain their error classification and timing heartbeats. SDK-internal logs are controlled separately.
+Use `createLogger(scope)` from `src/lib/diagnostics/logger.ts` for application `info`, `warn`, and `error` messages. Select only non-sensitive diagnostic fields; never pass credentials, finance records, provider payloads, or raw errors/messages/stacks. Existing bank diagnostics retain their error classification and timing heartbeats. SDK-internal logs are controlled separately.
 
 All application actor roots and their children report error-state observations through the shared observer, including normal machine failure states and unexpected actor failures. Logs contain the machine/state, triggering event type, actor correlation IDs, sanitized error/cause details and source frames, available status/permission facts, counters, collection sizes and typed failure results. Jazz initialization failures additionally report the public app ID and server origin before a database is available. Identical failure observations are suppressed until their facts change or the actor leaves the failure state. Context payloads and form values are omitted; error text is bounded and redacted rather than logging raw exceptions.
 
@@ -105,6 +105,12 @@ Feature browser regressions live in `tests/features/`; shared workspace and tran
 fixtures live in `tests/helpers/`. Shared workflow contracts live in `src/lib/contracts/`;
 application shell and navigation components live in `src/lib/components/navigation/`. Keep schema and permission deployment
 entry points in `src/lib/schema.ts` and `src/lib/permissions.ts`.
+
+Components and machines use feature folders such as `accounts/`, `identity/`, `workspaces/`,
+`transactions/`, and `transfers/`. Machines retain their colocated tests and fixtures.
+Shared logging and inspection live in `src/lib/diagnostics/`; session/context/lifecycle
+helpers live in `src/lib/runtime/`. Form, filter, and authorization helpers have their own
+library directories. Keep new files with the feature or responsibility they implement.
 
 `pnpm test:e2e` runs all development-server scenarios through four disjoint projects:
 `application`, `authentication`, `permissions`, and `workspace`. CI uses these same projects

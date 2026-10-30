@@ -176,11 +176,10 @@ test(
 		await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
 		const savedBalances = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts',
-				sessionPath = '/src/lib/jazz-session.ts'
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing database')
 			const links = await db.all(app.simplefinAccountLinks)
@@ -198,11 +197,10 @@ test(
 		)
 		const edited = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts',
-				sessionPath = '/src/lib/jazz-session.ts'
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing database')
 			const rows = await db.all(app.transactions.where({ source: 'simplefin' }))
@@ -222,11 +220,10 @@ test(
 		await expect(page.getByText(/Imported: 0; already present: 2; omitted: 2/)).toBeVisible()
 		const afterRepeat = await page.evaluate(async (id) => {
 			const schemaPath = '/src/lib/schema.ts',
-				sessionPath = '/src/lib/jazz-session.ts'
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-				sessionPath
-			)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
 			const db = getCurrentJazzSession()?.getSnapshot().client?.db
 			if (!db) throw new Error('Missing database')
 			const rows = await db.all(app.transactions.where({ source: 'simplefin' }), { tier: 'remote' })

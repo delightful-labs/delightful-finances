@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { observeRow } from '#lib/observations.js'
+	import { observeRow } from '#lib/runtime/observations.js'
 	import { fromStore } from 'svelte/store'
 	import { getDb, getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { m } from '#lib/paraglide/messages.js'
 	import { app } from '#lib/schema.js'
 	import { saveProfileName, saveProfileAvatar } from '#lib/data.js'
-	import { createScopedFormController } from '#lib/forms.svelte.js'
-	import { createProfileFormOptions } from '#lib/machines/profile.js'
+	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
+	import { createProfileFormOptions } from '#lib/machines/identity/profile.js'
 	import type { ProfileObservation } from '#lib/contracts/profile-contract.js'
-	import ProfileAvatarForm from '#lib/components/ProfileAvatarForm.svelte'
-	import ProfileNameForm from '#lib/components/ProfileNameForm.svelte'
-	import RecoveryPhraseIntegration from '#lib/components/RecoveryPhraseIntegration.svelte'
+	import ProfileAvatarForm from '#lib/components/identity/ProfileAvatarForm.svelte'
+	import ProfileNameForm from '#lib/components/identity/ProfileNameForm.svelte'
+	import RecoveryPhraseIntegration from '#lib/components/identity/RecoveryPhraseIntegration.svelte'
 	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 
 	const session = getJazzSession()

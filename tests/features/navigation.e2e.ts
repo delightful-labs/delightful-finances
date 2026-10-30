@@ -59,8 +59,8 @@ test(
 		// The binding survives only client navigation and still points to the active client.
 		expect(
 			await page.evaluate(async () => {
-				const sessionPath = '/src/lib/jazz-session.ts'
-				const { getCurrentJazzSession }: typeof import('../../src/lib/jazz-session.js') =
+				const sessionPath = '/src/lib/runtime/jazz-session.ts'
+				const { getCurrentJazzSession }: typeof import('../../src/lib/runtime/jazz-session.js') =
 					await import(sessionPath)
 				return window.workspaceSettingsTest.db === getCurrentJazzSession()?.getSnapshot().client?.db
 			})

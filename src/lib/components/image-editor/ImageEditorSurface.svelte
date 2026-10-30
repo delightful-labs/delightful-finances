@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { selectionQuad, type ImageSelection } from '#lib/domain/image-editor-geometry.js'
 	import type { ImageAdjustments } from '#lib/domain/image-editor-pixels.js'
-	import type { ImageEditorEvent } from '#lib/machines/image-editor.js'
+	import type { ImageEditorEvent } from '#lib/machines/images/image-editor.js'
 	import { paintEditorCanvas } from '#lib/domain/image-editor-platform.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import CropperHandle from '../photo-cropper/CropperHandle.svelte'
