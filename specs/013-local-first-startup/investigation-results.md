@@ -37,7 +37,7 @@ Passing workflows do not turn the failing preparation investigation below into a
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | T009 local usability verification | Verified the implemented slice, including negotiated nonresponse, later acceptance/rejection and the existing role matrix. Unknown-outcome recovery remains T012.                                                                                                                                                                                                                                                         |
 | T010 new/restored identity        | Alpha.59 still has no public durable provenance result for automatic root selection. Retain safe discovery. Automatic first-workspace bootstrap offline remains unbuilt. An explicit app-owned identity flow would require a new protocol/UX; no credential-storage parsing or empty-cache inference was added.                                                                                                           |
-| T011 all-workspace preparation    | Online reads returned the expected 500/5,000 permitted records from 1,000/10,000 fixtures. Cold reads failed with `NotObserved` even after authorization-fact warming and explicit LocalFirst. Broad preparation is not established. T027 authorization is repaired; cold query coverage and storage remain unresolved.                                                                                                                                 |
+| T011 all-workspace preparation | Investigation complete on available lab tools. Remote ID subscriptions pass live/cold correctness across Chromium, Firefox and WebKit; global LocalFirst views failed live invalidation. Unbounded initial acquisition caused a roughly three-second main-thread stall. Bounded pages preserve tested cold data/live boundary behavior but are slow. Budgeted runtime owner remains unbuilt; no automatic startup sweep enabled. |
 | T012 durable recovery             | In-memory checkpoint/reconciliation cases pass. Checkpoints retain a live binding and are route-owned; they cannot simply be serialized or survive route replacement. The proposed data-only write-ahead journal/application owner remains implementation work, not an SDK fix or a tested feature.                                                                                                                       |
 | T014 cold/runtime/update matrix   | Saved-record cold coverage and desktop update workflows verified within the boundaries above. Real changed-graph compatibility remains the known T026 deferral; physical supported-device certification is not established.                                                                                                                                                                                               |
 | T015 performance                  | Baseline, actor timing, page CPU, public-method setup and large-history probes recorded. About 0.94 s of returning page CPU samples were in Wasm execution. Public-method wrappers miss Svelte's internal subscription path, so they do not count all queries or prove duplication. No numerical budget or optimization benefit claimed.                                                                                  |
@@ -103,3 +103,30 @@ exiting the browser. Firefox's extra probe disabled HTTP disk/memory caches in b
    replaying unknown writes automatically.
 4. Obtain supported physical-device/network/storage measurements before setting budgets or adopting
    further optimizations. Keep the explicitly deferred cross-build cache work separate.
+
+
+Post-T027 cold-data follow-up is recorded separately in cold-query-follow-up.json and research.md.
+Small closed/silent/disconnect controls, the 10,000-row silent case and metadata/on-demand content
+case all produced their expected data. These are isolated dev-runtime data probes, not additional
+production shell or user-flow guarantees. Cold reads use the retained identity after every reader
+client exits. Their positive results qualify the earlier failure; they do not identify its cause or
+establish all-workspace completeness. The next cost comparison is now recorded in preparation-cost-follow-up.json: retained full-row
+queries add 21 MiB page heap at 5,000 readable transactions, versus 10.3 MiB for public ID projection.
+One-shot snapshots remained stale in the observed remote-edit window; retained queries receive the
+edit. Cold ID-projection checks retain tested full transaction fields/audit, remote inserts and
+file/link metadata while preserving on-demand file content. Prefer retained ID queries for the next
+implementation review. Worker memory, storage, other relationships and progress semantics remain
+open; no preparation owner is implemented.
+
+
+The final T011 evidence and superseding transport correction are in
+[remaining-investigation-results.json](remaining-investigation-results.json) and the final research
+section. The page-level WebSocket mock was not a reliable SharedWorker control; real-proxy tests now
+verify the selected subscription-only design. Remote-tier acquisition is appropriate only for the
+independent background owner; ordinary local-first work remains unchanged.
+
+Do not adopt the earlier unbounded startup proposal: it produced an approximately three-second
+main-thread stall. Public bounded pages retain tested cold records and react to boundary mutations,
+but their latency/resource tradeoff needs a reviewed scheduling/progress implementation. Real quota
+failure was not established because the reported quota override did not enforce its limit. Physical
+supported-device budgets remain unverified. T010, T012 and deferred T026 remain as described above.

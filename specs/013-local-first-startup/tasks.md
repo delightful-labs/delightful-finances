@@ -95,24 +95,22 @@ and a recommendation in `research.md`. Research does not automatically authorize
       Investigation recorded in research.md: alpha.59 exposes no public durable automatic-identity
       provenance result. SDK-supported handoff versus app-owned explicit identity flow requires
       mechanism/design review; automatic offline bootstrap remains unimplemented.
-- [ ] T011 Investigate all-accessible-finance-record coverage under FR-010: active query scopes,
-      relationship and offset completeness, subscriptions across workspaces, history volume,
-      attachment metadata, on-demand file download/retention, storage/quota,
-      and observable preparation progress. Propose background preparation without a local readiness gate.
-      Static scope audit recorded in research.md: selected-workspace warming is incomplete across
-      workspaces/relationships; list pagination is in memory; detail queries include attachment parts.
-      Metadata-only preparation design, coverage/transfer experiments, memory/quota and retention
-      evidence remain pending. No preparation or completeness guarantee implemented.
-      Runtime probe: a never-opened shared workspace had no local finance records after discovery;
-      metadata acquisition made link/file/transaction queryable without parts, then explicit parts
-      acquisition exposed bytes. Reproduction and limits recorded; cold persistence/transport/quota
-      and large-history evidence remain open.
-      Next reviewed candidate: fixed permission-filtered whole-table queries rather than one actor
-      per workspace. Plan records dataset coverage, session-bound ownership and the bounded
-      coverage/durability/large-result experiment required before choosing the acquisition policy.
-      Experiment found an existing attachment authorization gap: two users could not read an
-      ungranted transaction but could read its linked metadata and explicitly requested file bytes.
-      The T027 follow-up repairs authorization. Large-history comparison and cold persistence remain open.
+- [ ] T011 Investigate all-accessible-finance-record preparation under FR-010 and review its
+      runtime adoption. **Available SDK/browser investigation is complete; runtime remains unbuilt.**
+      See remaining-investigation-results.json and the final research/plan disposition. Remote-only
+      ID subscriptions qualify for background replication/live authorization across all three browsers;
+      global LocalFirst views did not qualify. Foreground reads/saves remain local-first and never
+      wait for preparation. Seventeen metadata/data roots exclude fileParts/provider operations.
+      Cold edited/new/deleted records and audit/relationship metadata pass with a real unanswered
+      proxy; 5,006 permitted records survive the large cold case. Namespace eviction retains identity
+      without recreating workspaces. Lifecycle/cancellation/error-isolation checks pass. The earlier
+      page WebSocket mock did not reliably isolate SharedWorker traffic; real-proxy results supersede it.
+      **Do not enable an unbounded startup sweep:** initial acquisition caused a roughly three-second
+      main-thread stall. Public retained pages preserve tested cold data and signal live boundaries,
+      but acquisition is much slower (111 seconds for 5,006 records in 200-record pages). A budgeted,
+      yielding page/growth/progress owner requires machine-first design and focused implementation
+      review. Counts do not establish global completeness. Actual quota-failure and supported physical
+      device budgets remain unverified; the reported Chrome quota override did not enforce a limit.
 - [ ] T012 Investigate unknown-outcome recovery in `transaction-save.ts` and staged Check/ledger
       persistence. Establish how pending recovery survives navigation/reload without replay or blocking
       unrelated work; determine which remote checks remain necessary and propose scoped states.
@@ -208,6 +206,59 @@ and a recommendation in `research.md`. Research does not automatically authorize
       browser checks passed, including offline edit/reload and viewer download. Type checks report
       zero errors/warnings. See reproductions/README.md for the rejected expression and alternative.
       Broad preparation remains unbuilt pending T011 cold query coverage and storage investigation.
+
+## Subscription ownership and startup query work
+
+These tasks follow T015's query/runtime CPU findings and the user's requested subscription cleanup.
+They use the installed Jazz public APIs and remain independent of T011 broad offline preparation.
+No redundant subscription or performance improvement is assumed. Complete T028 and review its
+findings first, then take one evidence-backed implementation task at a time in small review cycles.
+If an audit finds no applicable waste, record that outcome rather than adding an abstraction.
+
+- [ ] T028 [US1] Audit startup and returning-detail subscription acquisition, replacement, and release
+      in `src/lib/components/WorkspaceBootstrap.svelte`, `src/routes/+layout.svelte`,
+      `src/lib/components/TransactionForm.svelte`, and their route/integration callers. Record query
+      identity (account/session generation, workspace, filters, projection, includes, and read tier),
+      owner/lifetime, acquisition/update/release counts, and the triggering reactive inputs in
+      `specs/013-local-first-startup/research.md`. Capture comparable production startup/form-usable
+      baselines under T015 through supported integration boundaries; distinguish necessary concurrent
+      queries from duplicates. Present concrete candidates and affected tests before implementation.
+- [ ] T029 [US1] After T028 review, stabilize confirmed unnecessary rebinding in the audited
+      `src/lib/components/WorkspaceBootstrap.svelte`, `src/lib/components/TransactionForm.svelte`,
+      or identified route integration. Unrelated reactive updates must retain the current subscription;
+      changes to identity/session generation, scope, query shape, or required read tier must replace it.
+      Record exact changed paths and before/after acquisition counts in `research.md`; preserve live
+      record/permission updates and existing readiness behavior.
+- [ ] T030 [US1] After T028 review and any overlapping T029 changes, consolidate confirmed identical
+      subscriptions in the identified `src/lib/components/` or `src/routes/` integration owners.
+      Share only when admitted identity/session generation, workspace scope, query semantics, and
+      lifetime match. Retain one explicit owner with cleanup after its final consumer releases;
+      keep independent lifetimes separate. Record the exact paths/ownership decision in `plan.md`
+      before editing. Use the existing Jazz facilities; do not introduce a global query registry or
+      share authorization decisions merely because query results currently look equal.
+- [ ] T031 [US1] After T028 review, defer confirmed dialog-only or inactive-view queries in their
+      audited `src/lib/components/` or `src/routes/` integration owners until the view needs them.
+      Release them when that owner closes/unmounts, preserving any active save/settlement drain and
+      data needed by the visible page. Document exact paths in `plan.md`, and assess initial opening,
+      reopening, draft retention, and local/offline availability; do not defer dependencies required
+      to make the initial screen usable or alter UI styling.
+- [ ] T032 [US1] After T028 review and any overlapping T029–T031 changes, repair confirmed obsolete
+      bindings in `src/lib/components/WorkspaceBootstrap.svelte` and the identified scoped form/route
+      integrations. Identity, workspace, query, or owner replacement must release old subscriptions
+      and reject late reports from the old generation; teardown must preserve existing in-flight
+      write/drain ownership. Model any new multi-step lifecycle in `src/lib/machines/` before effects,
+      keep Jazz wiring in integration components, and record actual changed paths in `plan.md`.
+- [ ] T033 [US1] After each implementation slice is reviewed and approved, inspect and update its
+      affected unit/Playwright fixtures and assertions before running relevant checks under
+      `.specify/memory/testing.md`. Record exact test paths/results and comparable production timings
+      in `research.md`: stable subscription counts under unrelated updates; fresh data on meaningful
+      input changes; dialog close/reopen cleanup; repeated workspace/identity changes; stale callback
+      rejection; observed grant revocation; and available local work with an unanswered remote.
+      Reuse applicable cases in `tests/startup-stalled-remote.e2e.ts` and existing scoped-form/workspace
+      suites rather than creating tests that merely mirror code. Compare startup/form usability,
+      query acquisition/release counts, and page CPU before/after; report measured benefit or lack of
+      benefit without treating subscription-count reductions alone as a speedup. Verify earlier
+      slices before starting the next; no app preparation worker or broad startup sweep is included.
 
 ## Consolidated follow-through
 

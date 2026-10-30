@@ -944,3 +944,292 @@ offline-role, cross-browser and extra cold-runtime runs, with the stated Firefox
 cache limitation. The failing broad-preparation diagnostic remains explicitly unresolved rather
 than included in the passing workflow count. Temporary adapters/marks/configs and owned test servers
 were cleaned up. Changes are uncommitted; no deployment occurred.
+
+
+### T011 controlled cold-query follow-up after T027 (transport control superseded)
+
+Evidence: cold-query-follow-up.json. Installed alpha.59, b39d9fa permissions, isolated agent server
+127.0.0.1:5192, headless Chromium and synthetic fixtures. Two real browser identities replaced the
+backend-seeded fixture for this probe: writer creates a separate workspace, two accounts, historical
+transactions and viewer/selected membership for the reader with a grant to one account. The readable
+account is then archived. Reader never opens that workspace's finance pages. Remote whole-table
+queries acquire authorization facts, transactions with audit fields, plain transactions, accounts
+and categories. Both reader clients and its SharedWorker exit before cold launch; identity equality
+is asserted. HTTP module fetching stays available while Jazz WebSockets are intercepted without
+forwarding, separating this data test from already-tested production executable caching.
+
+Small controls separately close the remote socket, leave it open without responding, and add the
+old probe's explicit db.disconnect call. Each returns the one permitted row for all four LocalFirst
+query shapes: exact audit projection, exact plain root, workspace subset and ID subset. A separate
+10,000-transaction fixture (5,000 permitted) also succeeds after restart with the unanswered remote:
+exact audit root 5,000 / 1,917.5 ms; plain root 5,000 / 1,160.1 ms; workspace subset 5,000 / 1,300.9 ms;
+ID subset one row / 467.7 ms. Queries run sequentially, so these are not independent startup timings.
+Bulk fixture setup took about 2.9 minutes through the ordinary writer browser; that includes staging
+and globally settling synthetic writes and must not be reported as reader acquisition latency.
+
+A separate two-transaction metadata fixture creates a four-byte file and attachment for each account.
+The reader's online files and attachment root queries each return exactly the permitted reference.
+After cold restart with an unanswered remote, those same roots retain exactly that file/link; denied
+references remain absent. An unwarmed fileParts query returns zero rows/bytes locally. A subsequent
+online browser explicitly requests those parts at Remote and receives [1,2,3,4]. Local empty content
+therefore does not establish remote absence or physical byte erasure. No fileParts query is included
+in metadata warming, and no provider fetch occurs.
+
+The earlier NotObserved result is not reproduced here. Query-shape changes, silent transport,
+explicit disconnect and 10,000-row history alone do not explain it; do not replace the historical
+failure with a claim that its cause is fixed. These controlled successes support investigating the
+fixed permission-filtered dataset candidate with the installed SDK. They do not yet verify every
+relationship/detail include, multiple shared-workspace scales, permission changes during acquisition,
+page/worker memory, storage/quota, subscription costs or user-visible preparation progress. Keep
+T011 open and production preparation disabled until a reviewed acquisition policy has that evidence.
+
+Setup corrections: the first new fixture tried inserting an already-archived account, which the real
+insert policy correctly rejected. The corrected fixture creates it active, stages history, then
+archives it. An initial cold probe asserted an Accounts workspace URL and instead reached workspace
+settings; it did not reach query measurement. Subsequent probes wait for the local client and
+classify data reads independently of routing. No finance UI navigation guarantee follows from them.
+
+### T011 retained subscription cost and public ID projection (initial candidate)
+
+Evidence: preparation-cost-follow-up.json. Paired headless Chromium measurements use the installed
+alpha.59 and b39d9fa permissions on the known isolated agent server at 127.0.0.1:5192. Separate writer
+and viewer identities share two never-opened finance workspaces; each viewer has a selected grant to
+one of two accounts. Histories contain 1,000/10,000 transactions, of which 500/5,000 are readable.
+Initial whole-table acquisition is Remote, with authorization facts acquired first. No app collection
+copy is retained. After acquisition, one remote edit globally settles without a retained whole-table
+app subscription; after one second the reader disconnects and checks its local snapshot. It still
+contains the original amount 1234 rather than accepted 2345 at both sizes. This bounded observation
+is not proof that an arbitrarily longer wait could never receive an update. After reconnection and
+resynchronization, a retained LocalFirst subscription receives accepted 3456. Ordinary-edit callbacks
+still deliver the entire permitted result array, even though app code keeps only counts and one
+inspected scalar. No private subscribeDelta, worker, runtime option or server change is used.
+
+| Projection / readable rows | Acquisition ms | Added live page heap | Edit callback rows | Max edit-window frame gap ms |
+| -------------------------- | -------------- | -------------------- | ------------------ | ---------------------------- |
+| Full plus audit / 500      | 1,129.3        | 2.12 MiB             | 500                | 16.8                         |
+| Full plus audit / 5,000    | 6,871.5        | 21.00 MiB            | 5,000              | 33.4                         |
+| ID only / 5,000            | 7,106.1        | 10.30 MiB            | 5,000 IDs          | 16.8                         |
+
+Heap is page Runtime.getHeapUsage after forced GC; the added heap is relative to the post-acquisition
+baseline. After release, page heap returns within 0.08/0.13/0.17 MiB of those baselines respectively.
+Jazz SharedWorker/Wasm memory and physical storage are excluded. These are live-heap measurements,
+not peak allocations. Frame/long-task windows exclude forced GC; no long task was reported in these
+samples. Fixtures and initialization are not included in acquisition ms. ID-only's edit-observation
+upper bound was 1,782 ms versus 706 ms for full rows at 5,000; that includes authority acceptance,
+transport and polling. The single samples do not establish faster acquisition or update delivery.
+ID projection reduces measured page retention by roughly half, but still materializes full ID arrays
+on ordinary edits and does not establish a device/storage budget or unbounded-history scalability.
+
+The public alternative is query.select('id'), not a counts-only private subscription. Its replication
+semantics were checked independently: a fresh reader queries/subscribes only transaction IDs in a
+selected-account shared workspace. The writer edits amount/description on an existing transaction
+and creates a second permitted transaction. The subscriber sees counts [1,1,2]. After release and
+complete reader/browser/SharedWorker exit, a cold reader with an unanswered remote reads both full
+records through audit/plain/workspace queries and the existing record by ID. Expected amounts,
+descriptions, currency/date and nonempty audit authors/valid audit timestamps are present. No full
+transaction query warmed those records first. At 5,000 readable rows, the ID-cost case also reads
+all full records and accepted amount 3456 after disconnect. These verify the tested record fields;
+do not extrapolate them to every schema/query shape without coverage.
+
+A separate ID-only files/attachment-root acquisition retains the permitted file's filename, MIME,
+size and matching link fields across cold restart; the denied account's references remain absent.
+File-part query returns zero local rows/bytes, then explicit online content acquisition returns the
+synthetic [1,2,3,4]. Transactions in that metadata fixture were warmed separately; it specifically
+establishes ID projection for file/link metadata, not every relationship's cold coverage.
+
+Selected candidate for the next implementation review: retain permission-filtered ID-only dataset
+queries, release them with their session binding, keep counts/status facts rather than row arrays,
+and keep background acquisition independent of readiness. Prefer this over full-row global results
+for the tested page-retention cost. One-shot acquisition can seed a snapshot but must not be described
+as continuous remote preparation. A local callback/count does not establish remotely complete data;
+that status requires separately defined evidence. Preserve file contents on demand. The previously
+proposed session/dataset statechart remains the ownership model; no production preparation owner is
+implemented by this investigation. Other relationship shapes, permission changes, worker/storage
+costs and progress semantics remain open. Five final projection/audit/metadata/content browser phases
+and three cost fixtures pass; no broader application suite was rerun for these diagnostic-only edits.
+
+### T011 remaining investigation — final disposition
+
+Evidence: remaining-investigation-results.json, plus the final paging-boundary results below.
+All application schemas and permissions in the isolated checkout were compared with b39d9fa's main
+checkout sources. No production preparation code was enabled. The backend fixture bundles the actual
+schema/permissions with Vite to resolve repository #lib TypeScript imports in Node; the SDK package
+is external and unchanged. A disposable backend, public frontend serverUrl adapter and real proxy
+isolated the tests. No provider operation, credential unlock or user storage reset was performed.
+
+**Transport correction.** Page-level routeWebSocket mocking did not reliably control the SharedWorker:
+a supposed silent partial-replica probe received a remote result. The preceding cold-query-follow-up
+control/timing claims are therefore provisional, not proof of an unanswered transport. They are now
+superseded by a real HTTP/WebSocket proxy which accepts upgrades and holds every Jazz application
+frame and HTTP request. Every qualified cold case exits all reader browser clients/SharedWorkers and
+asserts proxy upgrades and client bytes after restart. The original NotObserved observation remains
+historical and unexplained; no SDK defect is claimed fixed by these probes.
+
+**Replication/authorization primitive.** Remote-tier subscriptions with ID projections qualify for
+background server-facing acquisition on alpha.59. Foreground reads/writes remain LocalFirst/local;
+background acquisition must not participate in readiness. The tested fixed set is the 17 planned
+metadata/data tables plus full current-user membership/grant queries. It excludes fileParts, uploads,
+retired checkDetails and provider calls. A callback describes an observed SDK snapshot, not globally
+fresh/complete finance data. Public subscribe still returns full result arrays; there is no private
+counts-only API dependency.
+
+The LocalFirst global-ID candidate failed live authorization qualification: grant removal reached the
+fact stream while a transaction result stayed at six rows versus five in a new Remote read. Linked
+transfer visibility also remained stale. Immediate LocalFirst rebind, full root fact subscriptions,
+and user-scoped facts/checkpoints alone did not qualify that model. Adding an organization-scoped
+transaction query corrected that transaction view but not the global transfer view. Scoped queries
+and declared traversal (transactions -> attachments -> file) handled grant changes; a cached global
+LocalFirst organization list could still linger after membership removal. Do not treat cached
+organization metadata or ID presence as current authorization. No client-side filtering was used to
+hide a server-policy overread, and no unsupported SDK rule was adopted.
+
+The simpler Remote-only global design passed the full live-access scenario in Chromium, Firefox and
+WebKit: account/transfer endpoint grant revocation, regrant, membership removal, a profile shared only
+through the removed workspace, admin-only metadata admission/downgrade, duplicate file references,
+last-link removal/restoration and unsubscribe cleanup. Remote subscriptions avoid the failed global
+LocalFirst view in this background-only role. Server permission rules remain b39d9fa's rules.
+
+**Cold/relationship coverage.** Fifteen final cross-browser phases acquired data using subscriptions
+only, without a one-shot finance query. Both an edited and newly inserted transaction retained their
+full fields/audit metadata after cold restart with the unanswered real proxy; an additionally inserted
+and deleted transaction did not reappear. File/link ID subscriptions retained full permitted metadata
+without parts. Explicit later online content acquisition returned the four-byte fixture. A separate
+large subscription-only Chromium case retained 5,006 permitted of 10,008 seeded transactions (including
+relationship fixtures) across cold restart; its scoped query returned 5,003. Metadata-only detail
+includes resolved account/category/tag/check/batch/attachment data, archived references, both transfer
+endpoints and an offset subset. Denied account metadata was absent; the content query stayed empty
+until requested. Executable modules remained available from the dev server: these are data tests,
+not additional production-shell/offline-code guarantees.
+
+**Lifecycle and partial data.** On a fresh partial replica with six authorized remote records, a
+local callback could be empty; a real unanswered Remote acquisition remained pending. The exact
+Remote-only subscription set produced no premature finance callback, released cleanly, and sent no
+late reports after transport resumed. An invalid UUID query reported a terminal error while a valid
+sibling continued. SDK identity replacement after old lease release denied the old scopes and emitted
+no old callbacks. These SDK-level checks do not implement the future owner's lifecycle unit tests or
+extend existing application drain guarantees to arbitrary external identity calls.
+
+**Memory/storage.** At 5,006 readable rows, the Remote ID query's post-GC page heap rose from
+29,308,308 to 40,105,440 bytes and returned to 29,467,584 after release. The observed SharedWorker
+broker's JS heap changed from 5,983,748 to 6,019,312 bytes; its reported backing storage stayed around
+4.34 MB. Page backing storage stayed around 17.01 MB. These are per-target metrics, not total process
+or complete Wasm resident memory; do not sum them into a physical budget. The origin estimate was
+3,263,192 bytes (2,912,256 IndexedDB bytes). Persisted storage was false and persist() was ungranted in
+this headless profile. Deleting only the disposable active Jazz namespace retained identity, left zero
+local finance rows and did not create another owned workspace while remote discovery was unanswered
+(one owned workspace before/after). This is not whole-origin/OS-eviction recovery certification.
+The quota experiment was inconclusive: Chrome reported an approximately 605 KB override but accepted
+three local one-MiB writes and reported about 3.92 MB usage. No QuotaExceededError occurred, so no
+actual quota-failure/recovery behavior is claimed verified. No SDK storage shim was introduced.
+
+**Initial acquisition changes the decision.** Steady-state memory/edit measurements alone were
+insufficient. An initial 5,006-row global sweep caused a 3,027 ms main-thread long task (3,016.6 ms
+frame gap); the form opened in 294 ms before that burst. A matched single-query control still caused
+2,887 ms, so this is not explained solely by registering 19 subscriptions together. Do not enable an
+unbounded automatic startup sweep. No new app worker or SDK override is proposed to disguise it.
+
+Public ordered offset/limit pages are a supported bounded alternative. The experiment statechart
+explicitly acquired one retained Remote page, classified it, yielded an animation frame and acquired
+the next page, with success/failure/cancellation and fixture-owned lease cleanup. Twenty-six pages
+(25 x 200 plus six rows) retained all 5,006 full records cold. Worst frame gap fell to 116.7 ms, but
+25 long tasks remained (about 114–131 ms) and acquisition took 111.1 seconds. Eleven 50-row pages
+(506 permitted records) with the metadata subscriptions had an 83.3 ms maximum gap, two 50/51 ms long
+tasks and a 55.9-second acquisition; cold full fields remained available. These are single desktop
+samples, not budgets, and neither result makes unconditional bulk startup work acceptable.
+
+A retained-page boundary scenario also passed: initial counts [2,2,2,0], edits outside the projection,
+inserts sorted before existing rows, a full tail signalling another page, manual next-page acquisition,
+delete rebalancing, grant revocation and regrant. The future owner must keep a tail observation and
+expand/trim its page set, handle partial/error/cancellation states, and avoid claiming completeness
+from independently timed page counts. No production paging implementation was added.
+
+**Next implementation review.** Keep T011 runtime adoption open. The tested acquisition primitive is
+Remote ID subscriptions, but a budgeted/yielding history protocol is required before mounting it.
+Retain the session-generation owner, per-dataset failure isolation, public cleanup and no readiness
+gate; show the paging/growth/scheduling statechart before effects. Review startup and foreground
+responsiveness with the real integration rather than assuming a nonblocking actor means no CPU
+contention. Physical-device budgets and real quota pressure remain external validation. T010's
+provenance constraint, T012's data-only durable journal and the user-deferred T026 are unchanged.
+
+### Dedicated-worker preparation compatibility — concrete result
+
+**Decision:** Do not implement worker-hosted broad preparation on `jazz-tools@2.0.0-alpha.59`.
+The worker does remove the measured page blocking, but its client does not prepare the app's
+persistent replica. This is a tested compatibility boundary, not a request to change Jazz or wait
+for a future release. No production worker, SDK patch, startup sweep, or credential protocol was added.
+
+The experiment used the isolated checkout with its own dependencies, the current application
+schema/permissions, disposable local-first identities, an in-memory backend, and the real
+forwarding/silent HTTP-WebSocket proxy. Public `createAccountManager`, `exportLocalFirstSecret`,
+`restoreLocalFirst`, `createDb`, Remote subscriptions, LocalFirst reads, and `shutdown` supplied the
+entire client path. A volatile public `AccountStore` let the worker restore the disposable identity;
+its signing root was transferred only to the same-origin diagnostic worker and never logged.
+No persisted account-selection parsing, private runtime source, inspector port, or `window` shim
+was used. The page and worker had the same account, app ID, environment, and logical database name.
+
+The resource-owning diagnostic machine starts with account-manager creation, then guarded identity
+selection (restore, retain, or explicit fixture creation), database opening, idle/observing, draining,
+and stopped/failed outcomes. Observing owns the subscription callback and its unsubscribe cleanup;
+manager creation, database opening, and shutdown are separate leaf actors. The actor/helpers were
+inspected for hidden orchestration. This bounded experiment does not implement production session
+replacement or claim cancellation-during-open behavior.
+
+Fourteen distinct diagnostic cases qualified: three worker bootstrap checks, nine acquisition/live/
+cold cases across Chromium, Firefox, and WebKit, and two large Chromium acquisition comparisons.
+The worker's default account store throws `createAccountManager requires an AccountStore outside
+the browser`; a public custom store resolves that initialization requirement. Both worker driver
+settings then acquired three permitted transactions, excluded the fourth ungranted transaction,
+received field changes, removed results on grant deletion, and restored them through a public grant
+restore. No late callbacks appeared in the observed 200 ms after graceful release. All reader
+clients/workers exited before cold reopening the same profile and original identity. The proxy
+accepted a fresh WebSocket upgrade and received client bytes while sending no Jazz application
+frames or HTTP responses.
+
+| Acquisition location | Configured driver | Online permitted rows | Cold page rows in each of the three engines           |
+| -------------------- | ----------------- | --------------------- | ----------------------------------------------------- |
+| Dedicated worker     | persistent        | 3                     | **0**                                                 |
+| Dedicated worker     | memory            | 3                     | **0**                                                 |
+| Page control         | persistent        | 3                     | **3**, including updated amount and full fields/audit |
+
+The store adapter is not the finance-persistence boundary: the cold page retained its original
+identity in every case. Installed SDK source explains the difference. `runtime/db.js` selects its
+persistent browser connection only when both `window` and `Worker` exist. A dedicated worker lacks
+`window`, so public `createDb` selects the direct connection even with a persistent driver.
+`runtime/default-runtime-source.js` uses the same browser test for broker/foreground leases.
+All three worker realms also reported `SharedWorker` unavailable, although IndexedDB and Web Locks
+were present. The availability of those browser storage primitives does not attach this Jazz client
+to the durable broker. Framework/session wrappers ultimately use the same factory.
+
+Public runtime asset overrides choose Wasm/broker asset inputs; they do not expose a preparation
+attachment transport. `browserWorkerPort`/session fields and `Db.createWithBrowserWorker` are marked
+internal. They were not used as application APIs. The official [client setup](https://jazz.tools/docs/getting-started/client-setup)
+and [browser architecture](https://jazz.tools/docs/reference/internals) provide configuration and
+SharedWorker background; the installed alpha.59 code and browser results establish this version's
+worker limitation. A worker that asks the page to execute subscriptions would retain the page's query
+work. No supported replica-import path was established that could copy acquired records back while
+preserving Jazz identity, audit, permission, and replication semantics.
+
+The matched large samples used the same 17 table-ID roots plus two full current-user authorization
+subscriptions and 5,000 permitted transactions. They sent IDs, not full financial result arrays,
+back to the page. A minimal diagnostic input supplied a UI interaction, while rAF/PerformanceObserver
+measured the page directly:
+
+| Acquisition location | Observed acquisition, ms | Maximum page frame gap, ms | Maximum page long task, ms |
+| -------------------- | ------------------------ | -------------------------- | -------------------------- |
+| Dedicated worker     | 7,342                    | 16.8                       | None observed              |
+| Page control         | 10,754                   | 2,683.2                    | 2,698                      |
+
+These are single desktop development-runtime samples, not production startup gains or device
+budgets. They show that moving the query runtime off the UI thread helps responsiveness; they do
+not fix the missing persistent-replica integration. Keep broad preparation disabled. Budgeted
+page-side preparation remains a possible separately reviewed offline-availability feature, rather
+than a startup speed optimization.
+
+Focused diagnostic TypeScript passed. Early harness issues were corrected before the qualified
+cases: a root state target, an accidentally spread raw-secret property rejected by the public Db
+factory, Vite root-HTML routing (the final page is a verified HTTP-200 static asset), an evaluate
+argument, and grant reinsertion (the final fixture uses public `restore`). None was reclassified as
+an app bug or hidden by an SDK patch. Results and limits are recorded in
+[worker-preparation-results.json](worker-preparation-results.json); diagnostic sources and raw
+artifacts remain in the isolated `/private/tmp/delightful-finances-startup-assets` checkout and
+`/private/tmp/spec013-worker-results` respectively. No user server/storage was touched.

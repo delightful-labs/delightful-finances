@@ -454,7 +454,7 @@ workspace/read access, disabled write controls, unchanged server amount/membersh
 12.34 after reload. Both focused cases pass; no production code change was necessary. This covers
 a known rejected outcome, not T012's durable recovery of an unknown outcome across interruption.
 
-### T011 next review: fixed preparation queries, measured before adoption
+### T011 acquisition investigation and current constraints
 
 The earlier per-workspace-child recommendation is not required by the query model. The installed
 SDK can subscribe to a whole table under the current user's permissions. Candidate preparation
@@ -515,9 +515,78 @@ permissions.ts, followed by reviewed unit/browser regressions. Details and fixtu
 research.md. The large-history/cold-persistence experiment remains unfinished; no performance
 budget or live-subscription policy was selected from these incomplete runs.
 
-T027 disposition: the proposed allowedTo.read('transaction') predicate failed permission
+Initial T027 disposition: the proposed allowedTo.read('transaction') predicate failed permission
 publication on Jazz alpha.59. The converted files read policy referenced accountId on
 transactionAttachments, which has no such column. The user rejected proceeding with an unsupported
 Jazz rule. The predicate and its newly added tests were reverted; no repair or deployment occurred.
 The existing authorization gap remains documented. Broad preparation remains paused until a
-supported permission design or SDK correction is established and reviewed.
+permission expression supported by the installed SDK is established and reviewed. The b39d9fa
+follow-up below resolves that blocker without an SDK change.
+
+T027 follow-up: b39d9fa implements a supported alternative on the installed alpha.59. Attachment
+links inherit transaction reads. Files inherit reads directly from their existing transaction
+relation and additionally require a link matching both fileId and transactionId; parts inherit file
+reads. No parent organization, role or grant predicate is weakened and no schema change is needed.
+The full permission suite passes 73 cases and five attachment/image browser cases pass, including
+offline replacement/reload and viewer download. The authorization blocker is resolved. T011 still
+requires cold-query, metadata/content and workload evidence before choosing a preparation policy;
+an upstream SDK change is not part of the implementation plan.
+
+T011 controlled follow-up (cold-query-follow-up.json): whole-table transaction acquisition retains
+5,000 permitted of 10,000 records across full reader exit and an unanswered connection, including
+exact-root and scoped/ID reads. Separate metadata roots retain permitted file/link references without
+content; later explicit online acquisition retrieves the bytes. Closed/silent/disconnect controls
+also pass at small scale. The earlier NotObserved failure remains unexplained, so this is bounded
+positive evidence rather than a fixed SDK defect or completeness guarantee. Keep the candidate
+unadopted until relationship coverage, workload/storage costs and progress semantics are reviewed.
+
+T011 acquisition-policy review: preparation-cost-follow-up.json compares one-shot versus retained
+whole-table subscriptions at 500 and 5,000 permitted transactions across two shared workspaces.
+A one-shot snapshot remained stale after the observed remote edit window. Retained full-row results
+receive edits but add about 21 MiB page heap at 5,000 rows. The supported public select('id') projection
+reduces that measured retention to 10.3 MiB, still delivers complete ID arrays, and preserves tested
+full transaction fields/audit provenance across cold restart, including a remotely created record.
+ID-only file/link metadata also survives cold restart without acquiring file parts; explicit content
+acquisition still succeeds. Page measurements exclude worker/Wasm/storage and are not latency or
+device-budget guarantees.
+
+Initial ID-only candidate (superseded by the final responsiveness gate below): preserve the
+existing proposed session-bound parent and per-dataset observation/failure states, synchronous
+unsubscribe cleanup, generation-bound callbacks, sibling independence and absence of a readiness
+gate. Integration owns typed SDK query/subscription adapters. Do not retain ID arrays in machine
+context, add an app collection cache, publish remote completeness from a local count, or subscribe
+to fileParts. Public subscribe still materializes full ID result arrays; no counts-only/private API
+is assumed. Assess exact relationship, permission-change and lifecycle tests at implementation
+review. Other dataset coverage and worker/storage/progress limits remain open, so T011 stays open.
+
+Final T011 responsiveness gate: the Remote-only global prototype replicated correctly, but initial
+acquisition of 5,006 permitted records produced a 3,027 ms main-thread long task. Do not enable an
+unbounded initial sweep based only on steady-state memory/edit measurements. The bounded paging
+experiment is a workflow: acquire one Remote ID subscription page -> classify its first result ->
+yield one animation frame when full -> acquire the next offset page, or finish the bounded fixture
+when short. Success and failure are terminal test-machine states; the browser fixture owns every
+retained lease and releases them on success/error/teardown. Measure frames/UI and verify cold full
+query coverage before considering paging. This is an investigation, not a production paging plan;
+concurrent inserts, permission changes and page-boundary coverage remain separate requirements.
+
+Final T011 decision (remaining-investigation-results.json): Remote-only global ID subscriptions,
+with full user-scoped authorization facts, pass live access and cold-data checks across the supported
+browser engines. This is background server acquisition; it does not replace foreground LocalFirst
+reads or gate readiness. The earlier global LocalFirst subscription proposal is not qualified.
+No SDK fix, source patch or private delta API is part of the path forward.
+
+Do not implement the unbounded 17-table sweep as a startup side effect. Its initial 5,006-record burst
+caused a roughly three-second main-thread stall, including in a single-query control. Bounded public
+orderBy(id)/offset/limit subscriptions retain full cold data and live boundary updates, but the
+200-row prototype took 111 seconds and still had approximately 120 ms tasks. Smaller pages reduce
+individual stalls further at higher acquisition cost. The next implementation must first expose
+acquisition/yield/tail-observation/growth/trimming/failure/cancellation and session replacement states;
+retained page leases remain owned until release. No actor may hide that workflow in an async helper.
+
+Keep only counts/status facts in the production owner, not another row/ID cache. Treat observations
+as snapshots, not current-global completeness. Current membership/grant facts determine eligibility;
+previously cached organization rows are not access grants. Independent dataset errors do not stop
+siblings. Integration owns SDK subscriptions and synchronous unsubscribe; ordinary navigation/saves
+remain independent. Review initial responsiveness with the real integration and explicit scheduling
+before enabling preparation. Real quota pressure and physical supported-device budgets remain
+unverified; namespace deletion and a non-enforced quota override do not establish them.
