@@ -90,6 +90,10 @@ async function start(page: Page) {
 	await page.goto('/')
 	await expect(page.getByRole('complementary').getByRole('navigation')).toBeVisible()
 	await prepareSidebar(page)
+	const workspace = page.getByLabel('Current Workspace', { exact: true })
+	await expect(workspace).toHaveValue(
+		/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+	)
 	await page.evaluate(async () => {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/jazz-session.ts'
