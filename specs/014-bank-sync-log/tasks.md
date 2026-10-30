@@ -9,9 +9,16 @@ Execute one review cycle at a time. Review gates precede tests for each slice.
 - [x] T002 Add attempt/account-result schemas, canonical validation and exported
       row types; implement scoped read/insert/settlement policies with immutable
       identities and default-denied retention deletion.
-- [ ] T003 Present T002 for implementation review before tests.
+- [x] T003 Present T002 for implementation review before tests (user approved commit and continuation).
 - [ ] T004 After approval, add full-app permission/validation coverage, verify
       schema publication and generate the reviewed additive migration.
+
+T004 progress: eight focused validation/full-policy tests pass, and SDK validation
+accepts all 22 tables. The full-policy harness publishes the schema and policy to
+its disposable test authority. Tests exposed optional-count decoding receiving
+null; fixed by making the underlying column optional before its transform and
+validating nullable numbers in both directions. That fix awaits review; additive
+migration generation remains pending. No deployed environment was changed.
 
 ## Recording
 

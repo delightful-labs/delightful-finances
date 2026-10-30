@@ -9,11 +9,11 @@ import {
 const count = () =>
 	s
 		.int()
-		.transform<number>({
-			from: (value) => syncCount.parse(value),
-			to: (value) => syncCount.parse(value)
-		})
 		.optional()
+		.transform<number | null>({
+			from: (value) => syncCount.nullable().parse(value),
+			to: (value) => syncCount.nullable().parse(value)
+		})
 const counts = () => ({ importedCount: count(), existingCount: count(), omittedCount: count() })
 
 export const bankSyncLogSchema = {
