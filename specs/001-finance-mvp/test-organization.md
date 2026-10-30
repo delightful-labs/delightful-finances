@@ -67,3 +67,37 @@ Production PWA, stalled-remote startup and flag-matrix suites were wired into CI
 not executed locally in this batch. Existing recovery, offline, authorization and smoke
 scenarios were retained; duplicate runtime ownership was removed rather than deleting
 scenarios with different behavioral intent.
+
+## CI regression follow-up: run 41108612867
+
+The application shards reported 13 failures: two bank-sync strict-locator failures,
+eight parameterized transaction-cancellation strict-locator failures, and three
+account-creation permission timeouts. Inspection of the job logs and saved traces found:
+
+- The layout's outer `main` contains both navigation and page content. Bank sync buttons
+  and account forms in the sidebar therefore also matched page-level locators.
+- The role fixtures shared a workspace after waiting only for navigation to render.
+  Their traces show the secondary client's single-workspace selector remaining disabled.
+  They also waited only for local settlement of a grant consumed by another client.
+- A targeted trace additionally confirmed that unscoped `/accounts` redirected to workspace
+  settings once both workspaces were observed; selecting a workspace preserved that route,
+  leaving the fixture waiting for Add Account on the settings page.
+
+Use the shared `pageContent` locator to target AppShell's content wrapper. Initialize both
+clients through the existing workspace-ready helper, wait for the grant's global settlement,
+and use the shared workspace selection helper. Navigate to Accounts with the subject’s
+explicit workspace ID and assert the route and scope after switching. Preserve the native form validity, Cancel,
+provider request/idempotency, server rejection and live role-withdrawal assertions.
+
+Tag the three role cases for account and permission scopes, and the profile case for identity
+coverage. No production code, assertion strength, retries or timeout budgets change.
+
+- [x] Test TypeScript and focused-scope discovery pass: 249 unique development scenarios;
+      all 15 selections match canonical coverage. Account and permission scopes now include
+      the three role cases; identity includes the profile edit-mode case.
+- [x] Verify all 26 scenarios across the three affected files with two workers. The first
+      run passed 24 and exposed the Accounts-to-chooser redirect in the remaining fixture.
+      After correcting explicit URL scope, all three role permutations passed in 50 seconds,
+      including admin creation/live withdrawal and member/viewer server rejection.
+      The intermediate diagnostic trace confirmed the route-dependent setup race.
+- [x] Touched-file formatting and whitespace checks pass.

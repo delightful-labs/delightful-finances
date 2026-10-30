@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { prepareSidebar } from './helpers/ui.js'
+import { pageContent, selectWorkspace } from './helpers/ui.js'
+import { start } from './helpers/workspace.js'
 
 test(
 	'scoped workflow profile edit mode keeps pristine fields editable and unchanged saves disabled',
-	{ tag: ['@workflow-completion', '@workspaces'] },
+	{ tag: ['@workflow-completion', '@identity'] },
 	async ({ page }) => {
 		await page.goto('/account')
 		const name = page.getByLabel('Display name', { exact: true })
-		const save = page.getByRole('main').getByRole('button', { name: 'Save', exact: true })
+		const save = pageContent(page).getByRole('button', { name: 'Save', exact: true })
 		await expect(name).toBeEditable()
 		const original = await name.inputValue()
 		await expect(save).toBeDisabled()
@@ -20,7 +21,7 @@ test(
 		await name.fill('Changed profile')
 		await save.click()
 		await expect(
-			page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+			pageContent(page).getByRole('status').filter({ hasText: 'Profile Display name saved.' })
 		).toHaveText('Profile Display name saved.')
 		await expect(save).toBeDisabled()
 		await expect(name).toBeEditable()
@@ -35,13 +36,11 @@ test(
 	async ({ page, context }) => {
 		await page.goto('/expenses/new')
 		await expect(
-			page
-				.getByRole('main')
+			pageContent(page)
 				.getByRole('paragraph')
 				.filter({ hasText: 'Add an account before recording a transaction.' })
 		).toBeVisible()
-		const trigger = page
-			.getByRole('main')
+		const trigger = pageContent(page)
 			.getByRole('button', { name: 'Add Account', exact: true })
 			.first()
 		await trigger.click()
@@ -81,23 +80,20 @@ test(
 for (const role of ['admin', 'member', 'viewer']) {
 	test(
 		`scoped workflow account creation permission: ${role}`,
-		{ tag: ['@workflow-completion', '@workspaces'] },
+		{ tag: ['@workflow-completion', '@workspaces', '@accounts', '@permissions'] },
 		async ({ page, browser, baseURL }) => {
-			await page.goto('/')
-			const workspaceSelector = page.getByLabel('Current Workspace', { exact: true })
-			await expect.poll(() => workspaceSelector.inputValue()).not.toBe('')
-			const organizationId = await workspaceSelector.inputValue()
-			await page.goto(`/settings/workspace?workspace=${organizationId}`)
-			await expect(
-				page.getByRole('textbox', { name: 'Workspace name', exact: true })
-			).toBeEditable()
+			await start(page)
+			const organizationId = await page
+				.getByLabel('Current Workspace', { exact: true })
+				.inputValue()
 			if (!baseURL) throw new Error('Missing browser base URL')
 			const context = await browser.newContext({ baseURL })
 			try {
 				const subject = await context.newPage()
-				await subject.goto('/')
-				await expect(subject.getByRole('complementary').getByRole('navigation')).toBeVisible()
-				await prepareSidebar(subject)
+				await start(subject)
+				const subjectWorkspaceId = await subject
+					.getByLabel('Current Workspace', { exact: true })
+					.inputValue()
 				const subjectId = await subject.evaluate(async () => {
 					const path = '/src/lib/runtime/jazz-session.ts'
 					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
@@ -130,27 +126,22 @@ for (const role of ['admin', 'member', 'viewer']) {
 								role,
 								accountAccessMode: 'all'
 							})
-							.wait({ tier: 'local' })
+							.wait({ tier: 'global' })
 						return membership.id
 					},
 					{ organizationId, subjectId, role }
 				)
-				await subject.goto('/accounts')
-				// Open Settings before selecting its native workspace control.
-				const toggle = subject.getByRole('button', { name: 'Toggle Main navigation', exact: true })
-				if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
-				const settings = subject
-					.locator('aside details')
-					.filter({ has: subject.locator('summary').filter({ hasText: 'Settings' }) })
-				if ((await settings.getAttribute('open')) === null)
-					await settings.locator('summary').click()
+				await subject.goto(`/accounts?workspace=${subjectWorkspaceId}`)
 				const selector = subject.getByLabel('Current Workspace', { exact: true })
 				await expect(selector.locator(`option[value="${organizationId}"]`)).toHaveCount(1)
-				await selector.selectOption(organizationId)
-				await subject
-					.getByRole('main')
-					.getByRole('button', { name: 'Add Account', exact: true })
-					.click()
+				await expect(selector).toBeEnabled()
+				await selectWorkspace(selector, organizationId)
+				await expect(selector).toHaveValue(organizationId)
+				await expect(subject).toHaveURL(
+					(url) =>
+						url.pathname === '/accounts' && url.searchParams.get('workspace') === organizationId
+				)
+				await pageContent(subject).getByRole('button', { name: 'Add Account', exact: true }).click()
 				const dialog = subject.getByRole('dialog', { name: 'Add Account', exact: true })
 				const name = dialog.getByLabel('Account name', { exact: true })
 				const submit = dialog.getByRole('button', { name: 'Add Account', exact: true })
@@ -162,8 +153,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 					await expect(dialog.getByRole('status')).toContainText('Shared admin account')
 					// A same-row SDK role delta must update the machine without a submit/input event.
 					await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-					await subject
-						.getByRole('main')
+					await pageContent(subject)
 						.getByRole('button', { name: 'Add Account', exact: true })
 						.click()
 					await expect(name).toBeEditable()

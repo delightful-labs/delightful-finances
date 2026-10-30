@@ -1,3 +1,4 @@
+import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 import { openCreationModal } from './helpers/ui.js'
 
@@ -169,9 +170,10 @@ test(
 		await expect(page.getByRole('combobox')).toHaveCount(0)
 		await page.getByRole('button', { name: 'Add Account “Provider Savings”', exact: true }).click()
 		await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
-		const sync = page
-			.getByRole('main')
-			.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+		const sync = pageContent(page).getByRole('button', {
+			name: 'Sync now (last 90 days)',
+			exact: true
+		})
 		await sync.click()
 		await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
 		const savedBalances = await page.evaluate(async () => {
@@ -247,9 +249,9 @@ test(
 		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 		await page.reload()
 		await expect(discover).toBeEnabled()
-		const savedHistory = page
-			.getByRole('main')
-			.getByText(/Last sync:.*Imported: 0; already present: 2; omitted: 2/)
+		const savedHistory = pageContent(page).getByText(
+			/Last sync:.*Imported: 0; already present: 2; omitted: 2/
+		)
 		await expect(savedHistory).toBeVisible()
 		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 		// A new discovery uses the current capability report without replacing saved sync history.
@@ -261,8 +263,7 @@ test(
 		failSync = true
 		await sync.click()
 		await expect(
-			page
-				.getByRole('main')
+			pageContent(page)
 				.getByRole('status')
 				.filter({ hasText: 'SimpleFIN could not complete the request' })
 		).toBeVisible()
@@ -312,10 +313,7 @@ test(
 		await input.fill(token)
 		await create.click()
 		await expect(
-			page
-				.getByRole('main')
-				.getByRole('status')
-				.filter({ hasText: 'No automatic retry will occur' })
+			pageContent(page).getByRole('status').filter({ hasText: 'No automatic retry will occur' })
 		).toBeVisible()
 		await expect(input).toHaveValue('')
 		await expect(create).toBeDisabled()
@@ -447,10 +445,7 @@ test(
 		const discover = page.getByRole('button', { name: 'Discover Accounts', exact: true })
 		await expect(discover).toBeEnabled()
 		await discover.click()
-		const row = page
-			.getByRole('main')
-			.getByRole('listitem')
-			.filter({ hasText: 'Provider Checking' })
+		const row = pageContent(page).getByRole('listitem').filter({ hasText: 'Provider Checking' })
 		const existing = row.getByRole('combobox', {
 			name: 'Link to existing Account',
 			exact: true
@@ -558,7 +553,7 @@ test(
 			.getByRole('button', { name: 'Add Account “Cancelled Checking”', exact: true })
 			.click()
 		await expect(page.getByText('Linked to Cancelled Checking', { exact: true })).toBeVisible()
-		const main = page.getByRole('main')
+		const main = pageContent(page)
 		const sync = main.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
 		await sync.click()
 		await pending.promise

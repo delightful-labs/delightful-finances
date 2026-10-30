@@ -1,5 +1,9 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
+export function pageContent(page: Page) {
+	return page.locator('.app-shell > .workspace > .content')
+}
+
 export async function openSidebarSection(page: Page, label: 'Accounts' | 'Settings') {
 	const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
 	await expect(toggle).toBeVisible()

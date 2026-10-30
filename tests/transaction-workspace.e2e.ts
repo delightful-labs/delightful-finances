@@ -1,9 +1,10 @@
+import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 
 async function seed(page: Page, count = 0) {
 	await page.goto('/accounts')
 	await expect(
-		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
+		pageContent(page).getByRole('button', { name: 'Add Account', exact: true })
 	).toBeEnabled({ timeout: 30_000 })
 	return page.evaluate(async (count) => {
 		const schemaPath = '/src/lib/schema.ts'
@@ -85,7 +86,7 @@ for (const desktop of [true, false]) {
 					await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
 					const workspaceId = await seed(page)
 					await page.goto(`${base}/new`)
-					const main = page.getByRole('main')
+					const main = pageContent(page)
 					const amount = main.getByLabel('Amount', { exact: true })
 					await expect(amount).toBeEnabled()
 					await main.getByLabel('Description', { exact: true }).fill('Cancelled draft')
@@ -120,7 +121,7 @@ for (const desktop of [true, false]) {
 				await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
 				const workspaceId = await seed(page)
 				await page.goto(base)
-				const main = page.getByRole('main')
+				const main = pageContent(page)
 				const drawer = main.locator('aside[data-side="right"]')
 				if (desktop) {
 					await expect(drawer).toHaveAttribute('data-open', 'true')
@@ -200,7 +201,7 @@ test(
 		await page.setViewportSize({ width: 1440, height: 900 })
 		const workspaceId = await seed(page, 26)
 		await page.goto('/expenses')
-		const main = page.getByRole('main')
+		const main = pageContent(page)
 		const drawer = main.locator('aside[data-side="right"]')
 		await expect(drawer).toHaveAttribute('data-open', 'true')
 		await drawer.getByRole('button', { name: 'Close Transactions', exact: true }).click()
