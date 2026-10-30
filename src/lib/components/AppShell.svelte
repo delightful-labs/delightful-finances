@@ -136,10 +136,12 @@
 
 <style>
 	.app-shell {
+		--dui-drawer-height: 100%;
+		--dui-details-content-border-width: 0;
 		display: grid;
 		grid-template-rows: max-content auto;
 		height: 100dvh;
-		--dui-drawer-height: 100%;
+		overflow: hidden;
 	}
 
 	.workspace {

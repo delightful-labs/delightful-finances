@@ -152,3 +152,11 @@
 	{/if}
 	<p>{statusMessage}</p>
 </section>
+
+<style>
+	fieldset {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+</style>
