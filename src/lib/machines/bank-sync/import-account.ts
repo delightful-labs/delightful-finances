@@ -107,7 +107,23 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 			result: undefined
 		}),
 		initial: 'checkingMapping',
-		output: ({ context }) => required(context.result),
+		output: ({ context }) => {
+			const result = required(context.result)
+			return {
+				...result,
+				accountResults: [
+					{
+						providerId: providerAccountIdentity(context.provider),
+						account: context.account
+							? { id: context.account.id, name: context.account.name }
+							: undefined,
+						kind: result.kind,
+						counts: result.counts,
+						settlement: result.settlement
+					}
+				]
+			}
+		},
 		on: { CANCEL: '.cancelled' },
 		states: {
 			checkingMapping: {

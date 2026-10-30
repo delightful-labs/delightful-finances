@@ -16,7 +16,14 @@ export type ProviderSummary = {
 }
 export type ImportCounts = { imported: number; existing: number; omitted: number }
 export type ImportSettlement = 'settled' | 'unresolved'
-export type ImportResult =
+export type AccountImportReport = {
+	providerId: string
+	account: Pick<Account, 'id' | 'name'> | undefined
+	kind: 'complete' | 'failed' | 'cancelled'
+	counts: ImportCounts
+	settlement: ImportSettlement
+}
+export type ImportResult = (
 	| { kind: 'complete'; counts: ImportCounts; error: undefined; settlement: 'settled' }
 	| {
 			kind: 'cancelled' | 'failed'
@@ -24,6 +31,7 @@ export type ImportResult =
 			error: unknown
 			settlement: ImportSettlement
 	  }
+) & { accountResults?: readonly AccountImportReport[] }
 export type ProviderResponse = Awaited<ReturnType<typeof fetchAccounts>>
 export type BankCommand =
 	| { type: 'DISCOVER' }

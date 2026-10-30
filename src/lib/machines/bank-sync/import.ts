@@ -7,6 +7,7 @@ import {
 	emptyCounts,
 	type Dependencies,
 	type ImportCounts,
+	type AccountImportReport,
 	type ImportResult,
 	type ImportSettlement,
 	type OperationWork,
@@ -23,6 +24,7 @@ type Context = Input & {
 	index: number
 	counts: ImportCounts
 	accountCounts: ImportCounts
+	accountResults: readonly AccountImportReport[]
 	error: unknown
 	settlement: ImportSettlement
 	result: ImportResult | undefined
@@ -40,6 +42,7 @@ function combinedCounts(previous: ImportCounts, current: ImportCounts): ImportCo
 function accountReport(context: Context, result: ImportResult) {
 	return {
 		counts: combinedCounts(context.counts, result.counts),
+		accountResults: [...context.accountResults, ...(result.accountResults ?? [])],
 		accountCounts: emptyCounts(),
 		error: result.error,
 		settlement: result.settlement
@@ -86,12 +89,16 @@ export function createImportMachine(dependencies: Dependencies) {
 			index: 0,
 			counts: emptyCounts(),
 			accountCounts: emptyCounts(),
+			accountResults: [],
 			error: undefined,
 			settlement: 'settled',
 			result: undefined
 		}),
 		initial: 'loadingMappings',
-		output: ({ context }) => required(context.result),
+		output: ({ context }) => ({
+			...required(context.result),
+			accountResults: context.accountResults
+		}),
 		on: {
 			CANCEL: '.cancelled',
 			IMPORT_PROGRESS: {

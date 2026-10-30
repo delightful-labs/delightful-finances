@@ -27,8 +27,23 @@ The migration awaits focused review. No deployed environment was changed.
 - [ ] T005 Define attempt and result contracts and the logging-owner statechart;
       compose the existing bank operation without duplicating credential/lock
       ownership. Model start failure, cancellation and result-write failure.
+
+T005 progress: standalone logging actor/protocol reviewed and committed as
+be8e18d. Eight lifecycle tests and six canonical validation tests pass. Covers
+readiness, invalid start, start-write failure, cancellation while start/result
+writes drain, awaiting the operation's actual cancelled result, ignoring late
+replacement results, terminal-write failure and invalid completion timestamps.
+Type checking passes. Parent integration/per-account recording remain T006;
+these tests do not establish that live sync is logged yet.
+
 - [ ] T006 Extend import result ownership with per-account results and stable
       attempt/account identities; wire local start and terminal persistence.
+
+T006 progress: account-result projection implemented through account import,
+multi-account import and operation outputs; awaits focused review and coverage.
+No log persistence is wired into live sync yet. Lifecycle tests from the prior
+review cycle pass (eight actor cases plus six validation cases).
+
 - [ ] T007 Present recording changes and recursively audit actor helpers.
 - [ ] T008 After approval, verify success/partial/failure/cancellation, interrupted
       writes, scope changes, actual financial settlement and no provider retries.

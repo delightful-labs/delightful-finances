@@ -21,6 +21,7 @@ import {
 	type BankCommand,
 	type Dependencies,
 	type ImportCounts,
+	type AccountImportReport,
 	type ImportSettlement,
 	type LockEvent,
 	type OperationWork,
@@ -38,6 +39,7 @@ type Context = Input & {
 	accessUrl: string | undefined
 	response: ProviderResponse | undefined
 	counts: ImportCounts
+	accountResults: readonly AccountImportReport[]
 	result: ProviderSummary[] | undefined
 	completion: OperationResult | undefined
 	error: unknown
@@ -46,6 +48,7 @@ type Context = Input & {
 	outcome: SyncOutcome | undefined
 }
 type OperationSummary = {
+	accountResults?: readonly AccountImportReport[]
 	counts: ImportCounts
 	discovered: ProviderSummary[] | undefined
 	settlement: ImportSettlement
@@ -187,6 +190,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				accessUrl: undefined,
 				response: undefined,
 				counts: emptyCounts(),
+				accountResults: [],
 				result: undefined,
 				completion: undefined,
 				error: undefined,
@@ -195,7 +199,10 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				outcome: undefined
 			}
 		},
-		output: ({ context }) => required(context.completion),
+		output: ({ context }) => ({
+			...required(context.completion),
+			accountResults: context.accountResults
+		}),
 		invoke: {
 			src: 'lock',
 			input: ({ context }) => ({
@@ -536,6 +543,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							target: 'cancelled',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								accountResults: ({ event }) => event.output.accountResults ?? [],
 								importSettlement: ({ event }) => event.output.settlement
 							})
 						},
@@ -544,6 +552,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							target: 'settlingFailure',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								accountResults: ({ event }) => event.output.accountResults ?? [],
 								importSettlement: ({ event }) => event.output.settlement
 							})
 						},
@@ -552,6 +561,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							target: 'cancelled',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								accountResults: ({ event }) => event.output.accountResults ?? [],
 								importSettlement: ({ event }) => event.output.settlement,
 								error: ({ event }) => event.output.error
 							})
@@ -561,6 +571,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							target: 'preparingFailure',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								accountResults: ({ event }) => event.output.accountResults ?? [],
 								importSettlement: ({ event }) => event.output.settlement,
 								error: ({ event }) => event.output.error
 							})
@@ -569,6 +580,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							target: 'classifyingSuccess',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								accountResults: ({ event }) => event.output.accountResults ?? [],
 								importSettlement: ({ event }) => event.output.settlement
 							})
 						}

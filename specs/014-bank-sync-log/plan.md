@@ -110,3 +110,27 @@ write failures are explicit final states. No credentials enter the log actor.
 The first implementation contains only the typed protocol and standalone actor;
 live operation integration and per-account persistence remain T006. Review this
 slice before actor tests are added or run. This actor is not yet user-visible.
+
+## Account-result projection — implementation review
+
+The account import actor now projects one report from its already-classified
+terminal result: provider identity, known local account ID/name, counts and import
+settlement. Unmapped/unavailable local accounts remain explicitly absent; do not
+invent an account identity or a name for an unreadable account.
+
+The multi-account importer appends each drained child's report in the same action
+that replaces transient progress with final totals. It returns those reports on
+success, failure or cancellation. The operation owner retains and returns them
+through its final cleanup; no provider payloads or raw exception messages are
+added to the account report. This is payload projection, not a new workflow.
+
+The added report field is optional at existing actor boundaries while their
+adapters/fixtures are migrated; production import actors always return an array.
+A child that errors without a final report leaves its account details unknown;
+the aggregate operation still preserves the existing partial counts/settlement.
+Live log creation and account-result writes remain the next wiring slice.
+
+Before running tests, review this four-file slice. Affected coverage includes
+bank-sync import/operation tests and fixtures using exact output equality; update
+those expectations by inspecting each scenario, and add multi-account assertions
+for counts, account-name snapshots, cancellation and late-child outcomes.
