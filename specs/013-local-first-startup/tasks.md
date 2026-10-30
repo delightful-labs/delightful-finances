@@ -249,12 +249,21 @@ If an audit finds no applicable waste, record that outcome rather than adding an
       focused test types and formatting pass. Existing cold test now also creates/reloads an account
       while the real Jazz connection sends no replies. One post-change timing sample does not
       establish a startup speedup. See subscription-audit-results.json and research.md.
-- [ ] T031 [US1] After T028 review, defer confirmed dialog-only or inactive-view queries in their
+- [x] T031 [US1] After T028 review, defer confirmed dialog-only or inactive-view queries in their
       audited `src/lib/components/` or `src/routes/` integration owners until the view needs them.
       Release them when that owner closes/unmounts, preserving any active save/settlement drain and
       data needed by the visible page. Document exact paths in `plan.md`, and assess initial opening,
       reopening, draft retention, and local/offline availability; do not defer dependencies required
       to make the initial screen usable or alter UI styling.
+      Verified focused slice: Accounts acquires workspace-wide members/grants only while Manage
+      Account is open. Initial subscriptions are 8 instead of 10; opening adds exactly two, reopening
+      reuses them, and closing returns to 8 after the normal SDK cache window. Permission-only loading/
+      error feedback leaves Archive independent; native close preserves an issued grant write.
+      Validation: 22 unit tests, 14 browser workflows (six production and eight agent account/role
+      regressions), zero app-check errors/warnings, focused test types and formatting pass. Includes
+      live grants, native/escape close/reopen, writer completion after close, cold local work, real
+      rejection, workspace/control isolation, live role replacement, and the archive role matrix. No startup speedup established.
+      Results: subscription-audit-results.json. Creation-dialog readiness queries remain live.
 - [ ] T032 [US1] After T028 review and any overlapping T029–T031 changes, repair confirmed obsolete
       bindings in `src/lib/components/WorkspaceBootstrap.svelte` and the identified scoped form/route
       integrations. Identity, workspace, query, or owner replacement must release old subscriptions
@@ -272,8 +281,8 @@ If an audit finds no applicable waste, record that outcome rather than adding an
       query acquisition/release counts, and page CPU before/after; report measured benefit or lack of
       benefit without treating subscription-count reductions alone as a speedup. Verify earlier
       slices before starting the next; no app preparation worker or broad startup sweep is included.
-      T030 slice validated with the results above. T033 remains open for later approved slices and
-      broader measurements; no T029/T031/T032 implementation was included in this review cycle.
+      T030 and T031 slices validated with the results above. T033 remains open for later approved slices and
+      broader measurements; no T029/T032 implementation was included in these review cycles.
 
 ## Consolidated follow-through
 

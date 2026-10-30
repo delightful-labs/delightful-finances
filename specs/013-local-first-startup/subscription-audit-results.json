@@ -485,7 +485,7 @@
 	},
 	"deferredUntilEvidence": [
 		"T029 rebinding changes: no unnecessary native reacquisition observed in typing sample",
-		"T031 dialog gating: readiness currently consumes workspace/account/membership queries before opening; needs lifecycle/readiness design to avoid disabling trigger",
+		"Creation-dialog gating remains unadopted because its data contributes to trigger readiness; T031 Manage Account query deferral is verified below",
 		"T032 lifecycle rewrite: no leaked old-workspace subscription found after SDK cleanup window"
 	],
 	"validation": {
@@ -572,5 +572,145 @@
 		"fixtureAdaptation": "Isolated production Node tests load a compiled copy of the unchanged app schema/permissions to avoid the known Playwright alias-loader issue; no SDK patch/backend credential is added to the browser.",
 		"statechartGate": "No production actors or async workflows changed. Query alignment is declarative; existing order-independent account duplicate-name validation is unchanged.",
 		"remaining": "T029/T031/T032 need their own evidence-backed scope/review; this verification does not authorize a broad lifecycle/dialog refactor."
+	},
+	"dialogDemandVerification": {
+		"task": "T031",
+		"revision": "816a7ac plus uncommitted Manage Account query deferral and regression coverage",
+		"productionChange": "Only the two Accounts-page workspace-wide member/grant query getters depend on native dialog visibility; permission-only QueryContent loading/error feedback; existing writer actor and local-first tiers unchanged.",
+		"initialSubscriptions": {
+			"before": 10,
+			"after": 8
+		},
+		"stages": {
+			"accountsClosedDialogs": {
+				"atMs": 1153.2000000029802,
+				"activeSdkSubscriptions": 8,
+				"broadAdminSubscriptions": 0,
+				"totalAcquisitions": 8,
+				"totalReleases": 0,
+				"duplicateExactNativeSignatures": 0
+			},
+			"accountsOpenDialog": {
+				"atMs": 1225.8999999910593,
+				"activeSdkSubscriptions": 8,
+				"broadAdminSubscriptions": 0,
+				"totalAcquisitions": 8,
+				"totalReleases": 0,
+				"duplicateExactNativeSignatures": 0
+			},
+			"accountsClosedAgain": {
+				"atMs": 1267.7999999970198,
+				"activeSdkSubscriptions": 8,
+				"broadAdminSubscriptions": 0,
+				"totalAcquisitions": 8,
+				"totalReleases": 0,
+				"duplicateExactNativeSignatures": 0
+			},
+			"savedDetail": {
+				"atMs": 1741.5999999940395,
+				"activeSdkSubscriptions": 18,
+				"broadAdminSubscriptions": 0,
+				"totalAcquisitions": 18,
+				"totalReleases": 0,
+				"duplicateExactNativeSignatures": 0
+			},
+			"secondWorkspaceAfterCleanup": {
+				"atMs": 33177.20000000298,
+				"activeSdkSubscriptions": 8,
+				"broadAdminSubscriptions": 0,
+				"totalAcquisitions": 26,
+				"totalReleases": 18,
+				"duplicateExactNativeSignatures": 0
+			},
+			"manageOpened": {
+				"atMs": 33397.79999999702,
+				"activeSdkSubscriptions": 10,
+				"broadAdminSubscriptions": 2,
+				"totalAcquisitions": 28,
+				"totalReleases": 18,
+				"duplicateExactNativeSignatures": 0
+			},
+			"manageClosedCached": {
+				"atMs": 33406.09999999404,
+				"activeSdkSubscriptions": 10,
+				"broadAdminSubscriptions": 2,
+				"totalAcquisitions": 28,
+				"totalReleases": 18,
+				"duplicateExactNativeSignatures": 0
+			},
+			"manageReopened": {
+				"atMs": 33453.70000000298,
+				"activeSdkSubscriptions": 10,
+				"broadAdminSubscriptions": 2,
+				"totalAcquisitions": 28,
+				"totalReleases": 18,
+				"duplicateExactNativeSignatures": 0
+			},
+			"manageAfterCleanup": {
+				"atMs": 63870.29999999702,
+				"activeSdkSubscriptions": 8,
+				"broadAdminSubscriptions": 0,
+				"totalAcquisitions": 28,
+				"totalReleases": 20,
+				"duplicateExactNativeSignatures": 0
+			}
+		},
+		"sdkEventTotals": {
+			"subscribe": 28,
+			"delta": 44,
+			"destroy": 20
+		},
+		"typingAdditionalAcquisitions": 0,
+		"remoteMemoEditObservedDeltaEvents": 3,
+		"closeCleanupObservationMs": 30416.59999999404,
+		"timingSample": {
+			"firstVisitAccountsUsableUpperBoundMs": 2322,
+			"warmSavedDetailUsableUpperBoundMs": 1842,
+			"coldSilentSavedDetailUsableUpperBoundMs": 1107,
+			"wire": {
+				"opened": 1,
+				"clientBytes": 1149,
+				"heldHttp": 0
+			}
+		},
+		"performanceConclusion": "Two fewer distinct initial SDK subscriptions confirmed; callbacks are released on close, while Jazz retains unused native entries for its normal approximately 30-second window. One post-change desktop timing sample does not establish a startup speedup or device budget.",
+		"checks": {
+			"unitTests": 22,
+			"unitSuites": [
+				"account-actions-dialog.test.ts",
+				"loading-content.test.ts",
+				"account-archive.test.ts"
+			],
+			"browserWorkflows": 14,
+			"productionWorkflows": 6,
+			"agentRegressions": 8,
+			"applicationCheck": "0 errors, 0 warnings, including service-worker TypeScript",
+			"focusedTestTypeScript": "passed",
+			"formatAndWhitespace": "passed",
+			"expandedPermissionWorkflowRerun": "passed: second workspace has only its own member/grant controls; observed owner -> viewer removes controls; restoring owner restores them"
+		},
+		"coverage": [
+			"permission data ready/loading/error/restricted-role rendering; Archive independent of permission loading/errors",
+			"initial broad queries absent; native Manage open acquires exactly two; escape close, reopen reuse, native close and delayed cleanup",
+			"server grant change updates visible checkbox",
+			"grant checkbox click and native close in same JavaScript task; asynchronous local write reaches authority; reopening shows persisted grant",
+			"unanswered real wire does not prevent archive/local persistence/reload; later authority acceptance",
+			"cold browser/SharedWorker exit with real unanswered wire; saved transaction read/edit/save/reload and account creation/reload",
+			"established connection stall and later acceptance; real rejection after stale local write",
+			"offline archive preserves another account and survives reload",
+			"draft reset and workspace isolation; live sorted/archived account changes",
+			"archive roles: admin, all-account member, selected write member, selected read member, viewer with write grant",
+			"workspace replacement after closing the first dialog excludes prior-workspace controls; observed role downgrade/restore while the next dialog is open updates controls live"
+		],
+		"limits": [
+			"Chromium browser workflows and one desktop development environment; no physical-device budget or cross-engine certification added",
+			"SDK dev introspection/debug output is read-only isolated instrumentation, not a production API dependency",
+			"Node production fixtures load compiled unchanged app schema/permissions for the known alias-loader boundary; no SDK patches or backend browser credentials",
+			"Default local-first metadata semantics preserved: incomplete/empty local results do not prove a globally complete permission inventory; data never opened online is not guaranteed available offline",
+			"The page still acquires these queries for any Manage dialog; no new role-based acquisition or permission policy was introduced",
+			"Other closed creation-dialog metadata participates in trigger readiness and remains live"
+		],
+		"statechartGate": "No production async workflow or actor changed. Disclosure remains simple presentation state; SDK owns subscription cleanup. Existing account-delete-grants assesses complete writer input before operating, and owner shutdown drains operating.closing. Dialog close sends no shutdown.",
+		"status": "T031 focused slice verified; uncommitted. T033 validated for this slice; other evidence-backed tasks and broader measurement limits remain separate."
 	}
 }

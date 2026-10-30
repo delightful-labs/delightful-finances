@@ -11,7 +11,9 @@ import {
 	closeCreationModal,
 	creationDialog,
 	openCreationModal,
-	navigateSidebar
+	navigateSidebar,
+	openAccountActions,
+	selectWorkspace
 } from './helpers/ui.js'
 
 const test = base.extend<{
@@ -63,6 +65,209 @@ const test = base.extend<{
 		} finally {
 			await rm(profile, { recursive: true, force: true })
 		}
+	}
+})
+
+test('account permission dialog receives live grants and closing preserves an issued change', async ({
+	playwright,
+	baseURL,
+	authority,
+	profile
+}) => {
+	if (!baseURL) throw new Error('Expected isolated production preview URL')
+	const context = await playwright.chromium.launchPersistentContext(profile, { baseURL })
+	try {
+		const page = context.pages()[0] ?? (await context.newPage())
+		const { workspace } = await prepareSavedExpense(page)
+		const account = await authority.one(
+			app.accounts.where({ organizationId: workspace, name: 'Silent remote ledger' }),
+			{ tier: 'remote' }
+		)
+		if (!account) throw new Error('Expected fixture account')
+		const userId = crypto.randomUUID()
+		await authority
+			.insert(app.organizationMembers, {
+				organizationId: workspace,
+				userId,
+				role: 'member',
+				accountAccessMode: 'selected'
+			})
+			.wait({ tier: 'global' })
+		const grant = await authority
+			.insert(app.accountMemberships, {
+				organizationId: workspace,
+				accountId: account.id,
+				userId,
+				access: 'read',
+				canDelete: true
+			})
+			.wait({ tier: 'global' })
+		await navigateSidebar(page, 'Accounts')
+		const dialog = await openAccountActions(page, account.name)
+		const checkbox = dialog.getByRole('checkbox', {
+			name: `Allow ${userId} to delete transactions`,
+			exact: true
+		})
+		await expect(checkbox).toBeChecked()
+		await authority
+			.update(app.accountMemberships, grant.id, { canDelete: false })
+			.wait({ tier: 'global' })
+		await expect(checkbox).not.toBeChecked()
+		// Issue the change and close the native dialog in the same JavaScript task,
+		// before the asynchronous local write can settle.
+		await checkbox.evaluate((element) => {
+			if (!(element instanceof HTMLInputElement)) throw new Error('Expected grant checkbox')
+			const dialog = element.closest('dialog')
+			if (!(dialog instanceof HTMLDialogElement)) throw new Error('Expected native dialog')
+			element.click()
+			dialog.close()
+		})
+		await expect(dialog).not.toBeVisible()
+		await expect
+			.poll(
+				async () =>
+					(await authority.one(app.accountMemberships.where({ id: grant.id }), { tier: 'remote' }))
+						?.canDelete
+			)
+			.toBe(true)
+		await openAccountActions(page, account.name)
+		await expect(checkbox).toBeChecked()
+		await page.keyboard.press('Escape')
+		await expect(dialog).not.toBeVisible()
+		await openAccountActions(page, account.name)
+		await expect(checkbox).toBeChecked()
+		await page.keyboard.press('Escape')
+		const organization = await authority.one(app.organizations.where({ id: workspace }), {
+			tier: 'remote'
+		})
+		if (!organization) throw new Error('Expected fixture workspace')
+		const secondWorkspace = crypto.randomUUID()
+		const secondAccount = crypto.randomUUID()
+		const secondUser = crypto.randomUUID()
+		const secondOwnerMember = crypto.randomUUID()
+		const second = await authority.transaction((tx) => {
+			tx.insert(
+				app.organizations,
+				{
+					ownerId: organization.ownerId,
+					name: 'Other permission scope',
+					kind: 'personal',
+					defaultCurrency: 'USD'
+				},
+				{ id: secondWorkspace }
+			)
+			tx.insert(
+				app.organizationMembers,
+				{
+					organizationId: secondWorkspace,
+					userId: organization.ownerId,
+					role: 'owner',
+					accountAccessMode: 'all'
+				},
+				{ id: secondOwnerMember }
+			)
+			tx.insert(app.organizationMembers, {
+				organizationId: secondWorkspace,
+				userId: secondUser,
+				role: 'member',
+				accountAccessMode: 'selected'
+			})
+			tx.insert(
+				app.accounts,
+				{
+					organizationId: secondWorkspace,
+					name: 'Other scope cash',
+					kind: 'cash',
+					currency: 'USD'
+				},
+				{ id: secondAccount }
+			)
+			tx.insert(app.accountMemberships, {
+				organizationId: secondWorkspace,
+				accountId: secondAccount,
+				userId: secondUser,
+				access: 'read',
+				canDelete: false
+			})
+		})
+		await second.wait({ tier: 'global' })
+		await selectWorkspace(page.getByLabel('Current Workspace', { exact: true }), secondWorkspace)
+		const otherDialog = await openAccountActions(page, 'Other scope cash')
+		const otherCheckbox = otherDialog.getByRole('checkbox', {
+			name: `Allow ${secondUser} to delete transactions`,
+			exact: true
+		})
+		await expect(otherCheckbox).toBeVisible()
+		await expect(otherCheckbox).not.toBeChecked()
+		await expect(
+			otherDialog.getByRole('checkbox', {
+				name: `Allow ${userId} to delete transactions`,
+				exact: true
+			})
+		).toHaveCount(0)
+		await authority
+			.update(app.organizationMembers, secondOwnerMember, { role: 'viewer' })
+			.wait({ tier: 'global' })
+		await expect(
+			otherDialog.getByText('Only workspace owners and admins can manage this permission.', {
+				exact: true
+			})
+		).toBeVisible()
+		await expect(otherCheckbox).toHaveCount(0)
+		await authority
+			.update(app.organizationMembers, secondOwnerMember, { role: 'owner' })
+			.wait({ tier: 'global' })
+		await expect(otherCheckbox).toBeVisible()
+		await expect(otherCheckbox).not.toBeChecked()
+	} finally {
+		await context.close()
+	}
+})
+
+test('account archive stays usable when unopened permission data has an unanswered remote', async ({
+	playwright,
+	baseURL,
+	authority,
+	remote,
+	profile
+}) => {
+	if (!baseURL) throw new Error('Expected isolated production preview URL')
+	const context = await playwright.chromium.launchPersistentContext(profile, { baseURL })
+	try {
+		const page = context.pages()[0] ?? (await context.newPage())
+		const { workspace } = await prepareSavedExpense(page)
+		const account = await authority.one(
+			app.accounts.where({ organizationId: workspace, name: 'Silent remote ledger' }),
+			{ tier: 'remote' }
+		)
+		if (!account) throw new Error('Expected fixture account')
+		await navigateSidebar(page, 'Accounts')
+		remote.silence()
+		const dialog = await openAccountActions(page, account.name)
+		const archive = dialog.getByRole('button', { name: 'Archive', exact: true })
+		await expect(archive).toBeEnabled()
+		await archive.click()
+		await expect(
+			page.getByRole('status').filter({ hasText: `Account ${account.name} archived.` })
+		).toBeVisible()
+		expect(
+			(await authority.one(app.accounts.where({ id: account.id }), { tier: 'remote' }))?.archivedAt
+		).toBeNull()
+		await page.reload()
+		await expect(
+			page.getByRole('main').getByRole('cell', { name: account.name, exact: true })
+		).toHaveCount(0)
+		remote.resume()
+		await expect
+			.poll(async () =>
+				Boolean(
+					(await authority.one(app.accounts.where({ id: account.id }), { tier: 'remote' }))
+						?.archivedAt
+				)
+			)
+			.toBe(true)
+	} finally {
+		await context.close()
 	}
 })
 

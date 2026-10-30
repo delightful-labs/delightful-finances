@@ -31,6 +31,7 @@
 
 	const db = getDb()
 	const session = fromStore(getJazzSession())
+	let accountActionsOpen = $state(false)
 	const accounts = new QuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
@@ -51,12 +52,12 @@
 			: undefined
 	})
 	const organizationMembers = new QuerySubscription(() =>
-		filters.activeOrganizationId
+		accountActionsOpen && filters.activeOrganizationId
 			? app.organizationMembers.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 	const allAccountGrants = new QuerySubscription(() =>
-		filters.activeOrganizationId
+		accountActionsOpen && filters.activeOrganizationId
 			? app.accountMemberships.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
@@ -175,6 +176,8 @@
 	{view}
 	{onArchive}
 	{balances}
+	onActionsOpenChange={(open) => (accountActionsOpen = open)}
+	grantQueries={[organizationMembers, allAccountGrants]}
 	deleteGrantView={{
 		canManage:
 			membership.current?.role === ORGANIZATION_ROLE.OWNER ||

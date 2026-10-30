@@ -620,3 +620,52 @@ including cold local account creation with an unanswered Jazz connection, live u
 replacement and real rejection. App/test types and formatting pass. Timing samples do not establish
 a startup speedup. See research.md and subscription-audit-results.json. Review this completed slice
 before starting another cleanup task.
+
+### T031 focused slice: acquire account-administration data when Manage opens
+
+Source inspection identifies two dialog-only queries on `src/routes/accounts/+page.svelte`:
+workspace-wide organizationMembers and accountMemberships. Their only consumers are the delete-grant
+writer observations and the Manage Account permission controls. Own membership/grants, active
+accounts, balances and creation queries remain independently live. The T030 closed-dialog snapshot
+contains these two distinct broad keys, so expected initial Accounts count is 10 -> 8. This is a
+structural expectation, not a measured latency improvement.
+
+Machine-first gate: this slice adds a single visibility predicate to existing QuerySubscription
+bindings, not a new async workflow. Simple closed/open disclosure stays in AccountList, reported to
+the page as an observation. SDK effects own query subscribe/unsubscribe/cache cleanup. The existing
+account-delete-grants statechart still owns read/check/write decisions and the issued writer:
+idle -> assessing -> operating.writing -> succeeded/failed (or denied); SHUTDOWN during writing
+enters operating.closing and drains before closed. Closing a dialog does not send SHUTDOWN or stop
+that actor. Reads used to choose GrantWrite precede writer invocation; the writer already receives
+its complete input and does not acquire/inspect new grant data. A later grant command still refreshes
+observations and uses the same scoped/loading/error/authorization guards. No busy/context flags,
+new actor, registry, promise orchestration or SDK cache override is needed.
+
+Implementation scope (four files): Accounts page gates those two query getters on observed dialog
+visibility and passes loading/error views; AccountList forwards the visibility and query-view props;
+AccountActionsDialog wraps only permission fields in existing QueryContent; messages/en.json adds
+shared plural noun permission; no new strings with interpolation beyond existing generic structures.
+Archive controls remain outside permission-data loading/error feedback. Scope-removal and native
+Dialog close events must publish closed visibility; component destruction releases page demand.
+Local-first query tiers remain unchanged. Deferring this data means first access while offline can
+use only locally retained results or the SDK query error/loading outcome; empty local results are
+partial knowledge, not a complete permission inventory. This must not block ordinary account/finance
+operations or infer global absence. Jazz can keep unused entries for its
+normal 30-second window after component listener release.
+
+Review implementation before tests. Affected coverage: account archive/offline/role workflows,
+query loading/error presentation, permission write behavior, close/reopen and close-during-write,
+workspace/session change, current account-creation and cold startup regressions. Production audit
+should prove no broad keys before Manage, two acquired on opening, no reacquisition for unrelated
+input, normal cleanup after close and correct live permission updates. Existing account-delete-grants
+coverage is absent as a direct machine suite; add meaningful writer/drain cases only after review if
+needed, rather than mirroring ternary query syntax. T031 remains open until focused verification.
+
+T031 verification completed after review: initial Accounts subscriptions are 8 instead of 10;
+Manage adds exactly two, reopen reuses them, and close returns to 8 after Jazz's normal cache delay.
+Permission presentation, live grants, immediate-close write completion, cold local work, offline
+archive, workspace replacement and role regressions pass (22 unit tests and 14 browser workflows).
+App/test types and formatting pass. One post-change timing sample does not establish a startup
+speedup. Read tiers and writer actors remain unchanged; no new statechart or SDK override was added.
+See the final research disposition and dialogDemandVerification in subscription-audit-results.json.
+This reviewed slice remains uncommitted. Do not expand into another cleanup without its own review.

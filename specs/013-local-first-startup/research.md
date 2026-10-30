@@ -1368,3 +1368,93 @@ The code and extended cold regression remain uncommitted. Temporary session/layo
 hooks were removed from the isolated app, and the owned servers were stopped. The before/after
 counts, timings and validation are in `subscription-audit-results.json`. T033 is complete for this
 slice; later T029/T031/T032 work needs its own confirmed candidate and review.
+
+### T031 dialog-only query scope — implementation review
+
+The Accounts page's workspace-wide `organizationMembers` and `accountMemberships` subscriptions
+feed only the Manage Account permission controls and grant-writer observations. They do not supply
+the visible ledger, balances, account archive eligibility, Add Account, or shell readiness. T030's
+closed-dialog snapshot includes both broad keys; those are the concrete deferred candidates.
+The separate current-user membership/grant queries stay live for ordinary actions.
+
+The implementation gates these two existing public Svelte query getters on AccountList's native
+dialog visibility. AccountList keeps its simple disclosure state and reports visibility to the page;
+close, selected-account removal and component destruction withdraw consumer demand. Jazz still owns
+its normal subscription cleanup/cache window. There is no new actor, global cache, manual runtime
+bridge, or promise workflow. Existing grant-write decisions stay in `account-delete-grants.ts`:
+idle -> assessing -> operating.writing -> succeeded/failed/denied, with operating.closing -> closed
+for owner shutdown. Dialog close does not shut down that machine. The writer's already-decided
+GrantWrite input survives query-listener release; later commands still refresh scoped observations
+and pass existing loading/error/authorization guards. Actors/helpers were inspected recursively;
+no new hidden orchestration or lifecycle context flags were introduced.
+
+Only the permission fieldset now uses existing QueryContent loading/error presentation. Archive
+controls remain independently available. The shared plural `nouns.permission` combines with existing
+loading/error message templates; no decorative styling or dialog implementation was added.
+Read tiers and local-first data semantics are unchanged. First access offline can only use the
+available replica; missing local metadata is not proof of complete membership/grant absence and
+must not hide ordinary finance content. The broader all-workspace preparation guarantee stays open.
+
+Expected structural result is **8 initial Accounts subscriptions instead of 10**. This is not yet
+measured, and no startup speedup is claimed. Four implementation files changed (page, AccountList,
+AccountActionsDialog, English noun catalog). Implementation review precedes tests. Relevant coverage
+includes native/escape close and reopen, live permission updates and role changes, workspace/session
+replacement, immediate close after an issued grant change, archive access independent of permission
+query loading/errors, and the existing cold local creation/save workflows. Production counts should
+show the two broad keys absent before Manage and acquired only when it opens, followed by the SDK's
+normal cleanup window. T031 remains open until that focused T033 verification.
+
+### T031 deferred permission queries — verified result
+
+The focused slice passed **22 unit tests and 14 browser workflows** after implementation review.
+No production correction was needed during testing. The public QuerySubscription visibility gate,
+existing writer ownership and permission-only loading/error boundary behaved as planned.
+
+The production audit measured **8 initial Accounts subscriptions instead of 10**. Add Account
+open/close retained the same 8. Manage Account acquired exactly the two workspace-wide member/grant
+keys, reaching 10. Escape close and immediate reopen reused those entries without new acquisition;
+native close withdrew demand, and the normal SDK cleanup window returned the count to 8. Both broad
+keys were absent before first Manage and after cleanup. No exact native signature was duplicated.
+Saved-detail navigation had 18 entries instead of T030's 20, including the same prior-route cache
+qualification. Typing acquired nothing new and the remote memo edit still yielded three observed
+SDK deltas. This is a structural query-work reduction, not proof of lower page CPU or startup latency.
+
+One comparable-harness post-change sample was 2,322 ms first visit, 1,842 ms warm saved detail and
+1,107 ms cold detail with a real unanswered Jazz connection. Earlier samples vary substantially;
+no speedup, numeric budget or supported-device certification is claimed.
+
+Focused coverage:
+
+- Four new presentation tests cover ready/granted, loading, error and restricted-role permission
+  content. Loading/error states hide incomplete permission controls while leaving Archive enabled.
+  Together with existing query-content and archive ownership suites, **22 unit cases passed**.
+- Two permanent production regressions exercise live server grant updates, an input click followed
+  by native dialog close in the same JS task before asynchronous local settlement, and a reopen
+  showing the accepted grant. Native/escape close both work. A separate real-silent-wire case proves
+  Archive and persisted reload still work before administrative data has ever been opened; the
+  authority remains unchanged while stalled and accepts the archive after reconnect. The grant-dialog
+  case was then expanded and rerun alone: changing workspace excludes the prior member's control;
+  an observed owner-to-viewer role change removes permission controls and restoring owner brings
+  them back. That targeted rerun and focused test types pass.
+- The existing three production startup/stall/rejection workflows plus the updated production audit
+  also pass: **six production workflows total**. This includes cold browser/SharedWorker exit with
+  HTTP cache removal, available transaction edits/account creation, later acceptance and rejection.
+- **Eight agent account workflows passed**: offline archive preserving another account, draft reset
+  and workspace isolation, live sorting/archive/workspace updates, and five archive access cases
+  (admin, all-account member, selected-account write member, selected-account read member and viewer).
+- App checking reports zero errors/warnings, including service-worker TypeScript. Focused browser
+  test types, formatting and whitespace checks pass. The tests used disposable data and the isolated
+  checkout's own dependencies; compiled unchanged schema/permissions remain the documented Node
+  alias-loader adapter. No backend credentials reached the browser and no SDK code was patched.
+
+Default metadata read tiers are preserved. First access to a never-opened permission inventory while
+offline is still limited to available replica knowledge; this does not certify all-workspace
+preparation or global absence. Query cache retention is the SDK's own policy, not a new immediate
+native-cancellation promise. Creation-dialog metadata remains live because it participates in trigger
+readiness. Production actors/helpers were re-inspected: this slice adds no promise orchestration,
+context lifecycle flags or actor shutdown on dialog close.
+
+Results are recorded under `dialogDemandVerification` in `subscription-audit-results.json`.
+Temporary diagnostic hooks were removed from the isolated session/layout and owned servers stopped
+at completion. T031 is complete for the reviewed scope; T033 is verified for this slice. Changes
+remain uncommitted; T029/T032 and broader spec measurements require their own evidence/review.
