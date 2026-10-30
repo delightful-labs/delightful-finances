@@ -215,7 +215,7 @@ No redundant subscription or performance improvement is assumed. Complete T028 a
 findings first, then take one evidence-backed implementation task at a time in small review cycles.
 If an audit finds no applicable waste, record that outcome rather than adding an abstraction.
 
-- [ ] T028 [US1] Audit startup and returning-detail subscription acquisition, replacement, and release
+- [x] T028 [US1] Audit startup and returning-detail subscription acquisition, replacement, and release
       in `src/lib/components/WorkspaceBootstrap.svelte`, `src/routes/+layout.svelte`,
       `src/lib/components/TransactionForm.svelte`, and their route/integration callers. Record query
       identity (account/session generation, workspace, filters, projection, includes, and read tier),
@@ -223,19 +223,32 @@ If an audit finds no applicable waste, record that outcome rather than adding an
       `specs/013-local-first-startup/research.md`. Capture comparable production startup/form-usable
       baselines under T015 through supported integration boundaries; distinguish necessary concurrent
       queries from duplicates. Present concrete candidates and affected tests before implementation.
+      Completed: two production-mode Chromium probes and diagnostic types pass; see research.md and
+      subscription-audit-results.json. Exact keys already share; no typing-induced reacquisition or
+      old-scope leak after the SDK cleanup window was found. One active-account query differs only
+      by sorting in AccountCreation.svelte. First implementation review is T030 query alignment;
+      11-to-10 Accounts count is now verified under T030. Read-only internal SDK
+      developer diagnostics were confined to the audit and are not a production dependency.
 - [ ] T029 [US1] After T028 review, stabilize confirmed unnecessary rebinding in the audited
       `src/lib/components/WorkspaceBootstrap.svelte`, `src/lib/components/TransactionForm.svelte`,
       or identified route integration. Unrelated reactive updates must retain the current subscription;
       changes to identity/session generation, scope, query shape, or required read tier must replace it.
       Record exact changed paths and before/after acquisition counts in `research.md`; preserve live
       record/permission updates and existing readiness behavior.
-- [ ] T030 [US1] After T028 review and any overlapping T029 changes, consolidate confirmed identical
+- [x] T030 [US1] After T028 review and any overlapping T029 changes, consolidate confirmed identical
       subscriptions in the identified `src/lib/components/` or `src/routes/` integration owners.
       Share only when admitted identity/session generation, workspace scope, query semantics, and
       lifetime match. Retain one explicit owner with cleanup after its final consumer releases;
       keep independent lifetimes separate. Record the exact paths/ownership decision in `plan.md`
       before editing. Use the existing Jazz facilities; do not introduce a global query registry or
       share authorization decisions merely because query results currently look equal.
+      Verified first slice: AccountCreation.svelte orders active accounts by name, matching the
+      existing shell/route key. Accounts subscriptions fell from 11 to 10; the saved-detail navigation
+      snapshot fell from 21 to 20. Live updates, typing stability and old-scope cleanup passed.
+      Focused validation: 28 unit tests, nine browser workflows, zero app check errors/warnings,
+      focused test types and formatting pass. Existing cold test now also creates/reloads an account
+      while the real Jazz connection sends no replies. One post-change timing sample does not
+      establish a startup speedup. See subscription-audit-results.json and research.md.
 - [ ] T031 [US1] After T028 review, defer confirmed dialog-only or inactive-view queries in their
       audited `src/lib/components/` or `src/routes/` integration owners until the view needs them.
       Release them when that owner closes/unmounts, preserving any active save/settlement drain and
@@ -259,6 +272,8 @@ If an audit finds no applicable waste, record that outcome rather than adding an
       query acquisition/release counts, and page CPU before/after; report measured benefit or lack of
       benefit without treating subscription-count reductions alone as a speedup. Verify earlier
       slices before starting the next; no app preparation worker or broad startup sweep is included.
+      T030 slice validated with the results above. T033 remains open for later approved slices and
+      broader measurements; no T029/T031/T032 implementation was included in this review cycle.
 
 ## Consolidated follow-through
 

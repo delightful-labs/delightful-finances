@@ -1233,3 +1233,138 @@ an app bug or hidden by an SDK patch. Results and limits are recorded in
 [worker-preparation-results.json](worker-preparation-results.json); diagnostic sources and raw
 artifacts remain in the isolated `/private/tmp/delightful-finances-startup-assets` checkout and
 `/private/tmp/spec013-worker-results` respectively. No user server/storage was touched.
+
+### T028 subscription ownership audit — first implementation review
+
+Audit the application before adding a shared subscription layer. The installed alpha.59 Svelte
+`QuerySubscription`/`QuerySubscriptionOne` already share one SDK cache entry for matching query
+and option keys within the same client. Each component's effect releases its own listener on rerun
+or destruction. The SDK retains the underlying unused entry for 30 seconds, cancels cleanup when
+another consumer arrives, and does not renew an unused deadline merely because a delta arrives.
+Multiple component declarations are therefore not proof of duplicate native subscriptions or a leak.
+`TransactionForm.svelte` is presentation and has no Jazz subscriptions; its integration callers are
+`TransactionEntry.svelte` and `TransactionEditEntry.svelte`.
+
+Static ownership inventory for the measured Accounts/saved-expense routes:
+
+| Owner                                | Queries/lifetime                                                                                                                                                                | Audit implication                                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WorkspaceBootstrap.svelte`          | Organizations, active ordered accounts, balance transactions, current membership, own bank connections, bank account links; session/root lifetime with reactive workspace scope | Existing shared shell sources; current balances and bank readiness remain live requirements                                                   |
+| `AccountCreation.svelte`             | Current membership, selected workspace, active **unordered** accounts; mounted integration lifetime even when dialog is closed                                                  | Membership already shares. Unordered accounts create an avoidable distinct key from shell's ordered active accounts                           |
+| `src/routes/accounts/+page.svelte`   | Ordered active accounts, current membership/grants, scoped members/all grants, balance transactions; route lifetime                                                             | Matching shell queries already share. All-member/all-grant queries support account access administration and differ from current-user queries |
+| `TransactionEditEntry.svelte`        | Detailed record/audit/attachments, membership/grants, active ordered options, tags/categories, transfer state, author profiles; detail integration lifetime                     | Includes and selected-author changes are meaningful query changes. Transfer candidate queries already have conditional gates                  |
+| `TransactionView.svelte`             | Kind/date-ordered transactions, historical accounts/categories/tags, tag links; list integration lifetime                                                                       | Archive filters and ordering differ intentionally from edit-option queries; do not merge by superficial row similarity                        |
+| `+layout.svelte` / `forms.svelte.ts` | Session/workspace keyed subtree and form observation/drain ownership                                                                                                            | Preserve session-generation remounts, meaningful scope replacement and graceful write cleanup; no new owner proposed                          |
+
+Two isolated production-mode Chromium runs used the unchanged app query code, separate disposable
+profiles/backends, one cash account and one saved expense. Timing-phase diagnostics were disabled.
+The build still included temporary diagnostic code, so these are comparable-harness starting
+samples, not exact deployed-bundle measurements or a speedup over historical runs.
+
+| Automation-completion upper bound, ms                      | Run 1 | Run 2 |
+| ---------------------------------------------------------- | ----- | ----- |
+| First visit, Accounts usable                               | 1,695 | 2,952 |
+| Warm saved detail reload                                   | 1,853 | 1,987 |
+| Cold saved detail, Jazz connection opens but never answers | 1,118 | 1,414 |
+
+Cold means HTTP cache cleared, every reader browser/worker closed, same profile/identity reopened,
+and real proxy forwarding no Jazz responses. Each run observed a new upgrade and 1,149 client bytes.
+App assets remained available; this adds data/startup evidence, not a new full offline-asset guarantee.
+The scenarios differ in cache/data/target and cannot be compared to each other as identical workloads.
+No device budget or latency improvement follows from two samples.
+
+The separate count phase used the SDK's installed **internal developer introspection**, enabled
+through `devMode`, plus its built-in subscription debug output. These were read-only lab diagnostics,
+not a new public application API/dependency, replica bridge, or SDK patch. Result payloads were
+discarded; artifacts retain topology/event counts with synthetic UUIDs replaced by fixture labels.
+Counts refer to SDK subscription registrations, not every Svelte listener or internal Wasm DAG node.
+
+Observed results (both topology runs agree; second run also captures delta events):
+
+- Accounts had **11 distinct active subscriptions**, with no duplicate exact native query/tier/branch
+  signatures. Opening and closing Add Account kept the count and cumulative acquisitions at 11.
+- Two active-account queries had identical workspace/archive predicates but differed in name
+  ordering. The closed creation dialog acquires the unordered variant; shell and Accounts route
+  share the ordered variant. This is a confirmed structural consolidation candidate.
+- Saved detail reached 21 active entries immediately after client-side navigation. That includes
+  cached entries from the prior route, not 21 independently required permanent detail subscriptions.
+- Typing and restoring an unsaved description caused **zero additional native acquisitions**.
+  A separate remote memo edit produced three observed SDK delta events, so stable subscriptions
+  still delivered data changes. Changed editor attribution legitimately acquired an author query.
+- After client-side workspace replacement, the old scoped entries disappeared within the observed
+  SDK cleanup window, returning to **11 active entries** in the second workspace. The final sample
+  was about 30.3 seconds after the first settled-scope sample. Count-phase totals were 32 subscribe,
+  49 delta and 21 destroy events; no exact native signature was duplicated in sampled snapshots.
+  This is expected SDK retention, not evidence that old component listeners remained attached.
+
+**First focused change for review (T030):** add `.orderBy('name')` to the existing active-account
+query in `AccountCreation.svelte`. That matches `WorkspaceBootstrap.svelte` and other active-account
+consumers, allowing existing Jazz sharing to remove one distinct subscription (expected Accounts
+count 11 to 10; not yet implemented or measured). The creation policy uses an order-independent
+`.some` duplicate-name check; default currency comes from the workspace, so no new workflow, helper,
+registry, context or authorization sharing is necessary. This reduces query-key divergence; a user
+startup improvement still requires before/after measurement.
+
+No T029 rebinding fix or T032 lifecycle rewrite is justified by these samples. T031 remains a
+separate design question: the closed dialog's queries participate in readiness and `canOpen`.
+Simply making all queries depend on dialog-open state can leave the trigger disabled, and removing
+children on close can interfere with draft/write ownership. Do not turn this audit into that refactor.
+
+Affected coverage for the first change: account creation/access unit cases, the account create/reset/
+selected-workspace/live-account cases in `tests/workspace.e2e.ts`, creation while ordering in
+`tests/account-order.e2e.ts`, and local creation with stalled transport. Inspect those fixtures and
+assertions after implementation review and run only relevant cases. Then repeat the same native
+count/usable-time harness; count reduction alone is not a speedup. The diagnostic TypeScript and
+both production-mode probes passed. No production code or tests were changed; temporary diagnostic hooks
+were removed from the isolated app session/layout. Results are in
+[subscription-audit-results.json](subscription-audit-results.json). T015's larger datasets, physical
+devices and further CPU attribution remain open; not every route or identity-replacement path was
+exercised dynamically here.
+
+### T030 query alignment — verified result
+
+After review, `AccountCreation.svelte` now adds `.orderBy('name')` to its existing active-account
+query. It matches the shell/Accounts/entry query key without adding helpers, actors, ownership
+layers or read-tier changes. Account duplicate-name checks remain order independent. No production
+async workflow or actor/helper orchestration changed; the machine-first gate requires no new machine
+for this declarative alignment.
+
+The same isolated production-mode audit verified Accounts at **10 active SDK subscriptions instead
+of 11**, both with the account dialog closed and open, and again in a second workspace after old
+cache entries expired. The saved-detail client-navigation snapshot fell from 21 to 20. Typing caused
+zero extra acquisitions; the remote memo edit still produced three observed delta events. Exact
+native signatures remained unique. The SDK cleanup policy and application binding lifetimes are
+unchanged; no private diagnostic API is used by the production implementation.
+
+One post-change automation-completion sample was 1,716 ms first visit, 1,818 ms warm detail and
+1,342 ms cold detail with an unanswered remote. Compare the two baseline samples above using the
+same harness and their limits. This confirms a structural reduction in query registrations, **not
+a measured startup speedup**, device budget or CPU improvement.
+
+Validation completed in the isolated checkout:
+
+- Two account-creation/access unit suites: **28 passed**, including normalized duplicate-name policy.
+- Production audit/startup workflows: **four passed**, covering the count comparison, live updates,
+  workspace cleanup, genuine cold browser/SharedWorker exit with real unanswered wire, an established
+  connection stall/later acceptance, and real rejection after a locally successful stale-access save.
+- The existing cold-start test now also navigates to Accounts, creates an account while Jazz replies
+  remain withheld, and verifies the new account after reload. This is durable-local behavior coverage,
+  not an assertion about a query builder's spelling.
+- Focused agent account workflows: **five distinct cases passed** for creation/reload, whitespace
+  validation and corrected cash/bank/card submissions, draft/scope reset, live sorting/archiving and
+  workspace selection, and creation while ordering with storage fallback.
+- Application checking: zero errors/warnings, including service-worker types. Focused browser-test
+  TypeScript, formatting and whitespace checks passed.
+
+An initial test expectation change was wrong: `FormFeedback.svelte` intentionally renders the full
+`invalidMessages` guidance list for invalid submissions, rather than filtering it to Zod issue paths.
+After inspecting that presentation path, the original whitespace expectation was restored and the
+single affected case passed on its focused rerun. `tests/workspace.e2e.ts` has no net change. No
+product validation behavior was changed to satisfy the test. Production Node tests used the isolated
+compiled copy of the unchanged schema/permissions for the known alias-loader boundary; the browser
+received no backend credential and the SDK was not patched.
+
+The code and extended cold regression remain uncommitted. Temporary session/layout diagnostic
+hooks were removed from the isolated app, and the owned servers were stopped. The before/after
+counts, timings and validation are in `subscription-audit-results.json`. T033 is complete for this
+slice; later T029/T031/T032 work needs its own confirmed candidate and review.

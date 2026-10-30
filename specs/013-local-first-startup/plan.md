@@ -590,3 +590,33 @@ siblings. Integration owns SDK subscriptions and synchronous unsubscribe; ordina
 remain independent. Review initial responsiveness with the real integration and explicit scheduling
 before enabling preparation. Real quota pressure and physical supported-device budgets remain
 unverified; namespace deletion and a non-enforced quota override do not establish them.
+
+### T028 audit outcome: first subscription consolidation review
+
+The current evidence is in research.md and subscription-audit-results.json. Alpha.59 already
+shares exact query keys and retains unused entries for 30 seconds; no generic ownership layer,
+cache-delay override, rebinding machine, or lifecycle rewrite is justified by the measured routes.
+Internal SDK developer introspection was used only in the disposable audit, not as an app API.
+
+The first T030 candidate is one implementation file: `src/lib/components/AccountCreation.svelte`.
+Add `orderBy('name')` to its active-account query so it matches the shell's existing ordered query.
+Keep its predicates, default read tier, component ownership, readiness, duplicate-name checks,
+workspace currency, and form lifetime. Existing SDK cache ownership supplies shared acquisition and
+cleanup; do not add a helper/context/registry. Expected structural change: Accounts has 10 distinct
+active SDK subscriptions instead of 11. This expectation is not an implemented or measured speedup.
+
+Review this audit before implementing that slice. After implementation review, inspect affected
+account-creation/access unit cases, workspace account-form cases, account-order coverage and stalled
+transport coverage, then run focused checks and compare counts/startup timings using the same
+isolated harness. T029/T031/T032 require their own confirmed candidate and review; hidden dialog
+queries currently contribute to trigger readiness, and unused old query entries did disappear after
+the SDK's cleanup window. Broader T015 measurement requirements remain open.
+
+T030 first slice is implemented and verified after review: AccountCreation.svelte uses the same
+name-ordered active-account query as the shell. One implementation file changed; no actors/helpers
+were added. Accounts subscriptions are verified at 10 instead of 11; a saved-detail navigation
+snapshot has 20 instead of 21. Focused validation passed 28 unit tests and nine browser workflows,
+including cold local account creation with an unanswered Jazz connection, live updates, workspace
+replacement and real rejection. App/test types and formatting pass. Timing samples do not establish
+a startup speedup. See research.md and subscription-audit-results.json. Review this completed slice
+before starting another cleanup task.

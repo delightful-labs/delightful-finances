@@ -30,10 +30,9 @@
 	)
 	const accounts = new QuerySubscription(() =>
 		filters.activeOrganizationId
-			? app.accounts.where({
-					organizationId: filters.activeOrganizationId,
-					archivedAt: { isNull: true }
-				})
+			? app.accounts
+					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
+					.orderBy('name')
 			: undefined
 	)
 	function observe(): AccountCreationObservation {

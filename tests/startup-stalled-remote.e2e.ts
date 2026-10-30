@@ -7,7 +7,12 @@ import { createJazzSession, type Db } from 'jazz-tools/backend'
 import { app } from '../src/lib/schema.js'
 import permissions from '../src/lib/permissions.js'
 import { createSilentJazzProxy } from './helpers/silent-jazz-proxy.js'
-import { closeCreationModal, creationDialog, openCreationModal } from './helpers/ui.js'
+import {
+	closeCreationModal,
+	creationDialog,
+	openCreationModal,
+	navigateSidebar
+} from './helpers/ui.js'
 
 const test = base.extend<{
 	remote: ReturnType<typeof createSilentJazzProxy> & { backend: LocalJazzServerHandle }
@@ -147,6 +152,17 @@ test('cold local reads and saves work while an open remote connection never answ
 		expect(reload?.fromServiceWorker()).toBe(true)
 		await expect(cold.getByLabel('Amount', { exact: true })).toHaveValue('42.13')
 		await expect(cold).toHaveURL(new URL(target, baseURL).href)
+		await navigateSidebar(cold, 'Accounts')
+		const accountDialog = await openCreationModal(cold, 'Add Account')
+		await accountDialog.getByLabel('Account name').fill('Cold local cash')
+		await accountDialog.getByLabel('Account type').selectOption('cash')
+		await accountDialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+		await expect(accountDialog.getByRole('status')).toContainText('Cold local cash')
+		await closeCreationModal(cold)
+		await cold.reload()
+		await expect(
+			cold.getByRole('main').getByRole('cell', { name: 'Cold local cash', exact: true })
+		).toBeVisible()
 		expect(errors).toEqual([])
 	} finally {
 		await current?.close()
