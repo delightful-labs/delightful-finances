@@ -1,0 +1,89 @@
+# Implementation Plan: Bank Sync Log
+
+## Scope
+
+Implement spec.md on the current feature branch in focused review cycles. Keep
+transaction revision history and system-account display naming as separate work.
+Existing manual-only provider requests and passkey authorization remain intact.
+
+## Storage
+
+Add schema/bank-sync-log.ts and register its tables in schema.ts:
+
+- simplefinSyncAttempts: organizationId, connectionId, initiatedBy, startedAt,
+  optional finishedAt, outcome, nullable importedCount/existingCount/omittedCount,
+  bounded optional failureCode and importSettlement.
+- simplefinSyncAccountResults: attemptId, organizationId, accountId,
+  accountName snapshot, outcome, nullable counts and optional failureCode.
+
+Attempt outcomes: unfinished, succeeded, partial, failed, cancelled. Settlement:
+notStarted, locallyPersisted, confirmed, unresolved. Unknown counts are null;
+known zero counts are zero. Use Jazz audit fields for record audit timestamps.
+Use stable attempt IDs and one account result identity per attempt/account.
+Domain validation lives in validation/bank-sync-log.ts beside derived adapters.
+Generate additive migrations only after the schema and permissions are reviewed.
+Do not deploy or modify existing financial records.
+
+## Authorization
+
+Attempts require organization/connection ownership consistency. Active
+owner/admin membership grants reads; the connection owner with current admin
+authority may insert and settle records. Account results inherit their attempt's
+scope and require a matching organization/account relationship. Immutable fields
+must be checked against the existing record on updates. Terminal transitions
+must not reopen or retarget attempts. Initially deny deletion; enable the narrow
+retention delete rules with the retention workflow. Account deletion must not
+silently cascade away retained history.
+
+Verify exact full-app predicates using the installed SDK before accepting them;
+permission publication alone is insufficient. Do not widen general permissions.
+
+## Machine-first gate
+
+The attempt owner performs authorization, start persistence, the existing bank
+operation, result classification, terminal persistence and cleanup. Implement
+these as explicit states and invoked children, with leaf actors for single I/O
+operations. Preserve the existing bank operation's credential and lock ownership.
+Inspect new actor helpers recursively for hidden orchestration before review.
+
+State sequence: authorize -> recordingStart -> operating -> recordingResult ->
+settled. Explicit alternatives: denied, startFailed, cancelled, resultUnrecorded.
+Cancellation while a write is issued drains it before exit; cancellation before
+provider fetching prevents the fetch. A terminal log-write failure retains the
+financial result and produces separate logging feedback. No automatic retry of
+provider work. Pass the existing classified result onward rather than deriving
+it again during persistence. Keep per-account counts at the import owner where
+the decisions are made; aggregate those results once.
+
+## Retention
+
+Use a separate child statechart: assess authorization -> establish sufficient
+completed-history knowledge -> select candidates -> delete related account rows
+and parent attempts together -> settle. Keep the latest 100 completed attempts
+per connection by finish time and stable ID. Never prune unfinished attempts.
+Partial local knowledge or an unanswered authority yields deferred cleanup.
+Concurrent deletion must recheck candidate eligibility and preserve the newest
+100 completed attempts. Cleanup failures must not change a sync's import result.
+Do not promise physical erasure of underlying replica history.
+
+## Presentation and ownership
+
+BankSyncIntegration owns queries and actor binding. A pure BankSyncLog component
+receives rows and callbacks; BankSync composes it under Bank Sync settings.
+Use DUI Details/Table and Paraglide labels without new decoration. Query a bounded
+recent page for the selected connection and explicitly load earlier entries.
+Retain latest-result feedback and distinguish empty, loading, failed and partial
+history availability. Observed workspace or identity changes invalidate bindings.
+
+## Review and verification
+
+Constitution compliance: local-first ordinary reads/writes; provider activity stays
+explicit; no secrets in logs; strict types and no casts/switch statements; machine
+ownership before effects; schema and validation names match; translations reuse
+shared actions/nouns. Each production slice is reviewed before tests are added or
+run. Unit tests cover validation, policies and statecharts; browser tests cover
+logs, account expansion, outcomes, reload/offline, isolation and retention.
+
+Use small related batches and the disposable agent server. Save diagnostics per
+batch. Record actual results rather than carrying forward results from old source.
+No commits or deployments without user authorization.
