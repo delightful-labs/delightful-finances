@@ -59,7 +59,9 @@
 {#each feedback as message}
 	{#if message.role === 'alert'}
 		<div role="alert">
-			{#each message.text.split('\u0000') as text}<p>{text}</p>{/each}
+			{#if 'paragraphs' in message}
+				{#each message.paragraphs as text}<p>{text}</p>{/each}
+			{:else}<p>{message.text}</p>{/if}
 		</div>
 	{:else}
 		<p role={message.role}>{message.text}</p>

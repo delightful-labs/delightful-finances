@@ -428,7 +428,7 @@ export function createScopedFormMachine<
 											section: 'result',
 											label: (input: Input): readonly FeedbackMessage[] =>
 												input.validationMessages.length > 0
-													? [{ text: input.validationMessages.join('\u0000'), role: 'alert' }]
+													? [{ paragraphs: input.validationMessages, role: 'alert' }]
 													: []
 										}
 									},
