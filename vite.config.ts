@@ -32,7 +32,9 @@ export default defineConfig({
 			: [
 					jazzSvelteKit({
 						// Jazz scopes browser identity to the server URL; keep it stable across restarts.
-						server: process.env.npm_lifecycle_event === 'dev' ? { port: 5174 } : false
+						server: ['dev', 'dev:network'].includes(process.env.npm_lifecycle_event ?? '')
+							? { port: 5174 }
+							: false
 					})
 				]),
 		svg(),

@@ -118,24 +118,28 @@
 			<legend
 				>{m['actions.select_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</legend
 			>
-			{#each suggestions as suggestion (suggestion.id)}
-				<label>
-					<input
-						type="radio"
-						name="transfer-counterpart"
-						value={suggestion.id}
-						checked={selectedId === suggestion.id}
-						onchange={() => onSelect?.(suggestion.id)}
-					/>
-					<span>
-						{formatDate(suggestion.bookedOn)} · {suggestion.accountName ??
-							m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
-						{#if suggestion.description}
-							· {suggestion.description}{/if}
-					</span>
-					<span>{formatMoney(suggestion.amountMinor, suggestion.currency, getLocale())}</span>
-				</label>
-			{/each}
+			<ul>
+				{#each suggestions as suggestion (suggestion.id)}
+					<li>
+						<label>
+							<input
+								type="radio"
+								name="transfer-counterpart"
+								value={suggestion.id}
+								checked={selectedId === suggestion.id}
+								onchange={() => onSelect?.(suggestion.id)}
+							/>
+							<span>
+								{formatDate(suggestion.bookedOn)} · {suggestion.accountName ??
+									m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
+								{#if suggestion.description}
+									· {suggestion.description}{/if}
+							</span>
+							<span>{formatMoney(suggestion.amountMinor, suggestion.currency, getLocale())}</span>
+						</label>
+					</li>
+				{/each}
+			</ul>
 		</fieldset>
 		<Button
 			type="button"
@@ -158,5 +162,18 @@
 		margin: 0;
 		padding: 0;
 		border: 0;
+	}
+
+	ul {
+		list-style: none;
+		padding: 0;
+		display: grid;
+		gap: var(--dui-space-sm);
+	}
+
+	label {
+		display: flex;
+		align-items: start;
+		gap: var(--dui-space-xs);
 	}
 </style>
