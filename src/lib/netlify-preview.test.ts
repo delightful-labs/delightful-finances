@@ -45,17 +45,21 @@ async function fixture(
 		`#!/usr/bin/env node
 	const { appendFileSync } = require('node:fs');
 	const command = process.argv[2];
-	appendFileSync(process.env.FIXTURE_RECORDS, JSON.stringify({ command,
+	const recordCommand = () => appendFileSync(process.env.FIXTURE_RECORDS, JSON.stringify({ command,
 	 appId: process.env.PUBLIC_JAZZ_APP_ID, cliAppId: process.env.JAZZ_APP_ID,
 	 serverUrl: process.env.PUBLIC_JAZZ_SERVER_URL, cliServerUrl: process.env.JAZZ_SERVER_URL,
 	 adminSecret: process.env.JAZZ_ADMIN_SECRET, backendSecret: process.env.BACKEND_SECRET,
 	 jazzBackendSecret: process.env.JAZZ_BACKEND_SECRET }) + '\\n');
-	if (command === 'deploy:jazz') console.log(process.env.JAZZ_ADMIN_SECRET);
- if (command === 'deploy:jazz' && command === ${JSON.stringify(options.failCommand)}) console.error('Permissions head fetch failed: 404 ' + process.env.JAZZ_ADMIN_SECRET);
 	if (command === ${JSON.stringify(options.waitCommand)}) {
 	 process.on('SIGTERM', () => { appendFileSync(process.env.FIXTURE_RECORDS, JSON.stringify({ terminated: command }) + '\\n'); process.exit(0); });
 	 setInterval(() => {}, 1000);
-	} else process.exit(command === ${JSON.stringify(options.failCommand)} ? 1 : 0);
+	 recordCommand();
+	} else {
+	 recordCommand();
+	 if (command === 'deploy:jazz') console.log(process.env.JAZZ_ADMIN_SECRET);
+ if (command === 'deploy:jazz' && command === ${JSON.stringify(options.failCommand)}) console.error('Permissions head fetch failed: 404 ' + process.env.JAZZ_ADMIN_SECRET);
+	 process.exit(command === ${JSON.stringify(options.failCommand)} ? 1 : 0);
+	}
 	`,
 		{ mode: 0o700 }
 	)
