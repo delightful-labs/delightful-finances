@@ -87,3 +87,26 @@ logs, account expansion, outcomes, reload/offline, isolation and retention.
 Use small related batches and the disposable agent server. Save diagnostics per
 batch. Record actual results rather than carrying forward results from old source.
 No commits or deployments without user authorization.
+
+## Logging actor protocol — implementation review
+
+The standalone createSyncLogMachine receives a stable attempt ID and authorized
+organization/connection/user/start facts. It validates and saves the start, then
+sends SYNC_LOG_READY to its parent. The parent must not unlock/fetch for that
+attempt before readiness. The existing bank operation remains resource owner.
+
+The parent sends FINISH with its classified, drained financial result and safe
+failure code. The log actor validates finish timing/counts and saves completion.
+Its output distinguishes recorded, notStarted and resultUnrecorded, preserving
+the supplied financial result even if completion logging fails.
+
+CANCEL during start persistence drains the write and records cancellation with
+no imports; it never signals readiness. CANCEL while awaiting the operation's
+result enters a cancelling state and waits for FINISH rather than inventing an
+import outcome. CANCEL during result persistence drains that write. The parent
+must cancel/drain both actors before stopping them. Invalid input and start/result
+write failures are explicit final states. No credentials enter the log actor.
+
+The first implementation contains only the typed protocol and standalone actor;
+live operation integration and per-account persistence remain T006. Review this
+slice before actor tests are added or run. This actor is not yet user-visible.
