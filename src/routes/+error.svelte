@@ -1,9 +1,9 @@
 <script lang="ts">
-	import AppLink from '#lib/components/AppLink.svelte'
+	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import { page } from '$app/state'
 	import { resolve } from '$app/paths'
 	import { Text } from 'delightful-ui'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
 	const title = $derived(

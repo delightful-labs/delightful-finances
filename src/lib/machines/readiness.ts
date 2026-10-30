@@ -31,7 +31,7 @@ import {
 	type NavigationAccess,
 	type NavigationReport,
 	type NavigationStatusEvent
-} from '../workspace-orchestration-contract.js'
+} from '../contracts/workspace-orchestration-contract.js'
 import { createWorkspaceIntegrityOwner } from './workspace-integrity-owner.js'
 import {
 	sameIntegrityBinding,
@@ -41,7 +41,7 @@ import {
 	type IntegrityRequest,
 	type IntegrityReport,
 	type IntegrityStatusEvent
-} from '../workspace-integrity-contract.js'
+} from '../contracts/workspace-integrity-contract.js'
 
 import type { Organization } from '#lib/schema.js'
 import { workspaceRoute } from '../domain/workspace-routes.js'

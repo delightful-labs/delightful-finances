@@ -5,7 +5,7 @@
 		createManagementFormOptions,
 		selectManagementArchiveIds
 	} from '#lib/machines/management.js'
-	import type { ManagementObservation } from '#lib/management-contract.js'
+	import type { ManagementObservation } from '#lib/contracts/management-contract.js'
 	import { categoryArchiveSchema, categoryFormSchema } from '#lib/validation/categories.js'
 	import { archiveCategory, createCategory } from '#lib/data.js'
 	import { app, transactionSummaryQuery } from '#lib/schema.js'
@@ -17,7 +17,7 @@
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import CategoryForm from '#lib/components/CategoryForm.svelte'
 	import CategoryList from '#lib/components/CategoryList.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)

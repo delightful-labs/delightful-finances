@@ -1,12 +1,15 @@
 <script lang="ts">
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import { Button, Details, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
 	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import WifiNoIcon from 'tdesign-icons-svg/src/wifi-no.svg?component'
 	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
-	import { bankSetupSteps, type BankPresentation } from '#lib/bank-presentation-contract.js'
+	import {
+		bankSetupSteps,
+		type BankPresentation
+	} from '#lib/contracts/bank-presentation-contract.js'
 	let {
 		browserOffline,
 		view,

@@ -1,11 +1,15 @@
 import { assign, enqueueActions, setup, type SnapshotFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
-import type { FormChildEvent, FormOperationInput, FormOperationResult } from '#lib/form-contract.js'
+import type {
+	FormChildEvent,
+	FormOperationInput,
+	FormOperationResult
+} from '#lib/contracts/form-contract.js'
 import type {
 	TransactionEntryObservation,
 	TransactionEntryReason,
 	TransactionEntryScope
-} from '#lib/transaction-entry-contract.js'
+} from '#lib/contracts/transaction-entry-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
 import { createTransactionAttachmentsMachine } from './transaction-attachments.js'
 import {

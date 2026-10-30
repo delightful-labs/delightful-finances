@@ -10,8 +10,8 @@ import { normalizedName } from '#lib/domain/names.js'
 import { appTagSchema } from '#lib/validation/tags.js'
 import { independentTransactionSchema } from '#lib/validation/transactions.js'
 import type { IndependentTransaction } from '#lib/domain/transaction.js'
-import type { FormInterruption, FormSettlement } from '#lib/form-contract.js'
-import { transferEditRequiresUnlink } from '#lib/transaction-save-contract.js'
+import type { FormInterruption, FormSettlement } from '#lib/contracts/form-contract.js'
+import { transferEditRequiresUnlink } from '#lib/contracts/transaction-save-contract.js'
 
 type TransactionDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<TransactionDb['beginTransaction']>

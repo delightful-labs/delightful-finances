@@ -15,7 +15,7 @@ type Context = Input & {
 	index: number
 	eligibleAccounts: Account[]
 }
-export type { ProviderAccountView } from '#lib/bank-presentation-contract.js'
+export type { ProviderAccountView } from '#lib/contracts/bank-presentation-contract.js'
 
 export const accountOptionsMachine = setup<
 	Context,

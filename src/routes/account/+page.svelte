@@ -7,11 +7,11 @@
 	import { saveProfileName, saveProfileAvatar } from '#lib/data.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { createProfileFormOptions } from '#lib/machines/profile.js'
-	import type { ProfileObservation } from '#lib/profile-contract.js'
+	import type { ProfileObservation } from '#lib/contracts/profile-contract.js'
 	import ProfileAvatarForm from '#lib/components/ProfileAvatarForm.svelte'
 	import ProfileNameForm from '#lib/components/ProfileNameForm.svelte'
 	import RecoveryPhraseIntegration from '#lib/components/RecoveryPhraseIntegration.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 
 	const session = getJazzSession()
 	const currentSession = fromStore(session)

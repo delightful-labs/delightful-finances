@@ -21,7 +21,7 @@
 	} from '#lib/machines/transaction-entry.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import { independentTransactionFormSchema } from '#lib/validation/transactions.js'
-	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
+	import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 	import {
 		developerMenuKey,
 		unavailableSampleControls,

@@ -98,3 +98,41 @@ The approved bank-sync design encrypts the SimpleFIN Access URL locally using a 
 Before consuming a SimpleFIN setup token, the app will verify encryption and subsequent decryption with a harmless sample. Each manual sync will require passkey verification, use the credential transiently, then lock again. Setup tokens, plaintext credentials, and usable decryption keys will not be persisted or replicated. There will be no automatic transaction fetching or retries. Lost-passkey recovery initially means reconnecting SimpleFIN; invalidating a previously copied Access URL requires provider-side revocation.
 
 This is planned behavior, not an implemented bank integration. Sharing credentials with other organization members and additional recovery mechanisms are out of scope. An initial passkey prototype demonstrated successful sample recovery in the reported browser trial and has been removed. Physical-device passkey synchronization and production Jazz credential replication remain unverified.
+
+## Source organization and browser tests
+
+Feature browser regressions live in `tests/features/`; shared workspace and transaction
+fixtures live in `tests/helpers/`. Shared workflow contracts live in `src/lib/contracts/`;
+application shell and navigation components live in `src/lib/components/navigation/`. Keep schema and permission deployment
+entry points in `src/lib/schema.ts` and `src/lib/permissions.ts`.
+
+`pnpm test:e2e` runs all development-server scenarios through four disjoint projects:
+`application`, `authentication`, `permissions`, and `workspace`. CI uses these same projects
+and shards the application project across two jobs. Local runs default to one worker;
+CI uses up to two workers with isolated browser contexts. Authentication retains its serial
+60-second budget; production and flag-specific environments stay serial. Production PWA,
+stalled-remote startup, debug, and fake-data flag scenarios use their own runtime configurations under `tests/config/`.
+
+Use `pnpm test:attachments`, `pnpm test:description`, or a config in `tests/config/` for focused
+runs. Cross-cutting selections use scenario tags, so moving or renaming a scenario does not
+silently remove it from a feature selection. `pnpm check:e2e` verifies that projects
+are disjoint and that every tagged feature selection exactly matches its coverage in the
+canonical run; CI runs this discovery check without launching a browser or server. For example:
+
+```sh
+pnpm test:e2e --grep @attachments
+pnpm test:e2e --grep @account-archive
+pnpm test:e2e --project workspace
+pnpm exec playwright test --config tests/config/playwright.transaction-workspace.config.ts
+```
+
+The default agent port is 5180. Set `FINANCE_E2E_PORT` to choose another port. Start a known
+agent server with `pnpm dev:agent --host 127.0.0.1 --port 5182 --strictPort`, then set
+`FINANCE_E2E_PORT=5182 FINANCE_E2E_REUSE_SERVER=true` to reuse it across focused runs.
+Reuse is opt-in and disabled in CI; do not reuse unidentified servers. Run tooling in a
+separate checkout with its own dependencies while the user's development server is running.
+
+Failure screenshots and a machine-readable duration report are written to `test-results/`.
+CI also retains failure traces. For local traces, pass `--trace retain-on-failure`; local
+development runs leave tracing off by default. Override concurrency with `--workers`. Use `pnpm test:pwa`, `pnpm test:startup`, and the CI feature-flag
+matrix for the separate production and flag-dependent environments.

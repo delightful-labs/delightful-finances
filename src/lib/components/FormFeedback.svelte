@@ -1,6 +1,6 @@
 <script lang="ts" generics="Result, Reason">
 	import { Button } from 'delightful-ui'
-	import type { ScopedFormView } from '#lib/form-contract.js'
+	import type { ScopedFormView } from '#lib/contracts/form-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	let {
 		view,

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import AppLink from '#lib/components/AppLink.svelte'
+	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import { Text } from 'delightful-ui'
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import ChevronRight from 'tdesign-icons-svg/src/chevron-right.svg?component'
 	import type { TransactionRow } from '#lib/schema.js'
 	import { formatMoney } from '#lib/domain/money.js'

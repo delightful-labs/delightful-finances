@@ -7,7 +7,7 @@
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 	import ExpenseOverview from '#lib/components/ExpenseOverview.svelte'
 	import { browser } from '$app/env'

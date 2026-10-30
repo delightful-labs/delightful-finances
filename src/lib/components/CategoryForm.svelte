@@ -3,7 +3,7 @@
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { InputText, Select } from 'delightful-ui'
 	import type { Category } from '#lib/schema.js'
-	import type { ManagementView, ManagementScope } from '#lib/management-contract.js'
+	import type { ManagementView, ManagementScope } from '#lib/contracts/management-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormModal from './FormModal.svelte'

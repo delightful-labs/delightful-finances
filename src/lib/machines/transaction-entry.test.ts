@@ -7,7 +7,7 @@ import {
 	sameTransactionEntryScope,
 	applicableTransactionTags
 } from './transaction-entry.js'
-import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
+import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 import type { Tag } from '#lib/schema.js'
 
 const binding = {}

@@ -1,5 +1,8 @@
 import { assign, fromPromise, setup, type SnapshotFrom } from 'xstate'
-import type { RecoveryIdentity, RecoveryPhraseView } from '#lib/recovery-phrase-contract.js'
+import type {
+	RecoveryIdentity,
+	RecoveryPhraseView
+} from '#lib/contracts/recovery-phrase-contract.js'
 type Event =
 	| { type: 'REVEAL' | 'HIDE' | 'SHUTDOWN' }
 	| { type: 'OBSERVE'; identity: RecoveryIdentity }

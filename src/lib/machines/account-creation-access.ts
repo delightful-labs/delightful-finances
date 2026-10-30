@@ -2,12 +2,16 @@ import type { AccountFormValues } from '#lib/validation/accounts.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
-import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
+import type {
+	FormCapability,
+	FormChildEvent,
+	FormObservation
+} from '#lib/contracts/form-contract.js'
 import type {
 	AccountCreationObservation,
 	AccountCreationReason,
 	AccountCreationScope
-} from '#lib/account-creation-contract.js'
+} from '#lib/contracts/account-creation-contract.js'
 import { accountFormSchema } from '#lib/validation/accounts.js'
 import type { Account } from '#lib/schema.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'

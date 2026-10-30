@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { waitFor } from 'xstate'
-import type { FormOperationResult } from '#lib/form-contract.js'
+import type { FormOperationResult } from '#lib/contracts/form-contract.js'
 import { fixture, ready, success } from './scoped-form.fixture.js'
 
 describe('post-save navigation ownership', () => {

@@ -3,7 +3,7 @@ import { createActor, waitFor } from 'xstate'
 import type {
 	WorkspaceRenameObservation,
 	WorkspaceRenameReason
-} from '#lib/workspace-rename-contract.js'
+} from '#lib/contracts/workspace-rename-contract.js'
 import {
 	createWorkspaceRenameAvailability,
 	selectWorkspaceRenameAvailability

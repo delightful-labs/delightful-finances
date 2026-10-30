@@ -29,7 +29,7 @@
 	import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 	import AccountCreation from '#lib/components/AccountCreation.svelte'
 	import AccountList from '#lib/components/AccountList.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const sharedBalances = getContext<AccountBalances>(accountBalancesKey)

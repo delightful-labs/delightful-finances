@@ -6,7 +6,7 @@
 		createManagementFormOptions,
 		selectManagementArchiveIds
 	} from '#lib/machines/management.js'
-	import type { ManagementObservation } from '#lib/management-contract.js'
+	import type { ManagementObservation } from '#lib/contracts/management-contract.js'
 	import { archiveTag, createTag } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
@@ -17,7 +17,7 @@
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import TagForm from '#lib/components/TagForm.svelte'
 	import TagList from '#lib/components/TagList.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)

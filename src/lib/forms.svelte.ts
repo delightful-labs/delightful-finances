@@ -7,7 +7,7 @@ import {
 	selectScopedFormView,
 	type ScopedFormOptions
 } from '#lib/machines/scoped-form.js'
-import type { FormOperationResult } from '#lib/form-contract.js'
+import type { FormOperationResult } from '#lib/contracts/form-contract.js'
 
 type OperationValue<S extends Snapshot<unknown>> =
 	Extract<S['output'], { outcome: 'succeeded' }> extends { value: infer Value } ? Value : never

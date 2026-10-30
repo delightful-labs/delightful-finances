@@ -1,4 +1,4 @@
-import type { FormPresentation } from '../form-contract.js'
+import type { FormPresentation } from '../contracts/form-contract.js'
 import { assign, raise, sendTo, setup, stateIn } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import {

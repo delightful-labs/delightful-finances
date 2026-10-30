@@ -17,7 +17,7 @@
 		transactionEntryScope,
 		writableTransactionAccounts
 	} from '#lib/machines/transaction-entry.js'
-	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
+	import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
@@ -43,8 +43,8 @@
 	import { createManagementFormOptions } from '#lib/machines/management.js'
 	import { categoryFormSchema } from '#lib/validation/categories.js'
 	import { createCategory } from '#lib/data.js'
-	import type { ManagementObservation } from '#lib/management-contract.js'
-	import PageHeader from './PageHeader.svelte'
+	import type { ManagementObservation } from '#lib/contracts/management-contract.js'
+	import PageHeader from './navigation/PageHeader.svelte'
 	import QueryContent from './QueryContent.svelte'
 	import TransactionDetails from './TransactionDetails.svelte'
 	import TransactionForm from './TransactionForm.svelte'

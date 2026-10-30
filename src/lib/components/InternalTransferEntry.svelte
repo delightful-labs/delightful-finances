@@ -5,7 +5,7 @@
 		createInternalTransferEntryFormOptions,
 		selectInternalTransferEntryAccounts
 	} from '#lib/machines/internal-transfer-entry.js'
-	import type { InternalTransferEntryObservation } from '#lib/transfer-create-contract.js'
+	import type { InternalTransferEntryObservation } from '#lib/contracts/transfer-create-contract.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'

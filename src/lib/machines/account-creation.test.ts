@@ -5,7 +5,7 @@ import type {
 	AccountCreationObservation,
 	AccountCreationReason,
 	AccountCreationScope
-} from '#lib/account-creation-contract.js'
+} from '#lib/contracts/account-creation-contract.js'
 import {
 	createAccountCreationAvailability,
 	createAccountCreationFormOptions,

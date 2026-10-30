@@ -8,7 +8,7 @@ import {
 	type Snapshot
 } from 'xstate'
 import { z } from 'zod'
-import { formInterruptionResult } from '#lib/form-contract.js'
+import { formInterruptionResult } from '#lib/contracts/form-contract.js'
 import type {
 	FormChildEvent,
 	FormInterruption,
@@ -18,7 +18,7 @@ import type {
 	FormRequest,
 	FormResult,
 	FormSubmissionProgressEvent
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 
 type Input<Scope, Observation> = {
 	request: FormRequest<Scope>

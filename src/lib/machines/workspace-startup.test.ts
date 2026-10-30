@@ -4,7 +4,7 @@ import { Transaction, type schema } from 'jazz-tools'
 import { app } from '../schema.js'
 import { createWorkspaceStartupMachine } from './workspace-startup.js'
 import { workspaceReports } from './workspace-reports.fixture.js'
-import type { InitializationStatusEvent } from '../workspace-orchestration-contract.js'
+import type { InitializationStatusEvent } from '../contracts/workspace-orchestration-contract.js'
 import { creationFixture, profileId, userId, workspace } from './workspace-creation.fixture.js'
 
 const environment = vi.hoisted(() => ({ PUBLIC_FAKE_DATA: 'false' }))

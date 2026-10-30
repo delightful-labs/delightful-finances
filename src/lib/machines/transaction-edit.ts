@@ -9,8 +9,8 @@ import type {
 	TransactionEntryObservation,
 	TransactionEntryScope,
 	TransactionEntryView
-} from '#lib/transaction-entry-contract.js'
-import type { FormObservation } from '#lib/form-contract.js'
+} from '#lib/contracts/transaction-entry-contract.js'
+import type { FormObservation } from '#lib/contracts/form-contract.js'
 import {
 	and,
 	assign,

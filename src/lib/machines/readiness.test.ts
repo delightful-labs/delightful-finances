@@ -4,13 +4,13 @@ import type {
 	InitializationRequest,
 	InitializationStatusEvent,
 	InitializationRecipient
-} from '../workspace-orchestration-contract.js'
+} from '../contracts/workspace-orchestration-contract.js'
 import type {
 	IntegrityRequest,
 	IntegrityRecipient,
 	IntegrityStatus,
 	IntegrityReport
-} from '../workspace-integrity-contract.js'
+} from '../contracts/workspace-integrity-contract.js'
 import type { CreationBinding } from './workspace-creation-operation.js'
 import {
 	createWorkspaceReadinessMachine,

@@ -2,7 +2,7 @@
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { Button, Table } from 'delightful-ui'
 	import type { Tag } from '#lib/schema.js'
-	import type { ManagementView } from '#lib/management-contract.js'
+	import type { ManagementView } from '#lib/contracts/management-contract.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import ArchiveFilter, { type ArchiveFilterValue } from './ArchiveFilter.svelte'

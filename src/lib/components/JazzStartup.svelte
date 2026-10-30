@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import { Button } from 'delightful-ui'
 	import LoadingContent from './LoadingContent.svelte'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'

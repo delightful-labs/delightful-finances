@@ -7,7 +7,7 @@
 		AccountCreationReason,
 		AccountCreationScope,
 		AccountCreationView
-	} from '#lib/account-creation-contract.js'
+	} from '#lib/contracts/account-creation-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormModal from './FormModal.svelte'
 	import FormFeedback from './FormFeedback.svelte'

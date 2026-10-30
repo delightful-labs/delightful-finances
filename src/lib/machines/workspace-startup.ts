@@ -12,7 +12,7 @@ import {
 	type InitializationRecipient,
 	type InitializationStatus,
 	type InitializationStatusEvent
-} from '../workspace-orchestration-contract.js'
+} from '../contracts/workspace-orchestration-contract.js'
 
 type Input = { request: InitializationRequest; recipient: InitializationRecipient }
 type Event =

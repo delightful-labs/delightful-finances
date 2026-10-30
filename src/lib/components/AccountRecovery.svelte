@@ -2,7 +2,7 @@
 	import { Button, Textarea, Checkbox, Dialog } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 
-	import type { RecoveryPhraseView } from '#lib/recovery-phrase-contract.js'
+	import type { RecoveryPhraseView } from '#lib/contracts/recovery-phrase-contract.js'
 	let {
 		view,
 		onReveal,

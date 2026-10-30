@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { createSampleTransactionsMachine } from './sample-transactions.js'
 import { creationFixture } from './transaction-create.fixture.js'
 import { createTransactionEntryFormOptions } from './transaction-entry.js'
-import type { FormChildEvent, FormOperationResult } from '#lib/form-contract.js'
+import type { FormChildEvent, FormOperationResult } from '#lib/contracts/form-contract.js'
 import type {
 	TransactionEntryObservation,
 	TransactionEntryReason
-} from '#lib/transaction-entry-contract.js'
+} from '#lib/contracts/transaction-entry-contract.js'
 
 describe('sample transaction batches', () => {
 	it('saves exactly 25 sequential entries and allows a new batch', async () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button, Heading, Text, InputText } from 'delightful-ui'
-	import type { ProfileView } from '#lib/profile-contract.js'
+	import type { ProfileView } from '#lib/contracts/profile-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'

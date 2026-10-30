@@ -107,7 +107,7 @@ describe('scoped form submission resources', () => {
 			reason: 'oneWriteFailed',
 			settlement: 'locallyPersisted'
 		}
-	] satisfies import('#lib/form-contract.js').FormOperationResult<void, string>[])(
+	] satisfies import('#lib/contracts/form-contract.js').FormOperationResult<void, string>[])(
 		'preserves domain $outcome outcomes without reclassification',
 		async (result) => {
 			const f = submission()

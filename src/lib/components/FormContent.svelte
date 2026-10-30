@@ -1,6 +1,6 @@
 <script lang="ts" generics="View extends FormPresentation">
 	import type { Snippet } from 'svelte'
-	import type { FormPresentation } from '#lib/form-contract.js'
+	import type { FormPresentation } from '#lib/contracts/form-contract.js'
 
 	let {
 		view,

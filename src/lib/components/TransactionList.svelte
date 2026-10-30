@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Details, Heading, Pagination, Text } from 'delightful-ui'
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import ChevronDown from 'tdesign-icons-svg/src/chevron-down.svg?component'
 	import ChevronRight from 'tdesign-icons-svg/src/chevron-right.svg?component'
-	import PaginationLink from './PaginationLink.svelte'
+	import PaginationLink from './navigation/PaginationLink.svelte'
 	import SplitRow from './SplitRow.svelte'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { formatMoney } from '#lib/domain/money.js'

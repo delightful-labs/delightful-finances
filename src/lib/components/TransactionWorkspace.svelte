@@ -1,10 +1,10 @@
 <script lang="ts">
-	import AppLink from '#lib/components/AppLink.svelte'
+	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import { Button, Drawer, ScreenReaderText } from 'delightful-ui'
 	import { onMount, type Snippet } from 'svelte'
 	import { isMobile } from '#lib/viewport.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import ListIcon from 'tdesign-icons-svg/src/view-list.svg?component'
 
 	let {

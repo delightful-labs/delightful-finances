@@ -7,7 +7,7 @@ import type {
 	FormObservation,
 	FormOperationInput,
 	FormOperationResult
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
 
 export type Facts = { scope: string; allowed: boolean; publish?: boolean; broken?: boolean }

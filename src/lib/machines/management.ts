@@ -7,12 +7,12 @@ import type {
 	FormCapability,
 	FormChildEvent,
 	FormObservation
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 import type {
 	ManagementObservation,
 	ManagementReason,
 	ManagementScope
-} from '#lib/management-contract.js'
+} from '#lib/contracts/management-contract.js'
 import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
 
 export function managementScope(facts: ManagementObservation): ManagementScope {

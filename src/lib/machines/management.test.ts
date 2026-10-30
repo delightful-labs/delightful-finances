@@ -2,7 +2,7 @@ import { tagFormSchema } from '#lib/validation/tags.js'
 import { categoryFormSchema } from '#lib/validation/categories.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createActor, getInitialSnapshot, waitFor } from 'xstate'
-import type { ManagementObservation, ManagementReason } from '#lib/management-contract.js'
+import type { ManagementObservation, ManagementReason } from '#lib/contracts/management-contract.js'
 import {
 	createManagementAvailability,
 	managementScope,

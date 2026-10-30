@@ -30,7 +30,7 @@
 		type AccountBalances
 	} from '#lib/finance-filters.js'
 	import BankSyncIntegration from './BankSyncIntegration.svelte'
-	import AppShell from './AppShell.svelte'
+	import AppShell from './navigation/AppShell.svelte'
 	import AccountCreation from './AccountCreation.svelte'
 	import JazzStartup from './JazzStartup.svelte'
 	import { useMachine } from '@xstate/svelte'

@@ -4,7 +4,11 @@ import * as platform from '#lib/domain/image-processing.js'
 import { MAX_AVATAR_BYTES, profileAvatarFormSchema } from '#lib/validation/identity.js'
 import { createProfileFormOptions, profileScope } from './profile.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
-import type { ProfileObservation, ProfileReason, ProfileScope } from '#lib/profile-contract.js'
+import type {
+	ProfileObservation,
+	ProfileReason,
+	ProfileScope
+} from '#lib/contracts/profile-contract.js'
 const cleanups: (() => void)[] = []
 afterEach(() => {
 	for (const cleanup of cleanups.splice(0)) cleanup()

@@ -14,13 +14,13 @@ import type {
 	FormOperationInput,
 	FormOperationResult,
 	FormSettlement
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 import type {
 	InternalTransferEntryObservation,
 	InternalTransferEntryReason,
 	InternalTransferEntryScope,
 	InternalTransferEntryValues
-} from '#lib/transfer-create-contract.js'
+} from '#lib/contracts/transfer-create-contract.js'
 import {
 	currencyText,
 	defaultTransactionCategory,

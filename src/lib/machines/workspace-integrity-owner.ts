@@ -6,11 +6,14 @@ import {
 	type IntegrityStatus,
 	type IntegrityRecipient,
 	type IntegrityStatusEvent
-} from '../workspace-integrity-contract.js'
+} from '../contracts/workspace-integrity-contract.js'
 import type { IntegrityResult } from './workspace-integrity-transaction.js'
 import { workspaceIntegrity } from './workspace-integrity.js'
 
-export type { IntegrityBinding, WorkspaceIntegrityView } from '../workspace-integrity-contract.js'
+export type {
+	IntegrityBinding,
+	WorkspaceIntegrityView
+} from '../contracts/workspace-integrity-contract.js'
 type Input = { request: IntegrityRequest; recipient: IntegrityRecipient }
 type Context = Input & {
 	operation: IntegrityRequest | undefined

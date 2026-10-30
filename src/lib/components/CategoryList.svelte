@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { EXPENSE } from '#lib/domain/transaction-kind.js'
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import { Button, Table } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Category } from '#lib/schema.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
-	import type { ManagementView } from '#lib/management-contract.js'
+	import type { ManagementView } from '#lib/contracts/management-contract.js'
 	import { formReasonText } from '#lib/form-messages.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import ArchiveFilter, { type ArchiveFilterValue } from './ArchiveFilter.svelte'

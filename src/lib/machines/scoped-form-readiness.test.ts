@@ -5,7 +5,7 @@ import type {
 	FormCapabilityReportEvent,
 	FormChildEvent,
 	FormObservation
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 import { createScopedFormWriteMachine } from './scoped-form-write.js'
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'

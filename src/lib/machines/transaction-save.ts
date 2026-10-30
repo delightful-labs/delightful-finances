@@ -13,19 +13,19 @@ import {
 	sameSaveScope,
 	transferEditRequiresUnlink,
 	type TransactionCheckpoint
-} from '#lib/transaction-save-contract.js'
+} from '#lib/contracts/transaction-save-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
 import type {
 	FormChildEvent,
 	FormOperationInput,
 	FormOperationResult,
 	FormSettlement
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 import type {
 	TransactionEntryObservation,
 	TransactionEntryScope,
 	TransactionEntryReason
-} from '#lib/transaction-entry-contract.js'
+} from '#lib/contracts/transaction-entry-contract.js'
 import { createCheckCreationMachine } from './check-create-persistence.js'
 import { createIndependentTransactionPersistenceMachine } from './independent-transaction-persistence.js'
 

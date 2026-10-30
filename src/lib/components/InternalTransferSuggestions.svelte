@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from 'delightful-ui'
-	import AppLink from '#lib/components/AppLink.svelte'
+	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import { formatMoney } from '#lib/domain/money.js'
 	import type { InternalTransferCandidate } from '#lib/domain/internal-transfer.js'
 	import type { TransactionRow } from '#lib/schema.js'

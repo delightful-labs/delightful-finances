@@ -13,7 +13,7 @@
 		applicableTransactionCategories,
 		applicableTransactionTags
 	} from '#lib/machines/transaction-entry.js'
-	import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
+	import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { fromStore } from 'svelte/store'
@@ -29,7 +29,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import AccountCreation from '#lib/components/AccountCreation.svelte'
 	import TransactionForm from '#lib/components/TransactionForm.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	let { kind }: { kind: TransactionKind } = $props()
 	let selectedAttachments = $state<readonly File[]>([])
 	let attachmentPickerRevision = $state(0)

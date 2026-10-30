@@ -4,7 +4,7 @@
 	import type {
 		WorkspaceRenameReason,
 		WorkspaceRenameView
-	} from '#lib/workspace-rename-contract.js'
+	} from '#lib/contracts/workspace-rename-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
 	import FormFeedback from './FormFeedback.svelte'

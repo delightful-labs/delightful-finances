@@ -5,7 +5,7 @@
 	import { getReadiness } from '#lib/bank-sync.js'
 	import { selectRecoveryView } from '#lib/machines/application-readiness.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import PageHeader from '#lib/components/PageHeader.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import LoginForm from '#lib/components/LoginForm.svelte'
 
 	const session = getJazzSession()

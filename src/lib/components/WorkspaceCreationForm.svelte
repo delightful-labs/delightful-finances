@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AppLink from '#lib/components/AppLink.svelte'
+	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import { Button, InputText, ScreenReaderText } from 'delightful-ui'
 	import {
 		workspaceCreationFormView,

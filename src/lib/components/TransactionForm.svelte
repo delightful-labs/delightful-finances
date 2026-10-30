@@ -23,7 +23,7 @@
 		TransactionEditTransferState,
 		TransferStatusLabel
 	} from '#lib/machines/transaction-edit.js'
-	import type { TransactionEntryView } from '#lib/transaction-entry-contract.js'
+	import type { TransactionEntryView } from '#lib/contracts/transaction-entry-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'

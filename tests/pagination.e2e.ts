@@ -362,126 +362,128 @@ declare global {
 	}
 }
 
-test('workspace replacement drains the issued sample and never retargets subsequent entries', async ({
-	page
-}) => {
-	await seed(page)
-	const fixture = await page.evaluate(async () => {
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const schemaPath = '/src/lib/schema.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
-		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const snapshot = getCurrentJazzSession()?.getSnapshot()
-		if (!snapshot?.client || !snapshot.account) throw new Error('Missing sample session')
-		const db = snapshot.client.db
-		const sourceId = new URL(location.href).searchParams.get('workspace')
-		if (!sourceId) throw new Error('Missing source scope')
-		const tx = db.beginTransaction()
-		const destination = tx.insert(app.organizations, {
-			name: 'Batch replacement workspace',
-			kind: 'personal',
-			ownerId: snapshot.account.id,
-			defaultCurrency: 'USD'
-		})
-		tx.insert(app.organizationMembers, {
-			organizationId: destination.id,
-			userId: snapshot.account.id,
-			role: 'owner',
-			accountAccessMode: 'all'
-		})
-		tx.insert(app.accounts, {
-			organizationId: destination.id,
-			name: 'Replacement ledger',
-			kind: 'bank',
-			currency: 'USD'
-		})
-		for (const kind of ['income', 'expense'] satisfies ('income' | 'expense')[])
-			tx.insert(app.categories, {
-				organizationId: destination.id,
-				name: 'Uncategorized',
-				kind,
-				isSystem: true
-			})
-		await tx.commit().wait({ tier: 'global' })
-		const gate = Promise.withResolvers<void>()
-		const begin = db.beginTransaction.bind(db)
-		let first = true
-		window.paginationBatchGate = {
-			started: false,
-			release: () => gate.resolve(),
-			restore: () => {
-				db.beginTransaction = begin
-			}
-		}
-		db.beginTransaction = (...args) => {
-			const transaction = begin(...args)
-			if (!first) return transaction
-			first = false
-			const commit = transaction.commit.bind(transaction)
-			transaction.commit = (...args) => {
-				const handle = commit(...args)
-				const wait = handle.wait.bind(handle)
-				handle.wait = async (...options) => {
-					const [option] = options
-					const result =
-						option.tier === 'edge'
-							? await wait({ tier: 'edge' })
-							: await wait({ tier: option.tier })
-					window.paginationBatchGate.started = true
-					await gate.promise
-					return result
-				}
-				return handle
-			}
-			return transaction
-		}
-		return { sourceId, destinationId: destination.id }
-	})
-	try {
-		const dialog = await openMenu(page)
-		const add = dialog.getByRole('button', {
-			name: 'Add 25 sample Expense Transactions',
-			exact: true
-		})
-		await expect(add).toBeEnabled()
-		await add.click()
-		await expect.poll(() => page.evaluate(() => window.paginationBatchGate.started)).toBe(true)
-		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-		const settings = await openSidebarSection(page, 'Settings')
-		await settings
-			.getByLabel('Current Workspace', { exact: true })
-			.selectOption(fixture.destinationId)
-		await expect(page).toHaveURL(
-			(url) => url.searchParams.get('workspace') === fixture.destinationId
-		)
-		await page.evaluate(() => window.paginationBatchGate.release())
-		await openMenu(page)
-		await expect(dialog.getByRole('status').filter({ hasText: /1 of 25/ })).toBeVisible()
-		await expect(add).toBeEnabled()
-		await expect
-			.poll(() =>
-				page.evaluate(async ({ sourceId, destinationId }) => {
-					const sessionPath = '/src/lib/jazz-session.ts'
-					const schemaPath = '/src/lib/schema.ts'
-					const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
-						await import(sessionPath)
-					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-					const db = getCurrentJazzSession()?.getSnapshot().client?.db
-					if (!db) throw new Error('Missing sample session')
-					const rows = await db.all(app.transactions, { tier: 'remote' })
-					return {
-						source: rows.filter((row) => row.organizationId === sourceId).length,
-						destination: rows.filter((row) => row.organizationId === destinationId).length
-					}
-				}, fixture)
+test(
+	'workspace replacement drains the issued sample and never retargets subsequent entries',
+	{ tag: ['@workspaces'] },
+	async ({ page }) => {
+		await seed(page)
+		const fixture = await page.evaluate(async () => {
+			const sessionPath = '/src/lib/jazz-session.ts'
+			const schemaPath = '/src/lib/schema.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+				sessionPath
 			)
-			.toEqual({ source: 1, destination: 0 })
-	} finally {
-		await page.evaluate(() => {
-			window.paginationBatchGate.release()
-			window.paginationBatchGate.restore()
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const snapshot = getCurrentJazzSession()?.getSnapshot()
+			if (!snapshot?.client || !snapshot.account) throw new Error('Missing sample session')
+			const db = snapshot.client.db
+			const sourceId = new URL(location.href).searchParams.get('workspace')
+			if (!sourceId) throw new Error('Missing source scope')
+			const tx = db.beginTransaction()
+			const destination = tx.insert(app.organizations, {
+				name: 'Batch replacement workspace',
+				kind: 'personal',
+				ownerId: snapshot.account.id,
+				defaultCurrency: 'USD'
+			})
+			tx.insert(app.organizationMembers, {
+				organizationId: destination.id,
+				userId: snapshot.account.id,
+				role: 'owner',
+				accountAccessMode: 'all'
+			})
+			tx.insert(app.accounts, {
+				organizationId: destination.id,
+				name: 'Replacement ledger',
+				kind: 'bank',
+				currency: 'USD'
+			})
+			for (const kind of ['income', 'expense'] satisfies ('income' | 'expense')[])
+				tx.insert(app.categories, {
+					organizationId: destination.id,
+					name: 'Uncategorized',
+					kind,
+					isSystem: true
+				})
+			await tx.commit().wait({ tier: 'global' })
+			const gate = Promise.withResolvers<void>()
+			const begin = db.beginTransaction.bind(db)
+			let first = true
+			window.paginationBatchGate = {
+				started: false,
+				release: () => gate.resolve(),
+				restore: () => {
+					db.beginTransaction = begin
+				}
+			}
+			db.beginTransaction = (...args) => {
+				const transaction = begin(...args)
+				if (!first) return transaction
+				first = false
+				const commit = transaction.commit.bind(transaction)
+				transaction.commit = (...args) => {
+					const handle = commit(...args)
+					const wait = handle.wait.bind(handle)
+					handle.wait = async (...options) => {
+						const [option] = options
+						const result =
+							option.tier === 'edge'
+								? await wait({ tier: 'edge' })
+								: await wait({ tier: option.tier })
+						window.paginationBatchGate.started = true
+						await gate.promise
+						return result
+					}
+					return handle
+				}
+				return transaction
+			}
+			return { sourceId, destinationId: destination.id }
 		})
+		try {
+			const dialog = await openMenu(page)
+			const add = dialog.getByRole('button', {
+				name: 'Add 25 sample Expense Transactions',
+				exact: true
+			})
+			await expect(add).toBeEnabled()
+			await add.click()
+			await expect.poll(() => page.evaluate(() => window.paginationBatchGate.started)).toBe(true)
+			await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+			const settings = await openSidebarSection(page, 'Settings')
+			await settings
+				.getByLabel('Current Workspace', { exact: true })
+				.selectOption(fixture.destinationId)
+			await expect(page).toHaveURL(
+				(url) => url.searchParams.get('workspace') === fixture.destinationId
+			)
+			await page.evaluate(() => window.paginationBatchGate.release())
+			await openMenu(page)
+			await expect(dialog.getByRole('status').filter({ hasText: /1 of 25/ })).toBeVisible()
+			await expect(add).toBeEnabled()
+			await expect
+				.poll(() =>
+					page.evaluate(async ({ sourceId, destinationId }) => {
+						const sessionPath = '/src/lib/jazz-session.ts'
+						const schemaPath = '/src/lib/schema.ts'
+						const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') =
+							await import(sessionPath)
+						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+						const db = getCurrentJazzSession()?.getSnapshot().client?.db
+						if (!db) throw new Error('Missing sample session')
+						const rows = await db.all(app.transactions, { tier: 'remote' })
+						return {
+							source: rows.filter((row) => row.organizationId === sourceId).length,
+							destination: rows.filter((row) => row.organizationId === destinationId).length
+						}
+					}, fixture)
+				)
+				.toEqual({ source: 1, destination: 0 })
+		} finally {
+			await page.evaluate(() => {
+				window.paginationBatchGate.release()
+				window.paginationBatchGate.restore()
+			})
+		}
 	}
-})
+)

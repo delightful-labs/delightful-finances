@@ -6,7 +6,7 @@ import type {
 	FormChildEvent,
 	FormObservation,
 	FormReadinessResult
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 
 /** Adapts the domain's public projection; domain policy and write resources remain elsewhere. */
 export function createScopedFormReadinessMachine<

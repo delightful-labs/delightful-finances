@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Transaction, ReadTier, type schema } from 'jazz-tools'
 import { createActor, fromPromise, toPromise } from 'xstate'
-import { transactionCheckpointSchema } from '#lib/transaction-save-contract.js'
+import { transactionCheckpointSchema } from '#lib/contracts/transaction-save-contract.js'
 import { app, type Check } from '#lib/schema.js'
 import { createTransactionSaveMachine } from './transaction-save.js'
-import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
+import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
 
 const organizationId = '22222222-2222-4222-8222-222222222222'
@@ -187,7 +187,9 @@ describe('staged Check recovery and interruptions', () => {
 	it('retains the allocated checkpoint when cancellation arrives during allocation', async () => {
 		const f = fixture()
 		const allocated =
-			Promise.withResolvers<import('#lib/transaction-save-contract.js').TransactionCheckpoint>()
+			Promise.withResolvers<
+				import('#lib/contracts/transaction-save-contract.js').TransactionCheckpoint
+			>()
 		const logic = f.machine.provide({
 			actors: { allocate: fromPromise(() => allocated.promise) }
 		})

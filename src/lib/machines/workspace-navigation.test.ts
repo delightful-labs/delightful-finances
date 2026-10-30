@@ -4,7 +4,7 @@ import { createWorkspaceNavigationMachine } from './workspace-navigation.js'
 import type {
 	NavigationStatusEvent,
 	WorkspaceNavigationFacts
-} from '../workspace-orchestration-contract.js'
+} from '../contracts/workspace-orchestration-contract.js'
 import { workspaceReports } from './workspace-reports.fixture.js'
 import { scope, records } from './workspace-integrity.fixture.js'
 import {

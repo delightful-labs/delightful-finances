@@ -1,10 +1,10 @@
 <script lang="ts" generics="View extends FormPresentation">
 	import { Button, Dialog } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
-	import type { FormPresentation } from '#lib/form-contract.js'
+	import type { FormPresentation } from '#lib/contracts/form-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import AddIcon from 'tdesign-icons-svg/src/add.svg?component'
 	import SaveIcon from 'tdesign-icons-svg/src/save.svg?component'
 	import CloseIcon from 'tdesign-icons-svg/src/close.svg?component'

@@ -18,8 +18,8 @@
 	import Message from '#lib/components/Message.svelte'
 	import TransactionList from '#lib/components/TransactionList.svelte'
 	import QueryContent from '#lib/components/QueryContent.svelte'
-	import PageHeader from '#lib/components/PageHeader.svelte'
-	import FloatingActionLink from './FloatingActionLink.svelte'
+	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
+	import FloatingActionLink from './navigation/FloatingActionLink.svelte'
 
 	let {
 		kind,

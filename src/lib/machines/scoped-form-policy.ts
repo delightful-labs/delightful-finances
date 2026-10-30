@@ -7,7 +7,7 @@ import type {
 	FormObservation,
 	FormOperationResult,
 	FormOperationInput
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 import { createScopedFormWriteMachine, type FormPersistence } from './scoped-form-write.js'
 import type { ScopedFormOptions } from './scoped-form.js'
 

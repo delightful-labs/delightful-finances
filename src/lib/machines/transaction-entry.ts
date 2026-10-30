@@ -4,17 +4,21 @@ import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
 import { createTransactionSubmissionMachine } from './transaction-submission.js'
 import type { TransactionSaveDb } from './transaction-save.js'
-import { transferEditRequiresUnlink } from '#lib/transaction-save-contract.js'
+import { transferEditRequiresUnlink } from '#lib/contracts/transaction-save-contract.js'
 import { workspaceHref } from '../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
-import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
+import type {
+	FormCapability,
+	FormChildEvent,
+	FormObservation
+} from '#lib/contracts/form-contract.js'
 import type {
 	TransactionEntryObservation,
 	TransactionEntryReason,
 	TransactionEntryScope
-} from '#lib/transaction-entry-contract.js'
+} from '#lib/contracts/transaction-entry-contract.js'
 import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 import {

@@ -1,12 +1,16 @@
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import type { AccountCurrency } from '#lib/domain/account-currency.js'
 import { assign, setup, type SnapshotFrom } from 'xstate'
-import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
+import type {
+	FormCapability,
+	FormChildEvent,
+	FormObservation
+} from '#lib/contracts/form-contract.js'
 import type {
 	WorkspaceRenameObservation,
 	WorkspaceRenameReason,
 	WorkspaceRenameScope
-} from '#lib/workspace-rename-contract.js'
+} from '#lib/contracts/workspace-rename-contract.js'
 import { workspaceSettingsFormSchema } from '#lib/validation/identity.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'
 

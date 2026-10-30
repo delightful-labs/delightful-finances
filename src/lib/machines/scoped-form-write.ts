@@ -1,4 +1,4 @@
-import { formInterruptionResult } from '#lib/form-contract.js'
+import { formInterruptionResult } from '#lib/contracts/form-contract.js'
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 import {
 	assign,
@@ -16,7 +16,7 @@ import type {
 	FormObservation,
 	FormOperationInput,
 	FormOperationResult
-} from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
 
 /** Exactly one persistence implementation: a leaf effect or a resource-owning actor. */
 export type FormPersistence<

@@ -4,7 +4,7 @@ import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
 import { app } from '#lib/schema.js'
 import { appCheckSchema } from '#lib/validation/checks.js'
-import type { FormInterruption, FormSettlement } from '#lib/form-contract.js'
+import type { FormInterruption, FormSettlement } from '#lib/contracts/form-contract.js'
 
 export type CheckCreationDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 const requestSchema = z.strictObject({

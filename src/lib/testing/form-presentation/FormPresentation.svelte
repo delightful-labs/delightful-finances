@@ -2,7 +2,7 @@
 	import FormContent from '../../components/FormContent.svelte'
 	import FormModal from '../../components/FormModal.svelte'
 	import { createScopedFormController } from '../../forms.svelte.js'
-	import type { FormOperationResult } from '../../form-contract.js'
+	import type { FormOperationResult } from '../../contracts/form-contract.js'
 	import { harnessOptions, type Facts } from './form-presentation.js'
 
 	const modal = new URLSearchParams(location.search).has('modal')

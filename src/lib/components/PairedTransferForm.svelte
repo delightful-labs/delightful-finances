@@ -2,7 +2,7 @@
 	import { Button, FieldFeedback, InputCurrency, InputDate, Select } from 'delightful-ui'
 	import { untrack } from 'svelte'
 	import type { Account } from '#lib/schema.js'
-	import type { InternalTransferEntryView } from '#lib/transfer-create-contract.js'
+	import type { InternalTransferEntryView } from '#lib/contracts/transfer-create-contract.js'
 	import { amountInputPattern } from '#lib/domain/money.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import { m } from '#lib/paraglide/messages.js'

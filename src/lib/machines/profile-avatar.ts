@@ -16,8 +16,12 @@ import type {
 	FormObservation,
 	FormOperationInput,
 	FormOperationResult
-} from '#lib/form-contract.js'
-import type { ProfileObservation, ProfileReason, ProfileScope } from '#lib/profile-contract.js'
+} from '#lib/contracts/form-contract.js'
+import type {
+	ProfileObservation,
+	ProfileReason,
+	ProfileScope
+} from '#lib/contracts/profile-contract.js'
 
 type Draft = z.output<typeof profileAvatarFormSchema>
 type Values = z.output<typeof profileAvatarValuesSchema>

@@ -4,7 +4,7 @@ import type {
 	WorkspaceRenameObservation,
 	WorkspaceRenameReason,
 	WorkspaceRenameScope
-} from '#lib/workspace-rename-contract.js'
+} from '#lib/contracts/workspace-rename-contract.js'
 import { createWorkspaceRenameFormOptions, workspaceRenameScope } from './workspace-rename.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
 

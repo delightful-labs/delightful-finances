@@ -24,8 +24,8 @@ import type {
 	FormResult,
 	ScopedFormView,
 	FormSubmissionProgressEvent
-} from '#lib/form-contract.js'
-import { formInterruptionResult } from '#lib/form-contract.js'
+} from '#lib/contracts/form-contract.js'
+import { formInterruptionResult } from '#lib/contracts/form-contract.js'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 

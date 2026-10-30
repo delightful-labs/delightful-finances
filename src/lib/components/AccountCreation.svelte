@@ -3,7 +3,7 @@
 	import { getContext, type Snippet } from 'svelte'
 	import { fromStore } from 'svelte/store'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
-	import type { AccountCreationObservation } from '#lib/account-creation-contract.js'
+	import type { AccountCreationObservation } from '#lib/contracts/account-creation-contract.js'
 	import { createScopedFormController } from '#lib/forms.svelte.js'
 	import { createAccountCreationFormOptions } from '#lib/machines/account-creation-access.js'
 	import { app } from '#lib/schema.js'

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button, Dialog, Text, InputAvatar } from 'delightful-ui'
 	import { avatarMimeType, profileAvatarFormSchema } from '#lib/validation/identity.js'
-	import type { ProfileView } from '#lib/profile-contract.js'
+	import type { ProfileView } from '#lib/contracts/profile-contract.js'
 	import FormFeedback from './FormFeedback.svelte'
 	import { formReasonText } from '#lib/form-messages.js'
 	import { m } from '#lib/paraglide/messages.js'

@@ -224,52 +224,51 @@ test('account permission dialog receives live grants and closing preserves an is
 	}
 })
 
-test('account archive stays usable when unopened permission data has an unanswered remote', async ({
-	playwright,
-	baseURL,
-	authority,
-	remote,
-	profile
-}) => {
-	if (!baseURL) throw new Error('Expected isolated production preview URL')
-	const context = await playwright.chromium.launchPersistentContext(profile, { baseURL })
-	try {
-		const page = context.pages()[0] ?? (await context.newPage())
-		const { workspace } = await prepareSavedExpense(page)
-		const account = await authority.one(
-			app.accounts.where({ organizationId: workspace, name: 'Silent remote ledger' }),
-			{ tier: 'remote' }
-		)
-		if (!account) throw new Error('Expected fixture account')
-		await navigateSidebar(page, 'Accounts')
-		remote.silence()
-		const dialog = await openAccountActions(page, account.name)
-		const archive = dialog.getByRole('button', { name: 'Archive', exact: true })
-		await expect(archive).toBeEnabled()
-		await archive.click()
-		await expect(
-			page.getByRole('status').filter({ hasText: `Account ${account.name} archived.` })
-		).toBeVisible()
-		expect(
-			(await authority.one(app.accounts.where({ id: account.id }), { tier: 'remote' }))?.archivedAt
-		).toBeNull()
-		await page.reload()
-		await expect(
-			page.getByRole('main').getByRole('cell', { name: account.name, exact: true })
-		).toHaveCount(0)
-		remote.resume()
-		await expect
-			.poll(async () =>
-				Boolean(
-					(await authority.one(app.accounts.where({ id: account.id }), { tier: 'remote' }))
-						?.archivedAt
-				)
+test(
+	'account archive stays usable when unopened permission data has an unanswered remote',
+	{ tag: ['@account-archive'] },
+	async ({ playwright, baseURL, authority, remote, profile }) => {
+		if (!baseURL) throw new Error('Expected isolated production preview URL')
+		const context = await playwright.chromium.launchPersistentContext(profile, { baseURL })
+		try {
+			const page = context.pages()[0] ?? (await context.newPage())
+			const { workspace } = await prepareSavedExpense(page)
+			const account = await authority.one(
+				app.accounts.where({ organizationId: workspace, name: 'Silent remote ledger' }),
+				{ tier: 'remote' }
 			)
-			.toBe(true)
-	} finally {
-		await context.close()
+			if (!account) throw new Error('Expected fixture account')
+			await navigateSidebar(page, 'Accounts')
+			remote.silence()
+			const dialog = await openAccountActions(page, account.name)
+			const archive = dialog.getByRole('button', { name: 'Archive', exact: true })
+			await expect(archive).toBeEnabled()
+			await archive.click()
+			await expect(
+				page.getByRole('status').filter({ hasText: `Account ${account.name} archived.` })
+			).toBeVisible()
+			expect(
+				(await authority.one(app.accounts.where({ id: account.id }), { tier: 'remote' }))
+					?.archivedAt
+			).toBeNull()
+			await page.reload()
+			await expect(
+				page.getByRole('main').getByRole('cell', { name: account.name, exact: true })
+			).toHaveCount(0)
+			remote.resume()
+			await expect
+				.poll(async () =>
+					Boolean(
+						(await authority.one(app.accounts.where({ id: account.id }), { tier: 'remote' }))
+							?.archivedAt
+					)
+				)
+				.toBe(true)
+		} finally {
+			await context.close()
+		}
 	}
-})
+)
 
 async function prepareSavedExpense(page: Page) {
 	await page.goto('/accounts')
@@ -308,71 +307,69 @@ async function prepareSavedExpense(page: Page) {
 	return { target, workspace, transactionId }
 }
 
-test('cold local reads and saves work while an open remote connection never answers', async ({
-	playwright,
-	browserName,
-	baseURL,
-	remote,
-	profile
-}) => {
-	test.skip(browserName !== 'chromium', 'HTTP-cache isolation uses Chromium CDP')
-	if (!baseURL) throw new Error('Expected isolated production preview URL')
-	let current: BrowserContext | undefined
-	try {
-		current = await playwright.chromium.launchPersistentContext(profile, {
-			baseURL,
-			serviceWorkers: 'allow'
-		})
-		const warm = current.pages()[0] ?? (await current.newPage())
-		const { target } = await prepareSavedExpense(warm)
-		const cdp = await current.newCDPSession(warm)
-		await cdp.send('Network.enable')
-		await cdp.send('Network.clearBrowserCache')
-		// Exit the browser and SharedWorker; preserve only the application profile data.
-		await current.close()
-		current = undefined
-		remote.silence()
-		current = await playwright.chromium.launchPersistentContext(profile, {
-			baseURL,
-			serviceWorkers: 'allow'
-		})
-		const cold = current.pages()[0] ?? (await current.newPage())
-		const errors: string[] = []
-		cold.on('pageerror', (error) => errors.push(error.message))
-		const response = await cold.goto(target)
-		expect(response?.fromServiceWorker()).toBe(true)
-		await expect.poll(() => remote.observed.opened).toBeGreaterThan(0)
-		await expect.poll(() => remote.observed.clientBytes).toBeGreaterThan(0)
-		expect(await cold.evaluate(() => navigator.onLine)).toBe(true)
-		await expect(cold.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
-		await expect(cold.getByLabel('Description', { exact: true })).toHaveValue(
-			'Silent remote saved record'
-		)
-		await cold.getByLabel('Amount', { exact: true }).fill('42.13')
-		await cold.getByRole('button', { name: 'Save Transaction', exact: true }).click()
-		await expect(
-			cold.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
-		).toBeVisible()
-		const reload = await cold.reload()
-		expect(reload?.fromServiceWorker()).toBe(true)
-		await expect(cold.getByLabel('Amount', { exact: true })).toHaveValue('42.13')
-		await expect(cold).toHaveURL(new URL(target, baseURL).href)
-		await navigateSidebar(cold, 'Accounts')
-		const accountDialog = await openCreationModal(cold, 'Add Account')
-		await accountDialog.getByLabel('Account name').fill('Cold local cash')
-		await accountDialog.getByLabel('Account type').selectOption('cash')
-		await accountDialog.getByRole('button', { name: 'Add Account', exact: true }).click()
-		await expect(accountDialog.getByRole('status')).toContainText('Cold local cash')
-		await closeCreationModal(cold)
-		await cold.reload()
-		await expect(
-			cold.getByRole('main').getByRole('cell', { name: 'Cold local cash', exact: true })
-		).toBeVisible()
-		expect(errors).toEqual([])
-	} finally {
-		await current?.close()
+test(
+	'cold local reads and saves work while an open remote connection never answers',
+	{ tag: [] },
+	async ({ playwright, browserName, baseURL, remote, profile }) => {
+		test.skip(browserName !== 'chromium', 'HTTP-cache isolation uses Chromium CDP')
+		if (!baseURL) throw new Error('Expected isolated production preview URL')
+		let current: BrowserContext | undefined
+		try {
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow'
+			})
+			const warm = current.pages()[0] ?? (await current.newPage())
+			const { target } = await prepareSavedExpense(warm)
+			const cdp = await current.newCDPSession(warm)
+			await cdp.send('Network.enable')
+			await cdp.send('Network.clearBrowserCache')
+			// Exit the browser and SharedWorker; preserve only the application profile data.
+			await current.close()
+			current = undefined
+			remote.silence()
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow'
+			})
+			const cold = current.pages()[0] ?? (await current.newPage())
+			const errors: string[] = []
+			cold.on('pageerror', (error) => errors.push(error.message))
+			const response = await cold.goto(target)
+			expect(response?.fromServiceWorker()).toBe(true)
+			await expect.poll(() => remote.observed.opened).toBeGreaterThan(0)
+			await expect.poll(() => remote.observed.clientBytes).toBeGreaterThan(0)
+			expect(await cold.evaluate(() => navigator.onLine)).toBe(true)
+			await expect(cold.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
+			await expect(cold.getByLabel('Description', { exact: true })).toHaveValue(
+				'Silent remote saved record'
+			)
+			await cold.getByLabel('Amount', { exact: true }).fill('42.13')
+			await cold.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+			await expect(
+				cold.getByRole('status').filter({ hasText: /^Transaction saved\.$/ })
+			).toBeVisible()
+			const reload = await cold.reload()
+			expect(reload?.fromServiceWorker()).toBe(true)
+			await expect(cold.getByLabel('Amount', { exact: true })).toHaveValue('42.13')
+			await expect(cold).toHaveURL(new URL(target, baseURL).href)
+			await navigateSidebar(cold, 'Accounts')
+			const accountDialog = await openCreationModal(cold, 'Add Account')
+			await accountDialog.getByLabel('Account name').fill('Cold local cash')
+			await accountDialog.getByLabel('Account type').selectOption('cash')
+			await accountDialog.getByRole('button', { name: 'Add Account', exact: true }).click()
+			await expect(accountDialog.getByRole('status')).toContainText('Cold local cash')
+			await closeCreationModal(cold)
+			await cold.reload()
+			await expect(
+				cold.getByRole('main').getByRole('cell', { name: 'Cold local cash', exact: true })
+			).toBeVisible()
+			expect(errors).toEqual([])
+		} finally {
+			await current?.close()
+		}
 	}
-})
+)
 
 test('local saves continue when a fully negotiated connection stops answering', async ({
 	playwright,

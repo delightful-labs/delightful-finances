@@ -1,4 +1,4 @@
-import type { ScopedFormView } from '#lib/form-contract.js'
+import type { ScopedFormView } from '#lib/contracts/form-contract.js'
 export type FeedbackMessage =
 	{ text: string; role: 'status' | 'alert' } | { paragraphs: readonly string[]; role: 'alert' }
 export type FormFeedbackInput<Result, Reason> = {

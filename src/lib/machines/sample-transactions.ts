@@ -8,12 +8,16 @@ import {
 	type Snapshot
 } from 'xstate'
 import type { AppTransaction } from '#lib/domain/transaction.js'
-import type { FormChildEvent, FormOperationInput, FormOperationResult } from '#lib/form-contract.js'
+import type {
+	FormChildEvent,
+	FormOperationInput,
+	FormOperationResult
+} from '#lib/contracts/form-contract.js'
 import type {
 	TransactionEntryObservation,
 	TransactionEntryReason,
 	TransactionEntryScope
-} from '#lib/transaction-entry-contract.js'
+} from '#lib/contracts/transaction-entry-contract.js'
 
 type CreationInput<Values = AppTransaction> = FormOperationInput<
 	Values,

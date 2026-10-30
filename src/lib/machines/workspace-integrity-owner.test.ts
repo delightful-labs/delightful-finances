@@ -4,7 +4,7 @@ import { workspaceReports } from './workspace-reports.fixture.js'
 import {
 	selectWorkspaceIntegrityView,
 	type IntegrityStatusEvent
-} from '../workspace-integrity-contract.js'
+} from '../contracts/workspace-integrity-contract.js'
 import {
 	createWorkspaceIntegrityOwner,
 	type IntegrityBinding

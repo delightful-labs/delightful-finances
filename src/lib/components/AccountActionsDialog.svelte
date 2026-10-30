@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button, Dialog, StatusMessage } from 'delightful-ui'
-	import Icon from './AppIcon.svelte'
+	import Icon from './navigation/AppIcon.svelte'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { AccountArchiveView } from '#lib/machines/account-archive.js'
 	import type { AccountDeleteGrantView } from '#lib/machines/account-delete-grants.js'

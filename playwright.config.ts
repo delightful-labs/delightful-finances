@@ -1,29 +1,20 @@
 import { defineConfig } from '@playwright/test'
+import base from './tests/config/base.js'
 
 export default defineConfig({
-	workers: 1,
-	timeout: 120_000,
-	expect: { timeout: 15_000 },
-	use: {
-		baseURL: 'http://127.0.0.1:5180',
-		trace: 'off',
-		screenshot: 'off',
-		video: 'off'
-	},
-	webServer: {
-		command: 'pnpm dev:agent --host 127.0.0.1',
-		url: 'http://127.0.0.1:5180',
-		reuseExistingServer: false
-	},
-	testMatch: '**/*.e2e.{ts,js}',
-	testIgnore: [
-		'**/tests/startup-stalled-remote.e2e.ts',
-		'**/tests/debugging.e2e.ts',
-		'**/tests/fake-data.e2e.ts',
-		'**/.delta/**',
-		'**/tests/pwa.e2e.ts',
-		'**/tests/authentication.e2e.ts',
-		'**/tests/permissions.e2e.ts',
-		'**/tests/workspace.e2e.ts'
+	...base,
+	projects: [
+		{
+			name: 'application',
+			testIgnore: [
+				...(Array.isArray(base.testIgnore) ? base.testIgnore : []),
+				'**/authentication.e2e.ts',
+				'**/permissions.e2e.ts',
+				'**/features/**/*.e2e.ts'
+			]
+		},
+		{ name: 'authentication', testMatch: 'authentication.e2e.ts', timeout: 60_000, workers: 1 },
+		{ name: 'permissions', testMatch: 'permissions.e2e.ts' },
+		{ name: 'workspace', testMatch: 'features/**/*.e2e.ts' }
 	]
 })

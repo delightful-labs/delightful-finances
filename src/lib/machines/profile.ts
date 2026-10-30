@@ -1,6 +1,14 @@
 import { assign, setup, type SnapshotFrom } from 'xstate'
-import type { ProfileObservation, ProfileReason, ProfileScope } from '#lib/profile-contract.js'
-import type { FormCapability, FormChildEvent, FormObservation } from '#lib/form-contract.js'
+import type {
+	ProfileObservation,
+	ProfileReason,
+	ProfileScope
+} from '#lib/contracts/profile-contract.js'
+import type {
+	FormCapability,
+	FormChildEvent,
+	FormObservation
+} from '#lib/contracts/form-contract.js'
 import { createProfileAvatarMachine } from './profile-avatar.js'
 import type { ScopedFormOptions } from './scoped-form.js'
 import { createSingleWriteFormOptions } from './scoped-form-policy.js'

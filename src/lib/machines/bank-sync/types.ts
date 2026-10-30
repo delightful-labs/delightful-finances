@@ -40,14 +40,14 @@ export type BankEvent =
 	| { type: 'CANCEL' }
 	| { type: 'RESET' }
 export type ProgressEvent = { type: 'IMPORT_PROGRESS'; counts: ImportCounts }
-export { bankSetupSteps } from '#lib/bank-presentation-contract.js'
+export { bankSetupSteps } from '#lib/contracts/bank-presentation-contract.js'
 export type {
 	BankSetupView,
 	BankStatus,
 	BankStatusKey,
 	LastSync
-} from '#lib/bank-presentation-contract.js'
-import type { BankSetupView, BankStatus } from '#lib/bank-presentation-contract.js'
+} from '#lib/contracts/bank-presentation-contract.js'
+import type { BankSetupView, BankStatus } from '#lib/contracts/bank-presentation-contract.js'
 export type BankViewMeta = {
 	status?: BankStatus
 	setupStep?: number

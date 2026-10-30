@@ -9,8 +9,8 @@ import type {
 	NavigationStatus,
 	NavigationStatusEvent,
 	WorkspaceNavigate
-} from '../workspace-orchestration-contract.js'
-export type { WorkspaceNavigationFacts } from '../workspace-orchestration-contract.js'
+} from '../contracts/workspace-orchestration-contract.js'
+export type { WorkspaceNavigationFacts } from '../contracts/workspace-orchestration-contract.js'
 type Input = { facts: WorkspaceNavigationFacts; recipient: NavigationRecipient }
 type Context = Input & {
 	resolving: WorkspaceNavigationFacts | undefined

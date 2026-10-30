@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createActor, fromTransition, waitFor } from 'xstate'
-import type { FormSubmissionProgressEvent } from '#lib/form-contract.js'
+import type { FormSubmissionProgressEvent } from '#lib/contracts/form-contract.js'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
 import { fixture, ready, schema, success } from './scoped-form.fixture.js'
 

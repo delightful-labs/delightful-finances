@@ -1,5 +1,5 @@
 import { m } from '#lib/paraglide/messages.js'
-import type { BankPresentation } from '#lib/bank-presentation-contract.js'
+import type { BankPresentation } from '#lib/contracts/bank-presentation-contract.js'
 import type { ActorRefFrom, EventObject, SnapshotFrom } from 'xstate'
 import { and, assign, not, or, raise, sendTo, setup, stateIn } from 'xstate'
 import {

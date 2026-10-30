@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createActor, getInitialSnapshot, waitFor, type SnapshotFrom } from 'xstate'
-import type { ProfileObservation, ProfileReason, ProfileScope } from '#lib/profile-contract.js'
+import type {
+	ProfileObservation,
+	ProfileReason,
+	ProfileScope
+} from '#lib/contracts/profile-contract.js'
 import {
 	createProfileAvailability,
 	createProfileFormOptions,

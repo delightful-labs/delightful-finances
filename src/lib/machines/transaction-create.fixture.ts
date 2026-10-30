@@ -3,7 +3,7 @@ import { Transaction } from 'jazz-tools'
 import { createActor, type InputFrom } from 'xstate'
 import { createTransactionSaveMachine } from './transaction-save.js'
 import { transactionEntryScope } from './transaction-entry.js'
-import type { TransactionEntryObservation } from '#lib/transaction-entry-contract.js'
+import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
 
 export const organizationId = '22222222-2222-4222-8222-222222222222'
