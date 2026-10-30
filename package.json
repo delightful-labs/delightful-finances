@@ -6,6 +6,7 @@
 	"scripts": {
 		"paraglide": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie baseLocale --emit-ts-declarations",
 		"dev": "vite dev",
+		"dev:network": "vite dev --host 0.0.0.0",
 		"dev:agent": "vite dev --config vite.e2e.config.ts --port 5180",
 		"precheck": "pnpm paraglide",
 		"prebuild": "pnpm paraglide",
