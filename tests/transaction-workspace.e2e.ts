@@ -94,6 +94,7 @@ for (const desktop of [true, false]) {
 				expect(
 					await main
 						.locator('form')
+						.filter({ has: page.getByLabel('Amount', { exact: true }) })
 						.evaluate((form) => form instanceof HTMLFormElement && form.checkValidity())
 				).toBe(valid)
 				const cancel = main.getByRole('button', { name: 'Cancel', exact: true })

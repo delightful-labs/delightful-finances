@@ -96,6 +96,7 @@ for (const role of ['admin', 'member', 'viewer']) {
 			await subject.goto('/')
 			await expect(subject.getByRole('complementary').getByRole('navigation')).toBeVisible()
 			await prepareSidebar(subject)
+			await expect(subject.getByLabel('Current Workspace', { exact: true })).not.toHaveValue('')
 			const subjectId = await subject.evaluate(async () => {
 				const path = '/src/lib/jazz-session.ts'
 				const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(

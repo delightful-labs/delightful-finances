@@ -7,7 +7,7 @@ test('mobile drawer preserves content width, prevents overflow and restores focu
 	await page.emulateMedia({ reducedMotion: 'reduce' })
 	await page.goto('/accounts')
 	const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
-	const main = page.locator('main')
+	const main = page.locator('main .content')
 	await expect(
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()

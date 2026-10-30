@@ -165,9 +165,8 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	await expect(page.getByRole('combobox')).toHaveCount(0)
 	await page.getByRole('button', { name: 'Add Account “Provider Savings”', exact: true }).click()
 	await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
-	const sync = page
-		.getByRole('main')
-		.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+	const bankPage = page.getByRole('heading', { name: 'Bank sync', exact: true }).locator('..')
+	const sync = bankPage.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
 	await sync.click()
 	await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
 	const savedBalances = await page.evaluate(async () => {
@@ -246,9 +245,7 @@ test('connects explicitly, creates provider-named accounts once, and imports ide
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	await page.reload()
 	await expect(discover).toBeEnabled()
-	const savedHistory = page
-		.getByRole('main')
-		.getByText(/Last sync:.*Imported: 0; already present: 2; omitted: 2/)
+	const savedHistory = bankPage.getByText(/Last sync:.*Imported: 0; already present: 2; omitted: 2/)
 	await expect(savedHistory).toBeVisible()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	// A new discovery uses the current capability report without replacing saved sync history.
@@ -535,18 +532,18 @@ test('cancels a pending sync, ignores its late response, and imports only on a n
 	await discover.click()
 	await page.getByRole('button', { name: 'Add Account “Cancelled Checking”', exact: true }).click()
 	await expect(page.getByText('Linked to Cancelled Checking', { exact: true })).toBeVisible()
-	const main = page.getByRole('main')
-	const sync = main.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+	const bankPage = page.getByRole('heading', { name: 'Bank sync', exact: true }).locator('..')
+	const sync = bankPage.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
 	await sync.click()
 	await pending.promise
-	await main.getByRole('button', { name: 'Cancel', exact: true }).click()
+	await bankPage.getByRole('button', { name: 'Cancel', exact: true }).click()
 	await expect(sync).toBeEnabled()
 	release.resolve()
 	await completed.promise
 	expect(operations).toEqual(['claim', 'discover', 'sync'])
-	await expect(main.getByText(/Imported:/)).toHaveCount(0)
+	await expect(bankPage.getByText(/Imported:/)).toHaveCount(0)
 	await sync.click()
-	await expect(main.getByText(/Imported: 1; already present: 0; omitted: 0/)).toBeVisible()
+	await expect(bankPage.getByText(/Imported: 1; already present: 0; omitted: 0/)).toBeVisible()
 	expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 	await page.reload()
 	await expect(discover).toBeEnabled()
