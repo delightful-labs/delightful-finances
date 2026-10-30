@@ -24,8 +24,10 @@
 	import {
 		financeFiltersKey,
 		accountOrderKey,
+		accountBalancesKey,
 		type FinanceFilters,
-		type AccountOrder
+		type AccountOrder,
+		type AccountBalances
 	} from '#lib/finance-filters.js'
 	import BankSyncIntegration from './BankSyncIntegration.svelte'
 	import AppShell from './AppShell.svelte'
@@ -119,10 +121,19 @@
 			: undefined
 	)
 	const accountBalances = $derived(
-		balanceTransactions.isLoading || balanceTransactions.error
+		!ready ||
+			accountQuery.isLoading ||
+			accountQuery.error ||
+			balanceTransactions.isLoading ||
+			balanceTransactions.error
 			? null
 			: calculateAccountBalances(accountQuery.current ?? [], balanceTransactions.current ?? [])
 	)
+	setContext<AccountBalances>(accountBalancesKey, {
+		get current() {
+			return accountBalances
+		}
+	})
 	const organizations = $derived(organizationQuery.current ?? [])
 	const activeAccounts = $derived(orderAccounts(accountQuery.current ?? [], preferredOrder))
 	const userId = $derived(session.current.account?.id)

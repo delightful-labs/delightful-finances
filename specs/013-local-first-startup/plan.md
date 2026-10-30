@@ -696,3 +696,44 @@ The user explicitly omitted performance measurements. No startup latency, heap, 
 benefit is claimed; dedicated cold projection and update/delete probes were not run. Jazz can retain
 or replicate full records despite projected application results. T035 calculation sharing and T036
 transaction-list work remain separate tasks.
+
+### T035 shared balance calculation review
+
+WorkspaceBootstrap owns the existing account and summary-transaction subscriptions and derived
+balance map. Publish that synchronous read-only map through accountBalancesKey context; Accounts
+consumes it and removes its redundant transaction subscription and calculation. Account queries,
+archive/grant actors and authorization decisions remain locally owned by their existing integrations.
+The map is unavailable while workspace readiness or either source query is unavailable/loading/failed.
+This is pure synchronous derivation, with no acquired resource, asynchronous workflow, or new actor.
+The calculation stays within the mounted workspace integration lifetime. No measured CPU or startup
+benefit is claimed. Implementation awaits review before tests; affected coverage is balance unit,
+sidebar viewport/workspace/offline cases and account archive/order/access scenarios.
+
+### T036 bounded date-group scan review
+
+TransactionView acquires all readable transactions of the selected kind, filters selected accounts,
+and builds full-day groups/totals. TransactionList renders 25 rows but previously flatMapped every
+date group for each page. Replace that scan with a loop that skips preceding groups and stops at the
+page end. Keep original group totals, count, page clamping, ordering, links and date-boundary slices.
+This synchronous presentation transformation acquires no resource and needs no workflow machine.
+
+Jazz limit/offset alone cannot preserve the current full filtered count and full-day totals without
+additional reads/aggregation design; acquisition and grouping remain unchanged. No latency or memory
+measurement is claimed, per the user's instruction to omit measurements. The bounded scan reduces
+visited groups on earlier pages; the final page still scans preceding groups. Implementation awaits
+review before tests. Inspect transaction pagination/browser cases for cross-day page boundaries,
+full-day totals, direct/out-of-range page URLs and live edits/deletes before focused verification.
+
+T036 focused verification: four pagination browser cases passed against disposable in-memory Jazz.
+Coverage includes URL/history/reload/filter reset, full-day totals, out-of-range clamping, mobile
+navigation, live deletes, and a new 60-row/three-date scenario whose pages cross date boundaries.
+The new scenario verifies 10+15, 5+20 and 10 visible rows while retaining full-day totals. No measured
+performance claim is made. Broader query acquisition changes remain deferred; this completes the
+bounded presentation scan slice.
+
+T035 verification completed: 3 account balance unit tests and 8 focused account browser cases passed
+(account archive, account ordering/workspace reset/direct create routes, and sidebar/table balance
+agreement at both viewport sizes including offline updates and workspace switching). Svelte/type,
+test type, formatting and whitespace checks passed. The malformed dual-key context registration was
+fixed and the four relevant account-order cases passed after correction. No performance measurement
+was requested or claimed.

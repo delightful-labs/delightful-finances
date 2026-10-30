@@ -8,12 +8,16 @@
 	import { stopAfterShutdown } from '#lib/actor-lifecycle.js'
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
-	import { app, transactionSummaryQuery } from '#lib/schema.js'
-	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
+	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { getContext, onMount } from 'svelte'
-	import { financeFiltersKey, type FinanceFilters } from '#lib/finance-filters.js'
+	import {
+		accountBalancesKey,
+		type AccountBalances,
+		financeFiltersKey,
+		type FinanceFilters
+	} from '#lib/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import {
@@ -28,6 +32,7 @@
 	import PageHeader from '#lib/components/PageHeader.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+	const sharedBalances = getContext<AccountBalances>(accountBalancesKey)
 
 	const db = getDb()
 	const session = fromStore(getJazzSession())
@@ -59,11 +64,6 @@
 	const allAccountGrants = new QuerySubscription(() =>
 		accountActionsOpen && filters.activeOrganizationId
 			? app.accountMemberships.where({ organizationId: filters.activeOrganizationId })
-			: undefined
-	)
-	const transactions = new QuerySubscription(() =>
-		filters.activeOrganizationId
-			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
 
@@ -129,14 +129,8 @@
 	let deleteGrantSnapshot = $state.raw(deleteGrantActor.getSnapshot())
 	const view = $derived(selectAccountArchiveView(archiveSnapshot))
 	const deleteGrantView = $derived(selectAccountDeleteGrantView(deleteGrantSnapshot))
-	const balances = $derived(
-		transactions.isLoading || transactions.error
-			? null
-			: calculateAccountBalances(
-					view.rows.map((row) => row.account),
-					transactions.current ?? []
-				)
-	)
+	const balances = $derived(sharedBalances.current)
+
 	$effect(() => {
 		actor.send({ type: 'OBSERVE', observation: observe() })
 		deleteGrantActor.send({ type: 'OBSERVE', observation: observeDeleteGrants() })

@@ -1,55 +1,64 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openSidebarSection } from './helpers/ui.js'
 
-async function seed(page: Page, count = 0) {
+async function seed(page: Page, count = 0, acrossDates = false) {
 	await page.goto('/accounts')
 	await expect(
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()
-	await page.evaluate(async (count) => {
-		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/jazz-session.ts'
-		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
-			sessionPath
-		)
-		const snapshot = getCurrentJazzSession()?.getSnapshot()
-		if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
-		const db = snapshot.client.db
-		const organization = await db.one(
-			app.organizations.where({ ownerId: snapshot.account.id, kind: 'personal' }),
-			{ tier: 'local' }
-		)
-		if (!organization) throw new Error('Workspace not ready')
-		const categories = await db.all(
-			app.categories.where({ organizationId: organization.id, kind: 'expense' }),
-			{ tier: 'local' }
-		)
-		const category = categories[0]
-		if (!category) throw new Error('Category not ready')
-		const write = await db.transaction((tx) => {
-			const account = tx.insert(app.accounts, {
-				organizationId: organization.id,
-				name: 'Pagination account',
-				kind: 'bank',
-				currency: 'USD'
-			})
-			for (let index = 0; index < count; index += 1) {
-				tx.insert(app.transactions, {
+	await page.evaluate(
+		async ({ count, acrossDates }) => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/jazz-session.js') = await import(
+				sessionPath
+			)
+			const snapshot = getCurrentJazzSession()?.getSnapshot()
+			if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
+			const db = snapshot.client.db
+			const organization = await db.one(
+				app.organizations.where({ ownerId: snapshot.account.id, kind: 'personal' }),
+				{ tier: 'local' }
+			)
+			if (!organization) throw new Error('Workspace not ready')
+			const categories = await db.all(
+				app.categories.where({ organizationId: organization.id, kind: 'expense' }),
+				{ tier: 'local' }
+			)
+			const category = categories[0]
+			if (!category) throw new Error('Category not ready')
+			const write = await db.transaction((tx) => {
+				const account = tx.insert(app.accounts, {
 					organizationId: organization.id,
-					accountId: account.id,
-					categoryId: category.id,
-					amountMinor: 100,
-					currency: 'USD',
-					kind: 'expense',
-					bookedOn: '2026-10-19',
-					description: `Pagination fixture ${index + 1}`,
-					source: 'manual'
+					name: 'Pagination account',
+					kind: 'bank',
+					currency: 'USD'
 				})
-			}
-		})
-		await write.wait({ tier: 'global' })
-	}, count)
+				for (let index = 0; index < count; index += 1) {
+					tx.insert(app.transactions, {
+						organizationId: organization.id,
+						accountId: account.id,
+						categoryId: category.id,
+						amountMinor: 100,
+						currency: 'USD',
+						kind: 'expense',
+						bookedOn: acrossDates
+							? index < 10
+								? '2026-10-19'
+								: index < 30
+									? '2026-10-18'
+									: '2026-10-17'
+							: '2026-10-19',
+						description: `Pagination fixture ${index + 1}`,
+						source: 'manual'
+					})
+				}
+			})
+			await write.wait({ tier: 'global' })
+		},
+		{ count, acrossDates }
+	)
 	await expect(
 		page.getByRole('main').getByRole('cell', { name: 'Pagination account', exact: true })
 	).toBeVisible()
@@ -182,6 +191,32 @@ test('URL pages preserve totals, five slots, history, reload and filter reset', 
 			url.searchParams.get('workspace') === workspaceId
 	)
 	await expect(navigation).toHaveCount(0)
+})
+
+test('pages span date groups while retaining full-day totals', async ({ page }) => {
+	await seed(page, 60, true)
+	await page.goto('/expenses')
+	const main = page.getByRole('main')
+	const entries = main.getByRole('link', { name: /Pagination fixture/ })
+	const navigation = page.getByRole('navigation', { name: 'Transaction pages', exact: true })
+	const day = (date: string) =>
+		main.locator('section').filter({ has: page.locator(`time[datetime="${date}"]`) })
+	await expect(entries).toHaveCount(25)
+	await expect(day('2026-10-19').getByRole('link')).toHaveCount(10)
+	await expect(day('2026-10-18').getByRole('link')).toHaveCount(15)
+	await expect(day('2026-10-18').getByLabel('Daily total: $20.00', { exact: true })).toBeVisible()
+	await expect(day('2026-10-17')).toHaveCount(0)
+	await navigation.getByRole('link', { name: 'Page 2', exact: true }).click()
+	await expect(entries).toHaveCount(25)
+	await expect(day('2026-10-19')).toHaveCount(0)
+	await expect(day('2026-10-18').getByRole('link')).toHaveCount(5)
+	await expect(day('2026-10-17').getByRole('link')).toHaveCount(20)
+	await expect(day('2026-10-18').getByLabel('Daily total: $20.00', { exact: true })).toBeVisible()
+	await expect(day('2026-10-17').getByLabel('Daily total: $30.00', { exact: true })).toBeVisible()
+	await navigation.getByRole('link', { name: 'Page 3', exact: true }).click()
+	await expect(entries).toHaveCount(10)
+	await expect(day('2026-10-18')).toHaveCount(0)
+	await expect(day('2026-10-17').getByLabel('Daily total: $30.00', { exact: true })).toBeVisible()
 })
 
 test('five-page mobile navigation never truncates or changes its item count', async ({ page }) => {

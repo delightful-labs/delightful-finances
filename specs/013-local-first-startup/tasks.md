@@ -300,27 +300,19 @@ smaller persisted replicas.
       confirmation instead of unrelated status messages. Per user direction, performance measurement
       was omitted. No startup-time, heap, network or storage improvement is claimed. Dedicated cold
       projection/update-delete probes were not run in this focused verification.
-- [ ] T035 [US1] After T034 review/verification, profile repeated `calculateAccountBalances` work in
-      `src/lib/components/WorkspaceBootstrap.svelte` and `src/routes/accounts/+page.svelte` using
-      `src/lib/domain/account-balances.ts`. Establish call frequency and large-history CPU cost before
-      adding shared ownership. If worthwhile, design one scope/generation-bound read-only calculation
-      source through the existing integration/context boundary; share only matching account/currency
-      and transaction inputs, without sharing authorization decisions. Preserve loading/error versus
-      zero, live edits, archive/filter/order behavior and identity/workspace invalidation. Record
-      exact paths and ownership in `plan.md` before implementation; use a statechart if a new workflow
-      is introduced. Verify focused balances/account-order/role/offline cases after implementation
-      approval and report measured CPU/usable-time benefit or close as evaluated without a change.
-- [ ] T036 [US1] After the preceding focused review cycles, profile acquisition/materialization,
-      filtering, grouping and rendering for large histories in `src/lib/components/TransactionView.svelte`,
-      `src/lib/components/TransactionList.svelte`, and their route/domain callers. Record exact hot
-      paths and comparable production traces in `research.md`. Evaluate current Jazz where/orderBy/
-      limit/offset APIs against existing URL pagination, date groups, account filters, archives,
-      transfers, live insert/edit/delete and navigation semantics before choosing a change. Keep
-      balance totals independently correct across the full readable history; a visible page is not
-      proof of complete data. Do not add a pagination owner, app worker or speculative memoization
-      without a measured case and machine-first review of any acquisition/growth lifecycle. Inspect
-      affected fixtures after review, then run focused correctness/cold/update checks and report
-      measured response/render cost, memory, and usable-time changes with their limits.
+- [x] T035 [US1] Share the shell's scope-owned read-only balance map with Accounts through the
+      existing context boundary. Accounts retains its own account authorization and display rows, and
+      no longer subscribes to balance transactions or recalculates them. During implementation, a
+      malformed setContext call temporarily replaced account-order context; it was corrected before
+      final verification. Verification: 3 balance unit tests, both sidebar viewport cases, account
+      archive and all 5 account-order browser cases passed; Svelte/type and formatting checks passed.
+      No performance measurement was requested or claimed.
+- [x] T036 [US1] Bound TransactionList's date-group scan to groups needed for the requested 25-row
+      page. Full filtered count, per-day totals, ordering, page clamping and links remain unchanged.
+      Four pagination browser cases passed, including a new 60-row three-date fixture crossing group
+      boundaries, live deletion, URL/history/reload/filter reset, full-day totals and mobile navigation.
+      No performance measurement was requested or claimed. Broader Jazz query pagination remains
+      deferred because it must preserve full counts and daily totals.
 
 ## Consolidated follow-through
 
