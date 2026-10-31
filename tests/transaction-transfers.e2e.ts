@@ -142,6 +142,12 @@ test(
 		const seed = await seedTransaction(page, 'transfer')
 		if (!seed.counterpartId) throw new Error('Missing transfer counterpart fixture')
 		await seedLinkedTransfer(page, seed.id, seed.counterpartId)
+		const suggestions = page.getByRole('region', { name: 'Matching transactions' })
+		await suggestions.getByRole('link', { name: 'Open Transaction', exact: true }).click()
+		await expect(page).toHaveURL(
+			(url) => url.pathname === `/expenses/${seed.id}` && Boolean(url.searchParams.get('workspace'))
+		)
+		await expect(suggestions.getByText('Linked to Transfer')).toBeVisible()
 		await page.evaluate(async (incomeId) => {
 			const schemaPath = '/src/lib/schema.ts'
 			const sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -154,9 +160,6 @@ test(
 				.update(app.transactions, incomeId, { internalTransferId: null })
 				.wait({ tier: 'local' })
 		}, seed.counterpartId)
-		await page.goto(`/expenses/${seed.id}`)
-
-		const suggestions = page.getByRole('region', { name: 'Matching transactions' })
 		await expect(suggestions.getByText(/This transfer link is inconsistent\./)).toBeVisible()
 		await expect(
 			page.getByRole('checkbox', { name: 'Convert this transaction to a transfer' })

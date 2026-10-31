@@ -19,8 +19,18 @@ import {
 	createInternalTransferMutationOwner,
 	type TransferMutationRequest
 } from '../transfers/internal-transfer-mutation-owner.js'
-import { createSessionStartupMachine } from 'delightful-local-first/session/workflow'
-import type { SessionStartupReport } from 'delightful-local-first/session/contracts'
+import {
+	createSessionStartupMachine,
+	createSessionReadinessMachine
+} from 'delightful-local-first/session/workflow'
+import type {
+	SessionReadinessBinding,
+	SessionReadinessScope,
+	SessionReadinessReport,
+	SessionObservationFailure,
+	SessionStatus,
+	SessionStartupReport
+} from 'delightful-local-first/session/contracts'
 import type { JazzStartupBinding } from '#lib/runtime/jazz-session.js'
 import { createWorkspaceReadinessMachine, type WorkspaceAttachment } from './readiness.js'
 import { required } from '../bank-sync/identity.js'
@@ -34,7 +44,7 @@ import {
 
 type Session = JazzSession<JazzClient>
 type Workspace = ActorRefFrom<ReturnType<typeof createWorkspaceReadinessMachine>>
-type Status = ReturnType<Session['getSnapshot']>['status']
+type Status = SessionStatus
 export type MutationNotice =
 	| { kind: 'generic'; transactionId: string }
 	| {
@@ -51,6 +61,10 @@ type Context = {
 	recoveryResult: RecoveryResult | undefined
 	session: Session | undefined
 	startupBinding: JazzStartupBinding | undefined
+	readinessScope: SessionReadinessScope | undefined
+	observation: number
+	retryAttempt: number
+	observationFailure: SessionObservationFailure | undefined
 	status: Status
 	workspace: Workspace | undefined
 	attachment: WorkspaceAttachment | undefined
@@ -62,14 +76,16 @@ type Context = {
 type Event =
 	| RecoveryNotice
 	| SessionStartupReport<Session>
+	| SessionReadinessReport
 	| { type: 'RECOVER'; phrase: string; origin: string; destination: string }
 	| { type: 'RETRY_NAVIGATION' }
 	| { type: 'START'; startup: JazzStartupBinding }
 	| { type: 'STARTUP_RELEASED' }
+	| { type: 'READINESS_RELEASED' }
 	| { type: 'STARTUP_UNAVAILABLE' }
 	| { type: 'RETRY' }
-	| { type: 'SESSION_OBSERVED'; status: Status }
-	| { type: 'SESSION_OBSERVER_FAILED' }
+	| { type: 'ACQUIRED_STATUS'; status: Status; afterRetry: number | undefined }
+	| { type: 'OBSERVATION_UNAVAILABLE' }
 	| { type: 'MUTATION_REJECTED'; transactionId: string }
 	| { type: 'TRANSFER_WRITE_TRACKED'; write: TransferWriteTracking }
 	| { type: 'TRANSFER_MUTATION_REQUEST'; request: TransferMutationRequest }
@@ -84,7 +100,7 @@ type Event =
 	| { type: 'SHUTDOWN' }
 	| { type: `xstate.error.actor.${string}`; actorId: string; error: unknown }
 
-/** Hosts enabling RECOVER supply the layout-owned binding factory; other lifecycles need none. */
+/** Layout-owned factories bind acquired session capabilities; Finance owns domain coordination. */
 export function createApplicationReadinessMachine(
 	navigation: { readHref: () => string; navigate: (destination: string) => Promise<void> } = {
 		readHref: () => '',
@@ -92,24 +108,17 @@ export function createApplicationReadinessMachine(
 			throw new Error('Navigation unavailable')
 		}
 	},
-	bindRestoration?: (session: Session) => RecoveryRestorationBinding
+	bindRestoration?: (session: Session) => RecoveryRestorationBinding,
+	bindReadiness?: (session: Session) => SessionReadinessBinding
 ) {
 	const actors = {
 		recovery: sessionRecoveryMachine,
 		transferMutationOwner: createInternalTransferMutationOwner(),
 		startup: createSessionStartupMachine<Session>(),
-		observeSession: fromCallback<Event, Session>(({ input, sendBack }) => {
-			// SDK notifications execute outside XState; bridge their failures explicitly.
-			const publish = () => {
-				try {
-					sendBack({ type: 'SESSION_OBSERVED', status: input.getSnapshot().status })
-				} catch {
-					sendBack({ type: 'SESSION_OBSERVER_FAILED' })
-				}
-			}
-			publish()
-			return input.subscribe(publish)
-		}),
+		sessionReadiness: createSessionReadinessMachine(),
+		bindSessionReadiness: fromPromise(({ input }: { input: Session }) =>
+			Promise.resolve({ session: input, readiness: required(bindReadiness)(input) })
+		),
 		observeMutationRejections: fromCallback<Event, Session>(({ input, sendBack }) => {
 			const db = input.getSnapshot().client?.db
 			if (!db) return
@@ -119,30 +128,39 @@ export function createApplicationReadinessMachine(
 					transactionId: rejection.transaction.transactionId
 				})
 			})
-		}),
-		retrySession: fromPromise(({ input }: { input: Session }) => input.retry())
+		})
 	}
 	const workflow = setup<
 		Context,
 		Event,
 		typeof actors,
 		{},
-		{ refreshAttachment: undefined; retireStartup: undefined },
+		{ refreshAttachment: undefined; retireStartup: undefined; shutDownReadiness: undefined },
 		{
 			startupOwnerFailed: undefined
 			currentStartup: undefined
+			currentReadiness: undefined
+			currentObservation: undefined
+			currentRetry: undefined
+			readinessStopping: undefined
 			shuttingDown: undefined
 			retryObserverFailed: undefined
 			retryStartupFailed: undefined
 			recoveryClosing: undefined
 			recoveryObserverFailed: undefined
 			recoveryStartupFailed: undefined
+			recoveryReadinessCrashed: undefined
 		},
 		never,
 		string
 	>({
 		actors,
 		actions: {
+			shutDownReadiness: enqueueActions(({ self, enqueue }) => {
+				const child = self.getSnapshot().children.sessionReadiness
+				if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
+				else enqueue.raise({ type: 'READINESS_RELEASED' })
+			}),
 			retireStartup: enqueueActions(({ context, self, enqueue }) => {
 				const child = self.getSnapshot().children.startup
 				if (context.startupBinding && child) {
@@ -159,6 +177,33 @@ export function createApplicationReadinessMachine(
 			})
 		},
 		guards: {
+			currentReadiness: ({ context, event }) =>
+				'scope' in event &&
+				event.scope.binding === context.readinessScope?.binding &&
+				event.scope.attachment === context.readinessScope.attachment,
+			currentObservation: and([
+				'currentReadiness',
+				({ context, event }) =>
+					(event.type === 'SESSION_STATUS' || event.type === 'SESSION_OBSERVATION_FAILED') &&
+					event.observation === context.observation
+			]),
+			currentRetry: and([
+				'currentReadiness',
+				({ context, event }) =>
+					(event.type === 'SESSION_RETRY_SETTLED' || event.type === 'SESSION_RETRY_STARTED') &&
+					event.attempt === context.retryAttempt
+			]),
+			readinessStopping: or([
+				stateIn('closing'),
+				stateIn('releasingReadiness'),
+				stateIn('releasingStartup'),
+				stateIn('settlingStartupFailure'),
+				stateIn('startupActorFailed'),
+				stateIn({ running: { retrying: 'closing' } }),
+				stateIn({ running: { retrying: 'startupFailed' } }),
+				stateIn({ running: { recovering: 'closing' } }),
+				stateIn({ running: { recovering: 'startupFailed' } })
+			]),
 			currentStartup: ({ context, event }) =>
 				(event.type === 'SESSION_STARTING' ||
 					event.type === 'SESSION_ACQUIRED' ||
@@ -173,6 +218,7 @@ export function createApplicationReadinessMachine(
 			shuttingDown: or([
 				stateIn('closing'),
 				stateIn('releasingStartup'),
+				stateIn('releasingReadiness'),
 				stateIn({ running: { retrying: 'closing' } }),
 				stateIn({ running: { recovering: 'closing' } })
 			]),
@@ -180,7 +226,8 @@ export function createApplicationReadinessMachine(
 			retryStartupFailed: stateIn({ running: { retrying: 'startupFailed' } }),
 			recoveryClosing: stateIn({ running: { recovering: 'closing' } }),
 			recoveryObserverFailed: stateIn({ running: { recovering: 'observerFailed' } }),
-			recoveryStartupFailed: stateIn({ running: { recovering: 'startupFailed' } })
+			recoveryStartupFailed: stateIn({ running: { recovering: 'startupFailed' } }),
+			recoveryReadinessCrashed: stateIn({ running: { recovering: 'readinessCrashed' } })
 		}
 	})
 	const attach = workflow.assign(({ context, spawn }) => ({
@@ -204,11 +251,10 @@ export function createApplicationReadinessMachine(
 	})
 	// These states retain the parent's issued retry while its observer and workspace drain.
 	const retryDrain = workflow.createStateConfig({
-		entry: [stopChild('sessionObserver'), shutDownWorkspace],
+		entry: shutDownWorkspace,
 		on: {
-			SESSION_OBSERVED: {},
-			SESSION_OBSERVER_FAILED: {},
-			'xstate.error.actor.sessionObserver': {},
+			ACQUIRED_STATUS: {},
+			OBSERVATION_UNAVAILABLE: {},
 			ATTACH_WORKSPACE: {},
 			ATTACH_PENDING: {},
 			RECOVER: {},
@@ -222,19 +268,15 @@ export function createApplicationReadinessMachine(
 		pending: ({ context, event }) =>
 			event.type === 'ATTACH_WORKSPACE' ? event.attachment : context.pending
 	})
+	const shutDownRecovery = workflow.enqueueActions(({ self, enqueue }) => {
+		const child = self.getSnapshot().children.recovery
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
+	})
 	const recoveryDrain = workflow.createStateConfig({
-		entry: [
-			stopChild('sessionObserver'),
-			shutDownWorkspace,
-			workflow.enqueueActions(({ self, enqueue }) => {
-				const child = self.getSnapshot().children.recovery
-				if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
-			})
-		],
+		entry: [shutDownWorkspace, shutDownRecovery],
 		on: {
-			SESSION_OBSERVED: {},
-			SESSION_OBSERVER_FAILED: {},
-			'xstate.error.actor.sessionObserver': {},
+			ACQUIRED_STATUS: {},
+			OBSERVATION_UNAVAILABLE: {},
 			ATTACH_WORKSPACE: {},
 			ATTACH_PENDING: {},
 			RECOVERY_DRAIN_REQUESTED: {},
@@ -256,6 +298,10 @@ export function createApplicationReadinessMachine(
 			recoveryResult: undefined,
 			session: undefined,
 			startupBinding: undefined,
+			readinessScope: undefined,
+			observation: 0,
+			retryAttempt: 0,
+			observationFailure: undefined,
 			status: 'transitioning',
 			workspace: undefined,
 			attachment: undefined,
@@ -281,6 +327,19 @@ export function createApplicationReadinessMachine(
 					{ target: '.settlingStartupFailure', actions: 'retireStartup' }
 				]
 			},
+			{
+				id: 'sessionReadiness',
+				src: 'sessionReadiness',
+				input: ({ self }) => ({ reportTo: self }),
+				onDone: [
+					{ guard: 'readinessStopping', actions: raise({ type: 'READINESS_RELEASED' }) },
+					{ target: '.settlingReadinessCrash' }
+				],
+				onError: [
+					{ guard: 'shuttingDown', actions: raise({ type: 'READINESS_RELEASED' }) },
+					{ target: '.settlingReadinessCrash' }
+				]
+			},
 			{ id: 'transferMutationOwner', src: 'transferMutationOwner' }
 		],
 		on: {
@@ -295,6 +354,27 @@ export function createApplicationReadinessMachine(
 			START: {},
 			RETRY: {},
 			STARTUP_RELEASED: {},
+			READINESS_RELEASED: {},
+			SESSION_STATUS: {
+				guard: 'currentObservation',
+				actions: raise(({ event }) => ({
+					type: 'ACQUIRED_STATUS',
+					status: event.status,
+					afterRetry: event.afterRetry
+				}))
+			},
+			SESSION_OBSERVATION_FAILED: {
+				guard: 'currentObservation',
+				actions: [
+					assign({ observationFailure: ({ event }) => event.reason }),
+					raise({ type: 'OBSERVATION_UNAVAILABLE' })
+				]
+			},
+			SESSION_OBSERVATION_CLEANUP_FAILED: {},
+			SESSION_RETRY_STARTED: {},
+			SESSION_RETRY_SETTLED: {},
+			ACQUIRED_STATUS: { actions: assign({ status: ({ event }) => event.status }) },
+			OBSERVATION_UNAVAILABLE: {},
 			SESSION_STARTING: {},
 			SESSION_ACQUIRED: {},
 			SESSION_STARTUP_FAILED: {
@@ -400,14 +480,42 @@ export function createApplicationReadinessMachine(
 				on: {
 					SESSION_ACQUIRED: {
 						guard: 'currentStartup',
-						target: 'running',
-						actions: assign({ session: ({ event }) => event.session })
+						target: 'bindingReadiness'
 					},
 					SESSION_STARTUP_FAILED: [
 						{ guard: 'startupOwnerFailed', target: 'settlingStartupFailure' },
 						{ guard: 'currentStartup', target: 'startupFailed' }
 					]
 				}
+			},
+			bindingReadiness: {
+				invoke: {
+					src: 'bindSessionReadiness',
+					input: ({ event }) => {
+						if (event.type !== 'SESSION_ACQUIRED') throw new Error('Missing acquired session')
+						return event.session
+					},
+					onDone: {
+						target: 'running',
+						actions: [
+							assign(({ event }) => ({
+								session: event.output.session,
+								readinessScope: { binding: event.output.readiness.binding, attachment: {} },
+								observation: 0,
+								retryAttempt: 0,
+								observationFailure: undefined,
+								status: 'transitioning'
+							})),
+							sendTo('sessionReadiness', ({ context, event }) => ({
+								type: 'BIND',
+								scope: required(context.readinessScope),
+								capability: event.output.readiness.capability
+							}))
+						]
+					},
+					onError: 'settlingReadinessCrash'
+				},
+				on: { ATTACH_WORKSPACE: {}, ATTACH_PENDING: {}, RETRY: {} }
 			},
 			startupFailed: {
 				tags: 'startup-error',
@@ -433,8 +541,17 @@ export function createApplicationReadinessMachine(
 				}
 			},
 			settlingStartupFailure: {
-				entry: shutDownWorkspace,
-				always: { guard: ({ context }) => !context.workspace, target: 'startupActorFailed' },
+				entry: [shutDownWorkspace, 'shutDownReadiness'],
+				initial: 'releasingReadiness',
+				states: {
+					releasingReadiness: { on: { READINESS_RELEASED: 'workspace' } },
+					workspace: {
+						always: {
+							guard: ({ context }) => !context.workspace,
+							target: '#application-readiness.startupActorFailed'
+						}
+					}
+				},
 				on: { ATTACH_WORKSPACE: {}, ATTACH_PENDING: {}, RETRY: {}, START: {} }
 			},
 			startupActorFailed: {
@@ -466,6 +583,31 @@ export function createApplicationReadinessMachine(
 					}
 				}
 			},
+			settlingReadinessCrash: {
+				entry: shutDownWorkspace,
+				always: { guard: ({ context }) => !context.workspace, target: 'readinessCrashed' },
+				on: {
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					RETRY: {},
+					START: {},
+					OBSERVATION_UNAVAILABLE: {},
+					ACQUIRED_STATUS: {},
+					STARTUP_UNAVAILABLE: {}
+				}
+			},
+			readinessCrashed: {
+				tags: 'startup-error',
+				on: {
+					RETRY: {},
+					START: {},
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					OBSERVATION_UNAVAILABLE: {},
+					ACQUIRED_STATUS: {},
+					STARTUP_UNAVAILABLE: {}
+				}
+			},
 			settlingObserverFailure: {
 				entry: shutDownWorkspace,
 				always: { guard: ({ context }) => !context.workspace, target: 'observerFailed' },
@@ -474,7 +616,32 @@ export function createApplicationReadinessMachine(
 			observerFailed: {
 				tags: 'startup-error',
 				on: {
-					RETRY: { target: 'running', actions: assign({ recoveryResult: undefined }) },
+					RETRY: [
+						{
+							guard: ({ context }) =>
+								context.observationFailure !== undefined &&
+								context.observation < Number.MAX_SAFE_INTEGER,
+							target: 'running',
+							actions: [
+								assign(({ context }) => ({
+									recoveryResult: undefined,
+									observationFailure: undefined,
+									observation: context.observation + 1,
+									status: 'transitioning'
+								})),
+								sendTo('sessionReadiness', ({ context }) => ({
+									type: 'REOBSERVE',
+									scope: required(context.readinessScope),
+									observation: context.observation
+								}))
+							]
+						},
+						{
+							guard: ({ context }) => context.observationFailure === undefined,
+							target: 'running',
+							actions: assign({ recoveryResult: undefined })
+						}
+					],
 					ATTACH_WORKSPACE: {},
 					ATTACH_PENDING: {}
 				}
@@ -482,12 +649,6 @@ export function createApplicationReadinessMachine(
 			running: {
 				initial: 'checking',
 				invoke: [
-					{
-						id: 'sessionObserver',
-						src: 'observeSession',
-						input: ({ context }) => required(context.session),
-						onError: '#application-readiness.settlingObserverFailure'
-					},
 					{
 						id: 'mutationRejectionObserver',
 						src: 'observeMutationRejections',
@@ -532,8 +693,8 @@ export function createApplicationReadinessMachine(
 					DISMISS_MUTATION_REJECTION: {
 						actions: assign({ mutationNotice: undefined })
 					},
-					SESSION_OBSERVER_FAILED: '#application-readiness.settlingObserverFailure',
-					SESSION_OBSERVED: {
+					OBSERVATION_UNAVAILABLE: '#application-readiness.settlingObserverFailure',
+					ACQUIRED_STATUS: {
 						target: '.checking',
 						actions: assign({ status: ({ event }) => event.status })
 					},
@@ -582,80 +743,80 @@ export function createApplicationReadinessMachine(
 					},
 					ready: {},
 					failed: { tags: 'startup-error' },
+					retryFailed: {
+						tags: 'startup-error',
+						on: {
+							ACQUIRED_STATUS: { actions: assign({ status: ({ event }) => event.status }) },
+							RECOVER: {},
+							RETRY_NAVIGATION: {},
+							ATTACH_WORKSPACE: {},
+							ATTACH_PENDING: {}
+						}
+					},
 					signedOut: {},
 					closed: {},
 					transitioning: {},
 					preparingRetry: {
 						entry: shutDownWorkspace,
-						always: { guard: ({ context }) => !context.workspace, target: 'retrying' },
+						always: {
+							guard: ({ context }) =>
+								!context.workspace && context.retryAttempt < Number.MAX_SAFE_INTEGER,
+							target: 'retrying'
+						},
 						on: {
 							START: {},
 							RETRY: {},
 							RECOVER: {},
 							RETRY_NAVIGATION: {},
-							SESSION_OBSERVED: { actions: assign({ status: ({ event }) => event.status }) },
+							ACQUIRED_STATUS: { actions: assign({ status: ({ event }) => event.status }) },
 							ATTACH_WORKSPACE: { actions: retainAttachment },
 							ATTACH_PENDING: {}
 						}
 					},
 					retrying: {
 						initial: 'active',
-						invoke: {
-							src: 'retrySession',
-							input: ({ context }) => required(context.session),
-							onDone: [
-								{
-									guard: 'shuttingDown',
-									target: '#application-readiness.closing',
-									actions: 'refreshAttachment'
-								},
-								{
-									guard: 'retryStartupFailed',
-									target: '#application-readiness.settlingStartupFailure',
-									actions: 'refreshAttachment'
-								},
-								{
-									guard: 'retryObserverFailed',
-									target: '#application-readiness.settlingObserverFailure',
-									actions: 'refreshAttachment'
-								},
-								{
-									target: '#application-readiness.running.checking',
-									actions: 'refreshAttachment'
-								}
-							],
-							onError: [
-								{
-									guard: 'shuttingDown',
-									target: '#application-readiness.closing',
-									actions: 'refreshAttachment'
-								},
-								{
-									guard: 'retryStartupFailed',
-									target: '#application-readiness.settlingStartupFailure',
-									actions: 'refreshAttachment'
-								},
-								{
-									guard: 'retryObserverFailed',
-									target: '#application-readiness.settlingObserverFailure',
-									actions: 'refreshAttachment'
-								},
-								{
-									target: '#application-readiness.running.failed',
-									actions: 'refreshAttachment'
-								}
-							]
-						},
+						entry: [
+							assign(({ context }) => ({ retryAttempt: context.retryAttempt + 1 })),
+							sendTo('sessionReadiness', ({ context }) => ({
+								type: 'RETRY',
+								scope: required(context.readinessScope),
+								attempt: context.retryAttempt
+							}))
+						],
 						on: {
+							SESSION_RETRY_SETTLED: [
+								{
+									guard: and(['currentRetry', 'shuttingDown']),
+									target: '#application-readiness.closing',
+									actions: 'refreshAttachment'
+								},
+								{
+									guard: and(['currentRetry', 'retryStartupFailed']),
+									target: '#application-readiness.settlingStartupFailure',
+									actions: 'refreshAttachment'
+								},
+								{
+									guard: and(['currentRetry', 'retryObserverFailed']),
+									target: '#application-readiness.settlingObserverFailure',
+									actions: 'refreshAttachment'
+								},
+								{
+									guard: and(['currentRetry', ({ event }) => event.outcome === 'rejected']),
+									target: '#application-readiness.running.retryFailed',
+									actions: 'refreshAttachment'
+								},
+								{ guard: 'currentRetry', target: '.awaitingStatus' }
+							],
 							ATTACH_WORKSPACE: { actions: retainAttachment },
 							ATTACH_PENDING: {},
 							START: {},
 							RECOVER: {},
 							RETRY_NAVIGATION: {},
 							RETRY: {},
-							SESSION_OBSERVED: { actions: assign({ status: ({ event }) => event.status }) },
-							SESSION_OBSERVER_FAILED: '.observerFailed',
-							'xstate.error.actor.sessionObserver': '.observerFailed',
+							ACQUIRED_STATUS: { actions: assign({ status: ({ event }) => event.status }) },
+							OBSERVATION_UNAVAILABLE: '.observerFailed',
+							'xstate.error.actor.sessionReadiness':
+								'#application-readiness.settlingReadinessCrash',
 							'xstate.error.actor.startup': { target: '.startupFailed', actions: 'retireStartup' },
 							STARTUP_UNAVAILABLE: '.startupFailed',
 							'xstate.error.actor.*': {
@@ -667,9 +828,36 @@ export function createApplicationReadinessMachine(
 						},
 						states: {
 							active: {},
+							awaitingStatus: {
+								on: {
+									SESSION_RETRY_SETTLED: {},
+									ACQUIRED_STATUS: {
+										guard: ({ context, event }) => event.afterRetry === context.retryAttempt,
+										target: '#application-readiness.running.checking',
+										actions: [assign({ status: ({ event }) => event.status }), 'refreshAttachment']
+									},
+									OBSERVATION_UNAVAILABLE: {
+										target: '#application-readiness.settlingObserverFailure',
+										actions: 'refreshAttachment'
+									},
+									STARTUP_UNAVAILABLE: {
+										target: '#application-readiness.settlingStartupFailure',
+										actions: 'refreshAttachment'
+									},
+									'xstate.error.actor.startup': {
+										target: '#application-readiness.settlingStartupFailure',
+										actions: ['refreshAttachment', 'retireStartup']
+									},
+									SHUTDOWN: {
+										target: '#application-readiness.closing',
+										actions: 'refreshAttachment'
+									}
+								}
+							},
 							observerFailed: retryDrain,
 							startupFailed: {
 								...retryDrain,
+								entry: [shutDownWorkspace, 'shutDownReadiness'],
 								on: {
 									...retryDrain.on,
 									'xstate.error.actor.startup': { actions: 'retireStartup' },
@@ -682,8 +870,10 @@ export function createApplicationReadinessMachine(
 							},
 							closing: {
 								...retryDrain,
+								entry: [shutDownWorkspace, 'shutDownReadiness'],
 								on: {
 									...retryDrain.on,
+									'xstate.error.actor.sessionReadiness': '#application-readiness.closing',
 									'xstate.error.actor.startup': { actions: 'retireStartup' },
 									STARTUP_UNAVAILABLE: {},
 									SHUTDOWN: {},
@@ -717,6 +907,11 @@ export function createApplicationReadinessMachine(
 									actions: assign({ recoveryRequest: undefined })
 								},
 								{
+									guard: 'recoveryReadinessCrashed',
+									target: '#application-readiness.settlingReadinessCrash',
+									actions: assign({ recoveryRequest: undefined })
+								},
+								{
 									guard: 'recoveryStartupFailed',
 									target: '#application-readiness.settlingStartupFailure',
 									actions: assign({ recoveryRequest: undefined })
@@ -747,6 +942,11 @@ export function createApplicationReadinessMachine(
 									actions: assign({ recoveryRequest: undefined })
 								},
 								{
+									guard: 'recoveryReadinessCrashed',
+									target: '#application-readiness.settlingReadinessCrash',
+									actions: assign({ recoveryRequest: undefined })
+								},
+								{
 									guard: 'recoveryStartupFailed',
 									target: '#application-readiness.settlingStartupFailure',
 									actions: assign({ recoveryRequest: undefined })
@@ -764,7 +964,7 @@ export function createApplicationReadinessMachine(
 							RETRY_NAVIGATION: {},
 							ATTACH_WORKSPACE: { actions: retainAttachment },
 							ATTACH_PENDING: {},
-							SESSION_OBSERVED: { actions: assign({ status: ({ event }) => event.status }) },
+							ACQUIRED_STATUS: { actions: assign({ status: ({ event }) => event.status }) },
 							RECOVERY_VALIDATED: {
 								guard: ({ context, event }) => event.attempt === context.recoveryAttempt,
 								actions: assign({
@@ -776,8 +976,8 @@ export function createApplicationReadinessMachine(
 								guard: ({ context, event }) => event.attempt === context.recoveryAttempt,
 								target: '.draining'
 							},
-							SESSION_OBSERVER_FAILED: '.observerFailed',
-							'xstate.error.actor.sessionObserver': '.observerFailed',
+							OBSERVATION_UNAVAILABLE: '.observerFailed',
+							'xstate.error.actor.sessionReadiness': '.readinessCrashed',
 							'xstate.error.actor.startup': { target: '.startupFailed', actions: 'retireStartup' },
 							STARTUP_UNAVAILABLE: '.startupFailed',
 							'xstate.error.actor.*': {
@@ -799,8 +999,18 @@ export function createApplicationReadinessMachine(
 							},
 							operating: {},
 							observerFailed: recoveryDrain,
+							readinessCrashed: {
+								...recoveryDrain,
+								on: {
+									...recoveryDrain.on,
+									'xstate.error.actor.sessionReadiness': {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									STARTUP_UNAVAILABLE: {}
+								}
+							},
 							startupFailed: {
 								...recoveryDrain,
+								entry: [shutDownWorkspace, shutDownRecovery, 'shutDownReadiness'],
 								on: {
 									...recoveryDrain.on,
 									'xstate.error.actor.startup': { actions: 'retireStartup' },
@@ -813,8 +1023,10 @@ export function createApplicationReadinessMachine(
 							},
 							closing: {
 								...recoveryDrain,
+								entry: [shutDownWorkspace, shutDownRecovery, 'shutDownReadiness'],
 								on: {
 									...recoveryDrain.on,
+									'xstate.error.actor.sessionReadiness': {},
 									SHUTDOWN: {},
 									'xstate.error.actor.startup': { actions: 'retireStartup' },
 									STARTUP_UNAVAILABLE: {},
@@ -831,13 +1043,16 @@ export function createApplicationReadinessMachine(
 			closing: {
 				always: {
 					guard: ({ context }) => !context.workspace && context.transferMutationOwnerClosed,
-					target: 'releasingStartup'
+					target: 'releasingReadiness'
 				},
-				entry: workflow.enqueueActions(({ context, enqueue }) => {
-					enqueue.sendTo('transferMutationOwner', { type: 'SHUTDOWN' })
-					if (context.workspace?.getSnapshot().status === 'active')
-						enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
-				}),
+				entry: [
+					'shutDownReadiness',
+					workflow.enqueueActions(({ context, enqueue }) => {
+						enqueue.sendTo('transferMutationOwner', { type: 'SHUTDOWN' })
+						if (context.workspace?.getSnapshot().status === 'active')
+							enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
+					})
+				],
 				on: {
 					STARTUP_UNAVAILABLE: {},
 					'xstate.error.actor.*': [
@@ -866,6 +1081,18 @@ export function createApplicationReadinessMachine(
 					RETRY: {}
 				}
 			},
+			releasingReadiness: {
+				entry: 'shutDownReadiness',
+				on: {
+					READINESS_RELEASED: 'releasingStartup',
+					SHUTDOWN: {},
+					STARTUP_UNAVAILABLE: {},
+					OBSERVATION_UNAVAILABLE: {},
+					ACQUIRED_STATUS: {},
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {}
+				}
+			},
 			releasingStartup: {
 				entry: workflow.enqueueActions(({ self, enqueue }) => {
 					const child = self.getSnapshot().children.startup
@@ -892,7 +1119,9 @@ export function createApplicationReadinessMachine(
 					attachment: undefined,
 					pending: undefined,
 					session: undefined,
-					startupBinding: undefined
+					startupBinding: undefined,
+					readinessScope: undefined,
+					observationFailure: undefined
 				})
 			}
 		}
