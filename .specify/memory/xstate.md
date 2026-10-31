@@ -103,6 +103,17 @@ do not replay an unknown write or block unrelated local work while seeking remot
 
 ## State-first UI and form ownership
 
+Status-to-message mappings belong with the owning machine, including connection
+status, historical outcomes, import settlement and failure reasons. Publish typed
+message descriptors through state metadata or the machine's public view selector;
+do not make consuming components interpret domain values using local lookup maps
+or conditional chains. Persisted history uses the same machine-owned presentation
+contract. Components translate the supplied descriptors with Paraglide and render
+them, keeping locale changes reactive. Keep translated strings out of persisted
+data and machine context; the machine owns which message applies, while the
+component owns translation. Do not add or edit Paraglide messages without the
+explicit approval required by localization.md.
+
 - A complex form is one UI workflow with a parent machine owning the form lifecycle, editable/locked
   capabilities, validation readiness, submission, and child operation coordination. Do not split
   unrelated pieces into component-local state and infer an overall workflow in Svelte effects.

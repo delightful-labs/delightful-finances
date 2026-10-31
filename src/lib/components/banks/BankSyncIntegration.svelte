@@ -13,6 +13,7 @@
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
 	import BankSyncLog from './BankSyncLog.svelte'
+	import { selectBankLogPresentation } from '#lib/machines/bank-sync/history.js'
 	import {
 		selectHistoryConnection,
 		historyPageLimit,
@@ -119,6 +120,13 @@
 	const historyAccounts = $derived(
 		selectHistoryAccounts(logAccounts.current ?? [], organizationId, attemptIds)
 	)
+	const logPresentation = $derived(
+		selectBankLogPresentation({
+			connections: historyConnections,
+			attempts: historyPage.attempts,
+			accounts: historyAccounts
+		})
+	)
 	function selectConnection(id: string) {
 		historySelection = { scope: historyScope, id }
 	}
@@ -205,11 +213,11 @@
 					errorMessage={m['errors.load_subject']({ subject: m['bank.log_title']() })}
 				>
 					<BankSyncLog
-						connections={historyConnections}
+						connections={logPresentation.connections}
 						connectionId={logConnectionId}
 						onConnection={selectConnection}
-						attempts={historyPage.attempts}
-						accounts={historyAccounts}
+						attempts={logPresentation.attempts}
+						accounts={logPresentation.accounts}
 						profiles={logProfiles.error ? [] : (logProfiles.current ?? [])}
 						hasEarlier={historyPage.hasEarlier}
 						onEarlier={loadEarlier}

@@ -1,6 +1,7 @@
 import type { SyncLogOutput } from './bank-sync-log.js'
 import { m } from '#lib/paraglide/messages.js'
-import type { Account } from '../schema.js'
+import type { Account, SyncAttempt, SyncAccountResult } from '../schema.js'
+import type { Connection } from '../machines/bank-sync/types.js'
 export type BankSetupView =
 	| 'creating'
 	| 'test-encryption'
@@ -69,4 +70,22 @@ export type BankPresentation = {
 	status: BankStatus | undefined
 	history: LastSync | undefined
 	providerAccounts: readonly ProviderAccountView[]
+}
+
+// Lazy labels match BankStatus: the machine chooses the message, the UI evaluates
+// it during rendering so the current locale is used.
+export type BankLogMessage = { label: () => string }
+export type BankLogPresentation = {
+	connections: readonly (Pick<Connection, 'id' | 'ownerId' | 'claimedAt'> & {
+		status: BankLogMessage
+	})[]
+	attempts: readonly (Omit<SyncAttempt, 'outcome' | 'importSettlement' | 'failureCode'> & {
+		outcome: BankLogMessage
+		importSettlement: BankLogMessage
+		failure: BankLogMessage | undefined
+	})[]
+	accounts: readonly (Omit<SyncAccountResult, 'outcome' | 'failureCode'> & {
+		outcome: BankLogMessage
+		failure: BankLogMessage | undefined
+	})[]
 }

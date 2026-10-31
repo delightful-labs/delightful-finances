@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Button, Details } from 'delightful-ui'
-	import type { SyncAttempt, SyncAccountResult } from '#lib/schema.js'
-	import type { Connection } from '#lib/machines/bank-sync/types.js'
+	import type {
+		BankLogMessage,
+		BankLogPresentation
+	} from '#lib/contracts/bank-presentation-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 
@@ -15,43 +17,16 @@
 		hasEarlier,
 		onEarlier
 	}: {
-		connections: readonly Pick<Connection, 'id' | 'ownerId' | 'claimedAt' | 'status'>[]
+		connections: BankLogPresentation['connections']
 		connectionId: string | undefined
 		onConnection: (id: string) => void
-		attempts: readonly SyncAttempt[]
-		accounts: readonly SyncAccountResult[]
+		attempts: BankLogPresentation['attempts']
+		accounts: BankLogPresentation['accounts']
 		profiles: readonly { userId: string; displayName: string | null }[]
 		hasEarlier: boolean
 		onEarlier: () => void
 	} = $props()
 
-	const connectionStatuses = $derived({
-		active: m['bank.succeeded'](),
-		error: m['bank.failed'](),
-		revoked: m['status.unavailable_subject']({ subject: m['bank.title']() })
-	})
-	const outcomes = $derived({
-		unfinished: m['labels.unspecified'](),
-		succeeded: m['bank.succeeded'](),
-		partial: m['bank.partial'](),
-		failed: m['bank.failed'](),
-		cancelled: m['status.cancelled']()
-	})
-	const settlements = $derived({
-		notStarted: m['bank.step_upcoming'](),
-		locallyPersisted: m['status.saved'](),
-		confirmed: m['bank.log_confirmed'](),
-		unresolved: m['bank.log_unresolved']()
-	})
-	const reasons = $derived({
-		authorization: m['developer.unavailable'](),
-		passkey: m['bank.unlock_failure'](),
-		provider: m['bank.provider_failure'](),
-		mapping: m['bank.mapping_failure'](),
-		import: m['errors.save_subject']({ subject: m['nouns.transaction']({ count: 2 }) }),
-		interrupted: m['bank.other_tab'](),
-		unexpected: m['errors.unexpected_title']()
-	})
 	const dates = $derived(
 		new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'medium' })
 	)
@@ -66,7 +41,12 @@
 	}
 </script>
 
-{#snippet counts(result: Pick<SyncAttempt, 'importedCount' | 'existingCount' | 'omittedCount'>)}
+{#snippet counts(
+	result: Pick<
+		BankLogPresentation['attempts'][number],
+		'importedCount' | 'existingCount' | 'omittedCount'
+	>
+)}
 	<dt>{m['actions.imported']()}</dt>
 	<dd>{count(result.importedCount)}</dd>
 	<dt>{m['actions.existing']()}</dt>
@@ -75,9 +55,9 @@
 	<dd>{count(result.omittedCount)}</dd>
 {/snippet}
 
-{#snippet failure(code: SyncAttempt['failureCode'])}
-	{#if code}<dt>{m['labels.description']()}</dt>
-		<dd>{reasons[code]}</dd>{/if}
+{#snippet failure(message: BankLogMessage | undefined)}
+	{#if message}<dt>{m['labels.description']()}</dt>
+		<dd>{message.label()}</dd>{/if}
 {/snippet}
 
 <section aria-label={m['bank.log_title']()}>
@@ -88,7 +68,7 @@
 			<select value={connectionId} onchange={(event) => onConnection(event.currentTarget.value)}>
 				{#each connections as connection (connection.id)}
 					<option value={connection.id}
-						>{`${dates.format(connection.claimedAt)} — ${connection.ownerId ? initiator(connection.ownerId) : m['developer.unavailable']()} (${connectionStatuses[connection.status]})`}</option
+						>{`${dates.format(connection.claimedAt)} — ${connection.ownerId ? initiator(connection.ownerId) : m['developer.unavailable']()} (${connection.status.label()})`}</option
 					>
 				{/each}
 			</select>
@@ -98,7 +78,7 @@
 		<p>{m['labels.no_subjects_yet']({ subjects: m['bank.log_title']() })}</p>
 	{/if}
 	{#each attempts as attempt (attempt.id)}
-		<Details summary={`${dates.format(attempt.startedAt)} — ${outcomes[attempt.outcome]}`}>
+		<Details summary={`${dates.format(attempt.startedAt)} — ${attempt.outcome.label()}`}>
 			<dl>
 				<dt>{m['labels.start_subject']({ subject: m['nouns.date']({ count: 1 }) })}</dt>
 				<dd>
@@ -114,14 +94,14 @@
 				<dd>{initiator(attempt.initiatedBy)}</dd>
 				{@render counts(attempt)}
 				<dt>{m['labels.status_subject']({ subject: m['bank.title']() })}</dt>
-				<dd>{settlements[attempt.importSettlement]}</dd>
-				{@render failure(attempt.failureCode)}
+				<dd>{attempt.importSettlement.label()}</dd>
+				{@render failure(attempt.failure)}
 			</dl>
 			{#each accounts.filter((row) => row.attemptId === attempt.id) as account (account.id)}
-				<Details summary={`${account.accountName} — ${outcomes[account.outcome]}`}>
+				<Details summary={`${account.accountName} — ${account.outcome.label()}`}>
 					<dl>
 						{@render counts(account)}
-						{@render failure(account.failureCode)}
+						{@render failure(account.failure)}
 					</dl>
 				</Details>
 			{/each}
