@@ -62,9 +62,9 @@ is not wired into live sync yet; that remains the next focused slice.
 
 ## Settings presentation
 
-- [ ] T012 Add bounded log queries in BankSyncIntegration, a pure BankSyncLog,
+- [x] T012 Add bounded log queries in BankSyncIntegration, a pure BankSyncLog,
       Bank Sync settings composition and localized labels/feedback.
-- [ ] T013 Present mobile/desktop presentation and query ownership before tests.
+- [x] T013 Present mobile/desktop presentation and query ownership before tests.
 - [ ] T014 After approval, run focused unit/E2E coverage for outcomes, account
       expansion, paging, reload/offline reads, isolation and logging failures.
 - [ ] T015 Reconcile spec acceptance, plan and actual verification results; prepare
@@ -114,3 +114,14 @@ settlement labels. Starts with 20 attempts and offers earlier entries; paging
 resets when the user/workspace/connection scope changes. Implementation awaits
 review before focused presentation/E2E tests. Retention and deployment remain
 outstanding.
+
+Settings viewer verification: implementation committed as fe4b89f. Both focused
+bank-sync browser scenarios pass (34.5 seconds), covering empty history,
+partial/success account expansion and counts, initiator display, failure with
+unknown counts, persisted cancellation, reload reads, warm offline reads,
+20-to-24-entry paging, pagination reset on reload, unfinished-attempt wording,
+other-connection exclusion and containment at a 390px viewport. No provider
+requests occur while reading/paging/reloading history. Test TypeScript,
+formatting and diff checks pass. Cross-workspace switching, cold offline startup
+and injected logging failures are not established by these two browser cases;
+T014 remains partially verified. Retention and schema deployment remain pending.
