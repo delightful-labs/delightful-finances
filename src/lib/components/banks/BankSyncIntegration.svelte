@@ -13,6 +13,13 @@
 	import { QuerySubscription } from 'jazz-tools/svelte'
 	import { app } from '#lib/schema.js'
 	import BankSyncLog from './BankSyncLog.svelte'
+	import {
+		selectHistoryConnection,
+		historyPageLimit,
+		nextHistoryPage,
+		selectHistoryPage,
+		selectHistoryAccounts
+	} from './bank-sync-history.js'
 	import { fromStore, readable } from 'svelte/store'
 	import { selectBankView } from '#lib/machines/bank-sync/index.js'
 	import { createBankTrace } from '#lib/integrations/diagnostics.js'
@@ -61,21 +68,22 @@
 					.orderBy('id', 'desc')
 			: undefined
 	)
-	const historyConnections = $derived(
-		(logConnections.current ?? []).filter((row) => row.organizationId === historyOrganizationId)
-	)
 	const historyScope = $derived(`${userId}:${historyOrganizationId}`)
 	let historySelection = $state({ scope: '', id: '' })
-	const logConnectionId = $derived(
-		historySelection.scope === historyScope &&
-			historyConnections.some((row) => row.id === historySelection.id)
-			? historySelection.id
-			: (historyConnections.find((row) => row.id === bankState.current.context.connection?.id)
-					?.id ?? historyConnections[0]?.id)
+	const selectedHistory = $derived(
+		selectHistoryConnection(
+			logConnections.current ?? [],
+			historyOrganizationId,
+			historySelection,
+			historyScope,
+			bankState.current.context.connection?.id
+		)
 	)
+	const historyConnections = $derived(selectedHistory.connections)
+	const logConnectionId = $derived(selectedHistory.connectionId)
 	const logScope = $derived(`${userId}:${organizationId}:${logConnectionId}`)
 	let logPage = $state({ scope: '', limit: 20 })
-	const logLimit = $derived(logPage.scope === logScope ? logPage.limit : 20)
+	const logLimit = $derived(historyPageLimit(logPage, logScope))
 	$effect(() => {
 		if (logPage.scope !== logScope) logPage = { scope: logScope, limit: 20 }
 	})
@@ -88,30 +96,35 @@
 					.limit(logLimit + 1)
 			: undefined
 	)
-	const scopedAttempts = $derived(
-		(logAttempts.current ?? []).filter(
-			(row) =>
-				Boolean(logConnectionId) &&
-				row.connectionId === logConnectionId &&
-				row.organizationId === organizationId
+	const historyPage = $derived(
+		selectHistoryPage(
+			logAttempts.current ?? [],
+			historyConnections,
+			organizationId,
+			logConnectionId,
+			logLimit
 		)
 	)
-	const visibleAttempts = $derived(scopedAttempts.slice(0, logLimit))
-	const attemptIds = $derived(visibleAttempts.map((row) => row.id))
+	const attemptIds = $derived(historyPage.attemptIds)
 	const logAccounts = new QuerySubscription(() =>
 		organizationId && attemptIds.length
 			? app.simplefinSyncAccountResults.where({ organizationId, attemptId: { in: attemptIds } })
 			: undefined
 	)
-	const initiatorIds = $derived([
-		...new Set([
-			...visibleAttempts.map((row) => row.initiatedBy),
-			...historyConnections.flatMap((row) => (row.ownerId ? [row.ownerId] : []))
-		])
-	])
 	const logProfiles = new QuerySubscription(() =>
-		initiatorIds.length ? app.profiles.where({ userId: { in: initiatorIds } }) : undefined
+		historyPage.initiatorIds.length
+			? app.profiles.where({ userId: { in: historyPage.initiatorIds } })
+			: undefined
 	)
+	const historyAccounts = $derived(
+		selectHistoryAccounts(logAccounts.current ?? [], organizationId, attemptIds)
+	)
+	function selectConnection(id: string) {
+		historySelection = { scope: historyScope, id }
+	}
+	function loadEarlier() {
+		logPage = nextHistoryPage(logPage, logScope)
+	}
 	$effect(() => {
 		actorRef.send({ type: 'NETWORK_CHANGED', offline: browserOffline })
 	})
@@ -194,18 +207,12 @@
 					<BankSyncLog
 						connections={historyConnections}
 						connectionId={logConnectionId}
-						onConnection={(id) => {
-							historySelection = { scope: historyScope, id }
-						}}
-						attempts={visibleAttempts}
-						accounts={(logAccounts.current ?? []).filter(
-							(row) => row.organizationId === organizationId && attemptIds.includes(row.attemptId)
-						)}
+						onConnection={selectConnection}
+						attempts={historyPage.attempts}
+						accounts={historyAccounts}
 						profiles={logProfiles.error ? [] : (logProfiles.current ?? [])}
-						hasEarlier={scopedAttempts.length > logLimit}
-						onEarlier={() => {
-							logPage = { scope: logScope, limit: logLimit + 20 }
-						}}
+						hasEarlier={historyPage.hasEarlier}
+						onEarlier={loadEarlier}
 					/>
 				</QueryContent>
 			{/if}
