@@ -65,6 +65,7 @@
 		"archived": "Archived only"
 	},
 	"bank": {
+		"system_account_name": "Bank Sync",
 		"account_already_linked": "This local account is already linked to another provider account. Add a new account or select an unlinked account.",
 		"cancelled": "Operation cancelled. Credential locked. If token claim had begun, revoke it at SimpleFIN before reconnecting.",
 		"claim_failure": "The setup token could not be claimed. It may already have been used or compromised; revoke it at SimpleFIN and obtain a new token.",
