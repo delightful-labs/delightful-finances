@@ -1,9 +1,11 @@
 # Incremental identity-restoration adoption
 
-Status: implementation for review; Finance restoration tests have not been updated or run yet.
+Status: implementation committed as `1e63e89`; focused verification changes prepared for review.
 Branch: `feat/identity-restoration-main`, created from main `629bd82` after PR #35 merged.
 This follow-up can target main directly; it no longer needs a stacked PR base.
-Library branch: `feat/identity-restoration-plan` (reviewed working-tree snapshot, not yet committed).
+Library branch: `feat/identity-restoration-plan`, runtime committed as `9549312`.
+The archive was packed from that reviewed runtime before the commit; subsequent library changes
+add coverage and documentation only.
 
 Finance consumes `vendor/delightful-local-first-0.0.0-restoration.tgz`, SHA-256
 `6a7f3aef5dcc2fa2f656c0d3d49f22fcb3ff7f9154e6109c44989b3d7c692f05`.
@@ -69,17 +71,32 @@ existing attempt correlation and workspace/observer/startup/shutdown priority.
 `pnpm check` reports zero errors/warnings. Frozen-lockfile install, focused formatting, and diff
 checks pass. Installed module resolution confirms shared physical Jazz, DUI, Svelte, and XState
 instances. Library package validation passes. These checks do not establish runtime correctness.
-The earlier 47 library tests qualify the pre-adoption fixed-capability API; the new invocation-input
-entry and the Finance wrapper need the next approved tests.
+The expanded library suite passes 81 tests: 34 lifecycle scenarios against each capability API,
+plus 13 Jazz adapter scenarios. The public-package fixture now exercises the invocation-input entry.
+Finance passes 34 focused recovery/session-mutation unit tests; 16 unrelated cases in that file
+were intentionally skipped. Types and public package-consumer checks also pass.
 
-## Focused verification after review
+## Approved verification
 
-1. Add coverage for the library's new supplied-capability entry and repeat affected library tests.
-2. Inject a typed binding factory into Finance readiness fixtures before running them. Omission is
-   supported for non-recovery callers, but a host enabling RECOVER must supply the factory.
-3. Adapt the old child-context assertions to the public protocol and actual cleanup/settlement.
-4. Exercise protected authentication browser scenarios on a disposable agent server; do not rerun
-   unrelated domain suites. Only after those checks qualifies this adoption for a main-targeted PR.
+The reviewed implementation is covered by updated fixtures that supply the layout-style binding
+factory. Assertions verify real protocol reports, stale binding/attempt rejection, drain ordering,
+private request cleanup, retained issued calls, adapter invalidation, same-client failure handling,
+partial identity observation, and navigation retry without rebinding/restoring. Credential comparisons
+return booleans rather than exposing generated phrases or roots in failed assertions.
+
+Ten focused protected Chromium scenarios pass on the disposable agent server at
+`http://127.0.0.1:5184`: three invalid phrase cases; restoration into another browser context;
+reveal/dismissal followed by profile saving; SDK/session failure recovery; selected-identity storage
+failure/retry; recoverable same-client failure/remount; navigation-only retry; and multiple-workspace
+chooser behavior. Screenshots, video, traces, and automatic failure-page snapshots are disabled.
+The four empty-draft assertions use a shared boolean-only helper, preserving credential protection
+if cleanup regresses. Unrelated image, startup, and domain suites were not rerun.
+
+The first browser attempt encountered a startup collision before any scenarios ran. The known agent
+server was restarted, verified with an HTTP 200 response, and reused for the actual scenarios.
+There were no production fixes after implementation review. These checks qualify this packed
+snapshot against Finance's existing real session; they do not qualify all SDK versions or a full
+foundation session/workspace migration.
 
 Affected unit coverage is the application-owned account recovery block in
 `src/lib/machines/runtime/application-readiness.test.ts`: invalid draft, matching drain, stale
@@ -90,4 +107,4 @@ protocol/cleanup assertions where the extraction makes the context private.
 Affected browser coverage is `tests/authentication.e2e.ts`: invalid inputs preserve identity/data,
 restoration across contexts, restore failure/session retry, navigation failure/retry, route departure,
 and empty restored-workspace behavior. Keep its credential artifact protections. Reuse only a known
-disposable agent server and finish generated-environment checks before browser work. No Finance tests have been changed or run in this implementation review cycle.
+disposable agent server and finish generated-environment checks before browser work. The updated coverage and these verification notes remain uncommitted for review.

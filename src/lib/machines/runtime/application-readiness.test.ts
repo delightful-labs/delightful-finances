@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, setup, sendParent, waitFor, type ActorRefFrom } from 'xstate'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
+import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
 import { generateAuthSecret } from 'jazz-tools'
 import type { JazzClient, JazzSession, getDb } from 'jazz-tools/svelte'
 import {
@@ -499,8 +500,15 @@ function mutationFixture() {
 	const navigate = vi.fn<(destination: string) => Promise<void>>(async () => {})
 	const readHref = vi.fn(() => '/login')
 	const open = vi.fn(async () => current.value)
+	const bindings: ReturnType<typeof createJazzRestorationAdapter>[] = []
+	const bindRestoration = vi.fn((value: Session) => {
+		const adapter = createJazzRestorationAdapter(value, () => current.value)
+		vi.spyOn(adapter, 'invalidate')
+		bindings.push(adapter)
+		return adapter
+	})
 	const actor = createActor(
-		createApplicationReadinessMachine(open, current.value, { readHref, navigate })
+		createApplicationReadinessMachine(open, current.value, { readHref, navigate }, bindRestoration)
 	).start()
 	actors.push(actor)
 	const workspace = attach(actor)
@@ -516,6 +524,8 @@ function mutationFixture() {
 	return {
 		actor,
 		current,
+		bindings,
+		bindRestoration,
 		pending,
 		restore,
 		retry,
@@ -679,17 +689,20 @@ describe('application-owned account recovery', () => {
 		expect(f.restore).not.toHaveBeenCalled()
 		control(f.workspace).close()
 		await vi.waitFor(() => expect(f.restore).toHaveBeenCalledOnce())
-		expect(f.restore).toHaveBeenCalledWith(RecoveryPhrase.toSecret(f.phrase))
-		const child = f.actor.getSnapshot().children.recovery
-		expect(child?.getSnapshot()).toMatchObject({
-			context: { request: undefined, secret: undefined }
-		})
+		expect(f.restore.mock.calls[0]?.[0] === RecoveryPhrase.toSecret(f.phrase)).toBe(true)
+		expect(f.bindRestoration).toHaveBeenCalledOnce()
+		const binding = f.bindings[0]
+		if (!binding) throw new Error('Expected restoration binding')
+		expect(binding.capability.isCurrentBinding(binding.binding)).toBe(true)
+		expect(binding.invalidate).not.toHaveBeenCalled()
 		f.actor.send({ type: 'DETACH_WORKSPACE', attachment: f.attachment })
 		f.pending.resolve()
 		await waitFor(f.actor, (s) => s.context.recoveryResult?.outcome === 'restored')
 		expect(f.navigate).toHaveBeenCalledExactlyOnceWith('/?workspace=original')
 		expect(f.actor.getSnapshot().context.attachmentRevision).toBe(1)
-		expect(JSON.stringify(f.actor.getSnapshot().context)).not.toContain(f.phrase)
+		expect(JSON.stringify(f.actor.getSnapshot().context).includes(f.phrase)).toBe(false)
+		expect(binding.invalidate).toHaveBeenCalledOnce()
+		expect(binding.capability.isCurrentBinding(binding.binding)).toBe(false)
 	})
 	it.each(['shutdown', 'observer', 'crash'])(
 		'starts no restore after %s during drain',
@@ -782,6 +795,51 @@ describe('application-owned account recovery', () => {
 		expect(f.actor.getSnapshot().context.workspace).toBe(replacement)
 		expect(selectRecoveryView(f.actor.getSnapshot()).failed).toBe(true)
 	})
+	it('rejects stale attempt and foreign binding reports before accepting library validation', async () => {
+		const f = mutationFixture()
+		f.actor.send(f.command)
+		const wrapper = f.actor.getSnapshot().children.recovery
+		const binding = f.bindings[0]
+		if (!wrapper || !binding) throw new Error('Expected recovery binding and actor')
+		const attempt = f.actor.getSnapshot().context.recoveryAttempt
+		wrapper.send({ type: 'RESTORATION_VALIDATED', binding: {}, attempt })
+		wrapper.send({ type: 'RESTORATION_PREPARE_REQUESTED', binding: {}, attempt })
+		wrapper.send({ type: 'RESTORATION_VALIDATED', binding: binding.binding, attempt: attempt - 1 })
+		wrapper.send({
+			type: 'RESTORATION_PREPARE_REQUESTED',
+			binding: binding.binding,
+			attempt: attempt - 1
+		})
+		expect(f.actor.getSnapshot().context.recoveryDraftRevision).toBe(0)
+		expect(f.workspace.getSnapshot().matches('active')).toBe(true)
+		await waitFor(f.actor, (s) => s.matches({ running: { recovering: 'draining' } }))
+		expect(f.actor.getSnapshot().context.recoveryDraftRevision).toBe(1)
+		control(f.workspace).close()
+		await vi.waitFor(() => expect(f.restore).toHaveBeenCalledOnce())
+		f.pending.resolve()
+		await waitFor(f.actor, (s) => s.context.recoveryResult?.outcome === 'restored')
+		expect(binding.invalidate).toHaveBeenCalledOnce()
+	})
+
+	it('reports a settled restore with unavailable identity without navigation or mutation retry', async () => {
+		const f = mutationFixture()
+		await beginRestore(f)
+		const binding = f.bindings[0]
+		if (!binding) throw new Error('Expected recovery binding')
+		vi.spyOn(binding.capability, 'readIdentity').mockResolvedValueOnce({ kind: 'unavailable' })
+		f.pending.resolve()
+		await waitFor(f.actor, (s) => s.context.recoveryResult?.outcome === 'navigationFailed')
+		expect(selectRecoveryView(f.actor.getSnapshot())).toMatchObject({
+			navigationFailed: true,
+			canRetryNavigation: false
+		})
+		f.actor.send({ type: 'RETRY_NAVIGATION' })
+		expect(f.restore).toHaveBeenCalledOnce()
+		expect(f.navigate).not.toHaveBeenCalled()
+		expect(f.actor.getSnapshot().context.attachmentRevision).toBe(1)
+		expect(binding.invalidate).toHaveBeenCalledOnce()
+	})
+
 	it('retries navigation without another restore or remount', async () => {
 		const f = mutationFixture()
 		f.navigate.mockRejectedValueOnce(new Error('private navigation failure'))
@@ -796,6 +854,8 @@ describe('application-owned account recovery', () => {
 		await waitFor(f.actor, (s) => s.context.recoveryResult?.outcome === 'restored')
 		expect(f.restore).toHaveBeenCalledOnce()
 		expect(f.navigate).toHaveBeenCalledTimes(2)
+		expect(f.bindRestoration).toHaveBeenCalledOnce()
+		expect(f.bindings[0]?.invalidate).toHaveBeenCalledOnce()
 		expect(f.actor.getSnapshot().context.attachmentRevision).toBe(1)
 	})
 	it('does not redirect after the user navigates away during restoration', async () => {
