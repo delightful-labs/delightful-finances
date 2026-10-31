@@ -40,6 +40,7 @@
 		"dismiss": "Dismiss",
 		"edit_subject": "Edit {subject}",
 		"filter_subject": "Filter {subject}",
+		"search_subject": "Search {subject}",
 		"link_existing_subject": "Link to existing {subject}",
 		"manage_subject": "Manage {subject}",
 		"move_down_name": "Move {name} down",
