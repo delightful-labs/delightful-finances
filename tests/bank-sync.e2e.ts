@@ -1,6 +1,12 @@
 import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
-import { openCreationModal, closeCreationModal, selectWorkspace } from './helpers/ui.js'
+import {
+	openCreationModal,
+	closeCreationModal,
+	selectWorkspace,
+	navigateSidebar,
+	openSidebarSection
+} from './helpers/ui.js'
 
 async function syncLog(page: Page) {
 	return page.evaluate(async () => {
@@ -16,6 +22,7 @@ async function syncLog(page: Page) {
 		return {
 			attempts: attempts.map((row) => ({
 				id: row.id,
+				connectionId: row.connectionId,
 				outcome: row.outcome,
 				importedCount: row.importedCount,
 				existingCount: row.existingCount,
@@ -924,16 +931,43 @@ for (const failure of ['start', 'result']) {
 }
 
 test(
-	'background retention prunes only completed excess history and its account rows without provider work',
+	'retention follows the synced connection while another connection history is selected',
 	{ tag: ['@bank-sync'] },
 	async ({ page }) => {
 		const providerRequests: string[] = []
 		await page.route('**/api/simplefin', async (route) => {
-			providerRequests.push(route.request().url())
-			await route.abort()
+			const body: unknown = route.request().postDataJSON()
+			if (
+				!body ||
+				typeof body !== 'object' ||
+				!('operation' in body) ||
+				typeof body.operation !== 'string'
+			)
+				throw new Error('Invalid provider operation')
+			providerRequests.push(body.operation)
+			if (body.operation === 'claim')
+				await route.fulfill({
+					contentType: 'text/plain',
+					body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+				})
+			else await route.fulfill({ json: { errors: [], accounts: [] } })
 		})
+		await installPasskey(page)
 		await page.goto('/settings/banks')
 		await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
+		await page
+			.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+			.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+		for (const name of [
+			'Create Passkey',
+			'Test encryption with my passkey',
+			'Test unlocking with my passkey',
+			'Connect and save securely'
+		])
+			await page.getByRole('button', { name, exact: true }).click()
+		await expect(
+			pageContent(page).getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+		).toBeEnabled()
 		const organizationId = new URL(page.url()).searchParams.get('workspace')
 		if (!organizationId) throw new Error('Missing workspace scope')
 		const seeded = await page.evaluate(async (organizationId) => {
@@ -946,26 +980,17 @@ test(
 				db = snapshot?.client?.db,
 				userId = snapshot?.account?.id
 			if (!db || !userId) throw new Error('Missing database/session')
-			const connectionId = crypto.randomUUID(),
+			const connection = (await db.all(app.simplefinConnections.where({ organizationId }))).find(
+				(row) => row.status === 'active'
+			)
+			if (!connection) throw new Error('Missing connected bank')
+			const connectionId = connection.id,
 				otherConnectionId = crypto.randomUUID(),
 				accountId = crypto.randomUUID()
 			const oldest = crypto.randomUUID(),
 				child = crypto.randomUUID(),
 				unfinished = crypto.randomUUID(),
 				otherAttempt = crypto.randomUUID()
-			await db
-				.insert(
-					app.simplefinConnections,
-					{
-						organizationId,
-						ownerId: userId,
-						accessUrl: '',
-						status: 'active',
-						claimedAt: new Date()
-					},
-					{ id: connectionId }
-				)
-				.wait({ tier: 'global' })
 			await db
 				.insert(
 					app.accounts,
@@ -1057,7 +1082,7 @@ test(
 					{ id: otherAttempt }
 				)
 				.wait({ tier: 'global' })
-			return { oldest, child, unfinished, otherAttempt }
+			return { oldest, child, unfinished, otherAttempt, connectionId, otherConnectionId }
 		}, organizationId)
 		await page.reload()
 		await expect(page.getByRole('region', { name: 'Sync history', exact: true })).toBeVisible()
@@ -1068,6 +1093,130 @@ test(
 		expect(retained.attempts.some((row) => row.id === seeded.unfinished)).toBe(true)
 		expect(retained.attempts.some((row) => row.id === seeded.otherAttempt)).toBe(true)
 		expect(retained.accounts).toHaveLength(0)
-		expect(providerRequests).toEqual([])
+		expect(providerRequests).toEqual(['claim'])
+		const history = page.getByRole('region', { name: 'Sync history', exact: true })
+		await history
+			.getByRole('combobox', { name: 'Bank connection', exact: true })
+			.selectOption(seeded.otherConnectionId)
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		const sync = pageContent(page).getByRole('button', {
+			name: 'Sync now (last 90 days)',
+			exact: true
+		})
+		await sync.click()
+		await expect(pageContent(page).getByText(/Last sync:.*Outcome: Succeeded/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		await expect
+			.poll(async () => {
+				const log = await syncLog(page)
+				return log.attempts.filter(
+					(row) => row.connectionId === seeded.connectionId && row.outcome !== 'unfinished'
+				).length
+			})
+			.toBe(100)
+		const afterSync = await syncLog(page)
+		expect(afterSync.attempts).toHaveLength(102)
+		expect(afterSync.attempts.some((row) => row.id === seeded.otherAttempt)).toBe(true)
+		await expect(
+			history.getByRole('combobox', { name: 'Bank connection', exact: true })
+		).toHaveValue(seeded.otherConnectionId)
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		expect(providerRequests).toEqual(['claim', 'sync'])
+	}
+)
+
+test(
+	'saved bank history remains readable when the optional profile lookup fails',
+	{ tag: ['@bank-sync'] },
+	async ({ page }) => {
+		await installPasskey(page)
+		const operations: string[] = []
+		await page.route('**/api/simplefin', async (route) => {
+			const body: unknown = route.request().postDataJSON()
+			if (
+				!body ||
+				typeof body !== 'object' ||
+				!('operation' in body) ||
+				typeof body.operation !== 'string'
+			)
+				throw new Error('Invalid provider operation')
+			operations.push(body.operation)
+			if (body.operation === 'claim')
+				await route.fulfill({
+					contentType: 'text/plain',
+					body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+				})
+			else await route.fulfill({ json: { errors: [], accounts: [] } })
+		})
+		await page.goto('/settings/banks')
+		await page
+			.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+			.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+		for (const name of [
+			'Create Passkey',
+			'Test encryption with my passkey',
+			'Test unlocking with my passkey',
+			'Connect and save securely'
+		])
+			await page.getByRole('button', { name, exact: true }).click()
+		const sync = pageContent(page).getByRole('button', {
+			name: 'Sync now (last 90 days)',
+			exact: true
+		})
+		await expect(sync).toBeEnabled()
+		await sync.click()
+		await expect(pageContent(page).getByText(/Last sync:.*Outcome: Succeeded/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		const history = page.getByRole('region', { name: 'Sync history', exact: true })
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		await navigateSidebar(page, 'Accounts')
+		await expect(history).toHaveCount(0)
+		await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const userId = getCurrentJazzSession()?.getSnapshot().account?.id
+			if (!userId) throw new Error('Missing identity')
+			const profileQuery = app.profiles.where({ userId: { in: [userId] } })
+			const blocked = profileQuery._build()
+			let prototype: object | null = Object.getPrototypeOf(profileQuery)
+			while (prototype && !Object.prototype.hasOwnProperty.call(prototype, '_build'))
+				prototype = Object.getPrototypeOf(prototype)
+			if (!prototype) throw new Error('Missing query builder prototype')
+			const original: unknown = Object.getOwnPropertyDescriptor(prototype, '_build')?.value
+			if (typeof original !== 'function') throw new Error('Missing query builder method')
+			Object.defineProperty(prototype, '_build', {
+				configurable: true,
+				writable: true,
+				value: function (this: object, ...args: unknown[]): unknown {
+					const result: unknown = Reflect.apply(original, this, args)
+					if (result === blocked) {
+						document.documentElement.dataset.profileLookupFailed = 'true'
+						throw new Error('Synthetic optional profile lookup failure')
+					}
+					return result
+				}
+			})
+		})
+		await openSidebarSection(page, 'Settings')
+		await navigateSidebar(page, 'Bank sync')
+		await expect(page.locator('html')).toHaveAttribute('data-profile-lookup-failed', 'true')
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		await expect(
+			history.getByRole('combobox', { name: 'Bank connection', exact: true })
+		).toBeEnabled()
+		await history.locator(':scope > details > summary').click()
+		await expect(history.getByText('You', { exact: true })).toBeVisible()
+		await expect(history.getByText('No import started', { exact: true })).toBeVisible()
+		for (const name of ['Imported', 'Already present', 'Omitted'])
+			await expect(
+				history
+					.locator('dt')
+					.filter({ hasText: new RegExp(`^${name}$`) })
+					.locator('xpath=following-sibling::dd[1]')
+			).toHaveText('0')
+		expect(operations).toEqual(['claim', 'sync'])
 	}
 )

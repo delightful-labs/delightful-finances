@@ -42,3 +42,15 @@ and committed. Final-slice changes remain available for review before commit.
 Schema and permission publication to the release environment is a rollout step,
 not a local test outcome. No production deployment ran. Transaction revision
 history and system-account display naming remain separate features.
+
+## Review follow-up
+
+- [x] Move retention scheduling/lifecycle into the bank actor, independent of
+      history selection, and preserve shutdown draining.
+- [x] Remove optional profile enrichment from the history loading/error boundary.
+- [x] After implementation approval, verify supervisor binding/drain and browser
+      active-A/viewed-B/profile-failure regressions; repeat cold/offline history.
+
+Follow-up results: 76 focused unit/lifecycle tests and six browser scenarios pass;
+static/format checks pass. See verification.md for scope and the corrected test
+navigation locator. Follow-up changes are uncommitted.

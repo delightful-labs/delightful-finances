@@ -17,7 +17,7 @@ counts and the separate unavailable-log result.
 
 ## Automated checks
 
-Final results: 111 tests pass across nine focused unit/full-policy suites.
+Feature baseline at commit `383fcfb`: 111 tests pass across nine focused unit/full-policy suites.
 All 11 bank-sync/offline browser scenarios pass (1.6 minutes); the production
 cold-start/offline history scenario passes (35.8 seconds including build/startup).
 After the final logging-crash safety change, all nine composed-operation tests
@@ -61,3 +61,30 @@ removal from every replica/history/backup is not promised. Locally saved imports
 are not presented as confirmed remote acceptance. Cross-device passkey/provider
 compatibility is unchanged and is not established by the mocked bank tests.
 Transaction revision history and the system-account label are outside spec 014.
+
+## Review follow-up: retention owner and optional names
+
+The bank actor now invokes retention and forwards its own connection/access,
+browser-offline observation and settled attempt ID. History selection cannot
+retarget cleanup. Shutdown closes only after setup/operation and retention have
+drained; late observations cannot reopen it. Refresh waits for an actual scoped
+binding because XState cannot expose a snapshot during initial ready entry.
+The optional profile lookup no longer participates in the history loading/error
+boundary, and errors use the existing name fallback.
+
+After implementation approval, 76 tests pass across bank-supervisor, retention
+and workspace-readiness suites. Added cases verify online/current-connection
+binding, replacement/offline/access observations, refresh after recorded sync,
+and shutdown during both setup and sync with an acquired retention resource.
+
+Five focused development-browser scenarios pass: existing import/history,
+cancellation and offline behavior; retention of active A at 100 completed entries
+after a new explicit sync while viewing B; and readable saved history/connection
+selection with an injected profile query failure. The profile test initially
+used an obsolete sidebar label; correcting it to Bank sync passes the case
+(8.1 seconds). No application assertions were weakened.
+
+The production cold/unanswered-authority/full-offline history scenario passes
+again (46.0 seconds including build/startup). Svelte/TypeScript and test TypeScript,
+Prettier and diff checks pass. No schema, permission or deployment changes were
+needed for these two fixes. This follow-up remains uncommitted for review.

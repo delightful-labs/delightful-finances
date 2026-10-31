@@ -14,6 +14,7 @@ import { required } from './identity.js'
 import { createBankSetupMachine } from './setup.js'
 import { createBankOperationMachine } from './operation.js'
 import { createLoggedBankOperationMachine } from './logged-operation.js'
+import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
 import {
 	bankCredentialFingerprint,
@@ -45,8 +46,11 @@ type Event =
 	| ProgressEvent
 	| BankObservationEvent
 	| { type: 'SHUTDOWN' }
+	| { type: 'NETWORK_CHANGED'; offline: boolean }
+	| { type: 'RETENTION_STOPPED' }
 	| { type: `xstate.error.actor.${string}`; error: unknown }
 type Context = BankData & {
+	browserOffline: boolean
 	logging: SyncLogOutput | undefined
 	operationConnectionId: string | undefined
 	access: BankAccess
@@ -71,6 +75,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 	}
 	const actors: {
 		history: typeof bankHistoryMachine
+		retention: ReturnType<typeof createSyncLogRetentionCoordinator>
 		mappingRow: typeof accountOptionsMachine
 		availability: typeof bankAvailabilityMachine
 		setupConnection: ReturnType<typeof createBankSetupMachine>
@@ -79,6 +84,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			| ReturnType<typeof createLoggedBankOperationMachine>
 	} = {
 		history: bankHistoryMachine,
+		retention: createSyncLogRetentionCoordinator(dependencies),
 		mappingRow: accountOptionsMachine,
 		availability: bankAvailabilityMachine,
 		setupConnection: createBankSetupMachine(dependencies),
@@ -108,7 +114,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		actors,
 		guards: {
 			acceptObservations: not(
-				or([stateIn({ setup: 'shuttingDown' }), stateIn({ running: 'shuttingDown' })])
+				or([
+					stateIn({ setup: 'shuttingDown' }),
+					stateIn({ running: 'shuttingDown' }),
+					stateIn('drainingRetention')
+				])
 			),
 			isNeutral: stateIn({ ready: 'neutral' }),
 			newAccess: and([
@@ -129,6 +139,29 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			canConnect: ({ context }) => context.availability?.canConnect === true,
 			canOperate: ({ context }) => context.availability?.canOperate === true
 		}
+	})
+	const refreshRetention = workflow.enqueueActions(({ context, self, enqueue }) => {
+		// Initial ready entry precedes actor snapshot availability and any scoped binding.
+		if (context.revision < 0) return
+		const child = self.getSnapshot()?.children.retention
+		if (child?.getSnapshot().status !== 'active') return
+		enqueue.sendTo(child, ({ context }) => ({
+			type: 'CHECK',
+			scope:
+				context.access.kind === 'allowed' && !context.browserOffline && context.connection
+					? {
+							organizationId: context.access.organizationId,
+							userId: context.access.userId,
+							connectionId: context.connection.id
+						}
+					: undefined,
+			completion: context.logging?.attemptId
+		}))
+	})
+	const shutdownRetention = workflow.enqueueActions(({ self, enqueue }) => {
+		const child = self.getSnapshot()?.children.retention
+		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
+		else enqueue.raise({ type: 'RETENTION_STOPPED' })
 	})
 	const clear = workflow.assign({ command: undefined, setupToken: undefined })
 	const cancelOperation = workflow.enqueueActions(({ self, enqueue }) => {
@@ -173,6 +206,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			generation: context.generation
 		}))
 		enqueue.sendTo('history', { type: 'BINDING_CHANGED', revision: event.revision })
+		enqueue(refreshRetention)
 	})
 	const acceptConnections = workflow.enqueueActions(({ context, event, enqueue }) => {
 		if (event.type !== 'CONNECTIONS_CHANGED') return
@@ -197,6 +231,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				connectionId: connection?.id
 			})
 		}
+		enqueue(refreshRetention)
 	})
 	const cancelSetup = workflow.enqueueActions(({ self, enqueue }) => {
 		const child = self.getSnapshot().children.setup
@@ -218,6 +253,12 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		initial: 'ready',
 		meta: { setupStep: 0 },
 		invoke: [
+			{
+				id: 'retention',
+				src: 'retention',
+				onDone: { actions: raise({ type: 'RETENTION_STOPPED' }) },
+				onError: { actions: raise({ type: 'RETENTION_STOPPED' }) }
+			},
 			{
 				id: 'availability',
 				src: 'availability',
@@ -244,6 +285,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		],
 		context: () => {
 			return {
+				browserOffline: true,
 				accounts: [],
 				mappings: new Map(),
 				access: { kind: 'waiting', organizationId: null, userId: undefined },
@@ -265,7 +307,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		on: {
 			// Mapping children are pure; active resource owners still settle via SHUTDOWN.
 			'xstate.error.actor.*': { actions: raise({ type: 'SHUTDOWN' }) },
-			SHUTDOWN: { target: '.closed' },
+			SHUTDOWN: { target: '.drainingRetention' },
+			NETWORK_CHANGED: {
+				actions: [assign({ browserOffline: ({ event }) => event.offline }), refreshRetention]
+			},
+			RETENTION_STOPPED: {},
 			WORKSPACE_ACCESS_CHANGED: {
 				guard: 'newAccess',
 				target: '.ready.neutral',
@@ -324,7 +370,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		states: {
 			ready: {
 				initial: 'neutral',
-				entry: refreshMappings,
+				entry: [refreshMappings, refreshRetention],
 				on: {
 					CONNECT: {
 						guard: 'canConnect',
@@ -536,6 +582,18 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					}
 				}
 			},
+			drainingRetention: {
+				entry: shutdownRetention,
+				on: {
+					RETENTION_STOPPED: 'closed',
+					SHUTDOWN: {},
+					RESET: {},
+					CANCEL: {},
+					NETWORK_CHANGED: {},
+					WORKSPACE_ACCESS_CHANGED: {},
+					CONNECTIONS_CHANGED: {}
+				}
+			},
 			closed: {
 				type: 'final',
 				entry: [
@@ -580,7 +638,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					},
 					onSnapshot: { actions: assign({ setupToken: undefined }) },
 					onDone: [
-						{ guard: stateIn({ setup: 'shuttingDown' }), target: 'closed' },
+						{ guard: stateIn({ setup: 'shuttingDown' }), target: 'drainingRetention' },
 						{
 							guard: stateIn({ setup: 'resetting' }),
 							target: 'ready.neutral',
@@ -602,7 +660,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						{ target: 'ready.success.complete' }
 					],
 					onError: [
-						{ guard: stateIn({ setup: 'shuttingDown' }), target: 'closed' },
+						{ guard: stateIn({ setup: 'shuttingDown' }), target: 'drainingRetention' },
 						{
 							guard: stateIn({ setup: 'resetting' }),
 							target: 'ready.neutral',
@@ -622,7 +680,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						target: '.resetting',
 						actions: [acceptAccess, cancelSetup]
 					},
-					SHUTDOWN: { target: '.shuttingDown', actions: cancelSetup },
+					SHUTDOWN: { target: '.shuttingDown', actions: [cancelSetup, shutdownRetention] },
 					RESET: {
 						target: '.resetting',
 						actions: [assign({ discovered: [] }), refreshMappings, cancelSetup]
@@ -677,7 +735,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					// Observe child transitions without mirroring their state into context.
 					onSnapshot: {},
 					onDone: [
-						{ guard: stateIn({ running: 'shuttingDown' }), target: 'closed' },
+						{ guard: stateIn({ running: 'shuttingDown' }), target: 'drainingRetention' },
 						{
 							guard: stateIn({ running: 'resetting' }),
 							target: 'ready.neutral',
@@ -745,7 +803,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						}
 					],
 					onError: [
-						{ guard: stateIn({ running: 'shuttingDown' }), target: 'closed' },
+						{ guard: stateIn({ running: 'shuttingDown' }), target: 'drainingRetention' },
 						{
 							guard: stateIn({ running: 'resetting' }),
 							target: 'ready.neutral',
@@ -765,7 +823,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						target: '.resetting',
 						actions: [acceptAccess, cancelOperation]
 					},
-					SHUTDOWN: { target: '.shuttingDown', actions: cancelOperation },
+					SHUTDOWN: { target: '.shuttingDown', actions: [cancelOperation, shutdownRetention] },
 					RESET: {
 						target: '.resetting',
 						actions: [assign({ discovered: [] }), refreshMappings, cancelOperation]

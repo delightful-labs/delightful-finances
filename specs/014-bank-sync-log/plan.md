@@ -9,8 +9,8 @@ passkey prompt or financial mutation is triggered by viewing or retaining logs.
 
 The bank supervisor composes `createLoggedBankOperationMachine`. Its raw bank
 operation retains ownership of credentials, Web Locks, imports and cleanup.
-`BankSyncIntegration` owns foreground Jazz queries and the independent retention
-coordinator. `BankSyncLog` is a pure presentation component with data/callback
+`BankSyncIntegration` owns foreground Jazz queries and browser-offline observation.
+The bank actor invokes the independent retention coordinator. `BankSyncLog` is a pure presentation component with data/callback
 props, native disclosures and localized labels. No new custom CSS properties.
 
 ## Persistence and permissions
@@ -57,12 +57,12 @@ Safe provider/passkey/mapping failure codes are projected from the existing clas
 
 ## Retention: knowledge before mutation
 
-Retention is independent of sync, starts for an observed owned connection, and
-also handles a selected retained connection owned by the current user. Its
+Retention is independent of sync and starts for the bank actor’s observed owned
+connection. A viewer selection cannot retarget its cleanup. Its
 coordinator chooses -> works -> idles, retries after 60 seconds, and handles
 replacing/closing by cancelling and draining the existing child before rebinding
-or final shutdown. Offline/no-access observations disable cleanup. Integration
-teardown sends SHUTDOWN; it does not abruptly stop an open transaction owner.
+or final shutdown. Offline/no-access observations disable cleanup. Bank shutdown
+drains the retention child before reaching its final closed state.
 
 The transaction child performs:
 
@@ -103,7 +103,7 @@ Subscribe only on Bank Sync settings, scoped to the selected workspace and
 connection. The selector includes disconnected connections and other users'
 connections permitted to the current owner/admin. Labels show connection time,
 owner and status without UUIDs or credentials. Read initiator names with a safe
-unavailable-user fallback.
+unavailable-user fallback. Profile lookup loading/errors do not gate readable history.
 
 Fetch 20 attempts plus a lookahead row, load another 20 explicitly, and reset the
 limit on user/workspace/connection changes. Scope-filter retained subscription
@@ -128,3 +128,28 @@ unanswered authority and full offline history reads.
 Record final outcomes in `verification.md` and tasks.md. Validate the schema and
 existing additive migration; publish schema/permissions through the normal release
 process. No production schema deployment is part of these local verification runs.
+
+## Review follow-up: ownership and optional profile enrichment
+
+The bank actor owns retention as a long-lived invoked child. It forwards its
+current authorized connection, browser-offline observation and recorded attempt
+completion through the existing CHECK protocol. The history selector supplies no
+cleanup scope. Access/connection changes reuse the bank's existing scoped
+observations, and normal ready entry checks the settled operation's logging
+result. No new promise orchestration is needed; the retention transaction child
+and its existing guards, authority/local rechecks and rollback paths are reused.
+
+Shutdown drains bank setup/operation work first, enters drainingRetention, sends
+SHUTDOWN to the retention coordinator if still active, and waits for its terminal
+report before the bank reaches closed. Late observations cannot reopen that
+shutdown state. An already completed/failed retention child is not awaited.
+
+The integration owns only the browser-offline observation and history queries.
+Optional profile-name enrichment does not gate history loading or errors; query
+failure supplies no profile names and reuses the existing unavailable-user label.
+
+Affected verification after implementation review: supervisor retention binding
+and shutdown fixtures; browser sync of active A while viewing old B; injected
+profile lookup failure with readable attempts/connection selection; existing
+retention, offline and logging/cancellation scenarios. The follow-up was reviewed before tests; verification.md records the focused
+unit/browser results.
