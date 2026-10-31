@@ -126,7 +126,6 @@
 		"working": "Waiting for passkey verification or completing your requested operation…",
 		"log_result_failed": "The sync ended, but its final log details could not be saved. The import result shown still applies.",
 		"log_title": "Sync history",
-		"log_confirmed": "Remote acceptance confirmed",
 		"log_unresolved": "Import settlement unresolved"
 	},
 	"currencies": {

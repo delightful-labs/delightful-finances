@@ -17,7 +17,6 @@ export type ProviderSummary = {
 export type ImportCounts = { imported: number; existing: number; omitted: number }
 export type ImportSettlement = 'settled' | 'unresolved'
 export type AccountImportReport = {
-	providerId: string
 	account: Pick<Account, 'id' | 'name'> | undefined
 	kind: 'complete' | 'failed' | 'cancelled'
 	counts: ImportCounts

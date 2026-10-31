@@ -2,7 +2,7 @@
 
 ## Implementation
 
-The log records one explicit connection-level attempt before provider work, with
+The log attempts to record one explicit connection-level attempt before provider work, with
 stable account results and terminal settlement after bank cleanup. Settings
 shows bounded, expandable history for permitted connections, including
 previous/disconnected connections. Retention independently keeps the latest 100
@@ -11,7 +11,7 @@ Unfinished attempts remain untouched. History/cleanup never requests provider
 transactions or passkeys.
 
 The final actor audit also contains unexpected logging-child crashes. A start
-crash prevents provider work; a crash during an issued import does not stop its
+crash allows sync without logging; a crash during an issued import does not stop its
 resource owner. Cancellation still drains the import before returning its actual
 counts and the separate unavailable-log result.
 
@@ -29,7 +29,7 @@ browser scenarios pass again (24.7 seconds). Static/schema/format checks pass.
 | Unit and full policy     | Nine focused suites: supervisor, raw/composed operations, import settlement, logging lifecycle, validation, log policies, retention statechart and full-policy retention.                                                                                                      |
 | Live history             | Real explicit syncs record partial/success account results; setup/discovery do not create attempts; repeats remain idempotent.                                                                                                                                                 |
 | Settings                 | Expansion, initiator, unknown counts, provider failure reason, 20/24 paging, reset after connection change/reload, workspace isolation and 390px containment.                                                                                                                  |
-| Logging failures         | Browser-injected start failure prevents provider work; final-write failure preserves the successful financial result and an unfinished attempt.                                                                                                                                |
+| Logging failures         | Browser-injected start failure allows imports; final-write failure preserves the successful financial result and an unfinished attempt.                                                                                                                                        |
 | Cancellation             | Pending response cancellation has no late import; unit tests drain already-issued imports and log writes, including an unexpected logging crash.                                                                                                                               |
 | Retention                | 100/101 boundary, stable finish/ID ties, atomic account/attempt deletion, concurrent cleanup, unfinished/other-connection preservation, partial coverage, timeouts and scope replacement. Browser verifies the actual integration prunes excess history with no provider work. |
 | Offline and cold restart | Existing bank offline scenarios plus a production-build persistent-profile test: close every client, reopen against an open/unanswered authority, close again, then reopen fully offline. History and account results remain readable without provider requests.               |
@@ -87,4 +87,13 @@ used an obsolete sidebar label; correcting it to Bank sync passes the case
 The production cold/unanswered-authority/full-offline history scenario passes
 again (46.0 seconds including build/startup). Svelte/TypeScript and test TypeScript,
 Prettier and diff checks pass. No schema, permission or deployment changes were
-needed for these two fixes. This follow-up remains uncommitted for review.
+needed for these two fixes. This follow-up has been committed.
+
+## Pending complete-review verification
+
+Earlier passing test counts above apply to their recorded revisions. The current
+cleanup adds bounded logging waits and removes unused report/context data; it has
+not yet been tested. After review, verify never-settling and late log writes,
+cancellation through timeout, identical unresolved crash handling, pagination scope
+reset and the existing history/import browser scenarios. Schema deployment remains
+a separate release step. System-account transaction attribution is implemented.

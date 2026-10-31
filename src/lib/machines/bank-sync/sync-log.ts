@@ -45,6 +45,16 @@ function completion(context: Context) {
 	return context.result
 }
 
+function logFailure(
+	context: Context,
+	reason: Exclude<SyncLogOutput, { kind: 'recorded' }>['reason']
+): SyncLogOutput {
+	const attemptId = context.start.id
+	return reason === 'invalidStart' || reason === 'startWriteFailed'
+		? { kind: 'notStarted', attemptId, reason }
+		: { kind: 'resultUnrecorded', attemptId, result: completion(context), reason }
+}
+
 /** Owns log writes only. The bank operation retains credentials, locks and import cleanup. */
 export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 	const actors = {
@@ -226,17 +236,10 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 			},
 			accountWriteFailed: {
 				type: 'final',
-				entry: assign({
-					output: ({ context }): SyncLogOutput => ({
-						kind: 'resultUnrecorded',
-						attemptId: context.start.id,
-						result: completion(context),
-						reason: 'accountWriteFailed'
-					})
-				})
+				entry: assign({ output: ({ context }) => logFailure(context, 'accountWriteFailed') })
 			},
 			recordingResult: {
-				// Keep the issued write alive through cancellation; parent must await this actor's completion.
+				// Cancellation does not abort the SDK write. The wrapper bounds its wait.
 				on: { CANCEL: {} },
 				invoke: {
 					src: 'recordResult',
@@ -247,23 +250,11 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 			},
 			invalidStart: {
 				type: 'final',
-				entry: assign({
-					output: ({ context }): SyncLogOutput => ({
-						kind: 'notStarted',
-						attemptId: context.start.id,
-						reason: 'invalidStart'
-					})
-				})
+				entry: assign({ output: ({ context }) => logFailure(context, 'invalidStart') })
 			},
 			startWriteFailed: {
 				type: 'final',
-				entry: assign({
-					output: ({ context }): SyncLogOutput => ({
-						kind: 'notStarted',
-						attemptId: context.start.id,
-						reason: 'startWriteFailed'
-					})
-				})
+				entry: assign({ output: ({ context }) => logFailure(context, 'startWriteFailed') })
 			},
 			recorded: {
 				type: 'final',
@@ -277,25 +268,11 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 			},
 			invalidResult: {
 				type: 'final',
-				entry: assign({
-					output: ({ context }): SyncLogOutput => ({
-						kind: 'resultUnrecorded',
-						attemptId: context.start.id,
-						result: completion(context),
-						reason: 'invalidResult'
-					})
-				})
+				entry: assign({ output: ({ context }) => logFailure(context, 'invalidResult') })
 			},
 			resultWriteFailed: {
 				type: 'final',
-				entry: assign({
-					output: ({ context }): SyncLogOutput => ({
-						kind: 'resultUnrecorded',
-						attemptId: context.start.id,
-						result: completion(context),
-						reason: 'resultWriteFailed'
-					})
-				})
+				entry: assign({ output: ({ context }) => logFailure(context, 'resultWriteFailed') })
 			}
 		}
 	})

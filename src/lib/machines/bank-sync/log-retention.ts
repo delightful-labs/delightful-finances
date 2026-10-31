@@ -26,7 +26,6 @@ const transactions = createJazzTransactionActors(
 	(write: ReturnType<Transaction['commit']>) => write.wait()
 )
 type Context = Input & {
-	error: unknown
 	authorityAttempts: readonly SyncAttempt[]
 	authorityAccounts: readonly SyncAccountResult[]
 	observedAttempts: readonly SyncAttempt[]
@@ -136,7 +135,6 @@ export function createSyncLogRetentionMachine(
 		id: 'sync-log-retention',
 		context: ({ input }) => ({
 			...input,
-			error: undefined,
 			authorityAttempts: [],
 			authorityAccounts: [],
 			observedAttempts: [],
@@ -179,10 +177,7 @@ export function createSyncLogRetentionMachine(
 										{ guard: ({ event }) => event.output, target: 'readingAuthorityHistory' },
 										{ target: 'finishing' }
 									],
-									onError: {
-										target: 'finishing',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'finishing'
 								}
 							},
 							readingAuthorityHistory: {
@@ -199,10 +194,7 @@ export function createSyncLogRetentionMachine(
 										target: 'selectingAuthority',
 										actions: assign({ authorityAttempts: ({ event }) => event.output })
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'finishing'
 								}
 							},
 							selectingAuthority: {
@@ -234,10 +226,7 @@ export function createSyncLogRetentionMachine(
 										target: 'opening',
 										actions: assign({ authorityAccounts: ({ event }) => event.output })
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'finishing'
 								}
 							},
 							opening: {
@@ -248,10 +237,7 @@ export function createSyncLogRetentionMachine(
 										target: 'checkingOpened',
 										actions: assign({ tx: ({ event }) => event.output })
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'finishing'
 								}
 							},
 							checkingOpened: {
@@ -271,10 +257,7 @@ export function createSyncLogRetentionMachine(
 										{ guard: ({ event }) => event.output, target: 'readingHistory' },
 										{ target: 'rollingBack' }
 									],
-									onError: {
-										target: 'rollingBack',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'rollingBack'
 								}
 							},
 							readingHistory: {
@@ -291,10 +274,7 @@ export function createSyncLogRetentionMachine(
 										target: 'selecting',
 										actions: assign({ observedAttempts: ({ event }) => event.output })
 									},
-									onError: {
-										target: 'rollingBack',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'rollingBack'
 								}
 							},
 							selecting: {
@@ -328,10 +308,7 @@ export function createSyncLogRetentionMachine(
 										target: 'checkingBeforeStage',
 										actions: assign({ accounts: ({ event }) => event.output })
 									},
-									onError: {
-										target: 'rollingBack',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'rollingBack'
 								}
 							},
 							checkingBeforeStage: {
@@ -354,10 +331,7 @@ export function createSyncLogRetentionMachine(
 										accounts: context.accounts
 									}),
 									onDone: 'checkingBeforeCommit',
-									onError: {
-										target: 'rollingBack',
-										actions: assign({ error: ({ event }) => event.error })
-									}
+									onError: 'rollingBack'
 								}
 							},
 							checkingBeforeCommit: {

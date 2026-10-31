@@ -2,7 +2,7 @@
 
 The user requested the remaining implementation and verification together in one
 final slice. Earlier foundation/logging/viewer cycles were separately reviewed
-and committed. Final-slice changes remain available for review before commit.
+and committed. Subsequent review cleanups are tracked below.
 
 ## Foundation
 
@@ -15,7 +15,7 @@ and committed. Final-slice changes remain available for review before commit.
 ## Recording
 
 - [x] T006 Implement stable attempt/account identities, per-account import reports,
-      start persistence before provider work and completion after actual cleanup.
+      best-effort start persistence before provider work and completion after financial cleanup.
 - [x] T007 Present recording changes and recursively audit actor helpers.
 - [x] T008 Verify financial result preservation, start/result failures, cancellation,
       issued writes, scope changes, unexpected logging crashes and no provider retry.
@@ -32,7 +32,7 @@ and committed. Final-slice changes remain available for review before commit.
 ## Settings and completion
 
 - [x] T012 Add settings-only scoped queries, bounded pagination, connection selection,
-      pure history presentation and localized availability/outcome labels.
+      pure history presentation and reusable outcome labels.
 - [x] T013 Present mobile/desktop presentation and query ownership.
 - [x] T014 Verify account expansion, paging/reset, reload, connection/workspace
       isolation, warm offline reads, cold unanswered-authority/full-offline reads,
@@ -41,7 +41,7 @@ and committed. Final-slice changes remain available for review before commit.
 
 Schema and permission publication to the release environment is a rollout step,
 not a local test outcome. No production deployment ran. Transaction revision
-history and system-account display naming remain separate features.
+history remains a separate feature. System-account display naming is implemented.
 
 ## Review follow-up
 
@@ -53,4 +53,15 @@ history and system-account display naming remain separate features.
 
 Follow-up results: 76 focused unit/lifecycle tests and six browser scenarios pass;
 static/format checks pass. See verification.md for scope and the corrected test
-navigation locator. Follow-up changes are uncommitted.
+navigation locator. These follow-up changes have been committed.
+
+## Complete-review cleanup
+
+- [x] Bound logging waits without blocking sync indefinitely; preserve issued Jazz writes.
+- [x] Share unresolved operation-crash handling between logged and fallback paths.
+- [x] Remove unread retention errors, logger error payloads and report provider IDs.
+- [x] Share log failure construction, operation inputs and crash results.
+- [x] Reuse Saved for confirmed history without a dedicated future-only string.
+- [x] Centralize pagination defaults/reset and reconcile completed feature documentation.
+- [ ] Review implementation, then verify stalled/late log writes, fallback crashes,
+      cancellation/drain, pagination reset and existing browser history flows.

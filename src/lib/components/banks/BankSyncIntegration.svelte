@@ -17,6 +17,7 @@
 	import {
 		selectHistoryConnection,
 		historyPageLimit,
+		initialHistoryPage,
 		nextHistoryPage,
 		selectHistoryPage,
 		selectHistoryAccounts
@@ -83,10 +84,10 @@
 	const historyConnections = $derived(selectedHistory.connections)
 	const logConnectionId = $derived(selectedHistory.connectionId)
 	const logScope = $derived(`${userId}:${organizationId}:${logConnectionId}`)
-	let logPage = $state({ scope: '', limit: 20 })
+	let logPage = $state(initialHistoryPage())
 	const logLimit = $derived(historyPageLimit(logPage, logScope))
 	$effect(() => {
-		if (logPage.scope !== logScope) logPage = { scope: logScope, limit: 20 }
+		if (logPage.scope !== logScope) logPage = initialHistoryPage(logScope)
 	})
 	const logAttempts = new QuerySubscription(() =>
 		logConnectionId && organizationId

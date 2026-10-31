@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-30
 
-**Status**: Implemented — local verification complete; release deployment pending
+**Status**: Implemented — complete-review cleanup verification pending; release deployment pending
 
 **Input**: Provide a persistent bank-sync log in Bank Sync settings, with one entry
 per explicit sync attempt, account-level results, and retention of the latest
@@ -56,6 +56,8 @@ a failure saving its final log result after imports have been saved.
 2. **Given** a failed start-record write, **When** sync would begin, **Then** sync
    proceeds normally and the logging failure is reported separately. Logging
    failure alone must not prevent provider work or replace the financial result.
+   A log write that does not settle stops blocking sync after five seconds; its
+   eventual persistence outcome must not retry provider work.
 3. **Given** cancellation, **When** cleanup and issued writes settle, **Then** the
    attempt records cancellation and any imports already saved or still uncertain.
 4. **Given** the browser exits before completion is recorded, **When** history is
@@ -139,7 +141,9 @@ and unfinished attempts exist, then verify which records remain after cleanup.
   cleanup MUST NOT initiate or retry provider fetching or passkey prompts.
 - **FR-012**: Logging MUST preserve cancellation, identity/workspace changes,
   shutdown cleanup and issued-write settlement. Log persistence failures MUST
-  be reported separately from the financial operation's actual outcome.
+  be reported separately from the financial operation's actual outcome. Log
+  completion waiting MUST be bounded to five seconds after financial cleanup; an
+  already-issued log write may finish later, without retries or subsequent writes.
 - **FR-013**: Retention MUST keep the latest 100 completed attempts per connection,
   remove older attempts and their account results together, and preserve all
   unfinished attempts. Failed, partial and cancelled attempts count as completed

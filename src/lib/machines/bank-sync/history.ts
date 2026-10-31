@@ -141,10 +141,11 @@ const connectionMessages = {
 	error: outcomeMessages.failed,
 	revoked: { label: () => m['status.unavailable_subject']({ subject: m['bank.title']() }) }
 } satisfies Record<Connection['status'], BankMessage>
+const savedMessage = { label: m['status.saved'] }
 const settlementMessages = {
 	notStarted: { label: m['bank.step_upcoming'] },
-	locallyPersisted: { label: m['status.saved'] },
-	confirmed: { label: m['bank.log_confirmed'] },
+	locallyPersisted: savedMessage,
+	confirmed: savedMessage,
 	unresolved: { label: m['bank.log_unresolved'] }
 } satisfies Record<SyncAttempt['importSettlement'], BankMessage>
 const failureMessages = {

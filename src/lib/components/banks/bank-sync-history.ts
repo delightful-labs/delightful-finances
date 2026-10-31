@@ -5,6 +5,10 @@ type ScopedSelection = { scope: string; id: string }
 type HistoryPage = { scope: string; limit: number }
 const pageSize = 20
 
+export function initialHistoryPage(scope = ''): HistoryPage {
+	return { scope, limit: pageSize }
+}
+
 export function selectHistoryConnection(
 	connections: readonly Connection[],
 	organizationId: string | undefined,

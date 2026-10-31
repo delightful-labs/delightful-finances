@@ -114,7 +114,6 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 				...result,
 				accountResults: [
 					{
-						providerId: providerAccountIdentity(context.provider),
 						account: context.account
 							? { id: context.account.id, name: context.account.name }
 							: undefined,

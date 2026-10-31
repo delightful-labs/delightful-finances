@@ -46,7 +46,8 @@ finalize attempt. The terminal attempt is saved last because account writes need
 an unfinished parent. Start failure falls back to the existing operation without logging; completion failure
 preserves actual financial results and leaves readable unfinished history.
 
-Cancellation drains issued start/account/final writes. While the operation owns
+Cancellation normally waits for issued log writes, bounded by the wrapper deadline.
+The SDK may complete a timed-out log write later. While the operation owns
 imports, logging waits for its actual drained result rather than inventing
 rollback or settlement. Scope replacement and shutdown preserve the existing bank
 owner's drain protocol. Unknown account identities are not fabricated. Unexpected logging-actor errors
@@ -235,3 +236,13 @@ provider. Cancellation and normal history/idempotency also pass. App/test types,
 focused formatting and diff checks pass. The initial browser run was stopped
 because the reused server could not open finances after unit checks; refreshing
 the disposable agent server resolved startup and the full four-case run passed.
+
+## Complete-review cleanup
+
+Reuse existing logging-failure transitions after a five-second readiness/completion
+wait. A deadline stops waiting, without aborting or retrying the issued Jazz write;
+late results cannot advance the stopped logger. Financial writes keep their drain
+protocol. Share operation inputs/crash results and log-failure output construction;
+remove unused fields, reuse Saved for confirmed history, and centralize pagination
+defaults. No schema change. After review, verify stalled/late logging, cancellation,
+fallback crashes, pagination resets and the existing history/import browser cases.
