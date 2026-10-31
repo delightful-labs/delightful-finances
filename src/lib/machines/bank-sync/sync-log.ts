@@ -1,12 +1,14 @@
 import { assign, fromPromise, sendParent, setup, stateIn } from 'xstate'
 import { app } from '#lib/schema.js'
-import { syncAttemptSchema } from '#lib/validation/bank-sync-log.js'
+import { syncAttemptSchema, syncAccountCompletionSchema } from '#lib/validation/bank-sync-log.js'
+import { stableUuid } from '#lib/data.js'
 import type {
 	SyncLogStart,
 	SyncLogCompletion,
 	SyncLogEvent,
 	SyncLogOutput,
-	SyncLogParentEvent
+	SyncLogParentEvent,
+	SyncLogAccountResult
 } from '#lib/contracts/bank-sync-log.js'
 import type { Dependencies } from './types.js'
 
@@ -14,6 +16,14 @@ type Context = {
 	start: SyncLogStart
 	result: SyncLogCompletion | undefined
 	output: SyncLogOutput | undefined
+	accounts: readonly SyncLogAccountResult[]
+	accountIndex: number
+	accountRowId: string | undefined
+}
+function accountValues(context: Context) {
+	const account = context.accounts[context.accountIndex]
+	if (!account) throw new Error('Missing account log result')
+	return { ...account, attemptId: context.start.id, organizationId: context.start.organizationId }
 }
 function initialValues(start: SyncLogStart) {
 	return {
@@ -38,6 +48,16 @@ function completion(context: Context) {
 /** Owns log writes only. The bank operation retains credentials, locks and import cleanup. */
 export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 	const actors = {
+		accountId: fromPromise<string, { attemptId: string; accountId: string }>(({ input }) =>
+			stableUuid(input.attemptId, `sync-account:${input.accountId}`)
+		),
+		recordAccount: fromPromise<void, { id: string; values: ReturnType<typeof accountValues> }>(
+			async ({ input }) => {
+				await db
+					.insert(app.simplefinSyncAccountResults, input.values, { id: input.id })
+					.wait({ tier: 'local' })
+			}
+		),
 		recordStart: fromPromise<void, SyncLogStart>(async ({ input }) => {
 			await db
 				.insert(app.simplefinSyncAttempts, syncAttemptSchema.parse(initialValues(input)), {
@@ -69,7 +89,14 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 		guards: { startCancelling: stateIn({ recordingStart: 'cancelling' }) }
 	}).createMachine({
 		id: 'bank-sync-log',
-		context: ({ input }) => ({ start: input, result: undefined, output: undefined }),
+		context: ({ input }) => ({
+			start: input,
+			result: undefined,
+			output: undefined,
+			accounts: [],
+			accountIndex: 0,
+			accountRowId: undefined
+		}),
 		initial: 'validatingStart',
 		output: ({ context }) => {
 			if (!context.output) throw new Error('Missing sync log output')
@@ -125,7 +152,10 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 				on: {
 					FINISH: {
 						target: 'validatingResult',
-						actions: assign({ result: ({ event }) => event.result })
+						actions: assign({
+							result: ({ event }) => event.result,
+							accounts: ({ event }) => event.accounts ?? []
+						})
 					}
 				}
 			},
@@ -136,11 +166,74 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 							syncAttemptSchema.safeParse({
 								...initialValues(context.start),
 								...completion(context)
-							}).success,
-						target: 'recordingResult'
+							}).success &&
+							new Set(context.accounts.map((account) => account.accountId)).size ===
+								context.accounts.length &&
+							context.accounts.every(
+								(account) =>
+									syncAccountCompletionSchema.safeParse({
+										...account,
+										attemptId: context.start.id,
+										organizationId: context.start.organizationId
+									}).success
+							),
+						target: 'nextAccount'
 					},
 					{ target: 'invalidResult' }
 				]
+			},
+			nextAccount: {
+				always: [
+					{
+						guard: ({ context }) => context.accountIndex < context.accounts.length,
+						target: 'identifyingAccount'
+					},
+					{ target: 'recordingResult' }
+				]
+			},
+			identifyingAccount: {
+				on: { CANCEL: {} },
+				invoke: {
+					src: 'accountId',
+					input: ({ context }) => ({
+						attemptId: context.start.id,
+						accountId: accountValues(context).accountId
+					}),
+					onDone: {
+						target: 'recordingAccount',
+						actions: assign({ accountRowId: ({ event }) => event.output })
+					},
+					onError: 'accountWriteFailed'
+				}
+			},
+			recordingAccount: {
+				on: { CANCEL: {} },
+				invoke: {
+					src: 'recordAccount',
+					input: ({ context }) => {
+						if (!context.accountRowId) throw new Error('Missing account log identity')
+						return { id: context.accountRowId, values: accountValues(context) }
+					},
+					onDone: {
+						target: 'nextAccount',
+						actions: assign({
+							accountIndex: ({ context }) => context.accountIndex + 1,
+							accountRowId: undefined
+						})
+					},
+					onError: 'accountWriteFailed'
+				}
+			},
+			accountWriteFailed: {
+				type: 'final',
+				entry: assign({
+					output: ({ context }): SyncLogOutput => ({
+						kind: 'resultUnrecorded',
+						attemptId: context.start.id,
+						result: completion(context),
+						reason: 'accountWriteFailed'
+					})
+				})
 			},
 			recordingResult: {
 				// Keep the issued write alive through cancellation; parent must await this actor's completion.

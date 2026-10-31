@@ -111,6 +111,27 @@ The first implementation contains only the typed protocol and standalone actor;
 live operation integration and per-account persistence remain T006. Review this
 slice before actor tests are added or run. This actor is not yet user-visible.
 
+### Account persistence extension — implementation review
+
+FINISH now accepts terminal account results alongside the operation's financial
+result. Validate all rows and reject duplicate account IDs before any account
+write. For each row the state sequence is nextAccount -> identifyingAccount ->
+recordingAccount -> nextAccount; only after all rows settle does recordingResult
+finish the parent attempt. ID derivation and each individual write are leaf
+actors. IDs are derived deterministically from attempt and account identities.
+
+The attempt stays unfinished if account persistence fails; report accountWriteFailed
+separately and preserve the financial result. Already saved rows remain attached
+to the unfinished attempt. No automatic retry or rollback of imported transactions
+occurs. Cancellation during account persistence drains those writes and the final
+attempt write, retaining the operation's already-supplied result. These ordered
+writes are not claimed to be atomic. The attempt is deliberately finalized last
+because account writes require an unfinished parent under the reviewed policy.
+
+Review before extending lifecycle/full-policy coverage for multiple accounts,
+stable IDs, duplicate/invalid inputs, write failures and cancellation while an
+account row settles. Live operation integration remains outstanding.
+
 ## Account-result projection — implementation review
 
 The account import actor now projects one report from its already-classified

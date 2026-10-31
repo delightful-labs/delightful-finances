@@ -50,3 +50,6 @@ export const syncAccountResultSchema = z.strictObject({
 	failureCode: syncFailureCode.nullable(),
 	...counts
 })
+export const syncAccountCompletionSchema = syncAccountResultSchema.extend({
+	outcome: syncOutcome.exclude(['unfinished'])
+})
