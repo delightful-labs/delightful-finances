@@ -232,6 +232,9 @@ test(
 		expect(await syncLog(page)).toEqual({ attempts: [], accounts: [] })
 		const history = page.getByRole('region', { name: 'Sync history', exact: true })
 		await expect(
+			history.getByText('Showing locally available history.', { exact: false })
+		).toHaveCount(0)
+		await expect(
 			history.getByText('No Sync history yet.', {
 				exact: true
 			})
