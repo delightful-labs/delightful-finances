@@ -155,3 +155,34 @@ Before running tests, review this four-file slice. Affected coverage includes
 bank-sync import/operation tests and fixtures using exact output equality; update
 those expectations by inspecting each scenario, and add multi-account assertions
 for counts, account-name snapshots, cancellation and late-child outcomes.
+
+## Composed operation actor — implementation review
+
+createLoggedBankOperationMachine composes preparation, the reviewed logging actor,
+and the existing bank operation. For SYNC it captures identity, authorizes scope,
+saves the attempt, waits for SYNC_LOG_READY, invokes the existing operation, waits
+for its cleanup/result, sends account/attempt completion to the log actor, and
+waits for final log settlement. Other commands invoke the existing operation.
+The raw operation accepts an optional captured identity so it cannot silently
+retarget when the composed actor's observed workspace changes.
+
+Cancellation during preparation ends before a log/provider operation is started.
+During start logging it drains the log; a late readiness message is handled by
+sending a cancelled/no-import completion, without invoking the provider. During
+operation it cancels both children but awaits the operation's actual drained
+result; during terminal logging it waits for logging. Financial results survive
+completion-log failure through a separate logging output. Start-log failure
+prevents the operation. Count/outcome projections are pure transformations of
+already-classified import results, not additional asynchronous orchestration.
+
+Only single log writes, existing operation effects, and read-only preparation
+actors are composed. No promise actor manually starts another actor. Raw provider
+responses and credentials are never copied into log inputs. Unknown per-account
+identities are omitted from persisted account rows, with aggregate results kept.
+
+This slice deliberately does not replace the supervisor's existing operation
+registration yet. Before registration, review and test readiness ordering,
+start failure, cancellation at readiness, operation cleanup before finalization,
+result-log failure, same-attempt identity binding, and non-SYNC passthrough.
+Then adapt supervisor snapshot/metadata and fixture contracts and expose safe
+logging failure feedback in presentation. No new tests were run for this slice.

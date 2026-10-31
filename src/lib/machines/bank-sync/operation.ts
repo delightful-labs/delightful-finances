@@ -32,7 +32,7 @@ import {
 	type BankViewMeta
 } from './types.js'
 
-type Input = { command: BankCommand; discovered: ProviderSummary[] }
+type Input = { command: BankCommand; discovered: ProviderSummary[]; identity?: RequestIdentity }
 type Context = Input & {
 	identity: RequestIdentity
 	work: OperationWork | undefined
@@ -185,7 +185,10 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			const observation = observe()
 			return {
 				...input,
-				identity: { userId: observation.userId, organizationId: observation.organizationId },
+				identity: input.identity ?? {
+					userId: observation.userId,
+					organizationId: observation.organizationId
+				},
 				work: undefined,
 				accessUrl: undefined,
 				response: undefined,

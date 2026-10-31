@@ -77,3 +77,8 @@ account writes and cancellation while a row settles. Three full-policy cases
 also pass, including the real logging actor saving account results before its
 parent attempt becomes terminal. These checks do not constitute live bank sync
 integration; the existing operation still needs to invoke and drain the actor.
+
+Live-wiring progress: persistence coverage committed as 66115cf. The composed
+logged-operation actor and captured raw-operation identity input are implemented
+and type-check cleanly; awaiting review before lifecycle tests and supervisor
+registration. The existing live supervisor still invokes the raw operation.
