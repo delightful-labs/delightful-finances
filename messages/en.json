@@ -486,14 +486,6 @@
 		"failed": "The update could not be completed. You can try again.",
 		"later": "Later"
 	},
-	"recovery": {
-		"confirm": "I saved this phrase somewhere safe.",
-		"description": "Save this phrase somewhere private so you can restore your account on another device.",
-		"error": "Your recovery phrase could not be loaded. Try again.",
-		"hide": "I saved the phrase",
-		"phrase_label": "Your recovery phrase",
-		"warning": "Anyone with this phrase can access your account and finances. Keep it private."
-	},
 	"status": {
 		"archived_subject_name": "{subject} {name} archived.",
 		"archiving_subject": "Archiving {subject}…",

@@ -1,52 +1,31 @@
 <script lang="ts">
-	import { inspectActor } from '#lib/diagnostics/inspector.js'
-	import { onMount } from 'svelte'
-	import { fromStore, readable } from 'svelte/store'
-	import { createActor } from 'xstate'
 	import { getJazzSession } from 'jazz-tools/svelte'
-	import { RecoveryPhrase } from 'jazz-tools/passphrase'
-	import { exportLocalFirstSecret } from 'jazz-tools'
-	import {
-		createRecoveryPhraseMachine,
-		selectRecoveryPhraseView
-	} from '#lib/machines/identity/recovery-phrase.js'
-	import AccountRecovery from './AccountRecovery.svelte'
-	const session = fromStore(getJazzSession())
-	const identity = () => ({
-		identityId: session.current.account?.id ?? null,
-		binding: session.current.account ?? null
+	import RecoveryPhrase from 'delightful-local-first/recovery/svelte'
+	import { createJazzRecoveryAdapter } from 'delightful-local-first/backend/jazz/recovery'
+	import { createRecoveryMessages } from 'delightful-local-first/recovery/messages'
+	import type { RecoveryScopeSource } from 'delightful-local-first/recovery/contracts'
+	import { getLocale } from '#lib/paraglide/runtime.js'
+
+	const session = getJazzSession()
+	const adapter = createJazzRecoveryAdapter(() => {
+		const snapshot = session.getSnapshot()
+		return snapshot.status === 'ready' ? snapshot.account : undefined
 	})
-	const actor = createActor(
-		createRecoveryPhraseMachine(async (captured) => {
-			const account = session.current.account
-			if (!account || account !== captured.binding || account.id !== captured.identityId)
-				throw new Error('Recovery identity changed')
-			return RecoveryPhrase.fromSecret(exportLocalFirstSecret(account))
-		}),
-		{ input: identity(), inspect: inspectActor }
-	)
-	const snapshot = fromStore(
-		readable(actor.getSnapshot(), (set) => {
-			const subscription = actor.subscribe(set)
-			return () => subscription.unsubscribe()
-		})
-	)
-	const view = $derived(selectRecoveryPhraseView(snapshot.current))
-	$effect(() => {
-		actor.send({ type: 'OBSERVE', identity: identity() })
-	})
-	onMount(() => {
-		actor.start()
-		return () => {
-			actor.send({ type: 'SHUTDOWN' })
-			actor.stop()
+	const source: RecoveryScopeSource = {
+		subscribe(publish) {
+			const unsubscribe = session.subscribe((snapshot) => {
+				publish(adapter.observeAccount(snapshot.status === 'ready' ? snapshot.account : undefined))
+			})
+			return () => {
+				try {
+					unsubscribe()
+				} finally {
+					adapter.invalidate()
+				}
+			}
 		}
-	})
+	}
+	const messages = $derived(createRecoveryMessages(getLocale()))
 </script>
 
-<AccountRecovery
-	{view}
-	onReveal={() => actor.send({ type: 'REVEAL' })}
-	onHide={() => actor.send({ type: 'HIDE' })}
-	onConfirm={(value) => actor.send({ type: 'CONFIRM', value })}
-/>
+<RecoveryPhrase {source} capability={adapter.capability} {messages} />
