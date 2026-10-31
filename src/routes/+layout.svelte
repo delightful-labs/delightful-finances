@@ -25,7 +25,7 @@
 	import { browser } from '$app/env'
 	import { workspaceRoute } from '#lib/domain/workspace-routes.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
-	import { getCurrentJazzSession, getOrCreateJazzSession } from '#lib/runtime/jazz-session.js'
+	import { getCurrentJazzSession, getJazzStartupBinding } from '#lib/runtime/jazz-session.js'
 
 	let { children }: { children: Snippet } = $props()
 	const routeWorkspaceId = $derived(browser ? workspaceRoute(page.url.search).workspaceId : null)
@@ -68,8 +68,6 @@
 
 	const actor = createActor(
 		createApplicationReadinessMachine(
-			() => getOrCreateJazzSession(jazzConfig),
-			getCurrentJazzSession(),
 			{
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
 				navigate: (destination) => goto(destination)
@@ -86,7 +84,7 @@
 	setContext(readinessKey, readiness)
 	const startupState = fromStore(snapshot)
 	const jazzSession = $derived(startupState.current.context.session)
-	onMount(() => actor.send({ type: 'START' }))
+	onMount(() => actor.send({ type: 'START', startup: getJazzStartupBinding(jazzConfig) }))
 	// The machine completes only after its workspace/bank children finish cleanup.
 	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
 </script>

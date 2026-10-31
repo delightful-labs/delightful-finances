@@ -825,7 +825,7 @@ test(
 			const snapshot = getCurrentJazzSession()?.getSnapshot()
 			if (!snapshot?.client || !snapshot.account) throw new Error('Test session is not ready.')
 			// Use the same public SDK module URL as the application to share its client registry.
-			const moduleSource = await (await fetch(sessionPath)).text()
+			const moduleSource = await (await fetch('/src/routes/+layout.svelte')).text()
 			const sdkPath = moduleSource.match(/from\s*['"]([^'"]*jazz-tools[^'"]*)['"]/)?.[1]
 			if (!sdkPath) throw new Error('Could not find the application SDK module.')
 			const { createJazzClient }: typeof import('jazz-tools/svelte') = await import(sdkPath)

@@ -1,95 +1,169 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-	createJazzSession,
-	type JazzClient,
-	type JazzSession,
-	type JazzSessionConfig
-} from 'jazz-tools/svelte'
+import { createActor, fromCallback, waitFor } from 'xstate'
+import type { JazzClient, JazzSession, JazzSessionConfig } from 'jazz-tools/svelte'
+import { createSessionStartupMachine } from 'delightful-local-first/session/workflow'
+import type { SessionStartupReport } from 'delightful-local-first/session/contracts'
+import type { JazzStartupBinding } from './jazz-session.js'
 
-const environment = vi.hoisted(() => ({ PUBLIC_DEBUG: 'true' }))
-vi.mock('$app/env/public', () => environment)
-
-vi.mock('jazz-tools/svelte', () => ({ createJazzSession: vi.fn() }))
-
+const environment = vi.hoisted(() => ({ browser: true }))
+vi.mock('$app/env', () => environment)
+// Keep the real shared owner/attachment; stub only SDK creation at the public backend boundary.
+// The vendored ESM adapter is external in Vitest, so mocking its transitive SDK import is insufficient.
+const backend = vi.hoisted(() => ({
+	create: vi.fn<(config: JazzSessionConfig) => Promise<JazzSession<JazzClient>>>()
+}))
+vi.mock('delightful-local-first/backend/jazz/session', () => ({
+	createJazzSessionAcquisition: (config: JazzSessionConfig) => {
+		const captured = { ...config }
+		return { binding: Object.freeze({}), capability: { open: () => backend.create(captured) } }
+	}
+}))
+const actors = new Set<{ stop: () => void }>()
+const owners = new Set<JazzStartupBinding['owner']>()
 const config = {
 	appId: 'test-app',
 	serverUrl: 'http://localhost:1234',
 	initial: 'local-first'
 } satisfies JazzSessionConfig
-function sessionStub(): JazzSession<JazzClient> {
+
+type Session = JazzSession<JazzClient>
+function sessionStub(): Session {
+	const unused = vi.fn(async () => {})
 	return {
 		getSnapshot: () => ({ status: 'ready' }),
 		subscribe: () => () => {},
-		createLocalFirst: vi.fn(async () => {}),
-		restoreLocalFirst: vi.fn(async () => {}),
-		becomeBackend: vi.fn(async () => {}),
-		registerJWT: vi.fn(async () => {}),
-		loginJWT: vi.fn(async () => {}),
-		loginOrRegisterJWT: vi.fn(async () => {}),
-		linkJWT: vi.fn(async () => {}),
+		createLocalFirst: unused,
+		restoreLocalFirst: unused,
+		becomeBackend: unused,
+		registerJWT: unused,
+		loginJWT: unused,
+		loginOrRegisterJWT: unused,
+		linkJWT: unused,
 		logout: vi.fn(async () => {}),
-		retry: vi.fn(async () => {}),
+		retry: unused,
 		close: vi.fn(async () => {})
 	}
 }
-
+function attach(binding: JazzStartupBinding) {
+	owners.add(binding.owner)
+	const reports: SessionStartupReport<Session>[] = []
+	const recipient = createActor(
+		fromCallback<SessionStartupReport<Session>>(({ receive }) =>
+			receive((event) => reports.push(event))
+		)
+	).start()
+	const actor = createActor(createSessionStartupMachine<Session>(), {
+		input: { reportTo: recipient }
+	}).start()
+	actors.add(actor)
+	actors.add(recipient)
+	actor.send({ type: 'START', ...binding })
+	return { actor, reports }
+}
 beforeEach(() => {
 	vi.resetModules()
-	environment.PUBLIC_DEBUG = 'true'
+	environment.browser = true
 	vi.spyOn(console, 'error').mockImplementation(() => {})
-	vi.mocked(createJazzSession).mockReset()
+	backend.create.mockReset()
+})
+afterEach(() => {
+	for (const actor of actors) actor.stop()
+	for (const owner of owners) owner.stop()
+	actors.clear()
+	owners.clear()
+	vi.restoreAllMocks()
 })
 
-afterEach(() => vi.restoreAllMocks())
-
-describe('shared session initialization', () => {
-	it('deduplicates simultaneous startup calls and caches the successful owner', async () => {
-		const owner = sessionStub()
-		const pending = Promise.withResolvers<JazzSession<JazzClient>>()
-		vi.mocked(createJazzSession).mockReturnValueOnce(pending.promise)
-		const { getOrCreateJazzSession, getCurrentJazzSession } = await import('./jazz-session.js')
-		const first = getOrCreateJazzSession(config)
-		const second = getOrCreateJazzSession(config)
-		expect(first).toBe(second)
+describe('browser shared acquisition binding', () => {
+	it('is lazy, shares pending startup, and keeps the same acquired session across detach/remount', async () => {
+		const session = sessionStub(),
+			pending = Promise.withResolvers<Session>()
+		backend.create.mockReturnValueOnce(pending.promise)
+		const { getJazzStartupBinding, getCurrentJazzSession } = await import('./jazz-session.js')
+		const firstBinding = getJazzStartupBinding(config),
+			secondBinding = getJazzStartupBinding({ ...config })
+		expect(firstBinding.owner).toBe(secondBinding.owner)
+		expect(firstBinding.scope.attachment).not.toBe(secondBinding.scope.attachment)
+		expect(backend.create).not.toHaveBeenCalled()
+		const first = attach(firstBinding),
+			second = attach(secondBinding)
+		first.actor.send({ type: 'SHUTDOWN' })
+		await waitFor(first.actor, (s) => s.status === 'done')
 		expect(getCurrentJazzSession()).toBeUndefined()
-		pending.resolve(owner)
-		await expect(first).resolves.toBe(owner)
-		await expect(getOrCreateJazzSession(config)).resolves.toBe(owner)
-		expect(getCurrentJazzSession()).toBe(owner)
-		expect(createJazzSession).toHaveBeenCalledExactlyOnceWith(config)
+		pending.resolve(session)
+		await waitFor(second.actor, (s) => s.matches({ bound: 'attached' }))
+		expect(getCurrentJazzSession()).toBe(session)
+		const third = attach(getJazzStartupBinding(config))
+		await waitFor(third.actor, (s) => s.matches({ bound: 'attached' }))
+		expect(backend.create).toHaveBeenCalledExactlyOnceWith(config)
+		expect(session.close).not.toHaveBeenCalled()
+		expect(session.logout).not.toHaveBeenCalled()
 	})
 
-	it('clears failed startup attempts so repeated retries can recover', async () => {
-		const owner = sessionStub()
-		const failure = new Error('Network unavailable')
-		vi.mocked(createJazzSession)
+	it('remembers failure across remounts and recovers through explicit retries without raw errors', async () => {
+		const session = sessionStub(),
+			failure = new Error('Private SDK initialization detail')
+		backend.create
 			.mockRejectedValueOnce(failure)
 			.mockRejectedValueOnce(failure)
-			.mockResolvedValueOnce(owner)
-		const { getOrCreateJazzSession, getCurrentJazzSession } = await import('./jazz-session.js')
-		await expect(getOrCreateJazzSession(config)).rejects.toBe(failure)
+			.mockResolvedValueOnce(session)
+		const { getJazzStartupBinding, getCurrentJazzSession } = await import('./jazz-session.js')
+		const first = attach(getJazzStartupBinding(config))
+		await waitFor(first.actor, (s) => s.matches({ bound: 'failed' }))
+		first.actor.send({ type: 'SHUTDOWN' })
+		await waitFor(first.actor, (s) => s.status === 'done')
+		const second = attach(getJazzStartupBinding(config))
+		await waitFor(second.actor, (s) => s.matches({ bound: 'failed' }))
+		expect(backend.create).toHaveBeenCalledTimes(1)
 		expect(getCurrentJazzSession()).toBeUndefined()
-		await expect(getOrCreateJazzSession(config)).rejects.toBe(failure)
+		second.actor.send({ type: 'RETRY' })
+		await waitFor(second.actor, (s) => s.matches({ bound: 'failed' }))
+		second.actor.send({ type: 'RETRY' })
+		await waitFor(second.actor, (s) => s.matches({ bound: 'attached' }))
+		expect(backend.create).toHaveBeenCalledTimes(3)
+		expect(getCurrentJazzSession()).toBe(session)
+		expect(
+			second.reports
+				.filter((event) => event.type === 'SESSION_STARTUP_FAILED')
+				.every((event) => event.reason === 'openFailed')
+		).toBe(true)
+		expect(console.error).not.toHaveBeenCalled()
+	})
+
+	it('does not allocate an owner or SDK session during SSR', async () => {
+		environment.browser = false
+		const { getJazzStartupBinding, getCurrentJazzSession } = await import('./jazz-session.js')
 		expect(getCurrentJazzSession()).toBeUndefined()
-		await expect(getOrCreateJazzSession(config)).resolves.toBe(owner)
-		expect(createJazzSession).toHaveBeenCalledTimes(3)
-		expect(console.error).toHaveBeenCalledTimes(2)
-		expect(console.error).toHaveBeenLastCalledWith(
-			'[jazz-startup] Jazz session initialization failed',
-			expect.objectContaining({
-				appId: 'test-app',
-				server: 'http://localhost:1234',
-				error: expect.objectContaining({ message: 'Network unavailable' })
-			})
+		expect(() => getJazzStartupBinding(config)).toThrow('Jazz startup binding requires the browser')
+		expect(backend.create).not.toHaveBeenCalled()
+	})
+
+	it('rejects changed configuration instead of creating a competing owner', async () => {
+		const { getJazzStartupBinding } = await import('./jazz-session.js')
+		const first = getJazzStartupBinding(config)
+		owners.add(first.owner)
+		expect(() => getJazzStartupBinding({ ...config, serverUrl: 'http://localhost:4321' })).toThrow(
+			'Jazz environment replacement requires coordinated cleanup'
 		)
+		expect(getJazzStartupBinding(config).owner).toBe(first.owner)
+		expect(backend.create).not.toHaveBeenCalled()
 	})
-})
 
-it('preserves startup rejection without logging when debug is disabled', async () => {
-	environment.PUBLIC_DEBUG = 'false'
-	const failure = new Error('Network unavailable')
-	vi.mocked(createJazzSession).mockRejectedValueOnce(failure)
-	const { getOrCreateJazzSession } = await import('./jazz-session.js')
-	await expect(getOrCreateJazzSession(config)).rejects.toBe(failure)
-	expect(console.error).not.toHaveBeenCalled()
+	it('never silently replaces a stopped owner', async () => {
+		const { getJazzStartupBinding, getCurrentJazzSession } = await import('./jazz-session.js')
+		const first = getJazzStartupBinding(config)
+		owners.add(first.owner)
+		first.owner.stop()
+		const second = getJazzStartupBinding(config)
+		expect(second.owner).toBe(first.owner)
+		const app = attach(second)
+		await waitFor(app.actor, (s) => s.matches('ownerFailed'))
+		expect(app.reports.at(-1)).toEqual({
+			type: 'SESSION_STARTUP_FAILED',
+			scope: second.scope,
+			reason: 'ownerFailed'
+		})
+		expect(getCurrentJazzSession()).toBeUndefined()
+		expect(backend.create).not.toHaveBeenCalled()
+	})
 })
