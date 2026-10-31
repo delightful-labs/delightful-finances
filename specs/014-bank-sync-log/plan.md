@@ -153,3 +153,25 @@ and shutdown fixtures; browser sync of active A while viewing old B; injected
 profile lookup failure with readable attempts/connection selection; existing
 retention, offline and logging/cancellation scenarios. The follow-up was reviewed before tests; verification.md records the focused
 unit/browser results.
+
+## Review follow-up: reuse without workflow changes
+
+This slice extracts pure data transformations only: the logged wrapper's empty
+cancellation result, the supervisor's connection-scoped completion fields, and
+the raw operation's settled import fields. Existing guards still select success,
+failure, cancellation, reset and shutdown paths; resource-owning invocations and
+their drain boundaries remain unchanged. No helper performs I/O or runs an actor.
+
+BankSyncLog reuses local count/failure snippets and per-locale Intl formatters.
+Jazz outcome/failure-code column factories reuse the canonical enum option order;
+the structural hash must remain e5a4d82f6013. This is a schema-source refactor,
+not a structural migration. The user requested implementation and focused tests
+in one slice. Inspect result fixtures, policy tests and history disclosures before
+running the affected unit/browser coverage.
+
+Verification: all 116 focused tests across nine bank-sync, validation and Jazz
+policy suites pass. The four Playwright cases for history presentation,
+cancellation and start/result persistence failures pass. `pnpm check` reports
+zero errors and warnings; focused Prettier and diff checks pass. The structural
+schema hash remains `e5a4d82f6013`. The cancellation fixture additionally covers
+a rejected pending start, preserving its existing failure outcome.

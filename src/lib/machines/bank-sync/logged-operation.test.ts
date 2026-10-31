@@ -105,18 +105,29 @@ it('prevents provider work when saving the start fails', async () => {
 	expect(f.unlock).not.toHaveBeenCalled()
 	expect(f.acquire).not.toHaveBeenCalled()
 })
-it('drains start persistence on cancellation without fetching', async () => {
-	const pending = Promise.withResolvers<void>()
-	const f = start({ begin: () => pending.promise })
-	await vi.waitFor(() => expect(f.starts).toHaveLength(1))
-	f.actor.send({ type: 'CANCEL' })
-	pending.resolve()
-	expect(await toPromise(f.actor)).toMatchObject({
-		kind: 'cancelled',
-		logging: { kind: 'recorded', result: { outcome: 'cancelled', importSettlement: 'notStarted' } }
-	})
-	expect(f.fetch).not.toHaveBeenCalled()
-})
+it.each(['saved', 'rejected'])(
+	'drains a %s start on cancellation without fetching',
+	async (status) => {
+		const pending = Promise.withResolvers<void>()
+		const f = start({ begin: () => pending.promise })
+		await vi.waitFor(() => expect(f.starts).toHaveLength(1))
+		f.actor.send({ type: 'CANCEL' })
+		if (status === 'saved') pending.resolve()
+		else pending.reject(new Error('write'))
+		expect(await toPromise(f.actor)).toMatchObject({
+			kind: status === 'saved' ? 'cancelled' : 'failed',
+			error: status === 'saved' ? undefined : new Error('sync_log_start_failed'),
+			counts: { imported: 0, existing: 0, omitted: 0 },
+			accountResults: [],
+			settlement: 'settled',
+			logging:
+				status === 'saved'
+					? { kind: 'recorded', result: { outcome: 'cancelled', importSettlement: 'notStarted' } }
+					: { kind: 'notStarted', reason: 'startWriteFailed' }
+		})
+		expect(f.fetch).not.toHaveBeenCalled()
+	}
+)
 it('waits for final logging after bank cleanup and preserves imports when the log write fails', async () => {
 	const pending = Promise.withResolvers<void>()
 	const f = start({ finish: () => pending.promise })

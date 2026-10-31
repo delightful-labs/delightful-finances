@@ -22,6 +22,7 @@ import {
 	type BankCommand,
 	type Dependencies,
 	type ImportCounts,
+	type ImportResult,
 	type AccountImportReport,
 	type ImportSettlement,
 	type LockEvent,
@@ -61,6 +62,14 @@ export type OperationResult =
 type SyncOutcome =
 	| { lastOutcome: 'succeeded' | 'partial'; lastError: null }
 	| { lastOutcome: 'failed'; lastError: 'operation-failed' }
+
+function importCompletion(result: ImportResult) {
+	return {
+		counts: result.counts,
+		accountResults: result.accountResults ?? [],
+		importSettlement: result.settlement
+	}
+}
 
 function workFor(context: Context) {
 	if (!context.work) throw new Error('missing-command')
@@ -546,48 +555,32 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						{
 							guard: stateIn({ importing: 'cancelling' }),
 							target: 'cancelled',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								accountResults: ({ event }) => event.output.accountResults ?? [],
-								importSettlement: ({ event }) => event.output.settlement
-							})
+							actions: assign(({ event }) => importCompletion(event.output))
 						},
 						{
 							guard: stateIn({ importing: 'failing' }),
 							target: 'settlingFailure',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								accountResults: ({ event }) => event.output.accountResults ?? [],
-								importSettlement: ({ event }) => event.output.settlement
-							})
+							actions: assign(({ event }) => importCompletion(event.output))
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'cancelled',
 							target: 'cancelled',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								accountResults: ({ event }) => event.output.accountResults ?? [],
-								importSettlement: ({ event }) => event.output.settlement,
-								error: ({ event }) => event.output.error
-							})
+							actions: assign(({ event }) => ({
+								...importCompletion(event.output),
+								error: event.output.error
+							}))
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'failed',
 							target: 'preparingFailure',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								accountResults: ({ event }) => event.output.accountResults ?? [],
-								importSettlement: ({ event }) => event.output.settlement,
-								error: ({ event }) => event.output.error
-							})
+							actions: assign(({ event }) => ({
+								...importCompletion(event.output),
+								error: event.output.error
+							}))
 						},
 						{
 							target: 'classifyingSuccess',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								accountResults: ({ event }) => event.output.accountResults ?? [],
-								importSettlement: ({ event }) => event.output.settlement
-							})
+							actions: assign(({ event }) => importCompletion(event.output))
 						}
 					],
 					onError: [

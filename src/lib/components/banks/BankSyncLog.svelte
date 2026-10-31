@@ -54,16 +54,12 @@
 		interrupted: m['bank.log_reason_interrupted'](),
 		unexpected: m['bank.log_reason_unexpected']()
 	})
-	function date(value: Date) {
-		return new Intl.DateTimeFormat(getLocale(), {
-			dateStyle: 'medium',
-			timeStyle: 'medium'
-		}).format(value)
-	}
+	const dates = $derived(
+		new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'medium' })
+	)
+	const numbers = $derived(new Intl.NumberFormat(getLocale()))
 	function count(value: number | null) {
-		return value === null
-			? m['bank.log_unknown']()
-			: new Intl.NumberFormat(getLocale()).format(value)
+		return value === null ? m['bank.log_unknown']() : numbers.format(value)
 	}
 	function initiator(id: string) {
 		return id === userId
@@ -72,6 +68,20 @@
 					m['bank.log_unknown_user']()
 	}
 </script>
+
+{#snippet counts(result: Pick<SyncAttempt, 'importedCount' | 'existingCount' | 'omittedCount'>)}
+	<dt>{m['bank.log_imported']()}</dt>
+	<dd>{count(result.importedCount)}</dd>
+	<dt>{m['bank.log_existing']()}</dt>
+	<dd>{count(result.existingCount)}</dd>
+	<dt>{m['bank.log_omitted']()}</dt>
+	<dd>{count(result.omittedCount)}</dd>
+{/snippet}
+
+{#snippet failure(code: SyncAttempt['failureCode'])}
+	{#if code}<dt>{m['bank.log_reason']()}</dt>
+		<dd>{reasons[code]}</dd>{/if}
+{/snippet}
 
 <section aria-label={m['bank.log_title']()}>
 	<h2>{m['bank.log_title']()}</h2>
@@ -83,7 +93,7 @@
 				{#each connections as connection (connection.id)}
 					<option value={connection.id}
 						>{m['bank.log_connection_time_owner_status']({
-							time: date(connection.claimedAt),
+							time: dates.format(connection.claimedAt),
 							owner: connection.ownerId
 								? initiator(connection.ownerId)
 								: m['bank.log_unknown_user'](),
@@ -98,38 +108,28 @@
 		<p>{m['bank.log_empty']()}</p>
 	{/if}
 	{#each attempts as attempt (attempt.id)}
-		<Details summary={`${date(attempt.startedAt)} — ${outcomes[attempt.outcome]}`}>
+		<Details summary={`${dates.format(attempt.startedAt)} — ${outcomes[attempt.outcome]}`}>
 			<dl>
 				<dt>{m['bank.log_started']()}</dt>
 				<dd>
-					<time datetime={attempt.startedAt.toISOString()}>{date(attempt.startedAt)}</time>
+					<time datetime={attempt.startedAt.toISOString()}>{dates.format(attempt.startedAt)}</time>
 				</dd>
 				<dt>{m['bank.log_finished']()}</dt>
-				<dd>{attempt.finishedAt === null ? m['bank.log_unknown']() : date(attempt.finishedAt)}</dd>
+				<dd>
+					{attempt.finishedAt === null ? m['bank.log_unknown']() : dates.format(attempt.finishedAt)}
+				</dd>
 				<dt>{m['bank.log_initiator']()}</dt>
 				<dd>{initiator(attempt.initiatedBy)}</dd>
-				<dt>{m['bank.log_imported']()}</dt>
-				<dd>{count(attempt.importedCount)}</dd>
-				<dt>{m['bank.log_existing']()}</dt>
-				<dd>{count(attempt.existingCount)}</dd>
-				<dt>{m['bank.log_omitted']()}</dt>
-				<dd>{count(attempt.omittedCount)}</dd>
+				{@render counts(attempt)}
 				<dt>{m['bank.log_settlement']()}</dt>
 				<dd>{settlements[attempt.importSettlement]}</dd>
-				{#if attempt.failureCode}<dt>{m['bank.log_reason']()}</dt>
-					<dd>{reasons[attempt.failureCode]}</dd>{/if}
+				{@render failure(attempt.failureCode)}
 			</dl>
 			{#each accounts.filter((row) => row.attemptId === attempt.id) as account (account.id)}
 				<Details summary={`${account.accountName} — ${outcomes[account.outcome]}`}>
 					<dl>
-						<dt>{m['bank.log_imported']()}</dt>
-						<dd>{count(account.importedCount)}</dd>
-						<dt>{m['bank.log_existing']()}</dt>
-						<dd>{count(account.existingCount)}</dd>
-						<dt>{m['bank.log_omitted']()}</dt>
-						<dd>{count(account.omittedCount)}</dd>
-						{#if account.failureCode}<dt>{m['bank.log_reason']()}</dt>
-							<dd>{reasons[account.failureCode]}</dd>{/if}
+						{@render counts(account)}
+						{@render failure(account.failureCode)}
 					</dl>
 				</Details>
 			{/each}

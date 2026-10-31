@@ -12,7 +12,7 @@ import { accountOptionsMachine, type ProviderAccountView } from './account-optio
 import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { required } from './identity.js'
 import { createBankSetupMachine } from './setup.js'
-import { createBankOperationMachine } from './operation.js'
+import { createBankOperationMachine, type OperationResult } from './operation.js'
 import { createLoggedBankOperationMachine } from './logged-operation.js'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
@@ -65,6 +65,13 @@ type Context = BankData & {
 	error: unknown
 	discovered: ProviderSummary[]
 	counts: ImportCounts
+}
+
+function operationCompletion(context: Context, result: OperationResult) {
+	return {
+		counts: result.counts,
+		logging: context.operationConnectionId === context.connection?.id ? result.logging : undefined
+	}
 }
 
 export function createBankSyncMachine(inputs: BankSyncDependencies) {
@@ -744,62 +751,38 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						{
 							guard: stateIn({ running: 'cancelling' }),
 							target: 'ready.cancelled',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								logging: ({ context, event }) =>
-									context.operationConnectionId === context.connection?.id
-										? event.output.logging
-										: undefined
-							})
+							actions: assign(({ context, event }) => operationCompletion(context, event.output))
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'cancelled',
 							target: 'ready.cancelled',
-							actions: assign({
-								error: ({ event }) =>
-									event.output.kind === 'cancelled' ? event.output.error : undefined,
-								counts: ({ event }) => event.output.counts,
-								logging: ({ context, event }) =>
-									context.operationConnectionId === context.connection?.id
-										? event.output.logging
-										: undefined
-							})
+							actions: assign(({ context, event }) => ({
+								...operationCompletion(context, event.output),
+								error: event.output.kind === 'cancelled' ? event.output.error : undefined
+							}))
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'failed',
 							target: 'ready.failure',
-							actions: assign({
-								error: ({ event }) =>
-									event.output.kind === 'failed' ? event.output.error : undefined,
-								counts: ({ event }) => event.output.counts,
-								logging: ({ context, event }) =>
-									context.operationConnectionId === context.connection?.id
-										? event.output.logging
-										: undefined
-							})
+							actions: assign(({ context, event }) => ({
+								...operationCompletion(context, event.output),
+								error: event.output.kind === 'failed' ? event.output.error : undefined
+							}))
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'partial',
 							target: 'ready.success.partial',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								logging: ({ context, event }) =>
-									context.operationConnectionId === context.connection?.id
-										? event.output.logging
-										: undefined,
-								discovered: ({ context, event }) => event.output.discovered ?? context.discovered
-							})
+							actions: assign(({ context, event }) => ({
+								...operationCompletion(context, event.output),
+								discovered: event.output.discovered ?? context.discovered
+							}))
 						},
 						{
 							target: 'ready.success.complete',
-							actions: assign({
-								counts: ({ event }) => event.output.counts,
-								logging: ({ context, event }) =>
-									context.operationConnectionId === context.connection?.id
-										? event.output.logging
-										: undefined,
-								discovered: ({ context, event }) => event.output.discovered ?? context.discovered
-							})
+							actions: assign(({ context, event }) => ({
+								...operationCompletion(context, event.output),
+								discovered: event.output.discovered ?? context.discovered
+							}))
 						}
 					],
 					onError: [

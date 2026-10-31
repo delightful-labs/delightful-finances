@@ -40,6 +40,16 @@ function failure(error: unknown): OperationResult {
 		accountResults: []
 	}
 }
+function cancelled(): OperationResult {
+	return {
+		kind: 'cancelled',
+		error: undefined,
+		counts: emptyCounts(),
+		discovered: undefined,
+		settlement: 'settled',
+		accountResults: []
+	}
+}
 const failureCodes: Readonly<Record<string, NonNullable<SyncLogCompletion['failureCode']>>> = {
 	unlock_failure: 'passkey',
 	passkey_failure: 'passkey',
@@ -163,14 +173,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 					CANCEL: {
 						target: 'done',
 						actions: assign({
-							result: () => ({
-								kind: 'cancelled',
-								error: undefined,
-								counts: emptyCounts(),
-								discovered: undefined,
-								settlement: 'settled',
-								accountResults: []
-							})
+							result: () => cancelled()
 						})
 					}
 				},
@@ -221,14 +224,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 							result: ({ context, event }) =>
 								context.result ??
 								(event.output.kind !== 'notStarted'
-									? {
-											kind: 'cancelled',
-											counts: emptyCounts(),
-											discovered: undefined,
-											error: undefined,
-											settlement: 'settled',
-											accountResults: []
-										}
+									? cancelled()
 									: failure(new Error('sync_log_start_failed')))
 						})
 					}
@@ -259,14 +255,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 							LOG_FAILED: {
 								target: '#logged-bank-operation.done',
 								actions: assign({
-									result: () => ({
-										kind: 'cancelled',
-										error: undefined,
-										counts: emptyCounts(),
-										discovered: undefined,
-										settlement: 'settled',
-										accountResults: []
-									}),
+									result: () => cancelled(),
 									logging: ({ context }) => ({
 										kind: 'notStarted',
 										attemptId: required(context.start).id,
@@ -279,14 +268,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 								guard: ({ context, event }) => event.attemptId === context.start?.id,
 								actions: [
 									assign({
-										result: () => ({
-											kind: 'cancelled',
-											counts: emptyCounts(),
-											discovered: undefined,
-											error: undefined,
-											settlement: 'settled',
-											accountResults: []
-										})
+										result: () => cancelled()
 									}),
 									sendTo('log', ({ context }) => finishedLog(context))
 								]
