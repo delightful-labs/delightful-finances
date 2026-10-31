@@ -105,3 +105,12 @@ second attempt on explicit repeat sync, and persisted cancellation without late
 response imports. Expected provider-error console messages belong to the tested
 failure scenario. No production changes were needed in this verification cycle.
 History presentation and retention remain outstanding; no schema deployment ran.
+
+Settings presentation review: bounded connection/workspace-scoped queries now live
+in BankSyncIntegration and subscribe only on the Bank Sync settings route. A pure
+BankSyncLog renders expandable attempts and account results, localized outcomes,
+initiator names, nullable counts, safe failure reasons and distinct local/remote
+settlement labels. Starts with 20 attempts and offers earlier entries; paging
+resets when the user/workspace/connection scope changes. Implementation awaits
+review before focused presentation/E2E tests. Retention and deployment remain
+outstanding.

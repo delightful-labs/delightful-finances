@@ -9,6 +9,10 @@
 	import { getWorkspace } from '#lib/runtime/workspace.js'
 	import { workspaceBankActor } from '#lib/machines/runtime/readiness.js'
 	import { beforeNavigate } from '$app/navigation'
+	import { page } from '$app/state'
+	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { app } from '#lib/schema.js'
+	import BankSyncLog from './BankSyncLog.svelte'
 	import { fromStore, readable } from 'svelte/store'
 	import { selectBankView } from '#lib/machines/bank-sync/index.js'
 	import { createBankTrace } from '#lib/integrations/diagnostics.js'
@@ -44,6 +48,42 @@
 	})
 	const bankState = fromStore(snapshot)
 	const view = $derived(selectBankView(bankState.current))
+	const logConnectionId = $derived(
+		page.url.pathname === '/settings/banks' && bankState.current.context.access.kind === 'allowed'
+			? bankState.current.context.connection?.id
+			: undefined
+	)
+	const logScope = $derived(`${userId}:${organizationId}:${logConnectionId}`)
+	let logPage = $state({ scope: '', limit: 20 })
+	const logLimit = $derived(logPage.scope === logScope ? logPage.limit : 20)
+	const logAttempts = new QuerySubscription(() =>
+		logConnectionId && organizationId
+			? app.simplefinSyncAttempts
+					.where({ organizationId, connectionId: logConnectionId })
+					.orderBy('startedAt', 'desc')
+					.orderBy('id', 'desc')
+					.limit(logLimit + 1)
+			: undefined
+	)
+	const scopedAttempts = $derived(
+		(logAttempts.current ?? []).filter(
+			(row) =>
+				Boolean(logConnectionId) &&
+				row.connectionId === logConnectionId &&
+				row.organizationId === organizationId
+		)
+	)
+	const visibleAttempts = $derived(scopedAttempts.slice(0, logLimit))
+	const attemptIds = $derived(visibleAttempts.map((row) => row.id))
+	const logAccounts = new QuerySubscription(() =>
+		organizationId && attemptIds.length
+			? app.simplefinSyncAccountResults.where({ organizationId, attemptId: { in: attemptIds } })
+			: undefined
+	)
+	const initiatorIds = $derived([...new Set(visibleAttempts.map((row) => row.initiatedBy))])
+	const logProfiles = new QuerySubscription(() =>
+		initiatorIds.length ? app.profiles.where({ userId: { in: initiatorIds } }) : undefined
+	)
 	const workflowTrace = createBankTrace('workflow')
 	function dispatch(event: BankSyncEvent) {
 		workflowTrace.log('event', {
@@ -114,6 +154,26 @@
 				onDisconnect={() => dispatch({ type: 'DISCONNECT' })}
 				onCancel={() => dispatch({ type: 'CANCEL' })}
 			/>
+			{#if logConnectionId}
+				<QueryContent
+					queries={[logAttempts, logAccounts, logProfiles]}
+					loadingMessage={m['status.loading_subject']({ subject: m['bank.log_title']() })}
+					errorMessage={m['errors.load_subject']({ subject: m['bank.log_title']() })}
+				>
+					<BankSyncLog
+						attempts={visibleAttempts}
+						accounts={(logAccounts.current ?? []).filter(
+							(row) => row.organizationId === organizationId && attemptIds.includes(row.attemptId)
+						)}
+						profiles={logProfiles.current ?? []}
+						{userId}
+						hasEarlier={scopedAttempts.length > logLimit}
+						onEarlier={() => {
+							logPage = { scope: logScope, limit: logLimit + 20 }
+						}}
+					/>
+				</QueryContent>
+			{/if}
 		{/key}
 	</QueryContent>
 {/snippet}
