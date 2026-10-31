@@ -34,6 +34,16 @@ async function restoreAccount(page: Page, phrase: string) {
 	await prepareSidebar(page)
 }
 
+// Return only a boolean so failed cleanup cannot print a still-populated credential field.
+async function expectEmptyRecoveryDraft(page: Page) {
+	await expect
+		.poll(
+			async () =>
+				(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).length === 0
+		)
+		.toBe(true)
+}
+
 const invalidPhrases = [
 	{ name: 'wrong word count', phrase: 'abandon' },
 	{ name: 'unknown word', phrase: Array(24).fill('notaword').join(' ') },
@@ -727,7 +737,7 @@ test(
 		await retry.click()
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		expect(await currentIdentity(page)).toBe(identity)
-		expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+		await expectEmptyRecoveryDraft(page)
 		await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
@@ -785,7 +795,7 @@ test(
 		await retry.click()
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		expect(await currentIdentity(page)).toBe(selected)
-		expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+		await expectEmptyRecoveryDraft(page)
 		await page.reload()
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		expect(await currentIdentity(page)).toBe(selected)
@@ -839,7 +849,7 @@ test(
 				'The account could not be restored. Please try again.'
 			)
 			expect(await currentIdentity(page)).toBe(identity)
-			expect(await page.getByLabel('Recovery phrase', { exact: true }).inputValue()).toBe('')
+			await expectEmptyRecoveryDraft(page)
 			await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
 		} finally {
 			await page.evaluate(async () => {
@@ -908,7 +918,7 @@ test(
 			'Your account was restored, but the destination could not be opened. Try again or use the navigation links.'
 		)
 		expect(await currentIdentity(page)).toBe(identity)
-		await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue('')
+		await expectEmptyRecoveryDraft(page)
 		await page.getByRole('button', { name: 'Try again', exact: true }).click()
 		await expect(page).toHaveURL((url) => url.pathname === '/')
 		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)

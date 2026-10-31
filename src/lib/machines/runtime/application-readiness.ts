@@ -25,7 +25,8 @@ import {
 	sessionRecoveryMachine,
 	type RecoveryNotice,
 	type RecoveryRequest,
-	type RecoveryResult
+	type RecoveryResult,
+	type RecoveryRestorationBinding
 } from '../identity/session-recovery.js'
 
 type Session = JazzSession<JazzClient>
@@ -76,6 +77,7 @@ type Event =
 	| { type: 'SHUTDOWN' }
 	| { type: `xstate.error.actor.${string}`; actorId: string; error: unknown }
 
+/** Hosts enabling RECOVER supply the layout-owned binding factory; other lifecycles need none. */
 export function createApplicationReadinessMachine(
 	open: () => Promise<Session>,
 	existing: Session | undefined,
@@ -84,7 +86,8 @@ export function createApplicationReadinessMachine(
 		navigate: async () => {
 			throw new Error('Navigation unavailable')
 		}
-	}
+	},
+	bindRestoration?: (session: Session) => RecoveryRestorationBinding
 ) {
 	const actors = {
 		recovery: sessionRecoveryMachine,
@@ -599,6 +602,10 @@ export function createApplicationReadinessMachine(
 								attempt: context.recoveryAttempt,
 								request: required(context.recoveryRequest),
 								session: required(context.session),
+								restorationBinding:
+									context.recoveryRequest?.kind === 'restore'
+										? bindRestoration?.(required(context.session))
+										: undefined,
 								...navigation
 							}),
 							onDone: [

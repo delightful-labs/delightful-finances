@@ -1,5 +1,6 @@
 <script lang="ts">
 	import 'delightful-ui/theme.css'
+	import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
 	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import {
 		PUBLIC_JAZZ_APP_ID,
@@ -72,7 +73,8 @@
 			{
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
 				navigate: (destination) => goto(destination)
-			}
+			},
+			(session) => createJazzRestorationAdapter(session, getCurrentJazzSession)
 		),
 		{ inspect: inspectActor }
 	).start()
