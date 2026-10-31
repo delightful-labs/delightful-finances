@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, setup, sendParent, waitFor, fromCallback, type ActorRefFrom } from 'xstate'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
+import { createJazzSessionReadinessAdapter } from 'delightful-local-first/backend/jazz/session-readiness'
 import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
 import {
 	createSessionAcquisitionMachine,
@@ -78,6 +79,34 @@ function beginStartup(actor: ActorRefFrom<ReturnType<typeof createApplicationRea
 	if (!startup) throw new Error('Expected startup test binding')
 	actor.send({ type: 'START', startup })
 }
+function readinessScope(actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>) {
+	const scope = actor.getSnapshot().context.readinessScope
+	if (!scope) throw new Error('Expected acquired session readiness binding')
+	return scope
+}
+function failObservation(
+	actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>
+) {
+	// Inject a normalized read fault at the real library observer boundary, retaining retry ownership.
+	actor.getSnapshot().children.sessionReadiness?.send({
+		type: 'OBSERVATION_FAILED',
+		scope: readinessScope(actor),
+		observation: actor.getSnapshot().context.observation,
+		reason: 'readFailed'
+	})
+}
+function reportStatus(
+	actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+	status: ReturnType<Session['getSnapshot']>['status']
+) {
+	actor.send({
+		type: 'SESSION_STATUS',
+		scope: readinessScope(actor),
+		observation: actor.getSnapshot().context.observation,
+		status,
+		afterRetry: undefined
+	})
+}
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
 	for (const owner of owners.splice(0)) owner.stop()
@@ -118,15 +147,20 @@ function session(db?: MutationErrorDb) {
 	}
 	return { value, getSnapshot, subscribe, unsubscribe, notify: () => notify() }
 }
-function start(open: () => Promise<Session>, existing?: Session) {
+async function start(open: () => Promise<Session>, existing?: Session) {
 	const startup = startupOwner(open, existing)
-	const actor = createActor(createApplicationReadinessMachine()).start()
+	const actor = createActor(
+		createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter)
+	).start()
 	startupBindings.set(actor, startup)
 	actors.push(actor)
-	if (existing) beginStartup(actor)
+	if (existing) {
+		beginStartup(actor)
+		await waitFor(actor, (state) => state.matches('running') || state.matches('observerFailed'))
+	}
 	return actor
 }
-function attach(actor: ReturnType<typeof start>) {
+function attach(actor: Awaited<ReturnType<typeof start>>) {
 	// The workspace factory above owns no database effects in this test.
 	const source = {
 		organizationId: null,
@@ -163,9 +197,9 @@ function attach(actor: ReturnType<typeof start>) {
 }
 
 describe('application readiness supervision', () => {
-	it('forwards active workspace observations to the transfer mutation owner', () => {
+	it('forwards active workspace observations to the transfer mutation owner', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const mutationOwner = actor.getSnapshot().children.transferMutationOwner
 		if (!mutationOwner) throw new Error('Expected transfer mutation owner')
 
@@ -176,11 +210,11 @@ describe('application readiness supervision', () => {
 		expect(mutationOwner.getSnapshot().context.workspaceId).toBeUndefined()
 	})
 
-	it('correlates late transfer rejections and releases the Jazz observer on shutdown', () => {
+	it('correlates late transfer rejections and releases the Jazz observer on shutdown', async () => {
 		const release = vi.fn()
 		const onMutationError = vi.fn<MutationErrorDb['onMutationError']>(() => release)
 		const current = session({ onMutationError })
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 
 		expect(onMutationError).toHaveBeenCalledOnce()
 		actor.send({
@@ -229,11 +263,11 @@ describe('application readiness supervision', () => {
 
 	it.each([false, true])(
 		'handles the registered SDK rejection callback with transfer tracking=%s',
-		(tracked) => {
+		async (tracked) => {
 			const release = vi.fn()
 			const onMutationError = vi.fn<MutationErrorDb['onMutationError']>(() => release)
 			const current = session({ onMutationError })
-			const actor = start(async () => current.value, current.value)
+			const actor = await start(async () => current.value, current.value)
 			const workspace = attach(actor)
 			if (tracked)
 				actor.send({
@@ -285,9 +319,9 @@ describe('application readiness supervision', () => {
 		}
 	)
 
-	it('uses a generic notice for evicted and post-restart transfer rejections', () => {
+	it('uses a generic notice for evicted and post-restart transfer rejections', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		for (let index = 0; index < 65; index++)
 			actor.send({
 				type: 'TRANSFER_WRITE_TRACKED',
@@ -304,7 +338,7 @@ describe('application readiness supervision', () => {
 			transactionId: 'tracked-0'
 		})
 
-		const restarted = start(async () => current.value, current.value)
+		const restarted = await start(async () => current.value, current.value)
 		restarted.send({ type: 'MUTATION_REJECTED', transactionId: 'tracked-64' })
 		expect(restarted.getSnapshot().context.mutationNotice).toEqual({
 			kind: 'generic',
@@ -318,7 +352,7 @@ describe('application readiness supervision', () => {
 			.fn<() => Promise<Session>>()
 			.mockRejectedValueOnce(new Error('private'))
 			.mockResolvedValue(current.value)
-		const actor = start(open)
+		const actor = await start(open)
 		beginStartup(actor)
 		await waitFor(actor, (state) => state.hasTag('startup-error'))
 		expect(actor.getSnapshot().context.session).toBeUndefined()
@@ -332,7 +366,7 @@ describe('application readiness supervision', () => {
 		const current = session()
 		const pending = Promise.withResolvers<Session>()
 		const open = vi.fn(() => pending.promise)
-		const actor = start(open)
+		const actor = await start(open)
 		beginStartup(actor)
 		actor.send({
 			type: 'xstate.error.actor.startup',
@@ -347,9 +381,9 @@ describe('application readiness supervision', () => {
 		expect(current.subscribe).toHaveBeenCalledTimes(1)
 	})
 
-	it('keeps shutdown priority over an unexpected startup error', () => {
+	it('keeps shutdown priority over an unexpected startup error', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const workspace = attach(actor)
 		actor.send({ type: 'SHUTDOWN' })
 		actor.send({ type: 'xstate.error.actor.startup', actorId: 'startup', error: new Error('late') })
@@ -358,24 +392,25 @@ describe('application readiness supervision', () => {
 		expect(actor.getSnapshot().status).toBe('done')
 	})
 
-	it('models observer acquisition failure and retries without reopening the session', () => {
+	it('models observer acquisition failure and retries without reopening the session', async () => {
 		const current = session()
 		current.subscribe.mockImplementationOnce(() => {
 			throw new Error('private')
 		})
 		const open = vi.fn(async () => current.value)
-		const actor = start(open, current.value)
+		const actor = await start(open, current.value)
 		expect(actor.getSnapshot().matches('observerFailed')).toBe(true)
 		expect(actor.getSnapshot().status).toBe('active')
 		actor.send({ type: 'RETRY' })
 		expect(actor.getSnapshot().matches({ running: 'ready' })).toBe(true)
 		expect(open).not.toHaveBeenCalled()
 		expect(current.subscribe).toHaveBeenCalledTimes(2)
+		expect(current.value.retry).not.toHaveBeenCalled()
 	})
 
-	it('bridges SDK callback failure, unsubscribes, and waits for workspace cleanup before retry', () => {
+	it('bridges SDK callback failure, unsubscribes, and waits for workspace cleanup before retry', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const workspace = attach(actor)
 		current.getSnapshot.mockImplementationOnce(() => {
 			throw new Error('private')
@@ -392,16 +427,17 @@ describe('application readiness supervision', () => {
 		actor.send({ type: 'RETRY' })
 		expect(actor.getSnapshot().matches({ running: 'ready' })).toBe(true)
 		expect(current.subscribe).toHaveBeenCalledTimes(2)
+		expect(current.value.retry).not.toHaveBeenCalled()
 	})
 
-	it('keeps shutdown priority over observer failure and retry', () => {
+	it('keeps shutdown priority over observer failure and retry', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const workspace = attach(actor)
-		actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+		failObservation(actor)
 		actor.send({ type: 'SHUTDOWN' })
 		actor.send({ type: 'RETRY' })
-		actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+		reportStatus(actor, 'ready')
 		expect(actor.getSnapshot().matches('closing')).toBe(true)
 		control(workspace).close()
 		expect(actor.getSnapshot().status).toBe('done')
@@ -412,7 +448,7 @@ describe('application readiness supervision', () => {
 	it('ignores startup completion while workspace shutdown is pending', async () => {
 		const current = session()
 		const pending = Promise.withResolvers<Session>()
-		const actor = start(() => pending.promise)
+		const actor = await start(() => pending.promise)
 		beginStartup(actor)
 		const workspace = attach(actor)
 		actor.send({ type: 'SHUTDOWN' })
@@ -425,9 +461,9 @@ describe('application readiness supervision', () => {
 		expect(actor.getSnapshot().status).toBe('done')
 	})
 
-	it('releases a workspace that fails before acquisition without awaiting its acknowledgement', () => {
+	it('releases a failed workspace while retaining healthy session observation', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		workspaceStart.mockImplementationOnce(() => {
 			throw new Error('private')
 		})
@@ -465,14 +501,16 @@ describe('application readiness supervision', () => {
 		})
 		expect(actor.getSnapshot().matches('observerFailed')).toBe(true)
 		expect(actor.getSnapshot().context.workspace).toBeUndefined()
-		expect(current.unsubscribe).toHaveBeenCalledTimes(1)
+		expect(current.unsubscribe).not.toHaveBeenCalled()
 		actor.send({ type: 'RETRY' })
 		expect(actor.getSnapshot().matches({ running: 'ready' })).toBe(true)
+		expect(current.subscribe).toHaveBeenCalledOnce()
+		expect(current.value.retry).not.toHaveBeenCalled()
 	})
 
-	it('ignores detach/completion from a replaced workspace', () => {
+	it('ignores detach/completion from a replaced workspace', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const previous = attach(actor)
 		const previousAttachment = actor.getSnapshot().context.attachment
 		if (!previousAttachment) throw new Error('Missing attachment')
@@ -490,9 +528,9 @@ describe('application readiness supervision', () => {
 		expect(actor.getSnapshot().context.workspace).toBe(replacement)
 		expect(replacement?.getSnapshot().matches('active')).toBe(true)
 	})
-	it('cancels a pending attachment before it can spawn an orphan owner', () => {
+	it('cancels a pending attachment before it can spawn an orphan owner', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const previous = attach(actor)
 		attach(actor)
 		const pending = actor.getSnapshot().context.pending
@@ -504,9 +542,9 @@ describe('application readiness supervision', () => {
 		expect(actor.getSnapshot().context.workspace).toBeUndefined()
 		expect(actor.getSnapshot().context.attachment).toBeUndefined()
 	})
-	it('does not replace the owner when the same attachment is submitted twice', () => {
+	it('does not replace the owner when the same attachment is submitted twice', async () => {
 		const current = session()
-		const actor = start(async () => current.value, current.value)
+		const actor = await start(async () => current.value, current.value)
 		const workspace = attach(actor)
 		const attachment = actor.getSnapshot().context.attachment
 		if (!attachment) throw new Error('Missing attachment')
@@ -523,7 +561,7 @@ function accountSnapshot(id: string): ReturnType<Session['getSnapshot']> {
 	Object.defineProperty(snapshot, 'account', { value: { id } })
 	return snapshot
 }
-function mutationFixture() {
+async function mutationFixture() {
 	const current = session()
 	current.getSnapshot.mockReturnValue(accountSnapshot('restored'))
 	const pending = Promise.withResolvers<void>()
@@ -540,11 +578,16 @@ function mutationFixture() {
 		return adapter
 	})
 	const actor = createActor(
-		createApplicationReadinessMachine({ readHref, navigate }, bindRestoration)
+		createApplicationReadinessMachine(
+			{ readHref, navigate },
+			bindRestoration,
+			createJazzSessionReadinessAdapter
+		)
 	).start()
 	actors.push(actor)
 	startupBindings.set(actor, startupOwner(open, current.value))
 	beginStartup(actor)
+	await waitFor(actor, (state) => state.matches({ running: 'ready' }))
 	const workspace = attach(actor)
 	const attachment = actor.getSnapshot().context.attachment
 	if (!attachment) throw new Error('Expected attachment')
@@ -572,14 +615,14 @@ function mutationFixture() {
 		command
 	}
 }
-async function beginRestore(f: ReturnType<typeof mutationFixture>) {
+async function beginRestore(f: Awaited<ReturnType<typeof mutationFixture>>) {
 	f.actor.send(f.command)
 	await waitFor(f.actor, (s) => s.matches({ running: { recovering: 'draining' } }))
 	expect(f.restore).not.toHaveBeenCalled()
 	control(f.workspace).close()
 	await vi.waitFor(() => expect(f.restore).toHaveBeenCalledOnce())
 }
-function beginRetry(f: ReturnType<typeof mutationFixture>) {
+function beginRetry(f: Awaited<ReturnType<typeof mutationFixture>>) {
 	f.actor.send({ type: 'RETRY' })
 	expect(f.retry).not.toHaveBeenCalled()
 	expect(f.workspace.getSnapshot().matches('closing')).toBe(true)
@@ -591,7 +634,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 	it.each(['ready', 'signed-out', 'error', 'closed', 'transitioning'] satisfies ReturnType<
 		Session['getSnapshot']
 	>['status'][])('keeps retry through %s observations and duplicate commands', async (status) => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		beginRetry(f)
 		f.current.getSnapshot.mockReturnValue({ status })
 		f.current.notify()
@@ -610,7 +653,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 		expect(f.current.value.close).not.toHaveBeenCalled()
 	})
 	it('rejects pending replacement work and stale closure before issuing retry', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		f.actor.send({ type: 'RETRY' })
 		f.actor.send({ type: 'WORKSPACE_CLOSED', actor: {} })
 		f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...f.attachment } })
@@ -626,11 +669,11 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 	})
 	it.each(['shutdown', 'observer', 'crash'])(
 		'starts no retry after %s during pre-drain',
-		(interruption) => {
-			const f = mutationFixture()
+		async (interruption) => {
+			const f = await mutationFixture()
 			f.actor.send({ type: 'RETRY' })
 			if (interruption === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
-			else if (interruption === 'observer') f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+			else if (interruption === 'observer') failObservation(f.actor)
 			else control(f.workspace).crash()
 			if (interruption !== 'crash') control(f.workspace).close()
 			expect(f.retry).not.toHaveBeenCalled()
@@ -638,10 +681,10 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 		}
 	)
 	it('reports rejection without an SDK error observation and permits a fresh retry', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		beginRetry(f)
 		f.pending.reject(new Error('private retry failure'))
-		await waitFor(f.actor, (s) => s.matches({ running: 'failed' }))
+		await waitFor(f.actor, (s) => s.matches({ running: 'retryFailed' }))
 		f.retry.mockResolvedValueOnce()
 		f.actor.send({ type: 'RETRY' })
 		await waitFor(f.actor, (s) => s.matches({ running: 'ready' }))
@@ -657,7 +700,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 	])(
 		'retains issued retry on $interruption (reject: $reject)',
 		async ({ interruption, reject }) => {
-			const f = mutationFixture()
+			const f = await mutationFixture()
 			beginRetry(f)
 			if (interruption === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
 			else if (interruption === 'observer') {
@@ -673,7 +716,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 				})
 			f.actor.send({ type: 'RETRY' })
 			f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...f.attachment } })
-			f.actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+			reportStatus(f.actor, 'ready')
 			expect(f.actor.getSnapshot().status).toBe('active')
 			expect(f.current.unsubscribe).toHaveBeenCalledOnce()
 			expect(f.actor.getSnapshot().context.pending).toBeUndefined()
@@ -694,7 +737,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 
 describe('application-owned account recovery', () => {
 	it('preserves invalid drafts without workspace cleanup or an SDK call', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		f.actor.send({ ...f.command, phrase: 'invalid' })
 		await waitFor(f.actor, (s) => s.context.recoveryResult?.outcome === 'invalid')
 		expect(selectRecoveryView(f.actor.getSnapshot())).toMatchObject({
@@ -708,7 +751,7 @@ describe('application-owned account recovery', () => {
 		expect(f.actor.getSnapshot().context.recoveryRequest).toBeUndefined()
 	})
 	it('waits for matching workspace cleanup, clears the secret and ignores duplicate commands', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		f.actor.send(f.command)
 		await waitFor(f.actor, (s) => s.matches({ running: { recovering: 'draining' } }))
 		const attempt = f.actor.getSnapshot().context.recoveryAttempt
@@ -741,11 +784,11 @@ describe('application-owned account recovery', () => {
 	it.each(['shutdown', 'observer', 'crash'])(
 		'starts no restore after %s during drain',
 		async (interruption) => {
-			const f = mutationFixture()
+			const f = await mutationFixture()
 			f.actor.send(f.command)
 			await waitFor(f.actor, (s) => s.matches({ running: { recovering: 'draining' } }))
 			if (interruption === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
-			else if (interruption === 'observer') f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+			else if (interruption === 'observer') failObservation(f.actor)
 			else control(f.workspace).crash()
 			if (interruption !== 'crash') control(f.workspace).close()
 			await waitFor(f.actor, (s) => !s.matches({ running: 'recovering' }))
@@ -763,17 +806,17 @@ describe('application-owned account recovery', () => {
 	])(
 		'retains issued restore on $interruption (reject: $reject)',
 		async ({ interruption, reject }) => {
-			const f = mutationFixture()
+			const f = await mutationFixture()
 			await beginRestore(f)
 			if (interruption === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
-			else if (interruption === 'observer') f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+			else if (interruption === 'observer') failObservation(f.actor)
 			else
 				f.actor.send({
 					type: 'xstate.error.actor.startup',
 					actorId: 'startup',
 					error: new Error('private')
 				})
-			f.actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+			reportStatus(f.actor, 'ready')
 			f.actor.send({ type: 'RETRY' })
 			f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...f.attachment } })
 			expect(f.actor.getSnapshot().status).toBe('active')
@@ -788,9 +831,9 @@ describe('application-owned account recovery', () => {
 		}
 	)
 	it('keeps shutdown priority over late actor failures and restore rejection', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		await beginRestore(f)
-		f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
+		failObservation(f.actor)
 		f.actor.send({
 			type: 'xstate.error.actor.startup',
 			actorId: 'startup',
@@ -803,18 +846,18 @@ describe('application-owned account recovery', () => {
 			error: new Error('late')
 		})
 		f.actor.send({
-			type: 'xstate.error.actor.sessionObserver',
-			actorId: 'sessionObserver',
+			type: 'xstate.error.actor.sessionReadiness',
+			actorId: 'sessionReadiness',
 			error: new Error('late')
 		})
-		f.actor.send({ type: 'SESSION_OBSERVER_FAILED' })
-		f.actor.send({ type: 'SESSION_OBSERVED', status: 'ready' })
+		failObservation(f.actor)
+		reportStatus(f.actor, 'ready')
 		f.pending.reject(new Error('late'))
 		await waitFor(f.actor, (s) => s.status === 'done')
 		expect(f.navigate).not.toHaveBeenCalled()
 	})
 	it('remounts after same-client restore failure and rejects obsolete attachments', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		await beginRestore(f)
 		const pendingAttachment = { ...f.attachment }
 		f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: pendingAttachment })
@@ -830,7 +873,7 @@ describe('application-owned account recovery', () => {
 		expect(selectRecoveryView(f.actor.getSnapshot()).failed).toBe(true)
 	})
 	it('rejects stale attempt and foreign binding reports before accepting library validation', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		f.actor.send(f.command)
 		const wrapper = f.actor.getSnapshot().children.recovery
 		const binding = f.bindings[0]
@@ -856,7 +899,7 @@ describe('application-owned account recovery', () => {
 	})
 
 	it('reports a settled restore with unavailable identity without navigation or mutation retry', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		await beginRestore(f)
 		const binding = f.bindings[0]
 		if (!binding) throw new Error('Expected recovery binding')
@@ -875,7 +918,7 @@ describe('application-owned account recovery', () => {
 	})
 
 	it('retries navigation without another restore or remount', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		f.navigate.mockRejectedValueOnce(new Error('private navigation failure'))
 		await beginRestore(f)
 		f.pending.resolve()
@@ -893,7 +936,7 @@ describe('application-owned account recovery', () => {
 		expect(f.actor.getSnapshot().context.attachmentRevision).toBe(1)
 	})
 	it('does not redirect after the user navigates away during restoration', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		await beginRestore(f)
 		f.readHref.mockReturnValue('/accounts')
 		f.pending.resolve()
@@ -901,7 +944,7 @@ describe('application-owned account recovery', () => {
 		expect(f.navigate).not.toHaveBeenCalled()
 	})
 	it('rechecks identity before retrying navigation', async () => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		f.navigate.mockRejectedValueOnce(new Error('private'))
 		await beginRestore(f)
 		f.pending.resolve()
@@ -913,7 +956,7 @@ describe('application-owned account recovery', () => {
 		expect(f.restore).toHaveBeenCalledOnce()
 	})
 	it.each([false, true])('awaits issued navigation on shutdown (reject: %s)', async (reject) => {
-		const f = mutationFixture()
+		const f = await mutationFixture()
 		const navigation = Promise.withResolvers<void>()
 		f.navigate.mockReturnValue(navigation.promise)
 		await beginRestore(f)
@@ -929,8 +972,10 @@ describe('application-owned account recovery', () => {
 })
 
 describe('shared startup attachment integration', () => {
-	it('closes before browser START without creating a session owner', () => {
-		const actor = createActor(createApplicationReadinessMachine()).start()
+	it('closes before browser START without creating a session owner', async () => {
+		const actor = createActor(
+			createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter)
+		).start()
 		actors.push(actor)
 		actor.send({ type: 'SHUTDOWN' })
 		expect(actor.getSnapshot().status).toBe('done')
@@ -948,7 +993,9 @@ describe('shared startup attachment integration', () => {
 				.mockImplementationOnce(() => pending.promise)
 				.mockResolvedValue(current.value)
 			const source = startupOwner(open)
-			const first = createActor(createApplicationReadinessMachine()).start()
+			const first = createActor(
+				createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter)
+			).start()
 			actors.push(first)
 			startupBindings.set(first, source)
 			beginStartup(first)
@@ -958,7 +1005,9 @@ describe('shared startup attachment integration', () => {
 			if (reject) pending.reject(new Error('private SDK open failure'))
 			else pending.resolve(current.value)
 			await waitFor(source.owner, (s) => s.matches(reject ? 'failed' : 'acquired'))
-			const second = createActor(createApplicationReadinessMachine()).start()
+			const second = createActor(
+				createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter)
+			).start()
 			actors.push(second)
 			startupBindings.set(second, {
 				owner: source.owner,
@@ -986,7 +1035,9 @@ describe('shared startup attachment integration', () => {
 				receive((event) => requests.push(event))
 			)
 		).start()
-		const actor = createActor(createApplicationReadinessMachine()).start()
+		const actor = createActor(
+			createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter)
+		).start()
 		actors.push(actor)
 		const scope = { binding: {}, attachment: {}, generation: 0 },
 			current = session()
@@ -995,12 +1046,14 @@ describe('shared startup attachment integration', () => {
 			const request = requests[0]
 			if (!request) throw new Error('Expected acquisition request')
 			request.replyTo.send({ type: 'ACQUIRED', scope, session: current.value })
+			await waitFor(actor, (state) => state.matches({ running: 'ready' }))
 			const workspace = attach(actor)
 			actor.send({ type: 'SHUTDOWN' })
 			expect(requests.map((event) => event.type)).toEqual(['ACQUIRE'])
 			control(workspace).close()
 			expect(actor.getSnapshot().matches('releasingStartup')).toBe(true)
 			expect(requests.map((event) => event.type)).toEqual(['ACQUIRE', 'RELEASE'])
+			expect(current.unsubscribe).toHaveBeenCalledOnce()
 			const release = requests[1]
 			if (!release) throw new Error('Expected release request')
 			release.replyTo.send({ type: 'RELEASED', scope: { ...scope, generation: 1 } })
@@ -1017,7 +1070,7 @@ describe('shared startup attachment integration', () => {
 	it('rejects stale reports and duplicate rebinding while acquisition is pending', async () => {
 		const pending = Promise.withResolvers<Session>(),
 			current = session()
-		const actor = start(() => pending.promise)
+		const actor = await start(() => pending.promise)
 		beginStartup(actor)
 		const startup = startupBindings.get(actor)
 		if (!startup) throw new Error('Expected startup binding')
@@ -1043,7 +1096,7 @@ describe('shared startup attachment integration', () => {
 	it.each(['restore', 'retry'])(
 		'retains an issued %s through real owner failure',
 		async (operation) => {
-			const f = mutationFixture()
+			const f = await mutationFixture()
 			if (operation === 'restore') await beginRestore(f)
 			else beginRetry(f)
 			const source = startupBindings.get(f.actor)
@@ -1057,4 +1110,126 @@ describe('shared startup attachment integration', () => {
 			else expect(f.retry).toHaveBeenCalledOnce()
 		}
 	)
+})
+
+describe('shared acquired session readiness integration', () => {
+	it('rejects foreign binding, attachment, observation, and retry reports', async () => {
+		const f = await mutationFixture()
+		const scope = readinessScope(f.actor)
+		for (const invalid of [
+			{ ...scope, binding: {} },
+			{ ...scope, attachment: {} }
+		]) {
+			f.actor.send({
+				type: 'SESSION_STATUS',
+				scope: invalid,
+				observation: 0,
+				status: 'error',
+				afterRetry: undefined
+			})
+			f.actor.send({
+				type: 'SESSION_OBSERVATION_FAILED',
+				scope: invalid,
+				observation: 0,
+				reason: 'readFailed'
+			})
+		}
+		f.actor.send({
+			type: 'SESSION_STATUS',
+			scope,
+			observation: 1,
+			status: 'error',
+			afterRetry: undefined
+		})
+		expect(f.actor.getSnapshot().matches({ running: 'ready' })).toBe(true)
+		beginRetry(f)
+		for (const invalid of [
+			{ ...scope, binding: {} },
+			{ ...scope, attachment: {} }
+		])
+			f.actor.send({
+				type: 'SESSION_RETRY_SETTLED',
+				scope: invalid,
+				attempt: 1,
+				outcome: 'resolved'
+			})
+		f.actor.send({ type: 'SESSION_RETRY_SETTLED', scope, attempt: 0, outcome: 'rejected' })
+		expect(f.actor.getSnapshot().matches({ running: { retrying: 'active' } })).toBe(true)
+		f.pending.resolve()
+		await waitFor(f.actor, (state) => state.matches({ running: 'ready' }))
+	})
+	it('preserves rejection feedback after a later ready notification', async () => {
+		const f = await mutationFixture()
+		beginRetry(f)
+		f.pending.reject(new Error('private retry rejection'))
+		await waitFor(f.actor, (state) => state.matches({ running: 'retryFailed' }))
+		f.current.notify()
+		f.actor.send(f.command)
+		expect(f.actor.getSnapshot().matches({ running: 'retryFailed' })).toBe(true)
+		expect(f.actor.getSnapshot().hasTag('startup-error')).toBe(true)
+		expect(f.restore).not.toHaveBeenCalled()
+		f.retry.mockResolvedValueOnce()
+		f.actor.send({ type: 'RETRY' })
+		await waitFor(f.actor, (state) => state.matches({ running: 'ready' }))
+		expect(f.retry).toHaveBeenCalledTimes(2)
+	})
+	it('waits for post-retry status and recovers a refresh failure by reobserving only', async () => {
+		const f = await mutationFixture()
+		beginRetry(f)
+		f.current.notify()
+		expect(f.actor.getSnapshot().matches({ running: { retrying: 'active' } })).toBe(true)
+		f.current.getSnapshot.mockImplementationOnce(() => {
+			throw new Error('private refresh fault')
+		})
+		f.pending.resolve()
+		await waitFor(f.actor, (state) => state.matches('observerFailed'))
+		expect(f.actor.getSnapshot().context.attachmentRevision).toBe(1)
+		f.actor.send({ type: 'RETRY' })
+		await waitFor(f.actor, (state) => state.matches({ running: 'ready' }))
+		expect(f.retry).toHaveBeenCalledOnce()
+		expect(f.current.subscribe).toHaveBeenCalledTimes(2)
+	})
+	it.each(['restore', 'retry'])(
+		'does not replay an issued %s after readiness actor crash',
+		async (operation) => {
+			const f = await mutationFixture()
+			if (operation === 'restore') await beginRestore(f)
+			else beginRetry(f)
+			// Exercise parent supervision separately from ordinary SDK/observation rejection.
+			f.actor.send({
+				type: 'xstate.error.actor.sessionReadiness',
+				actorId: 'sessionReadiness',
+				error: new Error('private actor failure')
+			})
+			if (operation === 'restore') {
+				expect(f.actor.getSnapshot().matches({ running: { recovering: 'readinessCrashed' } })).toBe(
+					true
+				)
+				f.pending.resolve()
+				await waitFor(f.actor, (state) => state.matches('readinessCrashed'))
+			} else {
+				expect(f.actor.getSnapshot().matches('readinessCrashed')).toBe(true)
+				f.pending.resolve()
+			}
+			f.actor.send({ type: 'RETRY' })
+			f.actor.send(f.command)
+			expect(f.navigate).not.toHaveBeenCalled()
+			expect(f.retry).toHaveBeenCalledTimes(operation === 'retry' ? 1 : 0)
+			expect(f.restore).toHaveBeenCalledTimes(operation === 'restore' ? 1 : 0)
+		}
+	)
+	it('finishes shutdown after a readiness crash without waiting for a lost retry report', async () => {
+		const f = await mutationFixture()
+		beginRetry(f)
+		f.actor.send({ type: 'SHUTDOWN' })
+		f.actor.send({
+			type: 'xstate.error.actor.sessionReadiness',
+			actorId: 'sessionReadiness',
+			error: new Error('private crash')
+		})
+		f.pending.resolve()
+		await waitFor(f.actor, (state) => state.status === 'done')
+		expect(f.retry).toHaveBeenCalledOnce()
+		expect(f.current.value.close).not.toHaveBeenCalled()
+	})
 })

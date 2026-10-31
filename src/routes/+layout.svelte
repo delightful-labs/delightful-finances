@@ -1,5 +1,6 @@
 <script lang="ts">
 	import 'delightful-ui/theme.css'
+	import { createJazzSessionReadinessAdapter } from 'delightful-local-first/backend/jazz/session-readiness'
 	import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
 	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import {
@@ -72,7 +73,8 @@
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
 				navigate: (destination) => goto(destination)
 			},
-			(session) => createJazzRestorationAdapter(session, getCurrentJazzSession)
+			(session) => createJazzRestorationAdapter(session, getCurrentJazzSession),
+			createJazzSessionReadinessAdapter
 		),
 		{ inspect: inspectActor }
 	).start()
