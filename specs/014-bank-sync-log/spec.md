@@ -51,10 +51,11 @@ a failure saving its final log result after imports have been saved.
 **Acceptance Scenarios**:
 
 1. **Given** an explicit authorized sync request, **When** it is accepted, **Then**
-   an attempt is recorded before provider transaction fetching starts, including
+   an attempt is recorded when possible before provider transaction fetching starts, including
    when passkey verification is subsequently cancelled or fails.
-2. **Given** a failed start-record write, **When** sync would begin, **Then** no
-   provider fetch occurs and the user sees that the attempt could not be recorded.
+2. **Given** a failed start-record write, **When** sync would begin, **Then** sync
+   proceeds normally and the logging failure is reported separately. Logging
+   failure alone must not prevent provider work or replace the financial result.
 3. **Given** cancellation, **When** cleanup and issued writes settle, **Then** the
    attempt records cancellation and any imports already saved or still uncertain.
 4. **Given** the browser exits before completion is recorded, **When** history is

@@ -876,7 +876,31 @@ for (const failure of ['start', 'result']) {
 						contentType: 'text/plain',
 						body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
 					})
-				else await route.fulfill({ json: { errors: [], accounts: [] } })
+				else
+					await route.fulfill({
+						json: {
+							errors: [],
+							accounts: [
+								{
+									id: 'log-failure-checking',
+									name: 'Log Failure Checking',
+									currency: 'USD',
+									org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' },
+									transactions:
+										body.operation === 'sync'
+											? [
+													{
+														id: 'log-failure-expense',
+														amount: '-12.34',
+														posted: 1792000000,
+														description: 'Import despite logging failure'
+													}
+												]
+											: []
+								}
+							]
+						}
+					})
 			})
 			await page.goto('/settings/banks')
 			await page
@@ -894,6 +918,12 @@ for (const failure of ['start', 'result']) {
 				exact: true
 			})
 			await expect(sync).toBeEnabled()
+			await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+			await page
+				.getByRole('button', { name: 'Add Account “Log Failure Checking”', exact: true })
+				.click()
+			await expect(page.getByText('Linked to Log Failure Checking', { exact: true })).toBeVisible()
+
 			await page.evaluate(async (failure) => {
 				const schemaPath = '/src/lib/schema.ts',
 					sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -919,27 +949,35 @@ for (const failure of ['start', 'result']) {
 			}, failure)
 			await sync.click()
 			const main = pageContent(page)
+
+			await expect(
+				main.getByText(
+					'The sync ended, but its final log details could not be saved. The import result shown still applies.',
+					{ exact: true }
+				)
+			).toBeVisible()
+			await expect(
+				main.getByText(
+					/Last sync:.*Outcome: Succeeded\. Imported: 1; already present: 0; omitted: 0/
+				)
+			).toBeVisible()
+			expect(operations).toEqual(['claim', 'discover', 'sync'])
+			const imported = await page.evaluate(async () => {
+				const schemaPath = '/src/lib/schema.ts',
+					sessionPath = '/src/lib/runtime/jazz-session.ts'
+				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
+				const db = getCurrentJazzSession()?.getSnapshot().client?.db
+				if (!db) throw new Error('Missing database')
+				return (await db.all(app.transactions)).filter(
+					(row) => row.description === 'Import despite logging failure'
+				).length
+			})
+			expect(imported).toBe(1)
 			if (failure === 'start') {
-				await expect(
-					main.getByText('Sync could not start because its log entry could not be saved.', {
-						exact: true
-					})
-				).toBeVisible()
-				expect(operations).toEqual(['claim'])
 				expect((await syncLog(page)).attempts).toHaveLength(0)
 			} else {
-				await expect(
-					main.getByText(
-						'The sync ended, but its final log details could not be saved. The import result shown still applies.',
-						{ exact: true }
-					)
-				).toBeVisible()
-				await expect(
-					main.getByText(
-						/Last sync:.*Outcome: Succeeded\. Imported: 0; already present: 0; omitted: 0/
-					)
-				).toBeVisible()
-				expect(operations).toEqual(['claim', 'sync'])
 				expect((await syncLog(page)).attempts).toMatchObject([{ outcome: 'unfinished' }])
 				await expect(
 					page

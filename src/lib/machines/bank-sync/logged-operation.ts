@@ -1,4 +1,4 @@
-import { assign, raise, sendParent, sendTo, setup, stateIn } from 'xstate'
+import { and, assign, raise, sendParent, sendTo, setup, stateIn } from 'xstate'
 import { createBankOperationMachine, type OperationResult } from './operation.js'
 import { createPreparationMachine } from './preparation.js'
 import { createSyncLogMachine } from './sync-log.js'
@@ -159,7 +159,11 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 				invoke: {
 					id: 'operation',
 					src: 'operation',
-					input: ({ context }) => ({ command: context.command, discovered: context.discovered }),
+					input: ({ context }) => ({
+						command: context.command,
+						discovered: context.discovered,
+						identity: context.identity
+					}),
 					onSnapshot: {},
 					onDone: { target: 'done', actions: assign({ result: ({ event }) => event.output }) },
 					onError: {
@@ -217,25 +221,30 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 					src: 'log',
 					input: ({ context }) => required(context.start),
 					onError: { actions: raise(({ event }) => ({ type: 'LOG_FAILED', error: event.error })) },
-					onDone: {
-						target: 'done',
-						actions: assign({
-							logging: ({ event }) => event.output,
-							result: ({ context, event }) =>
-								context.result ??
-								(event.output.kind !== 'notStarted'
-									? cancelled()
-									: failure(new Error('sync_log_start_failed')))
-						})
-					}
+					onDone: [
+						{
+							guard: and([
+								stateIn({ logged: 'starting' }),
+								({ event }) => event.output.kind === 'notStarted'
+							]),
+							target: 'unlogged',
+							actions: assign({ logging: ({ event }) => event.output })
+						},
+						{
+							target: 'done',
+							actions: assign({
+								logging: ({ event }) => event.output,
+								result: ({ context }) => context.result ?? cancelled()
+							})
+						}
+					]
 				},
 				states: {
 					starting: {
 						on: {
 							LOG_FAILED: {
-								target: '#logged-bank-operation.done',
+								target: '#logged-bank-operation.unlogged',
 								actions: assign({
-									result: ({ event }) => failure(event.error),
 									logging: ({ context }) => ({
 										kind: 'notStarted',
 										attemptId: required(context.start).id,

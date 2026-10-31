@@ -165,9 +165,7 @@
 		<p role="status" aria-live="polite">{statusText}</p>
 	{/if}
 	{#if outcomeText}<p>{outcomeText}</p>{/if}
-	{#if view.logging?.kind === 'notStarted'}
-		<StatusMessage variant="error" text={m['bank.log_start_failed']()} />
-	{:else if view.logging?.kind === 'resultUnrecorded'}
+	{#if view.logging?.kind === 'notStarted' || view.logging?.kind === 'resultUnrecorded'}
 		<StatusMessage variant="error" text={m['bank.log_result_failed']()} />
 	{/if}
 	{#if view.activity.kind === 'working' && view.activity.indicator === 'provider'}<LoadingSpinner

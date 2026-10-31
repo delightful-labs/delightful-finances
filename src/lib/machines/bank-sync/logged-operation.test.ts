@@ -91,19 +91,78 @@ it('records the start before fetching, and records account results only after th
 	])
 	expect(f.release).toHaveBeenCalledOnce()
 })
-it('prevents provider work when saving the start fails', async () => {
+it.each(['write', 'invalid', 'crash'])(
+	'imports when start logging fails through %s',
+	async (mode) => {
+		if (mode !== 'write') {
+			const parse = syncAttemptSchema.safeParse.bind(syncAttemptSchema)
+			vi.spyOn(syncAttemptSchema, 'safeParse').mockImplementationOnce(() => {
+				if (mode === 'crash') throw new Error('Unexpected log guard failure')
+				return parse({})
+			})
+		}
+		const f = start({
+			begin: async () => {
+				if (mode === 'write') throw new Error('write')
+			}
+		})
+		const result = await toPromise(f.actor)
+		expect(result).toMatchObject({
+			kind: 'complete',
+			counts: { imported: 3 },
+			logging: {
+				kind: 'notStarted',
+				reason: mode === 'invalid' ? 'invalidStart' : 'startWriteFailed'
+			}
+		})
+		expect(result.accountResults).toHaveLength(2)
+		expect(f.stored.size).toBe(3)
+		expect(f.fetch).toHaveBeenCalledOnce()
+		expect(f.unlock).toHaveBeenCalledOnce()
+		expect(f.acquire).toHaveBeenCalledOnce()
+		expect(f.release).toHaveBeenCalledOnce()
+		expect(f.starts).toHaveLength(mode === 'write' ? 1 : 0)
+		expect(f.results).toHaveLength(0)
+		expect(f.accounts).toHaveLength(0)
+	}
+)
+it('preserves a provider failure independently of the failed start log', async () => {
 	const f = start({
 		begin: async () => {
 			throw new Error('write')
 		}
 	})
+	f.fetch.mockRejectedValue(new Error('provider-failure'))
 	expect(await toPromise(f.actor)).toMatchObject({
 		kind: 'failed',
+		counts: { imported: 0 },
 		logging: { kind: 'notStarted', reason: 'startWriteFailed' }
 	})
-	expect(f.fetch).not.toHaveBeenCalled()
-	expect(f.unlock).not.toHaveBeenCalled()
-	expect(f.acquire).not.toHaveBeenCalled()
+	expect(f.fetch).toHaveBeenCalledOnce()
+	expect(f.release).toHaveBeenCalledOnce()
+	expect(f.results).toHaveLength(0)
+})
+it('drains an issued import on cancellation after start logging failed', async () => {
+	const pending = Promise.withResolvers<void>()
+	const f = start({
+		begin: async () => {
+			throw new Error('write')
+		}
+	})
+	f.persist.mockReturnValueOnce(pending.promise)
+	await vi.waitFor(() => expect(f.persist).toHaveBeenCalledOnce())
+	f.actor.send({ type: 'CANCEL' })
+	expect(f.actor.getSnapshot().status).toBe('active')
+	expect(f.release).not.toHaveBeenCalled()
+	pending.resolve()
+	expect(await toPromise(f.actor)).toMatchObject({
+		kind: 'cancelled',
+		counts: { imported: 1 },
+		logging: { kind: 'notStarted', reason: 'startWriteFailed' }
+	})
+	expect(f.persist).toHaveBeenCalledOnce()
+	expect(f.release).toHaveBeenCalledOnce()
+	expect(f.fetch).toHaveBeenCalledOnce()
 })
 it.each(['saved', 'rejected'])(
 	'drains a %s start on cancellation without fetching',
@@ -115,8 +174,8 @@ it.each(['saved', 'rejected'])(
 		if (status === 'saved') pending.resolve()
 		else pending.reject(new Error('write'))
 		expect(await toPromise(f.actor)).toMatchObject({
-			kind: status === 'saved' ? 'cancelled' : 'failed',
-			error: status === 'saved' ? undefined : new Error('sync_log_start_failed'),
+			kind: 'cancelled',
+			error: undefined,
 			counts: { imported: 0, existing: 0, omitted: 0 },
 			accountResults: [],
 			settlement: 'settled',
@@ -215,18 +274,6 @@ it('passes discovery through without creating a sync attempt', async () => {
 	expect(f.fetch).toHaveBeenCalledOnce()
 })
 
-it('contains an unexpected logging actor error before provider work', async () => {
-	vi.spyOn(syncAttemptSchema, 'safeParse').mockImplementationOnce(() => {
-		throw new Error('Unexpected log guard failure')
-	})
-	const f = start()
-	expect(await toPromise(f.actor)).toMatchObject({
-		kind: 'failed',
-		logging: { kind: 'notStarted', reason: 'startWriteFailed' }
-	})
-	expect(f.fetch).not.toHaveBeenCalled()
-	expect(f.acquire).not.toHaveBeenCalled()
-})
 it('preserves successful imports when the logging actor unexpectedly crashes at completion', async () => {
 	const parse = syncAttemptSchema.safeParse.bind(syncAttemptSchema)
 	vi.spyOn(syncAttemptSchema, 'safeParse')

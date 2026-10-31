@@ -43,14 +43,14 @@ setup, discovery and disconnect retain existing behavior.
 Logging child: validate start -> record start -> await actual operation result ->
 validate completion/accounts -> derive account ID -> save account (repeat) ->
 finalize attempt. The terminal attempt is saved last because account writes need
-an unfinished parent. Start failure prevents provider work; completion failure
+an unfinished parent. Start failure falls back to the existing operation without logging; completion failure
 preserves actual financial results and leaves readable unfinished history.
 
 Cancellation drains issued start/account/final writes. While the operation owns
 imports, logging waits for its actual drained result rather than inventing
 rollback or settlement. Scope replacement and shutdown preserve the existing bank
 owner's drain protocol. Unknown account identities are not fabricated. Unexpected logging-actor errors
-are contained: before provider work they prevent startup; during an operation
+are contained: before provider work they fall back to the existing operation; during an operation
 they preserve its resource owner and continue draining, including cancellation.
 The final financial result is returned with separate unavailable-log feedback.
 Safe provider/passkey/mapping failure codes are projected from the existing classifier.
@@ -208,3 +208,30 @@ The first browser run could not open finances on the reused server after generat
 environment checks; it was stopped, the known disposable agent server restarted,
 and the complete four-case run passed. `pnpm check` reports zero errors/warnings;
 focused Prettier and diff checks pass. No schema/policy change or deployment.
+
+## Non-blocking start-log failure
+
+The user requires sync to proceed when logging fails. Keep the existing statechart:
+prepare -> logged.starting -> logged.operating on readiness. A rejected/invalid
+start or unexpected logger crash in logged.starting instead transitions to the
+existing unlogged operation, retaining a separate notStarted logging result.
+Cancellation in logged.cancellingStart always completes cancelled after the issued
+write drains, including rejection; it must never enter unlogged fallback.
+The fallback receives the original captured identity and existing authorization,
+lock, credential and import owners remain unchanged. Do not retry provider or log
+work. Normal completion/result-log failures keep their existing drain behavior.
+No new promise orchestration or resource owner is introduced. Reuse the existing
+result-log warning for both log failures; no Paraglide edits are authorized.
+Review tests for failed start, invalid start, unexpected start crash, cancellation
+while the start is pending/rejecting, actual imports, financial failure during
+fallback, scope replacement and shutdown. Browser start-log failure must assert a
+provider sync, actual saved imports/result, a separate warning and no log retry.
+
+Verification after review: 82 focused unit tests pass across logged-operation,
+log persistence, import settlement and the supervisor. Four browser cases pass;
+failed start and result logging each still save an actual imported transaction,
+show its successful result and a separate logging warning, without retrying the
+provider. Cancellation and normal history/idempotency also pass. App/test types,
+focused formatting and diff checks pass. The initial browser run was stopped
+because the reused server could not open finances after unit checks; refreshing
+the disposable agent server resolved startup and the full four-case run passed.
