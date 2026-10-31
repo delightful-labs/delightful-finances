@@ -235,8 +235,8 @@ test('startup failure diagnostics follow the debug flag and preserve retry', asy
 	await page.goto('/settings/banks')
 	await expect(page.getByText('Your finances could not be opened.', { exact: false })).toBeVisible()
 	if (info.config.metadata.debugEnabled === true) {
-		await expect.poll(() => diagnostics.join('\n')).toContain('Jazz session initialization failed')
-		expect(diagnostics.join('\n')).toContain('Machine entered an error state')
+		await expect.poll(() => diagnostics.join('\n')).toContain('Machine entered an error state')
+		expect(diagnostics.join('\n')).toContain('machine: application-readiness')
 		expect(diagnostics.join('\n')).not.toContain('PRIVATE_STARTUP_TOKEN')
 	} else {
 		expect(diagnostics).toEqual([])

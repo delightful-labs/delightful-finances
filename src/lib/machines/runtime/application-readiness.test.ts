@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, setup, sendParent, waitFor, type ActorRefFrom } from 'xstate'
+import { createActor, setup, sendParent, waitFor, fromCallback, type ActorRefFrom } from 'xstate'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
 import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
+import {
+	createSessionAcquisitionMachine,
+	selectAcquiredSession
+} from 'delightful-local-first/session/workflow'
+import type { JazzStartupBinding } from '#lib/runtime/jazz-session.js'
+import type { SessionOwnerEvent } from 'delightful-local-first/session/workflow'
 import { generateAuthSecret } from 'jazz-tools'
 import type { JazzClient, JazzSession, getDb } from 'jazz-tools/svelte'
 import {
@@ -54,8 +60,28 @@ vi.mock('./readiness.js', () => ({
 type Session = JazzSession<JazzClient>
 type MutationErrorDb = Pick<ReturnType<typeof getDb>, 'onMutationError'>
 const actors: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>[] = []
+const owners: ActorRefFrom<ReturnType<typeof createSessionAcquisitionMachine<Session>>>[] = []
+const startupBindings = new Map<
+	ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+	JazzStartupBinding
+>()
+function startupOwner(open: () => Promise<Session>, existing?: Session) {
+	const binding = {}
+	const owner = createActor(createSessionAcquisitionMachine<Session>(), {
+		input: { binding, capability: { open }, ...(existing ? { existing } : {}) }
+	}).start()
+	owners.push(owner)
+	return { owner, scope: { binding, attachment: {}, generation: 0 } }
+}
+function beginStartup(actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>) {
+	const startup = startupBindings.get(actor)
+	if (!startup) throw new Error('Expected startup test binding')
+	actor.send({ type: 'START', startup })
+}
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
+	for (const owner of owners.splice(0)) owner.stop()
+	startupBindings.clear()
 	workspaceControls.clear()
 })
 function control(actor: { id: string }) {
@@ -93,8 +119,11 @@ function session(db?: MutationErrorDb) {
 	return { value, getSnapshot, subscribe, unsubscribe, notify: () => notify() }
 }
 function start(open: () => Promise<Session>, existing?: Session) {
-	const actor = createActor(createApplicationReadinessMachine(open, existing)).start()
+	const startup = startupOwner(open, existing)
+	const actor = createActor(createApplicationReadinessMachine()).start()
+	startupBindings.set(actor, startup)
 	actors.push(actor)
+	if (existing) beginStartup(actor)
 	return actor
 }
 function attach(actor: ReturnType<typeof start>) {
@@ -290,7 +319,7 @@ describe('application readiness supervision', () => {
 			.mockRejectedValueOnce(new Error('private'))
 			.mockResolvedValue(current.value)
 		const actor = start(open)
-		actor.send({ type: 'START' })
+		beginStartup(actor)
 		await waitFor(actor, (state) => state.hasTag('startup-error'))
 		expect(actor.getSnapshot().context.session).toBeUndefined()
 		actor.send({ type: 'RETRY' })
@@ -301,8 +330,10 @@ describe('application readiness supervision', () => {
 
 	it('restarts startup after an unexpected child error instead of retrying a failed actor', async () => {
 		const current = session()
-		const open = vi.fn(async () => current.value)
+		const pending = Promise.withResolvers<Session>()
+		const open = vi.fn(() => pending.promise)
 		const actor = start(open)
+		beginStartup(actor)
 		actor.send({
 			type: 'xstate.error.actor.startup',
 			actorId: 'startup',
@@ -310,6 +341,7 @@ describe('application readiness supervision', () => {
 		})
 		expect(actor.getSnapshot().matches('startupActorFailed')).toBe(true)
 		actor.send({ type: 'RETRY' })
+		pending.resolve(current.value)
 		await waitFor(actor, (state) => state.matches({ running: 'ready' }))
 		expect(open).toHaveBeenCalledTimes(1)
 		expect(current.subscribe).toHaveBeenCalledTimes(1)
@@ -381,7 +413,7 @@ describe('application readiness supervision', () => {
 		const current = session()
 		const pending = Promise.withResolvers<Session>()
 		const actor = start(() => pending.promise)
-		actor.send({ type: 'START' })
+		beginStartup(actor)
 		const workspace = attach(actor)
 		actor.send({ type: 'SHUTDOWN' })
 		pending.resolve(current.value)
@@ -508,9 +540,11 @@ function mutationFixture() {
 		return adapter
 	})
 	const actor = createActor(
-		createApplicationReadinessMachine(open, current.value, { readHref, navigate }, bindRestoration)
+		createApplicationReadinessMachine({ readHref, navigate }, bindRestoration)
 	).start()
 	actors.push(actor)
+	startupBindings.set(actor, startupOwner(open, current.value))
+	beginStartup(actor)
 	const workspace = attach(actor)
 	const attachment = actor.getSnapshot().context.attachment
 	if (!attachment) throw new Error('Expected attachment')
@@ -562,7 +596,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 		f.current.getSnapshot.mockReturnValue({ status })
 		f.current.notify()
 		f.actor.send({ type: 'RETRY' })
-		f.actor.send({ type: 'START' })
+		beginStartup(f.actor)
 		f.actor.send(f.command)
 		expect(f.actor.getSnapshot().matches({ running: { retrying: 'active' } })).toBe(true)
 		expect(f.actor.getSnapshot().context.status).toBe(status)
@@ -892,4 +926,135 @@ describe('application-owned account recovery', () => {
 		await waitFor(f.actor, (s) => s.status === 'done')
 		expect(f.restore).toHaveBeenCalledOnce()
 	})
+})
+
+describe('shared startup attachment integration', () => {
+	it('closes before browser START without creating a session owner', () => {
+		const actor = createActor(createApplicationReadinessMachine()).start()
+		actors.push(actor)
+		actor.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().status).toBe('done')
+		expect(actor.getSnapshot().context.session).toBeUndefined()
+		expect(actor.getSnapshot().context.startupBinding).toBeUndefined()
+	})
+
+	it.each([false, true])(
+		'retains acquisition across application release/remount (reject: %s)',
+		async (reject) => {
+			const current = session(),
+				pending = Promise.withResolvers<Session>()
+			const open = vi
+				.fn<() => Promise<Session>>()
+				.mockImplementationOnce(() => pending.promise)
+				.mockResolvedValue(current.value)
+			const source = startupOwner(open)
+			const first = createActor(createApplicationReadinessMachine()).start()
+			actors.push(first)
+			startupBindings.set(first, source)
+			beginStartup(first)
+			first.send({ type: 'SHUTDOWN' })
+			await waitFor(first, (s) => s.status === 'done')
+			expect(source.owner.getSnapshot().status).toBe('active')
+			if (reject) pending.reject(new Error('private SDK open failure'))
+			else pending.resolve(current.value)
+			await waitFor(source.owner, (s) => s.matches(reject ? 'failed' : 'acquired'))
+			const second = createActor(createApplicationReadinessMachine()).start()
+			actors.push(second)
+			startupBindings.set(second, {
+				owner: source.owner,
+				scope: { ...source.scope, attachment: {} }
+			})
+			beginStartup(second)
+			if (reject) {
+				await waitFor(second, (s) => s.matches('startupFailed'))
+				expect(open).toHaveBeenCalledTimes(1)
+				second.send({ type: 'RETRY' })
+			}
+			await waitFor(second, (s) => s.matches({ running: 'ready' }))
+			expect(second.getSnapshot().context.session).toBe(current.value)
+			expect(selectAcquiredSession(source.owner.getSnapshot())).toBe(current.value)
+			expect(open).toHaveBeenCalledTimes(reject ? 2 : 1)
+			expect(current.value.close).not.toHaveBeenCalled()
+			expect(current.value.logout).not.toHaveBeenCalled()
+		}
+	)
+
+	it('drains workspace before requesting release and waits for the matching acknowledgement', async () => {
+		const requests: SessionOwnerEvent<Session>[] = []
+		const owner = createActor(
+			fromCallback<SessionOwnerEvent<Session>>(({ receive }) =>
+				receive((event) => requests.push(event))
+			)
+		).start()
+		const actor = createActor(createApplicationReadinessMachine()).start()
+		actors.push(actor)
+		const scope = { binding: {}, attachment: {}, generation: 0 },
+			current = session()
+		try {
+			actor.send({ type: 'START', startup: { owner, scope } })
+			const request = requests[0]
+			if (!request) throw new Error('Expected acquisition request')
+			request.replyTo.send({ type: 'ACQUIRED', scope, session: current.value })
+			const workspace = attach(actor)
+			actor.send({ type: 'SHUTDOWN' })
+			expect(requests.map((event) => event.type)).toEqual(['ACQUIRE'])
+			control(workspace).close()
+			expect(actor.getSnapshot().matches('releasingStartup')).toBe(true)
+			expect(requests.map((event) => event.type)).toEqual(['ACQUIRE', 'RELEASE'])
+			const release = requests[1]
+			if (!release) throw new Error('Expected release request')
+			release.replyTo.send({ type: 'RELEASED', scope: { ...scope, generation: 1 } })
+			expect(actor.getSnapshot().status).toBe('active')
+			release.replyTo.send({ type: 'RELEASED', scope })
+			await waitFor(actor, (s) => s.status === 'done')
+			expect(actor.getSnapshot().context.session).toBeUndefined()
+			expect(current.value.close).not.toHaveBeenCalled()
+		} finally {
+			owner.stop()
+		}
+	})
+
+	it('rejects stale reports and duplicate rebinding while acquisition is pending', async () => {
+		const pending = Promise.withResolvers<Session>(),
+			current = session()
+		const actor = start(() => pending.promise)
+		beginStartup(actor)
+		const startup = startupBindings.get(actor)
+		if (!startup) throw new Error('Expected startup binding')
+		for (const scope of [
+			{ ...startup.scope, binding: {} },
+			{ ...startup.scope, attachment: {} },
+			{ ...startup.scope, generation: 1 }
+		]) {
+			actor.send({ type: 'SESSION_ACQUIRED', scope, session: current.value })
+			actor.send({ type: 'SESSION_STARTUP_FAILED', scope, reason: 'ownerFailed' })
+		}
+		actor.send({
+			type: 'START',
+			startup: { ...startup, scope: { ...startup.scope, attachment: {} } }
+		})
+		expect(actor.getSnapshot().matches('opening')).toBe(true)
+		expect(actor.getSnapshot().context.startupBinding).toBe(startup)
+		expect(actor.getSnapshot().context.session).toBeUndefined()
+		pending.resolve(current.value)
+		await waitFor(actor, (s) => s.matches({ running: 'ready' }))
+	})
+
+	it.each(['restore', 'retry'])(
+		'retains an issued %s through real owner failure',
+		async (operation) => {
+			const f = mutationFixture()
+			if (operation === 'restore') await beginRestore(f)
+			else beginRetry(f)
+			const source = startupBindings.get(f.actor)
+			if (!source) throw new Error('Expected startup owner')
+			source.owner.stop()
+			expect(f.actor.getSnapshot().status).toBe('active')
+			f.pending.resolve()
+			await waitFor(f.actor, (s) => s.matches('startupActorFailed'))
+			expect(f.navigate).not.toHaveBeenCalled()
+			if (operation === 'restore') expect(f.restore).toHaveBeenCalledOnce()
+			else expect(f.retry).toHaveBeenCalledOnce()
+		}
+	)
 })

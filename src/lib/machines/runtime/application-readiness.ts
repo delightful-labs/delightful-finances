@@ -2,7 +2,8 @@ import {
 	assign,
 	fromCallback,
 	fromPromise,
-	not,
+	enqueueActions,
+	and,
 	or,
 	stateIn,
 	raise,
@@ -18,7 +19,9 @@ import {
 	createInternalTransferMutationOwner,
 	type TransferMutationRequest
 } from '../transfers/internal-transfer-mutation-owner.js'
-import { createSessionStartupMachine } from '../identity/session-startup.js'
+import { createSessionStartupMachine } from 'delightful-local-first/session/workflow'
+import type { SessionStartupReport } from 'delightful-local-first/session/contracts'
+import type { JazzStartupBinding } from '#lib/runtime/jazz-session.js'
 import { createWorkspaceReadinessMachine, type WorkspaceAttachment } from './readiness.js'
 import { required } from '../bank-sync/identity.js'
 import {
@@ -47,6 +50,7 @@ type Context = {
 	recoveryRequest: RecoveryRequest | undefined
 	recoveryResult: RecoveryResult | undefined
 	session: Session | undefined
+	startupBinding: JazzStartupBinding | undefined
 	status: Status
 	workspace: Workspace | undefined
 	attachment: WorkspaceAttachment | undefined
@@ -57,9 +61,12 @@ type Context = {
 }
 type Event =
 	| RecoveryNotice
+	| SessionStartupReport<Session>
 	| { type: 'RECOVER'; phrase: string; origin: string; destination: string }
 	| { type: 'RETRY_NAVIGATION' }
-	| { type: 'START' }
+	| { type: 'START'; startup: JazzStartupBinding }
+	| { type: 'STARTUP_RELEASED' }
+	| { type: 'STARTUP_UNAVAILABLE' }
 	| { type: 'RETRY' }
 	| { type: 'SESSION_OBSERVED'; status: Status }
 	| { type: 'SESSION_OBSERVER_FAILED' }
@@ -79,8 +86,6 @@ type Event =
 
 /** Hosts enabling RECOVER supply the layout-owned binding factory; other lifecycles need none. */
 export function createApplicationReadinessMachine(
-	open: () => Promise<Session>,
-	existing: Session | undefined,
 	navigation: { readHref: () => string; navigate: (destination: string) => Promise<void> } = {
 		readHref: () => '',
 		navigate: async () => {
@@ -92,7 +97,7 @@ export function createApplicationReadinessMachine(
 	const actors = {
 		recovery: sessionRecoveryMachine,
 		transferMutationOwner: createInternalTransferMutationOwner(),
-		startup: createSessionStartupMachine(open, existing),
+		startup: createSessionStartupMachine<Session>(),
 		observeSession: fromCallback<Event, Session>(({ input, sendBack }) => {
 			// SDK notifications execute outside XState; bridge their failures explicitly.
 			const publish = () => {
@@ -122,9 +127,10 @@ export function createApplicationReadinessMachine(
 		Event,
 		typeof actors,
 		{},
-		{ refreshAttachment: undefined },
+		{ refreshAttachment: undefined; retireStartup: undefined },
 		{
-			acceptStartup: undefined
+			startupOwnerFailed: undefined
+			currentStartup: undefined
 			shuttingDown: undefined
 			retryObserverFailed: undefined
 			retryStartupFailed: undefined
@@ -137,15 +143,36 @@ export function createApplicationReadinessMachine(
 	>({
 		actors,
 		actions: {
+			retireStartup: enqueueActions(({ context, self, enqueue }) => {
+				const child = self.getSnapshot().children.startup
+				if (context.startupBinding && child) {
+					enqueue.sendTo(context.startupBinding.owner, {
+						type: 'RELEASE',
+						scope: context.startupBinding.scope,
+						replyTo: child
+					})
+				}
+			}),
 			refreshAttachment: assign({
 				attachmentRevision: ({ context }) => context.attachmentRevision + 1,
 				pending: undefined
 			})
 		},
 		guards: {
-			acceptStartup: or([stateIn('opening'), stateIn('startupFailed')]),
+			currentStartup: ({ context, event }) =>
+				(event.type === 'SESSION_STARTING' ||
+					event.type === 'SESSION_ACQUIRED' ||
+					event.type === 'SESSION_STARTUP_FAILED') &&
+				event.scope.binding === context.startupBinding?.scope.binding &&
+				event.scope.attachment === context.startupBinding.scope.attachment &&
+				event.scope.generation === context.startupBinding.scope.generation,
+			startupOwnerFailed: and([
+				'currentStartup',
+				({ event }) => event.type === 'SESSION_STARTUP_FAILED' && event.reason === 'ownerFailed'
+			]),
 			shuttingDown: or([
 				stateIn('closing'),
+				stateIn('releasingStartup'),
 				stateIn({ running: { retrying: 'closing' } }),
 				stateIn({ running: { recovering: 'closing' } })
 			]),
@@ -220,14 +247,15 @@ export function createApplicationReadinessMachine(
 	})
 	return workflow.createMachine({
 		id: 'application-readiness',
-		initial: 'opening',
+		initial: 'waitingForStartup',
 		context: {
 			attachmentRevision: 0,
 			recoveryDraftRevision: 0,
 			recoveryAttempt: 0,
 			recoveryRequest: undefined,
 			recoveryResult: undefined,
-			session: existing,
+			session: undefined,
+			startupBinding: undefined,
 			status: 'transitioning',
 			workspace: undefined,
 			attachment: undefined,
@@ -240,18 +268,17 @@ export function createApplicationReadinessMachine(
 			{
 				id: 'startup',
 				src: 'startup',
-				onError: [{ guard: 'shuttingDown' }, { target: '.settlingStartupFailure' }],
-				onSnapshot: [
+				input: ({ self }) => ({ reportTo: self }),
+				onDone: [
+					{ guard: 'shuttingDown', actions: raise({ type: 'STARTUP_RELEASED' }) },
+					{ target: '.settlingStartupFailure' }
+				],
+				onError: [
 					{
-						guard: not('acceptStartup')
+						guard: 'shuttingDown',
+						actions: ['retireStartup', raise({ type: 'STARTUP_RELEASED' })]
 					},
-					{ guard: ({ event }) => event.snapshot.matches('error'), target: '.startupFailed' },
-					{
-						guard: ({ event }) => event.snapshot.context.result !== undefined,
-						target: '.running',
-						actions: assign({ session: ({ event }) => event.snapshot.context.result })
-					},
-					{ target: '.opening' }
+					{ target: '.settlingStartupFailure', actions: 'retireStartup' }
 				]
 			},
 			{ id: 'transferMutationOwner', src: 'transferMutationOwner' }
@@ -265,8 +292,16 @@ export function createApplicationReadinessMachine(
 				},
 				{}
 			],
-			START: { actions: sendTo('startup', { type: 'START' }) },
-			RETRY: { actions: sendTo('startup', { type: 'RETRY' }) },
+			START: {},
+			RETRY: {},
+			STARTUP_RELEASED: {},
+			SESSION_STARTING: {},
+			SESSION_ACQUIRED: {},
+			SESSION_STARTUP_FAILED: {
+				guard: 'currentStartup',
+				actions: raise({ type: 'STARTUP_UNAVAILABLE' })
+			},
+			STARTUP_UNAVAILABLE: { target: '.settlingStartupFailure' },
 			TRANSFER_MUTATION_REQUEST: {
 				actions: sendTo('transferMutationOwner', ({ event }) => ({
 					type: 'REQUEST_TRANSFER_MUTATION',
@@ -350,8 +385,53 @@ export function createApplicationReadinessMachine(
 			}
 		},
 		states: {
-			opening: {},
-			startupFailed: { tags: 'startup-error' },
+			waitingForStartup: {
+				on: {
+					START: {
+						target: 'opening',
+						actions: [
+							assign({ startupBinding: ({ event }) => event.startup }),
+							sendTo('startup', ({ event }) => ({ type: 'START', ...event.startup }))
+						]
+					}
+				}
+			},
+			opening: {
+				on: {
+					SESSION_ACQUIRED: {
+						guard: 'currentStartup',
+						target: 'running',
+						actions: assign({ session: ({ event }) => event.session })
+					},
+					SESSION_STARTUP_FAILED: [
+						{ guard: 'startupOwnerFailed', target: 'settlingStartupFailure' },
+						{ guard: 'currentStartup', target: 'startupFailed' }
+					]
+				}
+			},
+			startupFailed: {
+				tags: 'startup-error',
+				on: {
+					RETRY: {
+						guard: ({ context }) =>
+							context.startupBinding !== undefined &&
+							context.startupBinding.scope.generation < Number.MAX_SAFE_INTEGER,
+						target: 'opening',
+						actions: [
+							assign(({ context }) => ({
+								startupBinding: {
+									...required(context.startupBinding),
+									scope: {
+										...required(context.startupBinding).scope,
+										generation: required(context.startupBinding).scope.generation + 1
+									}
+								}
+							})),
+							sendTo('startup', { type: 'RETRY' })
+						]
+					}
+				}
+			},
 			settlingStartupFailure: {
 				entry: shutDownWorkspace,
 				always: { guard: ({ context }) => !context.workspace, target: 'startupActorFailed' },
@@ -360,10 +440,29 @@ export function createApplicationReadinessMachine(
 			startupActorFailed: {
 				tags: 'startup-error',
 				on: {
+					START: {
+						target: '#application-readiness',
+						reenter: true,
+						actions: [assign({ session: undefined }), raise(({ event }) => event)]
+					},
 					RETRY: {
 						target: '#application-readiness',
 						reenter: true,
-						actions: [assign({ session: undefined }), raise({ type: 'START' })]
+						guard: ({ context }) => context.startupBinding !== undefined,
+						actions: [
+							assign({ session: undefined }),
+							raise(({ context }) => ({
+								type: 'START',
+								startup: {
+									owner: required(context.startupBinding).owner,
+									scope: {
+										binding: required(context.startupBinding).scope.binding,
+										attachment: {},
+										generation: 0
+									}
+								}
+							}))
+						]
 					}
 				}
 			},
@@ -557,7 +656,8 @@ export function createApplicationReadinessMachine(
 							SESSION_OBSERVED: { actions: assign({ status: ({ event }) => event.status }) },
 							SESSION_OBSERVER_FAILED: '.observerFailed',
 							'xstate.error.actor.sessionObserver': '.observerFailed',
-							'xstate.error.actor.startup': '.startupFailed',
+							'xstate.error.actor.startup': { target: '.startupFailed', actions: 'retireStartup' },
+							STARTUP_UNAVAILABLE: '.startupFailed',
 							'xstate.error.actor.*': {
 								guard: ({ context, event }) => context.workspace?.id === event.actorId,
 								target: '.observerFailed',
@@ -572,7 +672,8 @@ export function createApplicationReadinessMachine(
 								...retryDrain,
 								on: {
 									...retryDrain.on,
-									'xstate.error.actor.startup': {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									STARTUP_UNAVAILABLE: {},
 									'xstate.error.actor.*': {
 										guard: ({ context, event }) => context.workspace?.id === event.actorId,
 										actions: release
@@ -583,7 +684,8 @@ export function createApplicationReadinessMachine(
 								...retryDrain,
 								on: {
 									...retryDrain.on,
-									'xstate.error.actor.startup': {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									STARTUP_UNAVAILABLE: {},
 									SHUTDOWN: {},
 									'xstate.error.actor.*': {
 										guard: ({ context, event }) => context.workspace?.id === event.actorId,
@@ -676,7 +778,8 @@ export function createApplicationReadinessMachine(
 							},
 							SESSION_OBSERVER_FAILED: '.observerFailed',
 							'xstate.error.actor.sessionObserver': '.observerFailed',
-							'xstate.error.actor.startup': '.startupFailed',
+							'xstate.error.actor.startup': { target: '.startupFailed', actions: 'retireStartup' },
+							STARTUP_UNAVAILABLE: '.startupFailed',
 							'xstate.error.actor.*': {
 								guard: ({ context, event }) => context.workspace?.id === event.actorId,
 								target: '.observerFailed',
@@ -700,7 +803,8 @@ export function createApplicationReadinessMachine(
 								...recoveryDrain,
 								on: {
 									...recoveryDrain.on,
-									'xstate.error.actor.startup': {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									STARTUP_UNAVAILABLE: {},
 									'xstate.error.actor.*': {
 										guard: ({ context, event }) => context.workspace?.id === event.actorId,
 										actions: release
@@ -712,7 +816,8 @@ export function createApplicationReadinessMachine(
 								on: {
 									...recoveryDrain.on,
 									SHUTDOWN: {},
-									'xstate.error.actor.startup': {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									STARTUP_UNAVAILABLE: {},
 									'xstate.error.actor.*': {
 										guard: ({ context, event }) => context.workspace?.id === event.actorId,
 										actions: release
@@ -726,7 +831,7 @@ export function createApplicationReadinessMachine(
 			closing: {
 				always: {
 					guard: ({ context }) => !context.workspace && context.transferMutationOwnerClosed,
-					target: 'closed'
+					target: 'releasingStartup'
 				},
 				entry: workflow.enqueueActions(({ context, enqueue }) => {
 					enqueue.sendTo('transferMutationOwner', { type: 'SHUTDOWN' })
@@ -734,7 +839,9 @@ export function createApplicationReadinessMachine(
 						enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 				}),
 				on: {
+					STARTUP_UNAVAILABLE: {},
 					'xstate.error.actor.*': [
+						{ guard: ({ event }) => event.actorId === 'startup', actions: 'retireStartup' },
 						{
 							guard: ({ context, event }) => context.workspace?.id === event.actorId,
 							actions: release
@@ -759,9 +866,34 @@ export function createApplicationReadinessMachine(
 					RETRY: {}
 				}
 			},
+			releasingStartup: {
+				entry: workflow.enqueueActions(({ self, enqueue }) => {
+					const child = self.getSnapshot().children.startup
+					if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
+					else enqueue.raise({ type: 'STARTUP_RELEASED' })
+				}),
+				on: {
+					STARTUP_RELEASED: 'closed',
+					STARTUP_UNAVAILABLE: {},
+					SHUTDOWN: {},
+					ATTACH_WORKSPACE: {},
+					DETACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					START: {},
+					RETRY: {},
+					SESSION_ACQUIRED: {},
+					SESSION_STARTUP_FAILED: {}
+				}
+			},
 			closed: {
 				type: 'final',
-				entry: assign({ workspace: undefined, attachment: undefined, pending: undefined })
+				entry: assign({
+					workspace: undefined,
+					attachment: undefined,
+					pending: undefined,
+					session: undefined,
+					startupBinding: undefined
+				})
 			}
 		}
 	})
