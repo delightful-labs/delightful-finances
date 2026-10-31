@@ -189,3 +189,27 @@ No setup tasks.
 ## Implementation Strategy
 
 Deliver the relationship and policy first, then existing-transaction suggestions/linking, paired manual creation, reporting, and finally lifecycle/deletion. Each stage is a focused review checkpoint. Do not expose a persistent link or paired creation until account histories, totals, and privacy behavior are coherent. Keep all test edits and execution behind review of the production code they cover.
+
+## Transfer list implementation review
+
+- [x] Add workspace-scoped `/transfers` with one row per effective readable pair and account filters matching either endpoint.
+- [x] Reuse date grouping, pagination, and empty feedback; extract a pure row layout shared with income/expense rows.
+- [x] Show both accounts and posting dates, descriptions, and currency-aware amounts; omit daily totals. Open a saved-transfer detail route from each row.
+- [x] Point navigation at the list and retain the existing add-transfer route. Reuse all existing localization messages.
+- [x] User review and approval of implementation and test execution.
+- [x] Inspect affected fixtures and add focused coverage in `tests/transfer-create.e2e.ts`; run existing shared-list/workspace regression suites and effective-link/date-grouping unit coverage. See verification below.
+
+### Sidebar refinement review
+
+- [x] Share the existing transaction sidebar/mobile workspace across transfer list, creation, and detail routes.
+- [x] Open each relationship by transfer ID with prefilled disabled fields and links to both transaction editors. Preserve separate dates/currencies and existing linked-edit protections.
+- [x] Keep the selected transfer independent of list account filters and preserve pagination through detail/back links.
+- [x] Cover desktop/mobile sidebar behavior, disabled prefilled fields, both transaction links, distinct dates/currencies, unavailable transfers after unlink, and filter/pagination behavior.
+
+### Transfer list verification
+
+- `pnpm exec vitest run src/lib/domain/internal-transfer.test.ts src/lib/domain/transaction-groups.test.ts`: 13 tests passed.
+- Focused Playwright coverage: 23 distinct scenarios passed across `tests/features/transaction-list.e2e.ts`, `tests/transaction-workspace.e2e.ts`, and `tests/transfer-create.e2e.ts`. All five transfer scenarios passed again after the pagination fix; the 18 unchanged shared-list/workspace regression scenarios passed in the preceding run.
+- The pagination fixture initially omitted opening the Accounts disclosure; it now uses the existing `openSidebarSection` helper. Once corrected, it exposed a real reset bug: SvelteKit 3 shallow `replaceState` updated the browser URL without updating the route URL consumed by pagination. `TransferView` now uses a replacing navigation with scroll/focus reset disabled when a changed filter must return to page one. The selected detail remains open.
+- `pnpm exec svelte-check --tsconfig ./tsconfig.json`: zero errors and warnings. `pnpm exec tsc --project tests/tsconfig.json --noEmit`, focused Prettier checks, and `git diff --check` passed.
+- No new actors, persistence operations, schemas, or permissions were introduced. Existing effective/pending/conflicted-link unit coverage is reused; browser coverage verifies unlink disappearance and unavailable detail without claiming a fresh cross-identity policy audit.
