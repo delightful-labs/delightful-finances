@@ -20,6 +20,11 @@
 	import QueryContent from '#lib/components/shared/QueryContent.svelte'
 	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import FloatingActionLink from '../navigation/FloatingActionLink.svelte'
+	import TransactionListFilters from '../filters/TransactionListFilters.svelte'
+	import {
+		filterTransactions,
+		type TransactionListFilters as ListFilters
+	} from '#lib/filters/transaction-list-filters.js'
 
 	let {
 		kind,
@@ -33,19 +38,48 @@
 		showHeading?: boolean
 	} = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
+	const currentUrl = $derived(page.shallow?.url ?? page.url)
+	const listFilters = $derived<ListFilters>({
+		start: currentUrl.searchParams.get('start') ?? '',
+		end: currentUrl.searchParams.get('end') ?? '',
+		categoryId: currentUrl.searchParams.get('category') ?? '',
+		currency: currentUrl.searchParams.get('currency') ?? '',
+		query: currentUrl.searchParams.get('q') ?? ''
+	})
+	function changeListFilters(value: ListFilters) {
+		replaceState(
+			withQueryParams(`${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`, {
+				start: value.start || null,
+				end: value.end || null,
+				category: value.categoryId || null,
+				currency: value.currency || null,
+				q: value.query || null,
+				page: null
+			}),
+			page.state
+		)
+	}
+	const validRange = $derived(
+		!listFilters.start || !listFilters.end || listFilters.start <= listFilters.end
+	)
 
 	const requestedPage = $derived.by(() => {
-		const value = page.url.searchParams.get('page') ?? '1'
+		const value = currentUrl.searchParams.get('page') ?? '1'
 		const number = Number(value)
 		return /^\d+$/.test(value) && Number.isSafeInteger(number) && number > 0 ? number : 1
 	})
 	function pageHref(number: number) {
-		return withQueryParams(`${page.url.pathname}${page.url.search}${page.url.hash}`, {
+		return withQueryParams(`${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`, {
 			page: number > 1 ? number : null
 		})
 	}
 	function transactionHref(id: string) {
 		return withQueryParams(`${listPath}/${encodeURIComponent(id)}`, {
+			start: listFilters.start || null,
+			end: listFilters.end || null,
+			category: listFilters.categoryId || null,
+			currency: listFilters.currency || null,
+			q: listFilters.query || null,
 			page: requestedPage > 1 ? requestedPage : null
 		})
 	}
@@ -60,7 +94,7 @@
 	$effect(() => {
 		const scope = {
 			organizationId: filters.activeOrganizationId,
-			pathname: page.url.pathname,
+			pathname: currentUrl.pathname,
 			key: JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])
 		}
 		const previous = previousPaginationScope
@@ -130,7 +164,23 @@
 	const tagNamesByTransaction = $derived(
 		transactionTagNames(tags.current ?? [], links.current ?? [])
 	)
-	const groups = $derived(groupTransactionsByDate(visibleTransactions))
+	const groups = $derived(
+		groupTransactionsByDate(
+			filterTransactions(visibleTransactions, listFilters, categoryNames, tagNamesByTransaction)
+		)
+	)
+	const filterCategories = $derived(
+		new Map(
+			[...new Set(visibleTransactions.map((row) => row.categoryId))]
+				.map<[string, string]>((id) => [
+					id,
+					categoryNames.get(id) ??
+						m['status.unavailable_subject']({ subject: m['nouns.category']({ count: 1 }) })
+				])
+				.sort((left, right) => (left[1] ?? '').localeCompare(right[1] ?? ''))
+		)
+	)
+	const currencies = $derived([...new Set(visibleTransactions.map((row) => row.currency))].sort())
 </script>
 
 <div class="wrapper">
@@ -146,16 +196,26 @@
 			<AccountCreation />
 		{/if}
 		{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
-			<TransactionList
-				{groups}
-				{requestedPage}
-				{pageHref}
-				{transactionHref}
-				{categoryNames}
-				{tagNamesByTransaction}
-				noAccountsSelected={filters.selectedAccountIds !== null &&
-					filters.selectedAccountIds.length === 0}
+			<TransactionListFilters
+				value={listFilters}
+				categories={filterCategories}
+				{currencies}
+				onchange={changeListFilters}
 			/>
+			{#if !validRange}
+				<Message message={m['errors.date_range_invalid']()} />
+			{:else}
+				<TransactionList
+					{groups}
+					{requestedPage}
+					{pageHref}
+					{transactionHref}
+					{categoryNames}
+					{tagNamesByTransaction}
+					noAccountsSelected={filters.selectedAccountIds !== null &&
+						filters.selectedAccountIds.length === 0}
+				/>
+			{/if}
 		{/key}
 	</QueryContent>
 

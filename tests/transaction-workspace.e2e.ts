@@ -1,50 +1,223 @@
 import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 
-async function seed(page: Page, count = 0) {
+async function seed(
+	page: Page,
+	count = 0,
+	kind: 'expense' | 'income' = 'expense',
+	bookedOn = '2026-10-19'
+) {
 	await page.goto('/accounts')
 	await expect(
 		pageContent(page).getByRole('button', { name: 'Add Account', exact: true })
 	).toBeEnabled({ timeout: 30_000 })
-	return page.evaluate(async (count) => {
-		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/runtime/jazz-session.ts'
-		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-			await import(sessionPath)
-		const db = getCurrentJazzSession()?.getSnapshot().client?.db
-		if (!db) throw new Error('Missing database')
-		const [organization] = await db.all(app.organizations)
-		if (!organization) throw new Error('Missing organization')
-		const account = await db
-			.insert(app.accounts, {
-				organizationId: organization.id,
-				name: 'Workspace ledger',
-				kind: 'cash',
-				currency: 'USD'
-			})
-			.wait({ tier: 'local' })
-		const category = (
-			await db.all(app.categories.where({ organizationId: organization.id, kind: 'expense' }))
-		)[0]
-		if (!category) throw new Error('Missing expense category')
-		for (let index = 0; index < count; index++) {
-			await db
-				.insert(app.transactions, {
+	return page.evaluate(
+		async ({ count, kind, bookedOn }) => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			const [organization] = await db.all(app.organizations)
+			if (!organization) throw new Error('Missing organization')
+			const account = await db
+				.insert(app.accounts, {
 					organizationId: organization.id,
-					accountId: account.id,
-					categoryId: category.id,
-					kind: 'expense',
-					amountMinor: 100,
-					currency: 'USD',
-					bookedOn: '2026-10-19',
-					description: `Seed ${index}`,
-					source: 'manual'
+					name: 'Workspace ledger',
+					kind: 'cash',
+					currency: 'USD'
 				})
 				.wait({ tier: 'local' })
-		}
-		return organization.id
-	}, count)
+			const category = (
+				await db.all(app.categories.where({ organizationId: organization.id, kind }))
+			)[0]
+			if (!category) throw new Error('Missing transaction category')
+			for (let index = 0; index < count; index++) {
+				await db
+					.insert(app.transactions, {
+						organizationId: organization.id,
+						accountId: account.id,
+						categoryId: category.id,
+						kind,
+						amountMinor: 100,
+						currency: 'USD',
+						bookedOn,
+						description: `Seed ${index}`,
+						source: 'manual'
+					})
+					.wait({ tier: 'local' })
+			}
+			return organization.id
+		},
+		{ count, kind, bookedOn }
+	)
+}
+
+for (const desktop of [true, false]) {
+	for (const kind of ['expense', 'income'] satisfies ('expense' | 'income')[]) {
+		test(
+			`${desktop ? 'desktop' : 'mobile'} ${kind} list filters combine and retain search across reloads`,
+			{ tag: ['@transactions'] },
+			async ({ page }) => {
+				await page.setViewportSize({ width: desktop ? 1440 : 390, height: 900 })
+				const dates = await page.evaluate(() => {
+					function dateOnly(offset: number) {
+						const date = new Date()
+						date.setDate(date.getDate() + offset)
+						return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+					}
+					return {
+						today: dateOnly(0),
+						week: dateOnly(-6),
+						month: dateOnly(-29),
+						older: dateOnly(-12),
+						tomorrow: dateOnly(1)
+					}
+				})
+				const workspaceId = await seed(page, 27, kind, dates.older)
+				const path = kind === 'income' ? '/income' : '/expenses'
+				await page.goto(`${path}?workspace=${workspaceId}`)
+				const initialList = pageContent(page)
+				await expect(initialList.locator('.entries > li')).toHaveCount(25)
+				await expect(
+					initialList.getByRole('combobox', { name: 'Filter Currency', exact: true })
+				).toHaveCount(0)
+				const fixture = await page.evaluate(
+					async ({ workspaceId, kind, bookedOn }) => {
+						const schemaPath = '/src/lib/schema.ts'
+						const sessionPath = '/src/lib/runtime/jazz-session.ts'
+						const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+						const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+							await import(sessionPath)
+						const db = getCurrentJazzSession()?.getSnapshot().client?.db
+						if (!db) throw new Error('Missing database')
+						const account = await db
+							.insert(app.accounts, {
+								organizationId: workspaceId,
+								name: 'TZS ledger',
+								kind: 'cash',
+								currency: 'TZS'
+							})
+							.wait({ tier: 'local' })
+						const category = await db
+							.insert(app.categories, {
+								organizationId: workspaceId,
+								name: 'Travel filter',
+								kind,
+								isSystem: false
+							})
+							.wait({ tier: 'local' })
+						const tag = await db
+							.insert(app.tags, {
+								organizationId: workspaceId,
+								name: 'Business tag',
+								kind,
+								categoryId: category.id
+							})
+							.wait({ tier: 'local' })
+						const row = await db
+							.insert(app.transactions, {
+								organizationId: workspaceId,
+								accountId: account.id,
+								categoryId: category.id,
+								kind,
+								amountMinor: 1234,
+								currency: 'TZS',
+								bookedOn,
+								description: 'Conference ticket',
+								memo: 'Client visit',
+								source: 'manual'
+							})
+							.wait({ tier: 'local' })
+						await db
+							.insert(app.transactionTags, {
+								organizationId: workspaceId,
+								transactionId: row.id,
+								tagId: tag.id
+							})
+							.wait({ tier: 'local' })
+						return { categoryId: category.id }
+					},
+					{ workspaceId, kind, bookedOn: dates.today }
+				)
+				await page.goto(`${path}?workspace=${workspaceId}`)
+				const main = pageContent(page)
+				const rows = main.locator('.entries > li')
+				const search = main.getByRole('searchbox', { name: 'Search Transactions', exact: true })
+				await expect(rows).toHaveCount(25)
+				const filterGroup = main.getByRole('group', { name: 'Filter Transactions', exact: true })
+				await expect(filterGroup).toHaveCSS('border-top-width', '0px')
+				await expect(filterGroup).toHaveCSS('margin-top', '0px')
+				await expect(filterGroup).toHaveCSS('padding-top', '0px')
+				await expect(
+					main.getByRole('combobox', { name: 'Filter Currency', exact: true })
+				).toBeVisible()
+				await main.getByRole('link', { name: 'Page 2', exact: true }).click()
+				await expect(rows).toHaveCount(3)
+				await search.fill('  CLIENT business TRAVEL ticket ')
+				await expect(page).toHaveURL(
+					(url) =>
+						!url.searchParams.has('page') &&
+						url.searchParams.get('q') === '  CLIENT business TRAVEL ticket '
+				)
+				await expect(rows).toHaveCount(1)
+				await expect(rows).toContainText('Conference ticket')
+				await expect(main.getByLabel('Daily total: TSh 12.34', { exact: true })).toBeVisible()
+				await main
+					.getByRole('combobox', { name: 'Filter Category', exact: true })
+					.selectOption(fixture.categoryId)
+				await main
+					.getByRole('combobox', { name: 'Filter Currency', exact: true })
+					.selectOption('TZS')
+				await main.getByLabel('Start Date', { exact: true }).fill(dates.today)
+				await main.getByLabel('End Date', { exact: true }).fill(dates.today)
+				await expect(rows).toHaveCount(1)
+				await page.reload()
+				await expect(search).toHaveValue('  CLIENT business TRAVEL ticket ')
+				await expect(
+					main.getByRole('combobox', { name: 'Filter Category', exact: true })
+				).toHaveValue(fixture.categoryId)
+				await expect(
+					main.getByRole('combobox', { name: 'Filter Currency', exact: true })
+				).toHaveValue('TZS')
+				await expect(rows).toHaveCount(1)
+				await main
+					.getByRole('combobox', { name: 'Filter Currency', exact: true })
+					.selectOption('USD')
+				await expect(rows).toHaveCount(0)
+				await main.getByRole('combobox', { name: 'Filter Currency', exact: true }).selectOption('')
+				await main.getByRole('combobox', { name: 'Filter Category', exact: true }).selectOption('')
+				await search.fill('')
+				await main.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
+				await expect(main.getByLabel('Start Date', { exact: true })).toHaveValue(dates.week)
+				await expect(rows).toHaveCount(1)
+				await main.getByRole('button', { name: 'Last 30 Days', exact: true }).click()
+				await expect(main.getByLabel('Start Date', { exact: true })).toHaveValue(dates.month)
+				await expect(rows).toHaveCount(25)
+				await expect(main.getByLabel('Daily total: $27.00', { exact: true })).toBeVisible()
+				await search.fill('Seed')
+				await main.getByRole('link', { name: 'Page 2', exact: true }).click()
+				await expect(rows).toHaveCount(2)
+				await expect(search).toHaveValue('Seed')
+				await expect(page).toHaveURL(
+					(url) => url.searchParams.get('q') === 'Seed' && url.searchParams.get('page') === '2'
+				)
+				await search.fill('no matching transaction')
+				await expect(rows).toHaveCount(0)
+				await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
+				await main.getByLabel('Start Date', { exact: true }).fill(dates.tomorrow)
+				await expect(
+					main.getByText('Enter a start date and an end date on or after the start date.')
+				).toBeVisible()
+				if (!desktop)
+					expect(
+						await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+					).toBe(true)
+			}
+		)
+	}
 }
 
 async function expectWorkspaceUrl(
