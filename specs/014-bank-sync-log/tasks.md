@@ -24,7 +24,7 @@ The migration awaits focused review. No deployed environment was changed.
 
 ## Recording
 
-- [ ] T005 Define attempt and result contracts and the logging-owner statechart;
+- [x] T005 Define attempt and result contracts and the logging-owner statechart;
       compose the existing bank operation without duplicating credential/lock
       ownership. Model start failure, cancellation and result-write failure.
 
@@ -36,7 +36,7 @@ replacement results, terminal-write failure and invalid completion timestamps.
 Type checking passes. Parent integration/per-account recording remain T006;
 these tests do not establish that live sync is logged yet.
 
-- [ ] T006 Extend import result ownership with per-account results and stable
+- [x] T006 Extend import result ownership with per-account results and stable
       attempt/account identities; wire local start and terminal persistence.
 
 T006 progress: account-result projection reviewed and committed as 5f1e287.
@@ -47,7 +47,7 @@ failure outputs explicitly include empty account reports. No production changes
 were needed in this verification cycle. Start/terminal/account-result persistence
 is not wired into live sync yet; that remains the next focused slice.
 
-- [ ] T007 Present recording changes and recursively audit actor helpers.
+- [x] T007 Present recording changes and recursively audit actor helpers.
 - [ ] T008 After approval, verify success/partial/failure/cancellation, interrupted
       writes, scope changes, actual financial settlement and no provider retries.
 
@@ -96,3 +96,12 @@ supervisor now selects the logged actor and renders safe logging-failure feedbac
 connection-scoped late-result handling and nested operation metadata are wired.
 This slice awaits implementation review and integration verification. History UI,
 retention and deployment remain outstanding.
+
+Live integration verification: registration committed as c4e772a. All 93 focused
+unit/full-policy cases pass across seven suites. Two strengthened bank-sync
+browser scenarios pass against the disposable agent server (48 seconds): no
+attempts after setup/discovery, partial attempt plus two account-result rows,
+second attempt on explicit repeat sync, and persisted cancellation without late
+response imports. Expected provider-error console messages belong to the tested
+failure scenario. No production changes were needed in this verification cycle.
+History presentation and retention remain outstanding; no schema deployment ran.

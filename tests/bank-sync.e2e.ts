@@ -2,6 +2,38 @@ import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 import { openCreationModal } from './helpers/ui.js'
 
+async function syncLog(page: Page) {
+	return page.evaluate(async () => {
+		const schemaPath = '/src/lib/schema.ts',
+			sessionPath = '/src/lib/runtime/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const attempts = await db.all(app.simplefinSyncAttempts)
+		const accounts = await db.all(app.simplefinSyncAccountResults)
+		return {
+			attempts: attempts.map((row) => ({
+				id: row.id,
+				outcome: row.outcome,
+				importedCount: row.importedCount,
+				existingCount: row.existingCount,
+				omittedCount: row.omittedCount,
+				importSettlement: row.importSettlement
+			})),
+			accounts: accounts.map((row) => ({
+				attemptId: row.attemptId,
+				accountName: row.accountName,
+				outcome: row.outcome,
+				importedCount: row.importedCount,
+				existingCount: row.existingCount,
+				omittedCount: row.omittedCount
+			}))
+		}
+	})
+}
+
 async function installPasskey(page: Page) {
 	await page.addInitScript(() => {
 		let assertions = 0
@@ -170,12 +202,43 @@ test(
 		await expect(page.getByRole('combobox')).toHaveCount(0)
 		await page.getByRole('button', { name: 'Add Account “Provider Savings”', exact: true }).click()
 		await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
+		expect(await syncLog(page)).toEqual({ attempts: [], accounts: [] })
 		const sync = pageContent(page).getByRole('button', {
 			name: 'Sync now (last 90 days)',
 			exact: true
 		})
 		await sync.click()
 		await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		const firstLog = await syncLog(page)
+		expect(firstLog.attempts).toMatchObject([
+			{
+				outcome: 'partial',
+				importedCount: 2,
+				existingCount: 0,
+				omittedCount: 2,
+				importSettlement: 'locallyPersisted'
+			}
+		])
+		expect(firstLog.accounts).toHaveLength(2)
+		expect(firstLog.accounts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					attemptId: firstLog.attempts[0]?.id,
+					accountName: 'Provider Checking',
+					outcome: 'partial',
+					importedCount: 2,
+					omittedCount: 2
+				}),
+				expect.objectContaining({
+					attemptId: firstLog.attempts[0]?.id,
+					accountName: 'Provider Savings',
+					outcome: 'succeeded',
+					importedCount: 0,
+					omittedCount: 0
+				})
+			])
+		)
 		const savedBalances = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts',
 				sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -220,6 +283,8 @@ test(
 
 		await sync.click()
 		await expect(page.getByText(/Imported: 0; already present: 2; omitted: 2/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		expect((await syncLog(page)).attempts).toHaveLength(2)
 		const afterRepeat = await page.evaluate(async (id) => {
 			const schemaPath = '/src/lib/schema.ts',
 				sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -560,6 +625,9 @@ test(
 		await main.getByRole('button', { name: 'Cancel', exact: true }).click()
 		await expect(sync).toBeEnabled()
 		release.resolve()
+		expect((await syncLog(page)).attempts).toMatchObject([
+			{ outcome: 'cancelled', importSettlement: 'notStarted' }
+		])
 		await completed.promise
 		expect(operations).toEqual(['claim', 'discover', 'sync'])
 		await expect(main.getByText(/Imported:/)).toHaveCount(0)
