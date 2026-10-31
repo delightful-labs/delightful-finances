@@ -54,7 +54,7 @@
 
 	<li>
 		<AppNavigationLink
-			href="/transfers/new"
+			href="/transfers"
 			{pathname}
 			icon={TransfersIcon}
 			label={m['nouns.transfer']({ count: 2 })}

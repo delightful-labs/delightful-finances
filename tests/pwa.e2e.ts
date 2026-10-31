@@ -56,7 +56,7 @@ test('caches only same-origin public shells and build assets', async ({ page }) 
 		const url = new URL(path)
 		expect(url.origin).toBe(new URL(page.url()).origin)
 		expect(url.pathname).toMatch(
-			/^\/(?:$|_app\/immutable\/|app-icon\.svg$|favicon\.svg$|settings\/(?:categories|tags|workspace|banks)$|robots\.txt$|manifest\.webmanifest$|offline$|accounts$|account$|expenses(?:\/new)?$|income(?:\/new)?$|transfers\/new$|login$)/
+			/^\/(?:$|_app\/immutable\/|app-icon\.svg$|favicon\.svg$|settings\/(?:categories|tags|workspace|banks)$|robots\.txt$|manifest\.webmanifest$|offline$|accounts$|account$|expenses(?:\/new)?$|income(?:\/new)?$|transfers(?:\/new)?$|login$)/
 		)
 	}
 })

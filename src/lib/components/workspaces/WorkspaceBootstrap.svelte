@@ -33,7 +33,7 @@
 	import AppShell from '../navigation/AppShell.svelte'
 	import AccountCreation from '../accounts/AccountCreation.svelte'
 	import JazzStartup from '../startup/JazzStartup.svelte'
-	import { useMachine } from '@xstate/svelte'
+	import { useMachine, useSelector } from '@xstate/svelte'
 	import { accountOrderMachine, orderAccounts } from '#lib/machines/accounts/account-order.js'
 	import { getReadiness } from '#lib/runtime/bank-sync.js'
 	import { bankData, type BankObservationEvent } from '#lib/machines/bank-sync/types.js'
@@ -57,7 +57,8 @@
 	const db = getDb()
 	const session = fromStore(getJazzSession())
 	const accountOrder = useMachine(accountOrderMachine, { inspect: inspectActor })
-	const orderSnapshot = accountOrder.snapshot
+	// Account observations can arrive before the ready sidebar subscribes.
+	const orderSnapshot = useSelector(accountOrder.actorRef, (snapshot) => snapshot)
 	let movedOrder = $state<{ key: string; ids: readonly string[] } | undefined>()
 	const orderKey = $derived(
 		`finance-account-order:${session.current.account?.id ?? ''}:${filters.activeOrganizationId ?? ''}`
