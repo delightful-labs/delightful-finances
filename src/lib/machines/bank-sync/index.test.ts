@@ -10,7 +10,9 @@ import type { BankSource, BankSyncDependencies, Connection } from './types.js'
 const settlements = vi.hoisted(() => new WeakMap<object, () => void>())
 
 // The supervisor must wait for these resource-owning children to acknowledge cancellation.
-vi.mock('./operation.js', () => ({ createBankOperationMachine: () => delayedOperation() }))
+vi.mock('./logged-operation.js', () => ({
+	createLoggedBankOperationMachine: () => delayedOperation()
+}))
 vi.mock('./setup.js', () => ({ createBankSetupMachine: () => delayedOperation() }))
 function delayedOperation() {
 	return createMachine({

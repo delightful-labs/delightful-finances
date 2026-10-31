@@ -119,7 +119,9 @@
 		"token": "SimpleFIN Bridge setup token",
 		"unlock_failure": "Your original passkey could not unlock this credential, verification was cancelled, or the encrypted record is invalid. No provider request was made. Try a compatible browser and password manager, or reconnect if the passkey is lost.",
 		"waiting": "Waiting for encrypted credentials to replicate, or reconnection is required.",
-		"working": "Waiting for passkey verification or completing your requested operation…"
+		"working": "Waiting for passkey verification or completing your requested operation…",
+		"log_start_failed": "Sync could not start because its log entry could not be saved.",
+		"log_result_failed": "The sync ended, but its final log details could not be saved. The import result shown still applies."
 	},
 	"currencies": {
 		"tanzanian_shilling": "Tanzanian shilling",

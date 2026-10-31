@@ -1,3 +1,4 @@
+import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
 import type { EventObject } from 'xstate'
 import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
 import type { ErrorActorEvent } from 'xstate'
@@ -48,6 +49,7 @@ type Context = Input & {
 	outcome: SyncOutcome | undefined
 }
 type OperationSummary = {
+	logging?: SyncLogOutput | undefined
 	accountResults?: readonly AccountImportReport[]
 	counts: ImportCounts
 	discovered: ProviderSummary[] | undefined

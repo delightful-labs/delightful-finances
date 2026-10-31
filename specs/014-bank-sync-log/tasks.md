@@ -90,3 +90,9 @@ credential/provider work, cancellation draining start persistence, cancellation
 waiting for an issued import and retaining its final count, cleanup before final
 logging, final-log failure preserving successful imports, and discovery bypassing
 logging. Supervisor registration and logging-failure presentation remain pending.
+
+Supervisor registration progress: composed tests committed as f7c3953. Production
+supervisor now selects the logged actor and renders safe logging-failure feedback;
+connection-scoped late-result handling and nested operation metadata are wired.
+This slice awaits implementation review and integration verification. History UI,
+retention and deployment remain outstanding.

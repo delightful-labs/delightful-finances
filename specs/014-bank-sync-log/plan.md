@@ -186,3 +186,31 @@ start failure, cancellation at readiness, operation cleanup before finalization,
 result-log failure, same-attempt identity binding, and non-SYNC passthrough.
 Then adapt supervisor snapshot/metadata and fixture contracts and expose safe
 logging failure feedback in presentation. No new tests were run for this slice.
+
+## Live supervisor registration — implementation review
+
+The supervisor now registers createLoggedBankOperationMachine as its production
+operation. Its actor slot retains the raw-operation type as a supported test
+substitution, preserving the existing raw import/settlement fixture. The supervisor
+unit mock is retargeted to the new production actor factory; no tests have been
+run for this registration slice before review.
+
+Presentation metadata reads the active underlying operation when present, while
+checking that snapshots expose machine metadata. Log outcomes travel separately
+from financial outcomes into BankPresentation. Settings renders translated
+start-record/result-record failures. Logging feedback is reset at new operations,
+reset/scope changes and shutdown, and completion feedback is accepted only for
+the connection captured when that operation began.
+
+Cancellation and shutdown still flow through the existing supervisor's draining
+states. The composed actor forwards lock failures only while its underlying
+operation exists. Scope identity is passed into the raw operation so it cannot
+retarget. Existing resource ownership and local/global settlement boundaries are
+unchanged. This registration enables attempt/account writes, but history display
+and retention cleanup are not implemented yet. No schema deployment occurred.
+
+After review, inspect/update supervisor mock contracts and verify supervisor,
+composed actor, import/settlement and full-policy suites. Add integration coverage
+for log rows after a real sync, logging-write failures, workspace replacement,
+shutdown during final logging, preserved provider progress and cancelled writes.
+Only then run the relevant browser cases against the disposable agent server.

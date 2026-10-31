@@ -13,6 +13,8 @@ import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { required } from './identity.js'
 import { createBankSetupMachine } from './setup.js'
 import { createBankOperationMachine } from './operation.js'
+import { createLoggedBankOperationMachine } from './logged-operation.js'
+import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
 import {
 	bankCredentialFingerprint,
 	bankObservation,
@@ -45,6 +47,8 @@ type Event =
 	| { type: 'SHUTDOWN' }
 	| { type: `xstate.error.actor.${string}`; error: unknown }
 type Context = BankData & {
+	logging: SyncLogOutput | undefined
+	operationConnectionId: string | undefined
 	access: BankAccess
 	revision: number
 	connection: BankCredential | undefined
@@ -65,12 +69,20 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		passkeyName: inputs.passkeyName,
 		observe: () => bankObservation(inputs.read())
 	}
-	const actors = {
+	const actors: {
+		history: typeof bankHistoryMachine
+		mappingRow: typeof accountOptionsMachine
+		availability: typeof bankAvailabilityMachine
+		setupConnection: ReturnType<typeof createBankSetupMachine>
+		operation:
+			| ReturnType<typeof createBankOperationMachine>
+			| ReturnType<typeof createLoggedBankOperationMachine>
+	} = {
 		history: bankHistoryMachine,
 		mappingRow: accountOptionsMachine,
 		availability: bankAvailabilityMachine,
 		setupConnection: createBankSetupMachine(dependencies),
-		operation: createBankOperationMachine(dependencies)
+		operation: createLoggedBankOperationMachine(dependencies)
 	}
 	const workflow = setup<
 		Context,
@@ -138,7 +150,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		}))
 	})
 	const resetResults = workflow.enqueueActions(({ enqueue }) => {
-		enqueue.assign({ discovered: [], error: undefined, counts: emptyCounts() })
+		enqueue.assign({ discovered: [], error: undefined, counts: emptyCounts(), logging: undefined })
 		enqueue(refreshMappings)
 	})
 	const acceptAccess = workflow.enqueueActions(({ context, event, enqueue }) => {
@@ -151,6 +163,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			accounts: [],
 			mappings: new Map(),
 			lastSync: undefined,
+			logging: undefined,
 			availability: undefined
 		})
 		enqueue(resetResults)
@@ -238,6 +251,8 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				connection: undefined,
 				generation: 0,
 				lastSync: undefined,
+				logging: undefined,
+				operationConnectionId: undefined,
 				mappingActors: new Map(),
 				availability: undefined,
 				command: undefined,
@@ -525,7 +540,13 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				type: 'final',
 				entry: [
 					clear,
-					assign({ discovered: [], lastSync: undefined, error: undefined, counts: emptyCounts() }),
+					assign({
+						discovered: [],
+						lastSync: undefined,
+						logging: undefined,
+						error: undefined,
+						counts: emptyCounts()
+					}),
 					refreshMappings
 				]
 			},
@@ -639,7 +660,12 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				},
 				tags: ['operating', 'busy'],
 				meta: { status: { key: 'bank.working', label: () => m['bank.working']() } },
-				entry: assign({ error: undefined, counts: emptyCounts() }),
+				entry: assign({
+					error: undefined,
+					counts: emptyCounts(),
+					logging: undefined,
+					operationConnectionId: ({ context }) => context.connection?.id
+				}),
 				exit: clear,
 				invoke: {
 					id: 'operation',
@@ -660,7 +686,13 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						{
 							guard: stateIn({ running: 'cancelling' }),
 							target: 'ready.cancelled',
-							actions: assign({ counts: ({ event }) => event.output.counts })
+							actions: assign({
+								counts: ({ event }) => event.output.counts,
+								logging: ({ context, event }) =>
+									context.operationConnectionId === context.connection?.id
+										? event.output.logging
+										: undefined
+							})
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'cancelled',
@@ -668,7 +700,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							actions: assign({
 								error: ({ event }) =>
 									event.output.kind === 'cancelled' ? event.output.error : undefined,
-								counts: ({ event }) => event.output.counts
+								counts: ({ event }) => event.output.counts,
+								logging: ({ context, event }) =>
+									context.operationConnectionId === context.connection?.id
+										? event.output.logging
+										: undefined
 							})
 						},
 						{
@@ -677,7 +713,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							actions: assign({
 								error: ({ event }) =>
 									event.output.kind === 'failed' ? event.output.error : undefined,
-								counts: ({ event }) => event.output.counts
+								counts: ({ event }) => event.output.counts,
+								logging: ({ context, event }) =>
+									context.operationConnectionId === context.connection?.id
+										? event.output.logging
+										: undefined
 							})
 						},
 						{
@@ -685,6 +725,10 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							target: 'ready.success.partial',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								logging: ({ context, event }) =>
+									context.operationConnectionId === context.connection?.id
+										? event.output.logging
+										: undefined,
 								discovered: ({ context, event }) => event.output.discovered ?? context.discovered
 							})
 						},
@@ -692,6 +736,10 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							target: 'ready.success.complete',
 							actions: assign({
 								counts: ({ event }) => event.output.counts,
+								logging: ({ context, event }) =>
+									context.operationConnectionId === context.connection?.id
+										? event.output.logging
+										: undefined,
 								discovered: ({ context, event }) => event.output.discovered ?? context.discovered
 							})
 						}
@@ -744,10 +792,16 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 
 // Select presentation data from the current machine and its active child states.
 export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBankSyncMachine>>) {
+	const operation = snapshot.children.operation?.getSnapshot()
+	const nestedOperation =
+		operation && 'operation' in operation.children
+			? operation.children.operation?.getSnapshot()
+			: undefined
 	const metadata = bankViewMetadata(
 		snapshot,
 		snapshot.children.setup?.getSnapshot(),
-		snapshot.children.operation?.getSnapshot()
+		operation,
+		nestedOperation && 'getMeta' in nestedOperation ? nestedOperation : undefined
 	)
 	return {
 		mode:
@@ -765,6 +819,7 @@ export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBa
 			: { kind: 'idle' },
 		status: snapshot.hasTag('setup') ? undefined : metadata.status,
 		history: snapshot.context.lastSync,
+		logging: snapshot.context.logging,
 
 		providerAccounts: Array.from(
 			snapshot.context.mappingActors.values(),

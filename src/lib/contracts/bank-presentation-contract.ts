@@ -1,3 +1,4 @@
+import type { SyncLogOutput } from './bank-sync-log.js'
 import { m } from '#lib/paraglide/messages.js'
 import type { Account } from '../schema.js'
 export type BankSetupView =
@@ -59,6 +60,7 @@ export type ProviderAccountView = {
 	showExisting: boolean
 }
 export type BankPresentation = {
+	logging?: SyncLogOutput | undefined
 	mode:
 		| { kind: 'restricted' }
 		| { kind: 'setup'; step: number; stage: BankSetupView | null }

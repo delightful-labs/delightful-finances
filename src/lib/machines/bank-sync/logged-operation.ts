@@ -9,7 +9,8 @@ import {
 	type Dependencies,
 	type ProviderSummary,
 	type RequestIdentity,
-	type ProgressEvent
+	type ProgressEvent,
+	type LockEvent
 } from './types.js'
 import type {
 	SyncLogStart,
@@ -88,7 +89,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		{ type: 'CANCEL' } | ProgressEvent | SyncLogParentEvent,
+		{ type: 'CANCEL' } | ProgressEvent | SyncLogParentEvent | LockEvent,
 		typeof actors,
 		{},
 		{},
@@ -137,6 +138,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 			},
 			preparing: {
 				on: {
+					LOCK_FAILED: { actions: sendTo('operation', ({ event }) => event) },
 					CANCEL: {
 						target: 'done',
 						actions: assign({
@@ -244,6 +246,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 						initial: 'working',
 						states: { working: {}, cancelling: {} },
 						on: {
+							LOCK_FAILED: { actions: sendTo('operation', ({ event }) => event) },
 							CANCEL: {
 								target: '.cancelling',
 								actions: [

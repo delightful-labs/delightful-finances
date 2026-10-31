@@ -7,7 +7,8 @@
 		InputText,
 		LoadingSpinner,
 		Select,
-		Stepper
+		Stepper,
+		StatusMessage
 	} from 'delightful-ui'
 	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
@@ -164,6 +165,11 @@
 		<p role="status" aria-live="polite">{statusText}</p>
 	{/if}
 	{#if outcomeText}<p>{outcomeText}</p>{/if}
+	{#if view.logging?.kind === 'notStarted'}
+		<StatusMessage variant="error" text={m['bank.log_start_failed']()} />
+	{:else if view.logging?.kind === 'resultUnrecorded'}
+		<StatusMessage variant="error" text={m['bank.log_result_failed']()} />
+	{/if}
 	{#if view.activity.kind === 'working' && view.activity.indicator === 'provider'}<LoadingSpinner
 			role="presentation"
 			aria-hidden="true"
