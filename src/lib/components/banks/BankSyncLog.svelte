@@ -12,7 +12,6 @@
 		attempts,
 		accounts,
 		profiles,
-		userId,
 		hasEarlier,
 		onEarlier
 	}: {
@@ -22,50 +21,48 @@
 		attempts: readonly SyncAttempt[]
 		accounts: readonly SyncAccountResult[]
 		profiles: readonly { userId: string; displayName: string | null }[]
-		userId: string | undefined
 		hasEarlier: boolean
 		onEarlier: () => void
 	} = $props()
 
 	const connectionStatuses = $derived({
-		active: m['bank.log_connection_active'](),
-		error: m['bank.log_connection_error'](),
-		revoked: m['bank.log_connection_revoked']()
+		active: m['bank.succeeded'](),
+		error: m['bank.failed'](),
+		revoked: m['status.unavailable_subject']({ subject: m['bank.title']() })
 	})
 	const outcomes = $derived({
-		unfinished: m['bank.log_unfinished'](),
+		unfinished: m['labels.unspecified'](),
 		succeeded: m['bank.succeeded'](),
 		partial: m['bank.partial'](),
 		failed: m['bank.failed'](),
-		cancelled: m['bank.log_cancelled']()
+		cancelled: m['status.cancelled']()
 	})
 	const settlements = $derived({
-		notStarted: m['bank.log_notStarted'](),
+		notStarted: m['bank.step_upcoming'](),
 		locallyPersisted: m['bank.log_locallyPersisted'](),
 		confirmed: m['bank.log_confirmed'](),
 		unresolved: m['bank.log_unresolved']()
 	})
 	const reasons = $derived({
-		authorization: m['bank.log_reason_authorization'](),
-		passkey: m['bank.log_reason_passkey'](),
-		provider: m['bank.log_reason_provider'](),
-		mapping: m['bank.log_reason_mapping'](),
-		import: m['bank.log_reason_import'](),
-		interrupted: m['bank.log_reason_interrupted'](),
-		unexpected: m['bank.log_reason_unexpected']()
+		authorization: m['developer.unavailable'](),
+		passkey: m['bank.unlock_failure'](),
+		provider: m['bank.provider_failure'](),
+		mapping: m['bank.mapping_failure'](),
+		import: m['errors.save_subject']({ subject: m['nouns.transaction']({ count: 2 }) }),
+		interrupted: m['bank.other_tab'](),
+		unexpected: m['errors.unexpected_title']()
 	})
 	const dates = $derived(
 		new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'medium' })
 	)
 	const numbers = $derived(new Intl.NumberFormat(getLocale()))
 	function count(value: number | null) {
-		return value === null ? m['bank.log_unknown']() : numbers.format(value)
+		return value === null ? m['labels.unspecified']() : numbers.format(value)
 	}
 	function initiator(id: string) {
-		return id === userId
-			? m['bank.log_you']()
-			: profiles.find((profile) => profile.userId === id)?.displayName ||
-					m['bank.log_unknown_user']()
+		return (
+			profiles.find((profile) => profile.userId === id)?.displayName || m['developer.unavailable']()
+		)
 	}
 </script>
 
@@ -79,7 +76,7 @@
 {/snippet}
 
 {#snippet failure(code: SyncAttempt['failureCode'])}
-	{#if code}<dt>{m['bank.log_reason']()}</dt>
+	{#if code}<dt>{m['labels.description']()}</dt>
 		<dd>{reasons[code]}</dd>{/if}
 {/snippet}
 
@@ -88,40 +85,36 @@
 	<p>{m['bank.log_availability']()}</p>
 	{#if connections.length > 0}
 		<label>
-			{m['bank.log_connection']()}
+			{m['bank.title']()}
 			<select value={connectionId} onchange={(event) => onConnection(event.currentTarget.value)}>
 				{#each connections as connection (connection.id)}
 					<option value={connection.id}
-						>{m['bank.log_connection_time_owner_status']({
-							time: dates.format(connection.claimedAt),
-							owner: connection.ownerId
-								? initiator(connection.ownerId)
-								: m['bank.log_unknown_user'](),
-							status: connectionStatuses[connection.status]
-						})}</option
+						>{`${dates.format(connection.claimedAt)} — ${connection.ownerId ? initiator(connection.ownerId) : m['developer.unavailable']()} (${connectionStatuses[connection.status]})`}</option
 					>
 				{/each}
 			</select>
 		</label>
 	{/if}
 	{#if attempts.length === 0}
-		<p>{m['bank.log_empty']()}</p>
+		<p>{m['labels.no_subjects_yet']({ subjects: m['bank.log_title']() })}</p>
 	{/if}
 	{#each attempts as attempt (attempt.id)}
 		<Details summary={`${dates.format(attempt.startedAt)} — ${outcomes[attempt.outcome]}`}>
 			<dl>
-				<dt>{m['bank.log_started']()}</dt>
+				<dt>{m['labels.start_subject']({ subject: m['nouns.date']({ count: 1 }) })}</dt>
 				<dd>
 					<time datetime={attempt.startedAt.toISOString()}>{dates.format(attempt.startedAt)}</time>
 				</dd>
-				<dt>{m['bank.log_finished']()}</dt>
+				<dt>{m['labels.end_subject']({ subject: m['nouns.date']({ count: 1 }) })}</dt>
 				<dd>
-					{attempt.finishedAt === null ? m['bank.log_unknown']() : dates.format(attempt.finishedAt)}
+					{attempt.finishedAt === null
+						? m['labels.unspecified']()
+						: dates.format(attempt.finishedAt)}
 				</dd>
-				<dt>{m['bank.log_initiator']()}</dt>
+				<dt>{m['transactions.created_by']()}</dt>
 				<dd>{initiator(attempt.initiatedBy)}</dd>
 				{@render counts(attempt)}
-				<dt>{m['bank.log_settlement']()}</dt>
+				<dt>{m['labels.status_subject']({ subject: m['bank.title']() })}</dt>
 				<dd>{settlements[attempt.importSettlement]}</dd>
 				{@render failure(attempt.failureCode)}
 			</dl>
@@ -135,7 +128,9 @@
 			{/each}
 		</Details>
 	{/each}
-	{#if hasEarlier}<Button onclick={onEarlier}>{m['bank.log_earlier']()}</Button>{/if}
+	{#if hasEarlier}<Button onclick={onEarlier}
+			>{m['labels.more_subjects']({ subjects: m['bank.log_title']() })}</Button
+		>{/if}
 </section>
 
 <style>

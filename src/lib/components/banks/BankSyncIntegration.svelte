@@ -202,7 +202,6 @@
 							(row) => row.organizationId === organizationId && attemptIds.includes(row.attemptId)
 						)}
 						profiles={logProfiles.error ? [] : (logProfiles.current ?? [])}
-						{userId}
 						hasEarlier={scopedAttempts.length > logLimit}
 						onEarlier={() => {
 							logPage = { scope: logScope, limit: logLimit + 20 }
