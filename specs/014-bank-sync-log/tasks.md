@@ -69,3 +69,11 @@ is not wired into live sync yet; that remains the next focused slice.
       expansion, paging, reload/offline reads, isolation and logging failures.
 - [ ] T015 Reconcile spec acceptance, plan and actual verification results; prepare
       the final review without declaring deferred or blocked checks passed.
+
+Account-persistence review: implementation committed as 3af1ffd. Nineteen
+logging-lifecycle/validation cases pass, including ordered multi-account writes,
+ID stability/separation by attempt, duplicate/invalid input rejection, failed
+account writes and cancellation while a row settles. Three full-policy cases
+also pass, including the real logging actor saving account results before its
+parent attempt becomes terminal. These checks do not constitute live bank sync
+integration; the existing operation still needs to invoke and drain the actor.

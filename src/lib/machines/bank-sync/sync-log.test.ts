@@ -12,9 +12,14 @@ import type { Dependencies } from './types.js'
 import type {
 	SyncLogCompletion,
 	SyncLogParentEvent,
-	SyncLogStart
+	SyncLogStart,
+	SyncLogAccountResult
 } from '#lib/contracts/bank-sync-log.js'
 const actors: AnyActorRef[] = []
+type AccountWrite = {
+	id: string
+	values: SyncLogAccountResult & { attemptId: string; organizationId: string }
+}
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
 })
@@ -39,6 +44,7 @@ function start(
 		begin?: () => Promise<void>
 		finish?: (value: SyncLogCompletion) => Promise<void>
 		input?: SyncLogStart
+		account?: (write: AccountWrite) => Promise<void>
 	} = {}
 ) {
 	const events: SyncLogParentEvent[] = []
@@ -54,6 +60,9 @@ function start(
 	const actor = createActor(
 		createSyncLogMachine({ db }).provide({
 			actors: {
+				recordAccount: fromPromise<void, AccountWrite>(
+					({ input }) => options.account?.(input) ?? Promise.resolve()
+				),
 				recordStart: fromPromise<void, SyncLogStart>(() => options.begin?.() ?? Promise.resolve()),
 				recordResult: fromPromise<void, { start: SyncLogStart; result: SyncLogCompletion }>(
 					({ input }) => options.finish?.(input.result) ?? Promise.resolve()
@@ -168,4 +177,107 @@ it('rejects invalid completion times without attempting the terminal write', asy
 		reason: 'invalidResult'
 	})
 	expect(finish).not.toHaveBeenCalled()
+})
+
+const accountResult: SyncLogAccountResult = {
+	accountId: crypto.randomUUID(),
+	accountName: 'Checking at sync time',
+	outcome: 'succeeded',
+	importedCount: 1,
+	existingCount: 0,
+	omittedCount: 0,
+	failureCode: null
+}
+it('writes account rows before the attempt, with stable IDs scoped to the attempt', async () => {
+	const writes: AccountWrite[] = []
+	const order: string[] = []
+	const account = async (write: AccountWrite) => {
+		writes.push(write)
+		order.push(write.values.accountName)
+	}
+	const finish = async () => {
+		order.push('finish')
+	}
+	const accounts = [
+		accountResult,
+		{ ...accountResult, accountId: crypto.randomUUID(), accountName: 'Savings' }
+	]
+	const f = start({ account, finish })
+	await waitFor(f.actor, (s) => s.matches('awaitingResult'))
+	f.actor.send({ type: 'FINISH', result, accounts })
+	expect(await toPromise(f.actor)).toMatchObject({ kind: 'recorded' })
+	expect(order).toEqual(['Checking at sync time', 'Savings', 'finish'])
+	expect(writes.map((write) => write.values)).toEqual(
+		accounts.map((row) => ({ ...row, attemptId: input.id, organizationId: input.organizationId }))
+	)
+	expect(writes[0]?.id).not.toBe(writes[1]?.id)
+	const again = start({ account })
+	await waitFor(again.actor, (s) => s.matches('awaitingResult'))
+	again.actor.send({ type: 'FINISH', result, accounts })
+	await toPromise(again.actor)
+	expect(writes[2]?.id).toBe(writes[0]?.id)
+	const another = start({ account, input: { ...input, id: crypto.randomUUID() } })
+	await waitFor(another.actor, (s) => s.matches('awaitingResult'))
+	another.actor.send({ type: 'FINISH', result, accounts: [accountResult] })
+	await toPromise(another.actor)
+	expect(writes[4]?.id).not.toBe(writes[0]?.id)
+})
+it.each(['duplicate', 'invalid'])(
+	'rejects %s account results before issuing any account writes',
+	async (kind) => {
+		const account = vi.fn(async (_write: AccountWrite) => {})
+		const finish = vi.fn(async () => {})
+		const f = start({ account, finish })
+		await waitFor(f.actor, (s) => s.matches('awaitingResult'))
+		f.actor.send({
+			type: 'FINISH',
+			result,
+			accounts:
+				kind === 'duplicate'
+					? [accountResult, accountResult]
+					: [{ ...accountResult, importedCount: -1 }]
+		})
+		expect(await toPromise(f.actor)).toMatchObject({
+			kind: 'resultUnrecorded',
+			reason: 'invalidResult',
+			result
+		})
+		expect(account).not.toHaveBeenCalled()
+		expect(finish).not.toHaveBeenCalled()
+	}
+)
+it('leaves the attempt unfinished when an account write fails and preserves the financial result', async () => {
+	const finish = vi.fn(async () => {})
+	const f = start({
+		account: async () => {
+			throw new Error('account write')
+		},
+		finish
+	})
+	await waitFor(f.actor, (s) => s.matches('awaitingResult'))
+	f.actor.send({ type: 'FINISH', result, accounts: [accountResult] })
+	expect(await toPromise(f.actor)).toEqual({
+		kind: 'resultUnrecorded',
+		attemptId: input.id,
+		result,
+		reason: 'accountWriteFailed'
+	})
+	expect(finish).not.toHaveBeenCalled()
+})
+it('drains an account write through cancellation before completing the attempt', async () => {
+	const pending = Promise.withResolvers<void>()
+	const account = vi.fn((_write: AccountWrite) => pending.promise)
+	const finish = vi.fn(async () => {})
+	const f = start({ account, finish })
+	await waitFor(f.actor, (s) => s.matches('awaitingResult'))
+	f.actor.send({ type: 'FINISH', result, accounts: [accountResult] })
+	await waitFor(f.actor, (s) => s.matches('recordingAccount'))
+	f.actor.send({ type: 'CANCEL' })
+	f.actor.send({ type: 'FINISH', result: { ...result, importedCount: 99 }, accounts: [] })
+	expect(finish).not.toHaveBeenCalled()
+	expect(f.actor.getSnapshot().status).toBe('active')
+	pending.resolve()
+	expect(await toPromise(f.actor)).toEqual({ kind: 'recorded', attemptId: input.id, result })
+	expect(account).toHaveBeenCalledOnce()
+	expect(finish).toHaveBeenCalledExactlyOnceWith(result)
 })

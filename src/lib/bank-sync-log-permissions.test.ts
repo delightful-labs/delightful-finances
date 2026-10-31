@@ -7,6 +7,8 @@ import {
 } from 'jazz-tools/testing'
 import { app } from './schema.js'
 import permissions from './permissions.js'
+import { createActor, fromCallback, toPromise, waitFor } from 'xstate'
+import { createSyncLogMachine } from './machines/bank-sync/sync-log.js'
 
 const ownerSession = {
 	user_id: 'sync-log-owner',
@@ -89,6 +91,50 @@ beforeAll(async () => {
 }, 30000)
 afterAll(async () => {
 	await fixture?.shutdown()
+})
+
+it('persists account results through the logging actor before finalizing its attempt', async () => {
+	const parent = createActor(fromCallback(() => {})).start()
+	const attemptId = crypto.randomUUID()
+	const actor = createActor(createSyncLogMachine({ db: owner }), {
+		input: { id: attemptId, organizationId, connectionId, initiatedBy, startedAt },
+		parent
+	}).start()
+	try {
+		await waitFor(actor, (state) => state.matches('awaitingResult'))
+		actor.send({
+			type: 'FINISH',
+			result: {
+				outcome: 'succeeded',
+				finishedAt: new Date('2026-10-30T12:01:00Z'),
+				importSettlement: 'locallyPersisted',
+				failureCode: null,
+				importedCount: 2,
+				existingCount: 0,
+				omittedCount: 0
+			},
+			accounts: [
+				{
+					accountId,
+					accountName: 'Checking',
+					outcome: 'succeeded',
+					failureCode: null,
+					importedCount: 2,
+					existingCount: 0,
+					omittedCount: 0
+				}
+			]
+		})
+		expect(await toPromise(actor)).toMatchObject({ kind: 'recorded' })
+		expect((await owner.one(app.simplefinSyncAttempts.where({ id: attemptId })))?.outcome).toBe(
+			'succeeded'
+		)
+		const rows = await owner.all(app.simplefinSyncAccountResults.where({ attemptId }))
+		expect(rows).toHaveLength(1)
+		expect(rows[0]).toMatchObject({ accountId, accountName: 'Checking', importedCount: 2 })
+	} finally {
+		parent.stop()
+	}
 })
 
 it('allows the owner to record and settle an attempt and account result, with admin reads', async () => {
