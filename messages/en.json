@@ -128,8 +128,7 @@
 		"log_existing": "Already present",
 		"log_omitted": "Omitted",
 		"log_confirmed": "Remote acceptance confirmed",
-		"log_unresolved": "Import settlement unresolved",
-		"log_availability": "Showing locally available history. More entries may appear as this device syncs."
+		"log_unresolved": "Import settlement unresolved"
 	},
 	"currencies": {
 		"tanzanian_shilling": "Tanzanian shilling",

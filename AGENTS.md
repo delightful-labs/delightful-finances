@@ -1,6 +1,7 @@
 # Repository working agreements
 
 - Follow `.specify/memory/constitution.md` and the active feature artifacts under `specs/`. Before designing or changing complex state, read `.specify/memory/xstate.md`. Before designing Jazz schemas, permissions, or persistence behavior, read `.specify/memory/jazz.md`.
+- Never edit Paraglide catalogs, configuration, or generated files without explicit user authorization. Before proposing new strings, list each exact string, its code purpose/location, and why existing strings or generic actions/labels cannot work; wait for approval. Treat local saves as “Saved” in UI, without local/remote caveats or unsolicited sync notices. See `.specify/memory/localization.md`.
 - Before adding or changing localized strings, read `.specify/memory/localization.md`. Consolidate reusable action/label structures, use shared plural nouns, and name variable-bearing keys and inputs consistently (for example, `actions.select_subject: "Select {subject}"`).
 - Do not use `switch` statements or `case` clauses; use discriminated-union narrowing, lookup records, or clear conditional expressions.
 - Work on one task at a time. Do not start another task until the current change has been shown to the user and reviewed.

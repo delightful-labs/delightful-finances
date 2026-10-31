@@ -82,7 +82,6 @@
 
 <section aria-label={m['bank.log_title']()}>
 	<h2>{m['bank.log_title']()}</h2>
-	<p>{m['bank.log_availability']()}</p>
 	{#if connections.length > 0}
 		<label>
 			{m['bank.title']()}

@@ -4,6 +4,28 @@ These are user-approved conventions from the message consolidation review. Read 
 or changing messages, labels, noun forms, or their callers. Apply the patterns across the message
 catalog; account and transaction are examples, not the limits of the convention.
 
+## Explicit permission for Paraglide edits
+
+Never edit Paraglide message catalogs, configuration or generated files without
+specific user authorization. A general feature or UI request does not authorize
+translation edits. Before proposing new strings, give the user a list containing
+each exact string, its purpose and location in the code, and why an existing
+string or generic action/label cannot serve that purpose. Wait for explicit
+approval before adding them. Reuse existing strings whenever possible. Apply
+this rule before any other instruction here to consolidate, rename or remove
+messages. An explicit request to remove a particular message authorizes that
+removal only. Do not regenerate Paraglide files without authorization to do so.
+
+## Concise user-facing feedback
+
+Treat a successful local save as saved. Say “Saved”, without “locally”, remote
+acceptance caveats, replication explanations or notices about locally available
+history. Users do not need those implementation details. A dedicated Jazz sync
+status design is deferred until the user chooses to add it. Preserve technical
+persistence/settlement distinctions internally for correctness without narrating
+them in ordinary UI feedback. Keep UI copy and assistant communication concise;
+do not add explanatory notices the user did not request.
+
 ## Consolidate reusable structures
 
 Store regularly used entity nouns under `nouns`, with Paraglide plural variants selected by `count`.
