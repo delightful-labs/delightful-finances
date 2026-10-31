@@ -1,10 +1,9 @@
 <script lang="ts" generics="View extends FormPresentation">
-	import { Button, Dialog } from 'delightful-ui'
+	import { Button, ButtonContent, Dialog } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
 	import type { FormPresentation } from '#lib/contracts/form-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import FormContent from './FormContent.svelte'
-	import Icon from '../navigation/AppIcon.svelte'
 	import AddIcon from 'tdesign-icons-svg/src/add.svg?component'
 	import SaveIcon from 'tdesign-icons-svg/src/save.svg?component'
 	import CloseIcon from 'tdesign-icons-svg/src/close.svg?component'
@@ -52,7 +51,7 @@
 	{@render trigger(openModal, triggerDisabled)}
 {:else}
 	<Button type="button" disabled={triggerDisabled} onclick={openModal}>
-		<span class="button-content"><Icon icon={AddIcon} />{label}</span>
+		<ButtonContent icon={AddIcon} text={label} />
 	</Button>
 {/if}
 
@@ -62,31 +61,27 @@
 		{#if view.content.kind === 'success'}
 			{@render feedback(view)}
 			<Button type="button" variant="primary" onclick={() => (open = false)}>
-				<span class="button-content"><Icon icon={CloseIcon} />{m['actions.close']()}</span>
+				<ButtonContent icon={CloseIcon} text={m['actions.close']()} />
 			</Button>
 		{:else}
 			<FormContent controlsFill {view} {onsubmit} {onreset} {fields} {feedback}>
 				{#snippet controls(form)}
 					<Button type="button" onclick={() => (open = false)}>
-						<span class="button-content"
-							><Icon icon={CloseIcon} />{form.activity.kind === 'idle'
-								? m['actions.cancel']()
-								: m['actions.close']()}</span
-						>
+						<ButtonContent
+							icon={CloseIcon}
+							text={form.activity.kind === 'idle' ? m['actions.cancel']() : m['actions.close']()}
+						/>
 					</Button>
-					<Button type="submit" variant="primary" disabled={!form.canSubmit}>
-						<span class="button-content"><Icon icon={SaveIcon} />{label}</span>
+					<Button
+						type="submit"
+						variant="primary"
+						disabled={!form.canSubmit}
+						aria-busy={form.activity.kind !== 'idle'}
+					>
+						<ButtonContent icon={SaveIcon} text={label} loading={form.activity.kind !== 'idle'} />
 					</Button>
 				{/snippet}
 			</FormContent>
 		{/if}
 	{/key}
 </Dialog>
-
-<style>
-	.button-content {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--dui-space-xs, 0.5rem);
-	}
-</style>

@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { Button, Dialog, StatusMessage } from 'delightful-ui'
-	import Icon from '../navigation/AppIcon.svelte'
+	import { Button, ButtonContent, Dialog, StatusMessage } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { AccountArchiveView } from '#lib/machines/accounts/account-archive.js'
 	import type { AccountDeleteGrantView } from '#lib/machines/accounts/account-delete-grants.js'
@@ -49,13 +48,19 @@
 		<section>
 			<h3>{m['labels.actions']()}</h3>
 			{#if archiveAction && archiveAction !== 'unavailable'}
-				<Button type="button" disabled={archiveAction !== 'available'} onclick={onArchive}>
-					{#if archiveAction === 'archiving'}
-						{m['status.archiving_subject']({ subject: m['nouns.account']({ count: 1 }) })}
-					{:else}
-						<Icon style="width: 1em; height: 1em;" icon={ArchiveIcon} />
-						{m['actions.archive_button']()}
-					{/if}
+				<Button
+					type="button"
+					disabled={archiveAction !== 'available'}
+					aria-busy={archiveAction === 'archiving'}
+					onclick={onArchive}
+				>
+					<ButtonContent
+						icon={ArchiveIcon}
+						loading={archiveAction === 'archiving'}
+						text={archiveAction === 'archiving'
+							? m['status.archiving_subject']({ subject: m['nouns.account']({ count: 1 }) })
+							: m['actions.archive_button']()}
+					/>
 				</Button>
 			{:else}
 				<p>{m['accounts.archive_restricted']()}</p>

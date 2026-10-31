@@ -7,6 +7,7 @@ import { categoriesSchema } from './schema/categories.js'
 import { checksSchema } from './schema/checks.js'
 import { identitySchema } from './schema/identity.js'
 import { integrationsSchema } from './schema/integrations.js'
+import { bankSyncLogSchema } from './schema/bank-sync-log.js'
 import { tagsSchema } from './schema/tags.js'
 import { transactionsSchema } from './schema/transactions.js'
 
@@ -18,6 +19,7 @@ const schema = {
 	...transactionsSchema,
 	...checksSchema,
 	...integrationsSchema,
+	...bankSyncLogSchema,
 	...attachmentsSchema,
 	...batchesSchema
 }
@@ -33,6 +35,8 @@ export type Tag = s.RowOf<typeof app.tags>
 export type TransactionRow = s.RowOf<typeof app.transactions>
 export type InternalTransfer = s.RowOf<typeof app.internalTransfers>
 export type Check = s.RowOf<typeof app.checks>
+export type SyncAttempt = s.RowOf<typeof app.simplefinSyncAttempts>
+export type SyncAccountResult = s.RowOf<typeof app.simplefinSyncAccountResults>
 
 export const transactionSummaryQuery = app.transactions.select(
 	'id',

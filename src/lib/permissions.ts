@@ -7,6 +7,8 @@ import {
 	app,
 	type InternalTransfer,
 	type OrganizationMember,
+	type SyncAttempt,
+	type SyncAccountResult,
 	type Tag,
 	type TransactionRow
 } from './schema.js'
@@ -641,6 +643,78 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			])
 		)
 	policy.simplefinConnections.allowDelete.where((connection) => ownsConnection(connection))
+
+	const ownsSyncAttempt = (
+		attempt: Pick<RowContext<SyncAttempt>, 'organizationId' | 'connectionId' | 'initiatedBy'>
+	) =>
+		allOf([
+			isAdmin(attempt.organizationId),
+			{ initiatedBy: session.user.account },
+			policy.simplefinConnections.exists.where({
+				id: attempt.connectionId,
+				organizationId: attempt.organizationId,
+				ownerId: attempt.initiatedBy
+			})
+		])
+	policy.simplefinSyncAttempts.allowRead.where((attempt) => isAdmin(attempt.organizationId))
+	policy.simplefinSyncAttempts.allowInsert.where((attempt) =>
+		allOf([
+			ownsSyncAttempt(attempt),
+			{ outcome: 'unfinished', finishedAt: { isNull: true }, importSettlement: 'notStarted' }
+		])
+	)
+	policy.simplefinSyncAttempts.allowUpdate
+		.whereOld((attempt) => allOf([ownsSyncAttempt(attempt), { outcome: 'unfinished' }]))
+		.whereNew((attempt) =>
+			allOf([
+				ownsSyncAttempt(attempt),
+				policy.simplefinSyncAttempts.exists.where({
+					id: attempt.id,
+					organizationId: attempt.organizationId,
+					connectionId: attempt.connectionId,
+					initiatedBy: attempt.initiatedBy,
+					startedAt: attempt.startedAt
+				})
+			])
+		)
+	policy.simplefinSyncAttempts.allowDelete.where((attempt) =>
+		allOf([
+			ownsSyncAttempt(attempt),
+			{ outcome: { ne: 'unfinished' }, finishedAt: { isNull: false } }
+		])
+	)
+
+	const ownsAccountResult = (
+		result: Pick<RowContext<SyncAccountResult>, 'attemptId' | 'organizationId' | 'accountId'>
+	) =>
+		allOf([
+			isAdmin(result.organizationId),
+			allowedTo.update('attempt'),
+			policy.simplefinSyncAttempts.exists.where({
+				id: result.attemptId,
+				organizationId: result.organizationId,
+				initiatedBy: session.user.account,
+				outcome: 'unfinished'
+			}),
+			policy.accounts.exists.where({ id: result.accountId, organizationId: result.organizationId })
+		])
+	policy.simplefinSyncAccountResults.allowRead.where(allowedTo.read('attempt'))
+	policy.simplefinSyncAccountResults.allowInsert.where((result) => ownsAccountResult(result))
+	policy.simplefinSyncAccountResults.allowUpdate
+		.whereOld((result) => ownsAccountResult(result))
+		.whereNew((result) =>
+			allOf([
+				ownsAccountResult(result),
+				policy.simplefinSyncAccountResults.exists.where({
+					id: result.id,
+					attemptId: result.attemptId,
+					organizationId: result.organizationId,
+					accountId: result.accountId,
+					accountName: result.accountName
+				})
+			])
+		)
+	policy.simplefinSyncAccountResults.allowDelete.where(allowedTo.delete('attempt'))
 
 	policy.simplefinAccountLinks.allowRead.where((link) => isAdmin(link.organizationId))
 	const validBankMapping = (link: {

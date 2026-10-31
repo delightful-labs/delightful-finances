@@ -1,6 +1,45 @@
 import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
-import { openCreationModal } from './helpers/ui.js'
+import {
+	openCreationModal,
+	closeCreationModal,
+	selectWorkspace,
+	navigateSidebar,
+	openSidebarSection
+} from './helpers/ui.js'
+
+async function syncLog(page: Page) {
+	return page.evaluate(async () => {
+		const schemaPath = '/src/lib/schema.ts',
+			sessionPath = '/src/lib/runtime/jazz-session.ts'
+		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+			await import(sessionPath)
+		const db = getCurrentJazzSession()?.getSnapshot().client?.db
+		if (!db) throw new Error('Missing database')
+		const attempts = await db.all(app.simplefinSyncAttempts)
+		const accounts = await db.all(app.simplefinSyncAccountResults)
+		return {
+			attempts: attempts.map((row) => ({
+				id: row.id,
+				connectionId: row.connectionId,
+				outcome: row.outcome,
+				importedCount: row.importedCount,
+				existingCount: row.existingCount,
+				omittedCount: row.omittedCount,
+				importSettlement: row.importSettlement
+			})),
+			accounts: accounts.map((row) => ({
+				attemptId: row.attemptId,
+				accountName: row.accountName,
+				outcome: row.outcome,
+				importedCount: row.importedCount,
+				existingCount: row.existingCount,
+				omittedCount: row.omittedCount
+			}))
+		}
+	})
+}
 
 async function installPasskey(page: Page) {
 	await page.addInitScript(() => {
@@ -52,7 +91,7 @@ test(
 test(
 	'connects explicitly, creates provider-named accounts once, and imports idempotently',
 	{ tag: ['@bank-sync'] },
-	async ({ page }) => {
+	async ({ page, context }) => {
 		test.setTimeout(120_000)
 		await installPasskey(page)
 		const operations: string[] = []
@@ -162,20 +201,93 @@ test(
 			exact: true
 		})
 		await expect(addChecking).toBeEnabled()
-		await expect(page.getByRole('combobox')).toHaveCount(0)
+		await expect(
+			page.getByRole('combobox', { name: 'Link to existing Account', exact: true })
+		).toHaveCount(0)
 		await addChecking.click()
 		await expect(page.getByText('Linked to Provider Checking', { exact: true })).toBeVisible()
 		await expect(addChecking).toHaveCount(0)
 		// The first linked account must never become a destination for savings.
-		await expect(page.getByRole('combobox')).toHaveCount(0)
+		await expect(
+			page.getByRole('combobox', { name: 'Link to existing Account', exact: true })
+		).toHaveCount(0)
 		await page.getByRole('button', { name: 'Add Account “Provider Savings”', exact: true }).click()
 		await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
+		await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const session = getCurrentJazzSession()?.getSnapshot()
+			const db = session?.client?.db,
+				userId = session?.account?.id
+			if (!db || !userId) throw new Error('Missing session')
+			const [profile] = await db.all(app.profiles.where({ userId }))
+			if (!profile) throw new Error('Missing profile')
+			await db
+				.update(app.profiles, profile.id, { displayName: 'Sync Operator' })
+				.wait({ tier: 'local' })
+		})
+		expect(await syncLog(page)).toEqual({ attempts: [], accounts: [] })
+		const history = page.getByRole('region', { name: 'Sync history', exact: true })
+		await expect(
+			history.getByText('Showing locally available history.', { exact: false })
+		).toHaveCount(0)
+		await expect(
+			history.getByText('No Sync history yet.', {
+				exact: true
+			})
+		).toBeVisible()
 		const sync = pageContent(page).getByRole('button', {
 			name: 'Sync now (last 90 days)',
 			exact: true
 		})
 		await sync.click()
 		await expect(page.getByText(/Imported: 2; already present: 0; omitted: 2/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		const firstLog = await syncLog(page)
+		expect(firstLog.attempts).toMatchObject([
+			{
+				outcome: 'partial',
+				importedCount: 2,
+				existingCount: 0,
+				omittedCount: 2,
+				importSettlement: 'locallyPersisted'
+			}
+		])
+		expect(firstLog.accounts).toHaveLength(2)
+		expect(firstLog.accounts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					attemptId: firstLog.attempts[0]?.id,
+					accountName: 'Provider Checking',
+					outcome: 'partial',
+					importedCount: 2,
+					omittedCount: 2
+				}),
+				expect.objectContaining({
+					attemptId: firstLog.attempts[0]?.id,
+					accountName: 'Provider Savings',
+					outcome: 'succeeded',
+					importedCount: 0,
+					omittedCount: 0
+				})
+			])
+		)
+		const firstAttempt = history.locator(':scope > details').first()
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		await firstAttempt.locator(':scope > summary').click()
+		await expect(firstAttempt.getByText('Sync Operator', { exact: true })).toBeVisible()
+		await expect(firstAttempt.getByText('Saved', { exact: true })).toBeVisible()
+		const checkingResult = firstAttempt
+			.locator('details')
+			.filter({ has: page.locator('summary', { hasText: 'Provider Checking — Partial' }) })
+		await checkingResult.locator('summary').click()
+		await expect(checkingResult.locator('dd')).toHaveText(['2', '0', '2'])
+		await expect(
+			firstAttempt.locator('summary').filter({ hasText: 'Provider Savings — Succeeded' })
+		).toBeVisible()
 		const savedBalances = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts',
 				sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -220,6 +332,8 @@ test(
 
 		await sync.click()
 		await expect(page.getByText(/Imported: 0; already present: 2; omitted: 2/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		expect((await syncLog(page)).attempts).toHaveLength(2)
 		const afterRepeat = await page.evaluate(async (id) => {
 			const schemaPath = '/src/lib/schema.ts',
 				sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -253,6 +367,13 @@ test(
 			/Last sync:.*Imported: 0; already present: 2; omitted: 2/
 		)
 		await expect(savedHistory).toBeVisible()
+		await expect(history.locator(':scope > details')).toHaveCount(2)
+		await context.setOffline(true)
+		await history.locator(':scope > details > summary').first().click()
+		await expect(history.getByText('Sync Operator', { exact: true }).first()).toBeVisible()
+		await expect(sync).toBeDisabled()
+		await context.setOffline(false)
+		await expect(sync).toBeEnabled()
 		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
 		// A new discovery uses the current capability report without replacing saved sync history.
 		await discover.click()
@@ -268,6 +389,151 @@ test(
 				.filter({ hasText: 'SimpleFIN could not complete the request' })
 		).toBeVisible()
 		await expect(sync).toBeEnabled()
+		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover', 'sync'])
+		await expect(history.locator(':scope > details')).toHaveCount(3)
+		const failedAttempt = history.locator(':scope > details').first()
+		await expect(failedAttempt.locator(':scope > summary')).toContainText('Failed')
+		await failedAttempt.locator(':scope > summary').click()
+		await expect(failedAttempt.getByText('Unspecified', { exact: true })).toHaveCount(3)
+		await expect(
+			failedAttempt.getByText(
+				'SimpleFIN could not complete the request. Check connectivity or reauthorize your accounts at SimpleFIN, then retry manually.',
+				{ exact: true }
+			)
+		).toBeVisible()
+		// Older records exercise pagination without issuing additional provider operations.
+		const seededConnections = await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			const connection = (await db.all(app.simplefinConnections)).find(
+				(row) => row.status === 'active'
+			)
+			if (!connection?.ownerId) throw new Error('Missing owned connection')
+			for (let index = 0; index < 21; index += 1) {
+				const id = crypto.randomUUID()
+				const startedAt = new Date(Date.UTC(2020, 0, 1, 0, 0, index))
+				await db
+					.insert(
+						app.simplefinSyncAttempts,
+						{
+							organizationId: connection.organizationId,
+							connectionId: connection.id,
+							initiatedBy: connection.ownerId,
+							startedAt,
+							finishedAt: null,
+							outcome: 'unfinished',
+							importSettlement: 'notStarted',
+							failureCode: null,
+							importedCount: null,
+							existingCount: null,
+							omittedCount: null
+						},
+						{ id }
+					)
+					.wait({ tier: 'global' })
+				if (index > 0)
+					await db
+						.update(app.simplefinSyncAttempts, id, {
+							outcome: 'succeeded',
+							finishedAt: startedAt,
+							importedCount: 0,
+							existingCount: 0,
+							omittedCount: 0
+						})
+						.wait({ tier: 'global' })
+			}
+			const otherConnectionId = crypto.randomUUID()
+			await db
+				.insert(
+					app.simplefinConnections,
+					{
+						organizationId: connection.organizationId,
+						ownerId: connection.ownerId,
+						accessUrl: '',
+						status: 'revoked',
+						claimedAt: new Date()
+					},
+					{ id: otherConnectionId }
+				)
+				.wait({ tier: 'global' })
+			await db
+				.insert(app.simplefinSyncAttempts, {
+					organizationId: connection.organizationId,
+					connectionId: otherConnectionId,
+					initiatedBy: connection.ownerId,
+					startedAt: new Date(),
+					finishedAt: null,
+					outcome: 'unfinished',
+					importSettlement: 'notStarted',
+					failureCode: null,
+					importedCount: null,
+					existingCount: null,
+					omittedCount: null
+				})
+				.wait({ tier: 'global' })
+			return {
+				current: connection.id,
+				other: otherConnectionId,
+				organizationId: connection.organizationId
+			}
+		})
+		await expect(history.locator(':scope > details')).toHaveCount(20)
+		await history.getByRole('button', { name: 'More Sync history', exact: true }).click()
+		await expect(history.locator(':scope > details')).toHaveCount(24)
+		await expect(
+			history.getByRole('button', { name: 'More Sync history', exact: true })
+		).toHaveCount(0)
+		await expect(history.locator(':scope > details > summary').last()).toContainText('Unspecified')
+		const connectionSelector = history.getByRole('combobox', {
+			name: 'Bank sync',
+			exact: true
+		})
+		await connectionSelector.selectOption(seededConnections.other)
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		await expect(history.locator(':scope > details > summary')).toContainText('Unspecified')
+		await connectionSelector.selectOption(seededConnections.current)
+		await expect(history.locator(':scope > details')).toHaveCount(20)
+		await page.setViewportSize({ width: 390, height: 844 })
+		await expect(history).toBeVisible()
+		expect(await history.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+			true
+		)
+		await page.reload()
+		await expect(history.locator(':scope > details')).toHaveCount(20)
+		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover', 'sync'])
+		await page.goto(`/settings/workspace?workspace=${seededConnections.organizationId}`)
+		const workspaceDialog = await openCreationModal(page, 'Create Workspace')
+		await workspaceDialog
+			.getByLabel('Workspace name', { exact: true })
+			.fill('Unrelated bank history')
+		await workspaceDialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+		await expect(
+			workspaceDialog.getByRole('status').filter({ hasText: /^Workspace saved\.$/ })
+		).toBeVisible()
+		const workspaceLink = await page
+			.getByRole('link', { name: 'Open Workspace: Unrelated bank history', exact: true })
+			.getAttribute('href')
+		if (!workspaceLink) throw new Error('Missing second workspace link')
+		const secondWorkspaceId = new URL(workspaceLink, page.url()).searchParams.get('workspace')
+		if (!secondWorkspaceId) throw new Error('Missing second workspace ID')
+		await closeCreationModal(page)
+		await page.goto(`/settings/banks?workspace=${secondWorkspaceId}`)
+		await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
+		await expect(history.locator('details')).toHaveCount(0)
+		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toHaveCount(0)
+		await selectWorkspace(
+			page.getByLabel('Current Workspace', { exact: true }),
+			seededConnections.organizationId
+		)
+		const drawerToggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
+		if ((await drawerToggle.getAttribute('aria-expanded')) === 'true') await drawerToggle.click()
+		await expect(history.locator(':scope > details')).toHaveCount(20)
+		await expect(discover).toBeEnabled()
 		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync', 'discover', 'sync'])
 		await page.getByRole('button', { name: 'Disconnect Bank sync', exact: true }).click()
 		await expect(discover).toHaveCount(0)
@@ -560,6 +826,22 @@ test(
 		await main.getByRole('button', { name: 'Cancel', exact: true }).click()
 		await expect(sync).toBeEnabled()
 		release.resolve()
+		expect((await syncLog(page)).attempts).toMatchObject([
+			{
+				outcome: 'cancelled',
+				importSettlement: 'notStarted',
+				importedCount: null,
+				existingCount: null,
+				omittedCount: null
+			}
+		])
+		const history = page.getByRole('region', { name: 'Sync history', exact: true })
+		await expect(history.locator(':scope > details > summary')).toContainText(
+			'The request was cancelled.'
+		)
+		await history.locator(':scope > details > summary').click()
+		await expect(history.getByText('not completed', { exact: true })).toBeVisible()
+		await expect(history.getByText('Unspecified', { exact: true })).toHaveCount(3)
 		await completed.promise
 		expect(operations).toEqual(['claim', 'discover', 'sync'])
 		await expect(main.getByText(/Imported:/)).toHaveCount(0)
@@ -569,5 +851,430 @@ test(
 		await page.reload()
 		await expect(discover).toBeEnabled()
 		expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
+	}
+)
+
+for (const failure of ['start', 'result']) {
+	test(
+		`reports ${failure} log persistence failure separately from provider/import work`,
+		{ tag: ['@bank-sync'] },
+		async ({ page }) => {
+			await installPasskey(page)
+			const operations: string[] = []
+			await page.route('**/api/simplefin', async (route) => {
+				const body: unknown = route.request().postDataJSON()
+				if (
+					!body ||
+					typeof body !== 'object' ||
+					!('operation' in body) ||
+					typeof body.operation !== 'string'
+				)
+					throw new Error('Invalid provider operation')
+				operations.push(body.operation)
+				if (body.operation === 'claim')
+					await route.fulfill({
+						contentType: 'text/plain',
+						body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+					})
+				else
+					await route.fulfill({
+						json: {
+							errors: [],
+							accounts: [
+								{
+									id: 'log-failure-checking',
+									name: 'Log Failure Checking',
+									currency: 'USD',
+									org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' },
+									transactions:
+										body.operation === 'sync'
+											? [
+													{
+														id: 'log-failure-expense',
+														amount: '-12.34',
+														posted: 1792000000,
+														description: 'Import despite logging failure'
+													}
+												]
+											: []
+								}
+							]
+						}
+					})
+			})
+			await page.goto('/settings/banks')
+			await page
+				.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+				.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+			for (const name of [
+				'Create Passkey',
+				'Test encryption with my passkey',
+				'Test unlocking with my passkey',
+				'Connect and save securely'
+			])
+				await page.getByRole('button', { name, exact: true }).click()
+			const sync = pageContent(page).getByRole('button', {
+				name: 'Sync now (last 90 days)',
+				exact: true
+			})
+			await expect(sync).toBeEnabled()
+			await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+			await page
+				.getByRole('button', { name: 'Add Account “Log Failure Checking”', exact: true })
+				.click()
+			await expect(page.getByText('Linked to Log Failure Checking', { exact: true })).toBeVisible()
+
+			await page.evaluate(async (failure) => {
+				const schemaPath = '/src/lib/schema.ts',
+					sessionPath = '/src/lib/runtime/jazz-session.ts'
+				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
+				const db = getCurrentJazzSession()?.getSnapshot().client?.db
+				if (!db) throw new Error('Missing database')
+				const prototype: object | null = Object.getPrototypeOf(db)
+				if (!prototype) throw new Error('Missing database prototype')
+				const method = failure === 'start' ? 'insert' : 'update'
+				const original: unknown = Object.getOwnPropertyDescriptor(prototype, method)?.value
+				if (typeof original !== 'function') throw new Error('Missing database method')
+				Object.defineProperty(prototype, method, {
+					configurable: true,
+					writable: true,
+					value: function (this: object, ...args: unknown[]): unknown {
+						if (args[0] === app.simplefinSyncAttempts)
+							throw new Error('Synthetic log persistence failure')
+						return Reflect.apply(original, this, args)
+					}
+				})
+			}, failure)
+			await sync.click()
+			const main = pageContent(page)
+
+			await expect(
+				main.getByText(
+					'The sync ended, but its final log details could not be saved. The import result shown still applies.',
+					{ exact: true }
+				)
+			).toBeVisible()
+			await expect(
+				main.getByText(
+					/Last sync:.*Outcome: Succeeded\. Imported: 1; already present: 0; omitted: 0/
+				)
+			).toBeVisible()
+			expect(operations).toEqual(['claim', 'discover', 'sync'])
+			const imported = await page.evaluate(async () => {
+				const schemaPath = '/src/lib/schema.ts',
+					sessionPath = '/src/lib/runtime/jazz-session.ts'
+				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
+				const db = getCurrentJazzSession()?.getSnapshot().client?.db
+				if (!db) throw new Error('Missing database')
+				return (await db.all(app.transactions)).filter(
+					(row) => row.description === 'Import despite logging failure'
+				).length
+			})
+			expect(imported).toBe(1)
+			if (failure === 'start') {
+				expect((await syncLog(page)).attempts).toHaveLength(0)
+			} else {
+				expect((await syncLog(page)).attempts).toMatchObject([{ outcome: 'unfinished' }])
+				await expect(
+					page
+						.getByRole('region', { name: 'Sync history', exact: true })
+						.locator(':scope > details > summary')
+				).toContainText('Unspecified')
+			}
+			await expect(sync).toBeEnabled()
+		}
+	)
+}
+
+test(
+	'retention follows the synced connection while another connection history is selected',
+	{ tag: ['@bank-sync'] },
+	async ({ page }) => {
+		const providerRequests: string[] = []
+		await page.route('**/api/simplefin', async (route) => {
+			const body: unknown = route.request().postDataJSON()
+			if (
+				!body ||
+				typeof body !== 'object' ||
+				!('operation' in body) ||
+				typeof body.operation !== 'string'
+			)
+				throw new Error('Invalid provider operation')
+			providerRequests.push(body.operation)
+			if (body.operation === 'claim')
+				await route.fulfill({
+					contentType: 'text/plain',
+					body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+				})
+			else await route.fulfill({ json: { errors: [], accounts: [] } })
+		})
+		await installPasskey(page)
+		await page.goto('/settings/banks')
+		await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
+		await page
+			.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+			.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+		for (const name of [
+			'Create Passkey',
+			'Test encryption with my passkey',
+			'Test unlocking with my passkey',
+			'Connect and save securely'
+		])
+			await page.getByRole('button', { name, exact: true }).click()
+		await expect(
+			pageContent(page).getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+		).toBeEnabled()
+		const organizationId = new URL(page.url()).searchParams.get('workspace')
+		if (!organizationId) throw new Error('Missing workspace scope')
+		const seeded = await page.evaluate(async (organizationId) => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const snapshot = getCurrentJazzSession()?.getSnapshot(),
+				db = snapshot?.client?.db,
+				userId = snapshot?.account?.id
+			if (!db || !userId) throw new Error('Missing database/session')
+			const connection = (await db.all(app.simplefinConnections.where({ organizationId }))).find(
+				(row) => row.status === 'active'
+			)
+			if (!connection) throw new Error('Missing connected bank')
+			const connectionId = connection.id,
+				otherConnectionId = crypto.randomUUID(),
+				accountId = crypto.randomUUID()
+			const oldest = crypto.randomUUID(),
+				child = crypto.randomUUID(),
+				unfinished = crypto.randomUUID(),
+				otherAttempt = crypto.randomUUID()
+			await db
+				.insert(
+					app.accounts,
+					{ organizationId, name: 'Retention ledger', kind: 'bank', currency: 'USD' },
+					{ id: accountId }
+				)
+				.wait({ tier: 'global' })
+			await Promise.all(
+				Array.from({ length: 101 }, async (_, index) => {
+					const id = index === 0 ? oldest : crypto.randomUUID(),
+						time = new Date(Date.UTC(2020, 0, 1, 0, 0, index))
+					await db
+						.insert(
+							app.simplefinSyncAttempts,
+							{
+								organizationId,
+								connectionId,
+								initiatedBy: userId,
+								startedAt: time,
+								outcome: 'unfinished',
+								importSettlement: 'notStarted',
+								importedCount: 0,
+								existingCount: 0,
+								omittedCount: 0
+							},
+							{ id }
+						)
+						.wait({ tier: 'global' })
+					if (index === 0)
+						await db
+							.insert(
+								app.simplefinSyncAccountResults,
+								{
+									organizationId,
+									attemptId: id,
+									accountId,
+									accountName: 'Old bank ledger',
+									outcome: 'succeeded',
+									importedCount: 0,
+									existingCount: 0,
+									omittedCount: 0
+								},
+								{ id: child }
+							)
+							.wait({ tier: 'global' })
+					await db
+						.update(app.simplefinSyncAttempts, id, { outcome: 'succeeded', finishedAt: time })
+						.wait({ tier: 'global' })
+				})
+			)
+			await db
+				.insert(
+					app.simplefinSyncAttempts,
+					{
+						organizationId,
+						connectionId,
+						initiatedBy: userId,
+						startedAt: new Date(),
+						outcome: 'unfinished',
+						importSettlement: 'notStarted'
+					},
+					{ id: unfinished }
+				)
+				.wait({ tier: 'global' })
+			await db
+				.insert(
+					app.simplefinConnections,
+					{
+						organizationId,
+						ownerId: userId,
+						accessUrl: '',
+						status: 'revoked',
+						claimedAt: new Date()
+					},
+					{ id: otherConnectionId }
+				)
+				.wait({ tier: 'global' })
+			await db
+				.insert(
+					app.simplefinSyncAttempts,
+					{
+						organizationId,
+						connectionId: otherConnectionId,
+						initiatedBy: userId,
+						startedAt: new Date(),
+						outcome: 'unfinished',
+						importSettlement: 'notStarted'
+					},
+					{ id: otherAttempt }
+				)
+				.wait({ tier: 'global' })
+			return { oldest, child, unfinished, otherAttempt, connectionId, otherConnectionId }
+		}, organizationId)
+		await page.reload()
+		await expect(page.getByRole('region', { name: 'Sync history', exact: true })).toBeVisible()
+		await expect.poll(async () => (await syncLog(page)).attempts.length).toBe(102)
+		const retained = await syncLog(page)
+		expect(retained.attempts.filter((row) => row.outcome === 'succeeded')).toHaveLength(100)
+		expect(retained.attempts.some((row) => row.id === seeded.oldest)).toBe(false)
+		expect(retained.attempts.some((row) => row.id === seeded.unfinished)).toBe(true)
+		expect(retained.attempts.some((row) => row.id === seeded.otherAttempt)).toBe(true)
+		expect(retained.accounts).toHaveLength(0)
+		expect(providerRequests).toEqual(['claim'])
+		const history = page.getByRole('region', { name: 'Sync history', exact: true })
+		await history
+			.getByRole('combobox', { name: 'Bank sync', exact: true })
+			.selectOption(seeded.otherConnectionId)
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		const sync = pageContent(page).getByRole('button', {
+			name: 'Sync now (last 90 days)',
+			exact: true
+		})
+		await sync.click()
+		await expect(pageContent(page).getByText(/Last sync:.*Outcome: Succeeded/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		await expect
+			.poll(async () => {
+				const log = await syncLog(page)
+				return log.attempts.filter(
+					(row) => row.connectionId === seeded.connectionId && row.outcome !== 'unfinished'
+				).length
+			})
+			.toBe(100)
+		const afterSync = await syncLog(page)
+		expect(afterSync.attempts).toHaveLength(102)
+		expect(afterSync.attempts.some((row) => row.id === seeded.otherAttempt)).toBe(true)
+		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toHaveValue(
+			seeded.otherConnectionId
+		)
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		expect(providerRequests).toEqual(['claim', 'sync'])
+	}
+)
+
+test(
+	'saved bank history remains readable when the optional profile lookup fails',
+	{ tag: ['@bank-sync'] },
+	async ({ page }) => {
+		await installPasskey(page)
+		const operations: string[] = []
+		await page.route('**/api/simplefin', async (route) => {
+			const body: unknown = route.request().postDataJSON()
+			if (
+				!body ||
+				typeof body !== 'object' ||
+				!('operation' in body) ||
+				typeof body.operation !== 'string'
+			)
+				throw new Error('Invalid provider operation')
+			operations.push(body.operation)
+			if (body.operation === 'claim')
+				await route.fulfill({
+					contentType: 'text/plain',
+					body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+				})
+			else await route.fulfill({ json: { errors: [], accounts: [] } })
+		})
+		await page.goto('/settings/banks')
+		await page
+			.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+			.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+		for (const name of [
+			'Create Passkey',
+			'Test encryption with my passkey',
+			'Test unlocking with my passkey',
+			'Connect and save securely'
+		])
+			await page.getByRole('button', { name, exact: true }).click()
+		const sync = pageContent(page).getByRole('button', {
+			name: 'Sync now (last 90 days)',
+			exact: true
+		})
+		await expect(sync).toBeEnabled()
+		await sync.click()
+		await expect(pageContent(page).getByText(/Last sync:.*Outcome: Succeeded/)).toBeVisible()
+		await expect(sync).toBeEnabled()
+		const history = page.getByRole('region', { name: 'Sync history', exact: true })
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		await navigateSidebar(page, 'Accounts')
+		await expect(history).toHaveCount(0)
+		await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const userId = getCurrentJazzSession()?.getSnapshot().account?.id
+			if (!userId) throw new Error('Missing identity')
+			const profileQuery = app.profiles.where({ userId: { in: [userId] } })
+			const blocked = profileQuery._build()
+			let prototype: object | null = Object.getPrototypeOf(profileQuery)
+			while (prototype && !Object.prototype.hasOwnProperty.call(prototype, '_build'))
+				prototype = Object.getPrototypeOf(prototype)
+			if (!prototype) throw new Error('Missing query builder prototype')
+			const original: unknown = Object.getOwnPropertyDescriptor(prototype, '_build')?.value
+			if (typeof original !== 'function') throw new Error('Missing query builder method')
+			Object.defineProperty(prototype, '_build', {
+				configurable: true,
+				writable: true,
+				value: function (this: object, ...args: unknown[]): unknown {
+					const result: unknown = Reflect.apply(original, this, args)
+					if (result === blocked) {
+						document.documentElement.dataset.profileLookupFailed = 'true'
+						throw new Error('Synthetic optional profile lookup failure')
+					}
+					return result
+				}
+			})
+		})
+		await openSidebarSection(page, 'Settings')
+		await navigateSidebar(page, 'Bank sync')
+		await expect(page.locator('html')).toHaveAttribute('data-profile-lookup-failed', 'true')
+		await expect(history.locator(':scope > details')).toHaveCount(1)
+		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toBeEnabled()
+		await history.locator(':scope > details > summary').click()
+		await expect(history.getByText('Unavailable', { exact: true })).toBeVisible()
+		await expect(history.getByText('not completed', { exact: true })).toBeVisible()
+		for (const name of ['Imported', 'Already present', 'Omitted'])
+			await expect(
+				history
+					.locator('dt')
+					.filter({ hasText: new RegExp(`^${name}$`) })
+					.locator('xpath=following-sibling::dd[1]')
+			).toHaveText('0')
+		expect(operations).toEqual(['claim', 'sync'])
 	}
 )

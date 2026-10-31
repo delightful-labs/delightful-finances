@@ -18,6 +18,9 @@
 		}
 	},
 	"actions": {
+		"imported": "Imported",
+		"existing": "Already present",
+		"omitted": "Omitted",
 		"add_another_subject": "Add another {subject}",
 		"add_sample_count_kind_subjects": "Add {count} sample {kind} {subjects}",
 		"add_subject": "Add {subject}",
@@ -65,6 +68,7 @@
 		"archived": "Archived only"
 	},
 	"bank": {
+		"system_account_name": "Bank Sync",
 		"account_already_linked": "This local account is already linked to another provider account. Add a new account or select an unlinked account.",
 		"cancelled": "Operation cancelled. Credential locked. If token claim had begun, revoke it at SimpleFIN before reconnecting.",
 		"claim_failure": "The setup token could not be claimed. It may already have been used or compromised; revoke it at SimpleFIN and obtain a new token.",
@@ -119,7 +123,10 @@
 		"token": "SimpleFIN Bridge setup token",
 		"unlock_failure": "Your original passkey could not unlock this credential, verification was cancelled, or the encrypted record is invalid. No provider request was made. Try a compatible browser and password manager, or reconnect if the passkey is lost.",
 		"waiting": "Waiting for encrypted credentials to replicate, or reconnection is required.",
-		"working": "Waiting for passkey verification or completing your requested operation…"
+		"working": "Waiting for passkey verification or completing your requested operation…",
+		"log_result_failed": "The sync ended, but its final log details could not be saved. The import result shown still applies.",
+		"log_title": "Sync history",
+		"log_unresolved": "Import settlement unresolved"
 	},
 	"currencies": {
 		"tanzanian_shilling": "Tanzanian shilling",
@@ -496,6 +503,7 @@
 		"loading_subject": "Loading {subject}…",
 		"removed_subject_name": "{subject} {name} removed.",
 		"restoring_subject": "Restoring {subject}…",
+		"saved": "Saved",
 		"saved_subject": "{subject} saved.",
 		"saved_subject_name": "{subject} {name} saved.",
 		"selected_subject_name": "{subject} {name} selected.",

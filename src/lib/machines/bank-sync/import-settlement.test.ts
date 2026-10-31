@@ -1,7 +1,7 @@
 import { publishBankSource } from './reports.fixture.js'
 import { describe, expect, it, vi } from 'vitest'
 import { toPromise, waitFor } from 'xstate'
-import { importFixture, response, raw } from './import.fixture.js'
+import { importFixture, response, raw, accounts } from './import.fixture.js'
 import { id } from './test-fixtures.js'
 import type { BankCommand } from './types.js'
 
@@ -86,6 +86,12 @@ describe('operation/import/account/transaction ownership chain', () => {
 		expect(await toPromise(first.operation)).toMatchObject({
 			kind: 'complete',
 			counts: counts(3),
+			accountResults: accounts.map((account, index) => ({
+				account: { id: account.id, name: account.name },
+				kind: 'complete',
+				counts: counts(index === 0 ? 1 : 2),
+				settlement: 'settled'
+			})),
 			settlement: 'settled'
 		})
 		expect(f.stored.size).toBe(3)
@@ -104,6 +110,12 @@ describe('operation/import/account/transaction ownership chain', () => {
 		expect(await toPromise(second.operation)).toMatchObject({
 			kind: 'complete',
 			counts: counts(0, 3),
+			accountResults: accounts.map((account, index) => ({
+				account: { id: account.id, name: account.name },
+				kind: 'complete',
+				counts: counts(0, index === 0 ? 1 : 2),
+				settlement: 'settled'
+			})),
 			settlement: 'settled'
 		})
 		expect(f.persist).toHaveBeenCalledTimes(3)
@@ -135,6 +147,20 @@ describe('operation/import/account/transaction ownership chain', () => {
 			expect(await toPromise(operation)).toMatchObject({
 				kind: 'cancelled',
 				counts: expected,
+				accountResults: [
+					{
+						account: { id: accounts[0]?.id, name: accounts[0]?.name },
+						kind: 'complete',
+						counts: counts(1),
+						settlement: 'settled'
+					},
+					{
+						account: { id: accounts[1]?.id, name: accounts[1]?.name },
+						kind: 'cancelled',
+						counts: counts(outcome === 'resolve' ? 1 : 0),
+						settlement: outcome === 'resolve' ? 'settled' : 'unresolved'
+					}
+				],
 				settlement: outcome === 'resolve' ? 'settled' : 'unresolved'
 			})
 			await waitFor(bank, (s) => s.matches({ ready: 'cancelled' }))

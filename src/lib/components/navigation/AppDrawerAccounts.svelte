@@ -2,7 +2,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import Icon from './AppIcon.svelte'
 	import AppNavigationLink from './AppNavigationLink.svelte'
-	import { Button, Details, Navigation, Checkbox } from 'delightful-ui'
+	import { Button, ButtonContent, Details, Navigation, Checkbox } from 'delightful-ui'
 	import { type ComponentProps, type Snippet } from 'svelte'
 	import type { Account } from '#lib/schema.js'
 	import { formatSignedMoney } from '#lib/domain/money.js'
@@ -52,10 +52,11 @@
 </script>
 
 {#snippet accountCreationTrigger(open: () => void, disabled: boolean)}
-	<Button type="button" {disabled} onclick={open}>
-		<Icon navigation icon={AddIcon} />{m['actions.add_subject']({
-			subject: m['nouns.account']({ count: 1 })
-		})}
+	<Button type="button" {disabled} onclick={open} style="--dui-button-content-icon-size: 1.25rem;">
+		<ButtonContent
+			icon={AddIcon}
+			text={m['actions.add_subject']({ subject: m['nouns.account']({ count: 1 }) })}
+		/>
 	</Button>
 {/snippet}
 <li>

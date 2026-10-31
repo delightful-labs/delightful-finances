@@ -1,6 +1,15 @@
 <script lang="ts">
 	import Icon from '../navigation/AppIcon.svelte'
-	import { Button, Details, InputText, LoadingSpinner, Select, Stepper } from 'delightful-ui'
+	import {
+		Button,
+		ButtonContent,
+		Details,
+		InputText,
+		LoadingSpinner,
+		Select,
+		Stepper,
+		StatusMessage
+	} from 'delightful-ui'
 	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
 	import RefreshIcon from 'tdesign-icons-svg/src/refresh.svg?component'
 	import WifiNoIcon from 'tdesign-icons-svg/src/wifi-no.svg?component'
@@ -156,6 +165,9 @@
 		<p role="status" aria-live="polite">{statusText}</p>
 	{/if}
 	{#if outcomeText}<p>{outcomeText}</p>{/if}
+	{#if view.logging?.kind === 'notStarted' || view.logging?.kind === 'resultUnrecorded'}
+		<StatusMessage variant="error" text={m['bank.log_result_failed']()} />
+	{/if}
 	{#if view.activity.kind === 'working' && view.activity.indicator === 'provider'}<LoadingSpinner
 			role="presentation"
 			aria-hidden="true"
@@ -167,9 +179,12 @@
 			{@render connectionSetup()}
 		{/if}
 		{#if view.mode.kind === 'connected'}
-			<Button type="button" onclick={onDiscover} disabled={busy}>
-				<Icon style="width: 1em; height: 1em;" icon={SearchIcon} />
-				{m['actions.discover_subject']({ subject: m['nouns.account']({ count: 2 }) })}
+			<Button type="button" onclick={onDiscover} disabled={busy} aria-busy={busy}>
+				<ButtonContent
+					icon={SearchIcon}
+					text={m['actions.discover_subject']({ subject: m['nouns.account']({ count: 2 }) })}
+					loading={busy}
+				/>
 			</Button>
 
 			{#if busy}<Button type="button" onclick={onCancel}>{m['actions.cancel']()}</Button>{/if}
@@ -220,10 +235,10 @@
 					type="button"
 					onclick={onSync}
 					disabled={browserOffline || busy || syncDisabled}
+					aria-busy={busy}
 					aria-describedby={browserOffline ? 'bank-sync-offline' : undefined}
 				>
-					<Icon style="width: 1em; height: 1em;" icon={RefreshIcon} />
-					{m['bank.sync']()}
+					<ButtonContent icon={RefreshIcon} text={m['bank.sync']()} loading={busy} />
 				</Button>
 				<Button type="button" onclick={onDisconnect} disabled={busy}
 					>{m['actions.disconnect_subject']({ subject: m['bank.title']() })}</Button

@@ -1,7 +1,11 @@
 import type { ActorRef, Snapshot } from 'xstate'
 import { assign, enqueueActions, setup } from 'xstate'
 import { required } from './identity.js'
-import type { BankHistoryRecord, LastSync } from './types.js'
+import type { BankHistoryRecord, LastSync, Connection } from './types.js'
+import type { SyncAttempt, SyncAccountResult } from '#lib/schema.js'
+import type { BankMessage, BankLogPresentation } from '#lib/contracts/bank-presentation-contract.js'
+import { m } from '#lib/paraglide/messages.js'
+import { bankFailureStatuses } from './status.js'
 
 export type HistoryEvent = {
 	type: 'HISTORY_REPORTED'
@@ -124,3 +128,55 @@ export const bankHistoryMachine = setup<
 		failed: { entry: [{ type: 'summarize', params: { outcomeKey: 'bank.failed' } }, 'publish'] }
 	}
 })
+
+const outcomeMessages = {
+	unfinished: { label: m['labels.unspecified'] },
+	succeeded: { label: m['bank.succeeded'] },
+	partial: { label: m['bank.partial'] },
+	failed: { label: m['bank.failed'] },
+	cancelled: { label: m['status.cancelled'] }
+} satisfies Record<SyncAttempt['outcome'], BankMessage>
+const connectionMessages = {
+	active: outcomeMessages.succeeded,
+	error: outcomeMessages.failed,
+	revoked: { label: () => m['status.unavailable_subject']({ subject: m['bank.title']() }) }
+} satisfies Record<Connection['status'], BankMessage>
+const savedMessage = { label: m['status.saved'] }
+const settlementMessages = {
+	notStarted: { label: m['bank.step_upcoming'] },
+	locallyPersisted: savedMessage,
+	confirmed: savedMessage,
+	unresolved: { label: m['bank.log_unresolved'] }
+} satisfies Record<SyncAttempt['importSettlement'], BankMessage>
+const failureMessages = {
+	...bankFailureStatuses,
+	authorization: { label: m['developer.unavailable'] },
+	import: {
+		label: () => m['errors.save_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
+	},
+	unexpected: { label: m['errors.unexpected_title'] }
+} satisfies Record<NonNullable<SyncAttempt['failureCode']>, BankMessage>
+
+export function selectBankLogPresentation(input: {
+	connections: readonly Pick<Connection, 'id' | 'ownerId' | 'claimedAt' | 'status'>[]
+	attempts: readonly SyncAttempt[]
+	accounts: readonly SyncAccountResult[]
+}): BankLogPresentation {
+	return {
+		connections: input.connections.map((row) => ({
+			...row,
+			status: connectionMessages[row.status]
+		})),
+		attempts: input.attempts.map((row) => ({
+			...row,
+			outcome: outcomeMessages[row.outcome],
+			importSettlement: settlementMessages[row.importSettlement],
+			failure: row.failureCode ? failureMessages[row.failureCode] : undefined
+		})),
+		accounts: input.accounts.map((row) => ({
+			...row,
+			outcome: outcomeMessages[row.outcome],
+			failure: row.failureCode ? failureMessages[row.failureCode] : undefined
+		}))
+	}
+}
