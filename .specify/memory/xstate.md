@@ -232,6 +232,18 @@ Keep saved historical results independent of the current operation's success/fai
 nested actors drive the UI, ensure subscriptions actually notify consumers of child transitions;
 check the installed framework adapter's behavior rather than assuming root snapshot identity changes.
 
+## Keep timeouts simple
+
+For XState v5 timeouts, use built-in `after` transitions and a named delay in
+`setup({ delays })`. Reuse an existing failure/cancellation transition or target.
+Timers automatically cancel when their state exits. A timeout should normally
+require only a few lines; do not add manual timers, promise races, helper actors,
+extra states or result variants solely to implement it. Add separate states only
+when they represent a distinct domain outcome or resource-cleanup obligation.
+Stopping an invoked actor discards late results; it does not automatically undo
+an external operation. Preserve financial-write cleanup and avoid retries of
+uncertain writes. See https://stately.ai/docs/delayed-transitions.
+
 ## Design cleanup and races explicitly
 
 A normal cancel path is not enough. Account for navigation, component destruction, SDK session
