@@ -42,7 +42,8 @@ export const bankSetupSteps = [
 	{ id: 'verify', label: () => m['bank.step_verify']() },
 	{ id: 'connect', label: () => m['bank.step_connect']() }
 ] satisfies [SetupStep, ...SetupStep[]]
-export type BankStatus = { key: BankStatusKey; label: () => string }
+export type BankMessage = { label: () => string }
+export type BankStatus = BankMessage & { key: BankStatusKey }
 export type LastSync = {
 	time: Date
 	outcomeKey: 'bank.succeeded' | 'bank.partial' | 'bank.failed'
@@ -72,20 +73,17 @@ export type BankPresentation = {
 	providerAccounts: readonly ProviderAccountView[]
 }
 
-// Lazy labels match BankStatus: the machine chooses the message, the UI evaluates
-// it during rendering so the current locale is used.
-export type BankLogMessage = { label: () => string }
 export type BankLogPresentation = {
 	connections: readonly (Pick<Connection, 'id' | 'ownerId' | 'claimedAt'> & {
-		status: BankLogMessage
+		status: BankMessage
 	})[]
 	attempts: readonly (Omit<SyncAttempt, 'outcome' | 'importSettlement' | 'failureCode'> & {
-		outcome: BankLogMessage
-		importSettlement: BankLogMessage
-		failure: BankLogMessage | undefined
+		outcome: BankMessage
+		importSettlement: BankMessage
+		failure: BankMessage | undefined
 	})[]
 	accounts: readonly (Omit<SyncAccountResult, 'outcome' | 'failureCode'> & {
-		outcome: BankLogMessage
-		failure: BankLogMessage | undefined
+		outcome: BankMessage
+		failure: BankMessage | undefined
 	})[]
 }

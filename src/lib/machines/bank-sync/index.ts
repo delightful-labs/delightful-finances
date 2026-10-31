@@ -11,6 +11,7 @@ import {
 import { accountOptionsMachine, type ProviderAccountView } from './account-options.js'
 import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { required } from './identity.js'
+import { bankFailureStatuses } from './status.js'
 import { createBankSetupMachine } from './setup.js'
 import { createBankOperationMachine, type OperationResult } from './operation.js'
 import { createLoggedBankOperationMachine, type LoggedOperationResult } from './logged-operation.js'
@@ -557,7 +558,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 								}
 							},
 							otherTab: {
-								meta: { status: { key: 'bank.other_tab', label: () => m['bank.other_tab']() } }
+								meta: { status: bankFailureStatuses.interrupted }
 							},
 							lockingUnavailable: {
 								meta: {
@@ -569,20 +570,17 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 							},
 							unlock: {
 								meta: {
-									status: { key: 'bank.unlock_failure', label: () => m['bank.unlock_failure']() }
+									status: bankFailureStatuses.passkey
 								}
 							},
 							provider: {
 								meta: {
-									status: {
-										key: 'bank.provider_failure',
-										label: () => m['bank.provider_failure']()
-									}
+									status: bankFailureStatuses.provider
 								}
 							},
 							mapping: {
 								meta: {
-									status: { key: 'bank.mapping_failure', label: () => m['bank.mapping_failure']() }
+									status: bankFailureStatuses.mapping
 								}
 							},
 							unexpected: {

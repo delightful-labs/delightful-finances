@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button, Details } from 'delightful-ui'
 	import type {
-		BankLogMessage,
+		BankMessage,
 		BankLogPresentation
 	} from '#lib/contracts/bank-presentation-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -55,7 +55,7 @@
 	<dd>{count(result.omittedCount)}</dd>
 {/snippet}
 
-{#snippet failure(message: BankLogMessage | undefined)}
+{#snippet failure(message: BankMessage | undefined)}
 	{#if message}<dt>{m['labels.description']()}</dt>
 		<dd>{message.label()}</dd>{/if}
 {/snippet}

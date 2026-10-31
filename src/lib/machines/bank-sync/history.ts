@@ -3,11 +3,9 @@ import { assign, enqueueActions, setup } from 'xstate'
 import { required } from './identity.js'
 import type { BankHistoryRecord, LastSync, Connection } from './types.js'
 import type { SyncAttempt, SyncAccountResult } from '#lib/schema.js'
-import type {
-	BankLogMessage,
-	BankLogPresentation
-} from '#lib/contracts/bank-presentation-contract.js'
+import type { BankMessage, BankLogPresentation } from '#lib/contracts/bank-presentation-contract.js'
 import { m } from '#lib/paraglide/messages.js'
+import { bankFailureStatuses } from './status.js'
 
 export type HistoryEvent = {
 	type: 'HISTORY_REPORTED'
@@ -131,36 +129,32 @@ export const bankHistoryMachine = setup<
 	}
 })
 
-// Historical domain values use the same machine-owned message contract as live status.
-const connectionMessages = {
-	active: { label: () => m['bank.succeeded']() },
-	error: { label: () => m['bank.failed']() },
-	revoked: { label: () => m['status.unavailable_subject']({ subject: m['bank.title']() }) }
-} satisfies Record<Connection['status'], BankLogMessage>
 const outcomeMessages = {
-	unfinished: { label: () => m['labels.unspecified']() },
-	succeeded: { label: () => m['bank.succeeded']() },
-	partial: { label: () => m['bank.partial']() },
-	failed: { label: () => m['bank.failed']() },
-	cancelled: { label: () => m['status.cancelled']() }
-} satisfies Record<SyncAttempt['outcome'], BankLogMessage>
+	unfinished: { label: m['labels.unspecified'] },
+	succeeded: { label: m['bank.succeeded'] },
+	partial: { label: m['bank.partial'] },
+	failed: { label: m['bank.failed'] },
+	cancelled: { label: m['status.cancelled'] }
+} satisfies Record<SyncAttempt['outcome'], BankMessage>
+const connectionMessages = {
+	active: outcomeMessages.succeeded,
+	error: outcomeMessages.failed,
+	revoked: { label: () => m['status.unavailable_subject']({ subject: m['bank.title']() }) }
+} satisfies Record<Connection['status'], BankMessage>
 const settlementMessages = {
-	notStarted: { label: () => m['bank.step_upcoming']() },
-	locallyPersisted: { label: () => m['status.saved']() },
-	confirmed: { label: () => m['bank.log_confirmed']() },
-	unresolved: { label: () => m['bank.log_unresolved']() }
-} satisfies Record<SyncAttempt['importSettlement'], BankLogMessage>
+	notStarted: { label: m['bank.step_upcoming'] },
+	locallyPersisted: { label: m['status.saved'] },
+	confirmed: { label: m['bank.log_confirmed'] },
+	unresolved: { label: m['bank.log_unresolved'] }
+} satisfies Record<SyncAttempt['importSettlement'], BankMessage>
 const failureMessages = {
-	authorization: { label: () => m['developer.unavailable']() },
-	passkey: { label: () => m['bank.unlock_failure']() },
-	provider: { label: () => m['bank.provider_failure']() },
-	mapping: { label: () => m['bank.mapping_failure']() },
+	...bankFailureStatuses,
+	authorization: { label: m['developer.unavailable'] },
 	import: {
 		label: () => m['errors.save_subject']({ subject: m['nouns.transaction']({ count: 2 }) })
 	},
-	interrupted: { label: () => m['bank.other_tab']() },
-	unexpected: { label: () => m['errors.unexpected_title']() }
-} satisfies Record<NonNullable<SyncAttempt['failureCode']>, BankLogMessage>
+	unexpected: { label: m['errors.unexpected_title'] }
+} satisfies Record<NonNullable<SyncAttempt['failureCode']>, BankMessage>
 
 export function selectBankLogPresentation(input: {
 	connections: readonly Pick<Connection, 'id' | 'ownerId' | 'claimedAt' | 'status'>[]
