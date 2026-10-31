@@ -82,3 +82,11 @@ Live-wiring progress: persistence coverage committed as 66115cf. The composed
 logged-operation actor and captured raw-operation identity input are implemented
 and type-check cleanly; awaiting review before lifecycle tests and supervisor
 registration. The existing live supervisor still invokes the raw operation.
+
+Composed actor verification: implementation committed as 22f8857. Six focused
+composed-operation tests pass with the real import/operation chain and controlled
+log writes. Covers start-before-fetch ordering, failed start preventing lock/
+credential/provider work, cancellation draining start persistence, cancellation
+waiting for an issued import and retaining its final count, cleanup before final
+logging, final-log failure preserving successful imports, and discovery bypassing
+logging. Supervisor registration and logging-failure presentation remain pending.
