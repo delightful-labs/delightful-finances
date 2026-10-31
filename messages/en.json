@@ -18,6 +18,9 @@
 		}
 	},
 	"actions": {
+		"imported": "Imported",
+		"existing": "Already present",
+		"omitted": "Omitted",
 		"add_another_subject": "Add another {subject}",
 		"add_sample_count_kind_subjects": "Add {count} sample {kind} {subjects}",
 		"add_subject": "Add {subject}",
@@ -123,9 +126,6 @@
 		"working": "Waiting for passkey verification or completing your requested operation…",
 		"log_result_failed": "The sync ended, but its final log details could not be saved. The import result shown still applies.",
 		"log_title": "Sync history",
-		"log_imported": "Imported",
-		"log_existing": "Already present",
-		"log_omitted": "Omitted",
 		"log_confirmed": "Remote acceptance confirmed",
 		"log_unresolved": "Import settlement unresolved"
 	},

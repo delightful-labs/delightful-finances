@@ -67,11 +67,11 @@
 </script>
 
 {#snippet counts(result: Pick<SyncAttempt, 'importedCount' | 'existingCount' | 'omittedCount'>)}
-	<dt>{m['bank.log_imported']()}</dt>
+	<dt>{m['actions.imported']()}</dt>
 	<dd>{count(result.importedCount)}</dd>
-	<dt>{m['bank.log_existing']()}</dt>
+	<dt>{m['actions.existing']()}</dt>
 	<dd>{count(result.existingCount)}</dd>
-	<dt>{m['bank.log_omitted']()}</dt>
+	<dt>{m['actions.omitted']()}</dt>
 	<dd>{count(result.omittedCount)}</dd>
 {/snippet}
 
