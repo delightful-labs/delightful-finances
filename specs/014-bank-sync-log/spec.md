@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-30
 
-**Status**: Draft — ready for planning
+**Status**: Implemented — local verification complete; release deployment pending
 
 **Input**: Provide a persistent bank-sync log in Bank Sync settings, with one entry
 per explicit sync attempt, account-level results, and retention of the latest

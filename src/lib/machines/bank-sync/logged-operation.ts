@@ -1,10 +1,11 @@
-import { assign, sendParent, sendTo, setup } from 'xstate'
+import { assign, raise, sendParent, sendTo, setup, stateIn } from 'xstate'
 import { createBankOperationMachine, type OperationResult } from './operation.js'
 import { createPreparationMachine } from './preparation.js'
 import { createSyncLogMachine } from './sync-log.js'
 import { required } from './identity.js'
 import {
 	emptyCounts,
+	bankErrorCode,
 	type BankCommand,
 	type Dependencies,
 	type ProviderSummary,
@@ -14,6 +15,7 @@ import {
 } from './types.js'
 import type {
 	SyncLogStart,
+	SyncLogCompletion,
 	SyncLogOutput,
 	SyncLogParentEvent,
 	SyncLogEvent,
@@ -37,6 +39,13 @@ function failure(error: unknown): OperationResult {
 		settlement: 'settled',
 		accountResults: []
 	}
+}
+const failureCodes: Readonly<Record<string, NonNullable<SyncLogCompletion['failureCode']>>> = {
+	unlock_failure: 'passkey',
+	passkey_failure: 'passkey',
+	provider_failure: 'provider',
+	mapping: 'mapping',
+	other_tab: 'interrupted'
 }
 function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }> {
 	const result = required(context.result)
@@ -72,7 +81,10 @@ function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }
 					: result.counts.imported > 0
 						? 'locallyPersisted'
 						: 'notStarted',
-			failureCode: result.kind === 'failed' ? 'unexpected' : null,
+			failureCode:
+				result.kind === 'failed'
+					? (failureCodes[bankErrorCode(result.error)] ?? 'unexpected')
+					: null,
 			importedCount: countsKnown ? result.counts.imported : null,
 			existingCount: countsKnown ? result.counts.existing : null,
 			omittedCount: countsKnown ? result.counts.omitted : null
@@ -89,16 +101,23 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		{ type: 'CANCEL' } | ProgressEvent | SyncLogParentEvent | LockEvent,
+		| { type: 'CANCEL' }
+		| { type: 'LOG_FAILED'; error: unknown }
+		| ProgressEvent
+		| SyncLogParentEvent
+		| LockEvent,
 		typeof actors,
 		{},
 		{},
-		{},
+		{ logFailed: undefined },
 		never,
 		string,
 		Input,
 		LoggedOperationResult
-	>({ actors }).createMachine({
+	>({
+		actors,
+		guards: { logFailed: stateIn({ logged: { operating: 'logFailed' } }) }
+	}).createMachine({
 		id: 'logged-bank-operation',
 		context: ({ input }) => {
 			const observed = dependencies.observe()
@@ -123,7 +142,10 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 			unlogged: {
 				initial: 'working',
 				states: { working: {}, cancelling: {} },
-				on: { CANCEL: { target: '.cancelling', actions: sendTo('operation', { type: 'CANCEL' }) } },
+				on: {
+					CANCEL: { target: '.cancelling', actions: sendTo('operation', { type: 'CANCEL' }) },
+					LOCK_FAILED: { actions: sendTo('operation', ({ event }) => event) }
+				},
 				invoke: {
 					id: 'operation',
 					src: 'operation',
@@ -138,7 +160,6 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 			},
 			preparing: {
 				on: {
-					LOCK_FAILED: { actions: sendTo('operation', ({ event }) => event) },
 					CANCEL: {
 						target: 'done',
 						actions: assign({
@@ -192,6 +213,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 					id: 'log',
 					src: 'log',
 					input: ({ context }) => required(context.start),
+					onError: { actions: raise(({ event }) => ({ type: 'LOG_FAILED', error: event.error })) },
 					onDone: {
 						target: 'done',
 						actions: assign({
@@ -214,6 +236,17 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 				states: {
 					starting: {
 						on: {
+							LOG_FAILED: {
+								target: '#logged-bank-operation.done',
+								actions: assign({
+									result: ({ event }) => failure(event.error),
+									logging: ({ context }) => ({
+										kind: 'notStarted',
+										attemptId: required(context.start).id,
+										reason: 'startWriteFailed'
+									})
+								})
+							},
 							SYNC_LOG_READY: {
 								guard: ({ context, event }) => event.attemptId === context.start?.id,
 								target: 'operating'
@@ -223,6 +256,24 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 					},
 					cancellingStart: {
 						on: {
+							LOG_FAILED: {
+								target: '#logged-bank-operation.done',
+								actions: assign({
+									result: () => ({
+										kind: 'cancelled',
+										error: undefined,
+										counts: emptyCounts(),
+										discovered: undefined,
+										settlement: 'settled',
+										accountResults: []
+									}),
+									logging: ({ context }) => ({
+										kind: 'notStarted',
+										attemptId: required(context.start).id,
+										reason: 'startWriteFailed'
+									})
+								})
+							},
 							CANCEL: {},
 							SYNC_LOG_READY: {
 								guard: ({ context, event }) => event.attemptId === context.start?.id,
@@ -244,8 +295,13 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 					},
 					operating: {
 						initial: 'working',
-						states: { working: {}, cancelling: {} },
+						states: {
+							working: {},
+							cancelling: {},
+							logFailed: { on: { CANCEL: { actions: sendTo('operation', { type: 'CANCEL' }) } } }
+						},
 						on: {
+							LOG_FAILED: { target: '.logFailed' },
 							LOCK_FAILED: { actions: sendTo('operation', ({ event }) => event) },
 							CANCEL: {
 								target: '.cancelling',
@@ -264,21 +320,45 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 								identity: context.identity
 							}),
 							onSnapshot: {},
-							onDone: {
-								target: 'finishing',
-								actions: assign({ result: ({ event }) => event.output })
-							},
-							onError: {
-								target: 'finishing',
-								actions: assign({
-									result: ({ event }) => ({ ...failure(event.error), settlement: 'unresolved' })
-								})
-							}
+							onDone: [
+								{
+									guard: 'logFailed',
+									target: 'resultLogFailed',
+									actions: assign({ result: ({ event }) => event.output })
+								},
+								{ target: 'finishing', actions: assign({ result: ({ event }) => event.output }) }
+							],
+							onError: [
+								{
+									guard: 'logFailed',
+									target: 'resultLogFailed',
+									actions: assign({
+										result: ({ event }) => ({ ...failure(event.error), settlement: 'unresolved' })
+									})
+								},
+								{
+									target: 'finishing',
+									actions: assign({
+										result: ({ event }) => ({ ...failure(event.error), settlement: 'unresolved' })
+									})
+								}
+							]
 						}
+					},
+					resultLogFailed: {
+						entry: assign({
+							logging: ({ context }) => ({
+								kind: 'resultUnrecorded',
+								attemptId: required(context.start).id,
+								result: finishedLog(context).result,
+								reason: 'resultWriteFailed'
+							})
+						}),
+						always: '#logged-bank-operation.done'
 					},
 					finishing: {
 						entry: sendTo('log', ({ context }) => finishedLog(context)),
-						on: { CANCEL: {} }
+						on: { CANCEL: {}, LOG_FAILED: 'resultLogFailed' }
 					}
 				}
 			},

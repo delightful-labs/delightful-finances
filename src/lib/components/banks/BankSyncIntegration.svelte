@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { setContext, type Snippet, type ComponentProps } from 'svelte'
+	import { setContext, onMount, type Snippet, type ComponentProps } from 'svelte'
 	import {
 		bankSyncKey,
 		type BankSyncContext,
@@ -10,7 +10,10 @@
 	import { workspaceBankActor } from '#lib/machines/runtime/readiness.js'
 	import { beforeNavigate } from '$app/navigation'
 	import { page } from '$app/state'
-	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { QuerySubscription, getDb } from 'jazz-tools/svelte'
+	import { createActor } from 'xstate'
+	import { inspectActor } from '#lib/diagnostics/inspector.js'
+	import { createSyncLogRetentionCoordinator } from '#lib/machines/bank-sync/log-retention-coordinator.js'
 	import { app } from '#lib/schema.js'
 	import BankSyncLog from './BankSyncLog.svelte'
 	import { fromStore, readable } from 'svelte/store'
@@ -48,14 +51,37 @@
 	})
 	const bankState = fromStore(snapshot)
 	const view = $derived(selectBankView(bankState.current))
-	const logConnectionId = $derived(
+	const historyOrganizationId = $derived(
 		page.url.pathname === '/settings/banks' && bankState.current.context.access.kind === 'allowed'
-			? bankState.current.context.connection?.id
+			? bankState.current.context.access.organizationId
 			: undefined
+	)
+	const logConnections = new QuerySubscription(() =>
+		historyOrganizationId
+			? app.simplefinConnections
+					.where({ organizationId: historyOrganizationId })
+					.orderBy('claimedAt', 'desc')
+					.orderBy('id', 'desc')
+			: undefined
+	)
+	const historyConnections = $derived(
+		(logConnections.current ?? []).filter((row) => row.organizationId === historyOrganizationId)
+	)
+	const historyScope = $derived(`${userId}:${historyOrganizationId}`)
+	let historySelection = $state({ scope: '', id: '' })
+	const logConnectionId = $derived(
+		historySelection.scope === historyScope &&
+			historyConnections.some((row) => row.id === historySelection.id)
+			? historySelection.id
+			: (historyConnections.find((row) => row.id === bankState.current.context.connection?.id)
+					?.id ?? historyConnections[0]?.id)
 	)
 	const logScope = $derived(`${userId}:${organizationId}:${logConnectionId}`)
 	let logPage = $state({ scope: '', limit: 20 })
 	const logLimit = $derived(logPage.scope === logScope ? logPage.limit : 20)
+	$effect(() => {
+		if (logPage.scope !== logScope) logPage = { scope: logScope, limit: 20 }
+	})
 	const logAttempts = new QuerySubscription(() =>
 		logConnectionId && organizationId
 			? app.simplefinSyncAttempts
@@ -80,10 +106,48 @@
 			? app.simplefinSyncAccountResults.where({ organizationId, attemptId: { in: attemptIds } })
 			: undefined
 	)
-	const initiatorIds = $derived([...new Set(visibleAttempts.map((row) => row.initiatedBy))])
+	const initiatorIds = $derived([
+		...new Set([
+			...visibleAttempts.map((row) => row.initiatedBy),
+			...historyConnections.flatMap((row) => (row.ownerId ? [row.ownerId] : []))
+		])
+	])
 	const logProfiles = new QuerySubscription(() =>
 		initiatorIds.length ? app.profiles.where({ userId: { in: initiatorIds } }) : undefined
 	)
+	const retention = createActor(
+		createSyncLogRetentionCoordinator({
+			db: getDb(),
+			observe: () => ({
+				organizationId: bankState.current.context.access.organizationId,
+				userId: bankState.current.context.access.userId,
+				allowed: bankState.current.context.access.kind === 'allowed',
+				connected: !browserOffline,
+				sessionReady: bankState.current.context.access.kind === 'allowed',
+				connection: undefined
+			})
+		}),
+		{ inspect: inspectActor }
+	)
+	onMount(() => {
+		retention.start()
+		return () => retention.send({ type: 'SHUTDOWN' })
+	})
+	$effect(() => {
+		const access = bankState.current.context.access
+		const selected = historyConnections.find(
+			(row) => row.id === logConnectionId && row.ownerId === access.userId
+		)
+		const connectionId = selected?.id ?? bankState.current.context.connection?.id
+		retention.send({
+			type: 'CHECK',
+			scope:
+				access.kind === 'allowed' && !browserOffline && connectionId
+					? { organizationId: access.organizationId, userId: access.userId, connectionId }
+					: undefined,
+			completion: bankState.current.context.logging?.attemptId
+		})
+	})
 	const workflowTrace = createBankTrace('workflow')
 	function dispatch(event: BankSyncEvent) {
 		workflowTrace.log('event', {
@@ -154,13 +218,18 @@
 				onDisconnect={() => dispatch({ type: 'DISCONNECT' })}
 				onCancel={() => dispatch({ type: 'CANCEL' })}
 			/>
-			{#if logConnectionId}
+			{#if historyOrganizationId}
 				<QueryContent
-					queries={[logAttempts, logAccounts, logProfiles]}
+					queries={[logConnections, logAttempts, logAccounts, logProfiles]}
 					loadingMessage={m['status.loading_subject']({ subject: m['bank.log_title']() })}
 					errorMessage={m['errors.load_subject']({ subject: m['bank.log_title']() })}
 				>
 					<BankSyncLog
+						connections={historyConnections}
+						connectionId={logConnectionId}
+						onConnection={(id) => {
+							historySelection = { scope: historyScope, id }
+						}}
 						attempts={visibleAttempts}
 						accounts={(logAccounts.current ?? []).filter(
 							(row) => row.organizationId === organizationId && attemptIds.includes(row.attemptId)

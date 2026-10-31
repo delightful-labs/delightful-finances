@@ -1,7 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createActor, fromCallback, fromPromise, toPromise, type AnyActorRef } from 'xstate'
+import {
+	createActor,
+	fromCallback,
+	fromPromise,
+	toPromise,
+	waitFor,
+	type AnyActorRef
+} from 'xstate'
 import { createLoggedBankOperationMachine } from './logged-operation.js'
 import { createSyncLogMachine } from './sync-log.js'
+import { syncAttemptSchema } from '#lib/validation/bank-sync-log.js'
 import { importFixture } from './import.fixture.js'
 import { dependencies } from './test-fixtures.js'
 import type {
@@ -12,6 +20,7 @@ import type {
 
 const parents: AnyActorRef[] = []
 afterEach(() => {
+	vi.restoreAllMocks()
 	for (const parent of parents.splice(0)) parent.stop()
 })
 function start(
@@ -145,4 +154,66 @@ it('passes discovery through without creating a sync attempt', async () => {
 	expect(f.starts).toHaveLength(0)
 	expect(f.results).toHaveLength(0)
 	expect(f.fetch).toHaveBeenCalledOnce()
+})
+
+it('contains an unexpected logging actor error before provider work', async () => {
+	vi.spyOn(syncAttemptSchema, 'safeParse').mockImplementationOnce(() => {
+		throw new Error('Unexpected log guard failure')
+	})
+	const f = start()
+	expect(await toPromise(f.actor)).toMatchObject({
+		kind: 'failed',
+		logging: { kind: 'notStarted', reason: 'startWriteFailed' }
+	})
+	expect(f.fetch).not.toHaveBeenCalled()
+	expect(f.acquire).not.toHaveBeenCalled()
+})
+it('preserves successful imports when the logging actor unexpectedly crashes at completion', async () => {
+	const parse = syncAttemptSchema.safeParse.bind(syncAttemptSchema)
+	vi.spyOn(syncAttemptSchema, 'safeParse')
+		.mockImplementationOnce((value) => parse(value))
+		.mockImplementationOnce(() => {
+			throw new Error('Unexpected log guard failure')
+		})
+	const f = start()
+	expect(await toPromise(f.actor)).toMatchObject({
+		kind: 'complete',
+		counts: { imported: 3 },
+		logging: { kind: 'resultUnrecorded', reason: 'resultWriteFailed' }
+	})
+	expect(f.release).toHaveBeenCalledOnce()
+	expect(f.fetch).toHaveBeenCalledOnce()
+})
+it('drains an issued import after the logging actor crashes, including later cancellation', async () => {
+	const pending = Promise.withResolvers<void>(),
+		f = start()
+	f.persist.mockResolvedValueOnce(undefined).mockReturnValueOnce(pending.promise)
+	await vi.waitFor(() => expect(f.persist).toHaveBeenCalledTimes(2))
+	const log = f.actor.getSnapshot().children.log
+	if (!log) throw new Error('Missing log actor')
+	log.send({
+		type: 'FINISH',
+		result: {
+			get outcome(): 'succeeded' {
+				throw new Error('Unexpected log guard failure')
+			},
+			finishedAt: new Date(),
+			importSettlement: 'locallyPersisted',
+			failureCode: null,
+			importedCount: 2,
+			existingCount: 0,
+			omittedCount: 0
+		}
+	})
+	await waitFor(f.actor, (snapshot) => snapshot.matches({ logged: { operating: 'logFailed' } }))
+	expect(f.release).not.toHaveBeenCalled()
+	f.actor.send({ type: 'CANCEL' })
+	expect(f.release).not.toHaveBeenCalled()
+	pending.resolve()
+	expect(await toPromise(f.actor)).toMatchObject({
+		kind: 'cancelled',
+		counts: { imported: 2 },
+		logging: { kind: 'resultUnrecorded', result: { outcome: 'cancelled', importedCount: 2 } }
+	})
+	expect(f.release).toHaveBeenCalledOnce()
 })

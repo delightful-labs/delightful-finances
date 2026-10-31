@@ -134,3 +134,14 @@ Public runtime asset overrides do not supply a replica attachment; inspector por
 factory methods are internal, not application APIs. A 5,000-row worker sample avoided the page's
 roughly 2.7-second stall, but failed the persistent preparation purpose. Do not implement this worker
 owner or copy rows back through application writes. See spec 013 worker-preparation-results.json.
+
+Spec 014 retention verification adds a transaction-tier boundary on alpha.59:
+the completed-history query returned 101 rows at Remote tier outside the browser
+transaction but zero at Remote tier inside it. The same machine passed its Node
+full-policy test, so that alone did not establish browser behavior. Acquire the
+authority snapshot before the exclusive transaction, then recheck at LocalFirst
+inside it and require matching attempt and account-result identities before
+staging the atomic deletion. Terminal log records are immutable under the policy.
+Browser retention and full-policy tests verify this path; unit tests reject
+partial/mismatched local knowledge. See
+[`spec 014 verification`](../../specs/014-bank-sync-log/verification.md).

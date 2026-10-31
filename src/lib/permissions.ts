@@ -677,7 +677,12 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 				})
 			])
 		)
-	policy.simplefinSyncAttempts.allowDelete.never()
+	policy.simplefinSyncAttempts.allowDelete.where((attempt) =>
+		allOf([
+			ownsSyncAttempt(attempt),
+			{ outcome: { ne: 'unfinished' }, finishedAt: { isNull: false } }
+		])
+	)
 
 	const ownsAccountResult = (
 		result: Pick<RowContext<SyncAccountResult>, 'attemptId' | 'organizationId' | 'accountId'>
@@ -709,7 +714,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 				})
 			])
 		)
-	policy.simplefinSyncAccountResults.allowDelete.never()
+	policy.simplefinSyncAccountResults.allowDelete.where(allowedTo.delete('attempt'))
 
 	policy.simplefinAccountLinks.allowRead.where((link) => isAdmin(link.organizationId))
 	const validBankMapping = (link: {

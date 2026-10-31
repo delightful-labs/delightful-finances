@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { Button, Details } from 'delightful-ui'
 	import type { SyncAttempt, SyncAccountResult } from '#lib/schema.js'
+	import type { Connection } from '#lib/machines/bank-sync/types.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
 
 	let {
+		connections,
+		connectionId,
+		onConnection,
 		attempts,
 		accounts,
 		profiles,
@@ -12,6 +16,9 @@
 		hasEarlier,
 		onEarlier
 	}: {
+		connections: readonly Pick<Connection, 'id' | 'ownerId' | 'claimedAt' | 'status'>[]
+		connectionId: string | undefined
+		onConnection: (id: string) => void
 		attempts: readonly SyncAttempt[]
 		accounts: readonly SyncAccountResult[]
 		profiles: readonly { userId: string; displayName: string | null }[]
@@ -20,6 +27,11 @@
 		onEarlier: () => void
 	} = $props()
 
+	const connectionStatuses = $derived({
+		active: m['bank.log_connection_active'](),
+		error: m['bank.log_connection_error'](),
+		revoked: m['bank.log_connection_revoked']()
+	})
 	const outcomes = $derived({
 		unfinished: m['bank.log_unfinished'](),
 		succeeded: m['bank.succeeded'](),
@@ -63,6 +75,25 @@
 
 <section aria-label={m['bank.log_title']()}>
 	<h2>{m['bank.log_title']()}</h2>
+	<p>{m['bank.log_availability']()}</p>
+	{#if connections.length > 0}
+		<label>
+			{m['bank.log_connection']()}
+			<select value={connectionId} onchange={(event) => onConnection(event.currentTarget.value)}>
+				{#each connections as connection (connection.id)}
+					<option value={connection.id}
+						>{m['bank.log_connection_time_owner_status']({
+							time: date(connection.claimedAt),
+							owner: connection.ownerId
+								? initiator(connection.ownerId)
+								: m['bank.log_unknown_user'](),
+							status: connectionStatuses[connection.status]
+						})}</option
+					>
+				{/each}
+			</select>
+		</label>
+	{/if}
 	{#if attempts.length === 0}
 		<p>{m['bank.log_empty']()}</p>
 	{/if}
@@ -106,3 +137,9 @@
 	{/each}
 	{#if hasEarlier}<Button onclick={onEarlier}>{m['bank.log_earlier']()}</Button>{/if}
 </section>
+
+<style>
+	select {
+		max-inline-size: 100%;
+	}
+</style>

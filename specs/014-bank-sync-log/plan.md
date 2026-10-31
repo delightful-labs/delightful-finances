@@ -1,216 +1,130 @@
 # Implementation Plan: Bank Sync Log
 
-## Scope
+## Scope and ownership
 
-Implement spec.md on the current feature branch in focused review cycles. Keep
-transaction revision history and system-account display naming as separate work.
-Existing manual-only provider requests and passkey authorization remain intact.
+Persistent connection-level Bank Sync attempt history, per-account results,
+settings presentation and fixed retention. Transaction revision history and
+system-account display naming remain separate features. No provider request,
+passkey prompt or financial mutation is triggered by viewing or retaining logs.
 
-## Storage
+The bank supervisor composes `createLoggedBankOperationMachine`. Its raw bank
+operation retains ownership of credentials, Web Locks, imports and cleanup.
+`BankSyncIntegration` owns foreground Jazz queries and the independent retention
+coordinator. `BankSyncLog` is a pure presentation component with data/callback
+props, native disclosures and localized labels. No new custom CSS properties.
 
-Add schema/bank-sync-log.ts and register its tables in schema.ts:
+## Persistence and permissions
 
-- simplefinSyncAttempts: organizationId, connectionId, initiatedBy, startedAt,
-  optional finishedAt, outcome, nullable importedCount/existingCount/omittedCount,
-  bounded optional failureCode and importSettlement.
-- simplefinSyncAccountResults: attemptId, organizationId, accountId,
-  accountName snapshot, outcome, nullable counts and optional failureCode.
+`schema/bank-sync-log.ts` declares `simplefinSyncAttempts` and
+`simplefinSyncAccountResults`; `validation/bank-sync-log.ts` owns canonical
+validation. The additive migration creates only these tables. Existing financial
+records are unchanged. Attempts use stable IDs, and account-result IDs are
+stable derivations of attempt/account identity. Counts distinguish null from zero.
+Persist bounded failure codes, never raw exceptions, provider payloads or secrets.
 
-Attempt outcomes: unfinished, succeeded, partial, failed, cancelled. Settlement:
-notStarted, locallyPersisted, confirmed, unresolved. Unknown counts are null;
-known zero counts are zero. Use Jazz audit fields for record audit timestamps.
-Use stable attempt IDs and one account result identity per attempt/account.
-Domain validation lives in validation/bank-sync-log.ts beside derived adapters.
-Generate additive migrations only after the schema and permissions are reviewed.
-Do not deploy or modify existing financial records.
+Current owner/admin membership permits organization-scoped reads, including other
+users' connection logs. Only the connecting owner with current admin authority
+can create or settle attempts. Organization, connection, initiator, start and
+account identities are immutable. Account results require an unfinished matching
+parent and a local account in the same organization. Terminal records cannot be
+reopened or edited. Deletion is restricted to completed, finished attempts owned
+by the current admin user; account-result deletion inherits that permission.
+The fixed cap is enforced by the exclusive workflow, not an unsupported policy
+aggregate. No manual edit/delete/replay controls are exposed.
 
-## Authorization
+## Logging statecharts
 
-Attempts require organization/connection ownership consistency. Active
-owner/admin membership grants reads; the connection owner with current admin
-authority may insert and settle records. Account results inherit their attempt's
-scope and require a matching organization/account relationship. Immutable fields
-must be checked against the existing record on updates. Terminal transitions
-must not reopen or retarget attempts. Initially deny deletion; enable the narrow
-retention delete rules with the retention workflow. Account deletion must not
-silently cascade away retained history.
+Composed operation: capture identity -> prepare authorization -> save start ->
+wait for readiness -> existing bank operation -> drain its cleanup -> classify
+safe log completion -> save account results -> save terminal attempt -> return
+financial result with separate logging outcome. Only explicit SYNC commands log;
+setup, discovery and disconnect retain existing behavior.
 
-Verify exact full-app predicates using the installed SDK before accepting them;
-permission publication alone is insufficient. Do not widen general permissions.
+Logging child: validate start -> record start -> await actual operation result ->
+validate completion/accounts -> derive account ID -> save account (repeat) ->
+finalize attempt. The terminal attempt is saved last because account writes need
+an unfinished parent. Start failure prevents provider work; completion failure
+preserves actual financial results and leaves readable unfinished history.
 
-## Machine-first gate
+Cancellation drains issued start/account/final writes. While the operation owns
+imports, logging waits for its actual drained result rather than inventing
+rollback or settlement. Scope replacement and shutdown preserve the existing bank
+owner's drain protocol. Unknown account identities are not fabricated. Unexpected logging-actor errors
+are contained: before provider work they prevent startup; during an operation
+they preserve its resource owner and continue draining, including cancellation.
+The final financial result is returned with separate unavailable-log feedback.
+Safe provider/passkey/mapping failure codes are projected from the existing classifier.
 
-The attempt owner performs authorization, start persistence, the existing bank
-operation, result classification, terminal persistence and cleanup. Implement
-these as explicit states and invoked children, with leaf actors for single I/O
-operations. Preserve the existing bank operation's credential and lock ownership.
-Inspect new actor helpers recursively for hidden orchestration before review.
+## Retention: knowledge before mutation
 
-State sequence: authorize -> recordingStart -> operating -> recordingResult ->
-settled. Explicit alternatives: denied, startFailed, cancelled, resultUnrecorded.
-Cancellation while a write is issued drains it before exit; cancellation before
-provider fetching prevents the fetch. A terminal log-write failure retains the
-financial result and produces separate logging feedback. No automatic retry of
-provider work. Pass the existing classified result onward rather than deriving
-it again during persistence. Keep per-account counts at the import owner where
-the decisions are made; aggregate those results once.
+Retention is independent of sync, starts for an observed owned connection, and
+also handles a selected retained connection owned by the current user. Its
+coordinator chooses -> works -> idles, retries after 60 seconds, and handles
+replacing/closing by cancelling and draining the existing child before rebinding
+or final shutdown. Offline/no-access observations disable cleanup. Integration
+teardown sends SHUTDOWN; it does not abruptly stop an open transaction owner.
 
-## Retention
+The transaction child performs:
 
-Use a separate child statechart: assess authorization -> establish sufficient
-completed-history knowledge -> select candidates -> delete related account rows
-and parent attempts together -> settle. Keep the latest 100 completed attempts
-per connection by finish time and stable ID. Never prune unfinished attempts.
-Partial local knowledge or an unanswered authority yields deferred cleanup.
-Concurrent deletion must recheck candidate eligibility and preserve the newest
-100 completed attempts. Cleanup failures must not change a sync's import result.
-Do not promise physical erasure of underlying replica history.
+1. Check observed identity and authority-read membership/connection ownership.
+2. Authority-read completed history ordered by `finishedAt desc, id desc`.
+   At most 100 needs no mutation or transaction acquisition.
+3. Authority-read every account result for attempts older than the newest 100.
+4. Open one exclusive transaction and recheck membership/connection locally.
+5. Read completed history locally within the transaction; require exactly the
+   authority-observed attempt IDs, otherwise defer and roll back.
+6. Select the older attempts, read their account rows in the same transaction,
+   and require exactly the authority-observed account-result IDs.
+7. Recheck observed identity, stage all child/parent deletes, recheck identity
+   again, commit once and await authority acceptance.
 
-## Presentation and ownership
+Terminal rows and account results are immutable under the production policy, so
+matching identities also preserve ordering and contents. Exclusive read conflict
+checks and atomic commit protect concurrent cleanup. Unfinished attempts and
+other connections are excluded. No local count is treated as global completeness.
 
-BankSyncIntegration owns queries and actor binding. A pure BankSyncLog component
-receives rows and callbacks; BankSync composes it under Bank Sync settings.
-Use DUI Details/Table and Paraglide labels without new decoration. Query a bounded
-recent page for the selected connection and explicitly load earlier entries.
-Retain latest-result feedback and distinguish empty, loading, failed and partial
-history availability. Observed workspace or identity changes invalidate bindings.
+This authority/local boundary is required by browser verification on alpha.59:
+the same history query returned 101 outside a browser transaction at Remote tier
+but zero inside it at Remote tier. Acquisition outside followed by LocalFirst
+transaction rechecks passes browser and full-policy tests. Do not substitute an
+empty transaction Remote read for sufficient history knowledge.
 
-## Review and verification
+Each authority/local read has a bounded deadline. Before commit, cancellation,
+timeout, missing knowledge, authorization loss or staging failure rolls back any
+acquired transaction. Commit is issued once. Its wait drains to actual acceptance
+or an explicit unresolved deadline; the latter does not claim deletion, rollback
+or financial failure. Later cleanup re-queries rather than replaying provider work.
+Deletion removes normal records; it promises no physical erasure of replica or
+backup history.
 
-Constitution compliance: local-first ordinary reads/writes; provider activity stays
-explicit; no secrets in logs; strict types and no casts/switch statements; machine
-ownership before effects; schema and validation names match; translations reuse
-shared actions/nouns. Each production slice is reviewed before tests are added or
-run. Unit tests cover validation, policies and statecharts; browser tests cover
-logs, account expansion, outcomes, reload/offline, isolation and retention.
+## Settings presentation
 
-Use small related batches and the disposable agent server. Save diagnostics per
-batch. Record actual results rather than carrying forward results from old source.
-No commits or deployments without user authorization.
+Subscribe only on Bank Sync settings, scoped to the selected workspace and
+connection. The selector includes disconnected connections and other users'
+connections permitted to the current owner/admin. Labels show connection time,
+owner and status without UUIDs or credentials. Read initiator names with a safe
+unavailable-user fallback.
 
-## Logging actor protocol — implementation review
+Fetch 20 attempts plus a lookahead row, load another 20 explicitly, and reset the
+limit on user/workspace/connection changes. Scope-filter retained subscription
+values before rendering. Expand an attempt and each account for timestamps,
+counts, outcome, safe failure reasons and import settlement. Unfinished means
+final result unknown; locally saved is distinct from confirmed remote acceptance.
+Explain local history availability and that pre-feature syncs were not logged.
+Preserve existing latest-result feedback and separate logging-write errors.
 
-The standalone createSyncLogMachine receives a stable attempt ID and authorized
-organization/connection/user/start facts. It validates and saves the start, then
-sends SYNC_LOG_READY to its parent. The parent must not unlock/fetch for that
-attempt before readiness. The existing bank operation remains resource owner.
+## Verification and rollout
 
-The parent sends FINISH with its classified, drained financial result and safe
-failure code. The log actor validates finish timing/counts and saves completion.
-Its output distinguishes recorded, notStarted and resultUnrecorded, preserving
-the supplied financial result even if completion logging fails.
+The user authorized the remaining implementation and verification in one final
+slice. Tests inspect current schemas, permissions, actor protocols and locators.
+Focused unit/full-policy coverage checks validation, recording, financial results,
+resource drain, authorization, partial knowledge, timeouts, retention boundary,
+stable tie ordering and concurrency. Browser coverage checks live log records,
+account expansion, paging/reset, connection/workspace isolation, mobile containment,
+log-write failures and integrated background retention without provider requests.
+A production-build persistent-profile test covers cold restart with an open but
+unanswered authority and full offline history reads.
 
-CANCEL during start persistence drains the write and records cancellation with
-no imports; it never signals readiness. CANCEL while awaiting the operation's
-result enters a cancelling state and waits for FINISH rather than inventing an
-import outcome. CANCEL during result persistence drains that write. The parent
-must cancel/drain both actors before stopping them. Invalid input and start/result
-write failures are explicit final states. No credentials enter the log actor.
-
-The first implementation contains only the typed protocol and standalone actor;
-live operation integration and per-account persistence remain T006. Review this
-slice before actor tests are added or run. This actor is not yet user-visible.
-
-### Account persistence extension — implementation review
-
-FINISH now accepts terminal account results alongside the operation's financial
-result. Validate all rows and reject duplicate account IDs before any account
-write. For each row the state sequence is nextAccount -> identifyingAccount ->
-recordingAccount -> nextAccount; only after all rows settle does recordingResult
-finish the parent attempt. ID derivation and each individual write are leaf
-actors. IDs are derived deterministically from attempt and account identities.
-
-The attempt stays unfinished if account persistence fails; report accountWriteFailed
-separately and preserve the financial result. Already saved rows remain attached
-to the unfinished attempt. No automatic retry or rollback of imported transactions
-occurs. Cancellation during account persistence drains those writes and the final
-attempt write, retaining the operation's already-supplied result. These ordered
-writes are not claimed to be atomic. The attempt is deliberately finalized last
-because account writes require an unfinished parent under the reviewed policy.
-
-Review before extending lifecycle/full-policy coverage for multiple accounts,
-stable IDs, duplicate/invalid inputs, write failures and cancellation while an
-account row settles. Live operation integration remains outstanding.
-
-## Account-result projection — implementation review
-
-The account import actor now projects one report from its already-classified
-terminal result: provider identity, known local account ID/name, counts and import
-settlement. Unmapped/unavailable local accounts remain explicitly absent; do not
-invent an account identity or a name for an unreadable account.
-
-The multi-account importer appends each drained child's report in the same action
-that replaces transient progress with final totals. It returns those reports on
-success, failure or cancellation. The operation owner retains and returns them
-through its final cleanup; no provider payloads or raw exception messages are
-added to the account report. This is payload projection, not a new workflow.
-
-The added report field is optional at existing actor boundaries while their
-adapters/fixtures are migrated; production import actors always return an array.
-A child that errors without a final report leaves its account details unknown;
-the aggregate operation still preserves the existing partial counts/settlement.
-Live log creation and account-result writes remain the next wiring slice.
-
-Before running tests, review this four-file slice. Affected coverage includes
-bank-sync import/operation tests and fixtures using exact output equality; update
-those expectations by inspecting each scenario, and add multi-account assertions
-for counts, account-name snapshots, cancellation and late-child outcomes.
-
-## Composed operation actor — implementation review
-
-createLoggedBankOperationMachine composes preparation, the reviewed logging actor,
-and the existing bank operation. For SYNC it captures identity, authorizes scope,
-saves the attempt, waits for SYNC_LOG_READY, invokes the existing operation, waits
-for its cleanup/result, sends account/attempt completion to the log actor, and
-waits for final log settlement. Other commands invoke the existing operation.
-The raw operation accepts an optional captured identity so it cannot silently
-retarget when the composed actor's observed workspace changes.
-
-Cancellation during preparation ends before a log/provider operation is started.
-During start logging it drains the log; a late readiness message is handled by
-sending a cancelled/no-import completion, without invoking the provider. During
-operation it cancels both children but awaits the operation's actual drained
-result; during terminal logging it waits for logging. Financial results survive
-completion-log failure through a separate logging output. Start-log failure
-prevents the operation. Count/outcome projections are pure transformations of
-already-classified import results, not additional asynchronous orchestration.
-
-Only single log writes, existing operation effects, and read-only preparation
-actors are composed. No promise actor manually starts another actor. Raw provider
-responses and credentials are never copied into log inputs. Unknown per-account
-identities are omitted from persisted account rows, with aggregate results kept.
-
-This slice deliberately does not replace the supervisor's existing operation
-registration yet. Before registration, review and test readiness ordering,
-start failure, cancellation at readiness, operation cleanup before finalization,
-result-log failure, same-attempt identity binding, and non-SYNC passthrough.
-Then adapt supervisor snapshot/metadata and fixture contracts and expose safe
-logging failure feedback in presentation. No new tests were run for this slice.
-
-## Live supervisor registration — implementation review
-
-The supervisor now registers createLoggedBankOperationMachine as its production
-operation. Its actor slot retains the raw-operation type as a supported test
-substitution, preserving the existing raw import/settlement fixture. The supervisor
-unit mock is retargeted to the new production actor factory; no tests have been
-run for this registration slice before review.
-
-Presentation metadata reads the active underlying operation when present, while
-checking that snapshots expose machine metadata. Log outcomes travel separately
-from financial outcomes into BankPresentation. Settings renders translated
-start-record/result-record failures. Logging feedback is reset at new operations,
-reset/scope changes and shutdown, and completion feedback is accepted only for
-the connection captured when that operation began.
-
-Cancellation and shutdown still flow through the existing supervisor's draining
-states. The composed actor forwards lock failures only while its underlying
-operation exists. Scope identity is passed into the raw operation so it cannot
-retarget. Existing resource ownership and local/global settlement boundaries are
-unchanged. This registration enables attempt/account writes, but history display
-and retention cleanup are not implemented yet. No schema deployment occurred.
-
-After review, inspect/update supervisor mock contracts and verify supervisor,
-composed actor, import/settlement and full-policy suites. Add integration coverage
-for log rows after a real sync, logging-write failures, workspace replacement,
-shutdown during final logging, preserved provider progress and cancelled writes.
-Only then run the relevant browser cases against the disposable agent server.
+Record final outcomes in `verification.md` and tasks.md. Validate the schema and
+existing additive migration; publish schema/permissions through the normal release
+process. No production schema deployment is part of these local verification runs.
