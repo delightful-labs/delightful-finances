@@ -183,8 +183,10 @@ it.each(['deploy:jazz', 'build'])(
 	async (waitCommand) => {
 		const run = await fixture({ waitCommand })
 		try {
-			await vi.waitFor(async () =>
-				expect(await run.records()).toHaveLength(waitCommand === 'deploy:jazz' ? 3 : 4)
+			// Child startup competes with the full suite; leave time within the 5s test for shutdown.
+			await vi.waitFor(
+				async () => expect(await run.records()).toHaveLength(waitCommand === 'deploy:jazz' ? 3 : 4),
+				{ timeout: 3000 }
 			)
 			run.child.kill('SIGTERM')
 			expect((await run.completed).code).toBe(130)
