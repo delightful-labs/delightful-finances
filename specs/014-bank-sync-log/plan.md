@@ -175,3 +175,36 @@ cancellation and start/result persistence failures pass. `pnpm check` reports
 zero errors and warnings; focused Prettier and diff checks pass. The structural
 schema hash remains `e5a4d82f6013`. The cancellation fixture additionally covers
 a rejected pending start, preserving its existing failure outcome.
+
+## Review follow-up: required result reports
+
+The existing start-cancellation state and logged-operation completion projection
+already preserve null counts before account results are known; no production
+count change is needed. Verify both paths alongside completed empty syncs, whose
+counts must remain known zero.
+
+This change tightens data contracts only. Import/account actors construct an
+outcome in their existing terminal states and attach required account reports at
+the output boundary. The raw operation similarly attaches its required reports;
+only the logged wrapper adds logging feedback. The supervisor invokes the logged
+wrapper in production; its injected actor contract also accepts the raw operation
+for isolated import-settlement tests. It narrows wrapper feedback explicitly. Existing states,
+invocations, acquired-resource cleanup, failure and cancellation priorities remain
+unchanged; no asynchronous effects or orchestration were added.
+
+Implementation review precedes tests per repository agreements. Affected coverage:
+index supervisor fixtures must return LoggedOperationResult with required reports
+and logging, including retention completion; import/operation actor mocks must
+include reports; logged-operation cancellation assertions should verify all three
+persisted counts are null, with an empty completed sync retaining zero. Relevant
+existing import-settlement and browser cancellation/history scenarios also apply.
+
+Verification after review: 94 focused tests pass across supervisor, raw operation,
+logged operation, import settlement and log persistence. New coverage preserves
+null counts before unlocking and during start cancellation, and known zero for
+an empty completed sync. All four focused bank-sync browser scenarios pass,
+including persisted null counts and three visible Unknown values on cancellation.
+The first browser run could not open finances on the reused server after generated
+environment checks; it was stopped, the known disposable agent server restarted,
+and the complete four-case run passed. `pnpm check` reports zero errors/warnings;
+focused Prettier and diff checks pass. No schema/policy change or deployment.

@@ -9,6 +9,7 @@ import {
 	type ImportCounts,
 	type AccountImportReport,
 	type ImportResult,
+	type ImportOutcome,
 	type ImportSettlement,
 	type OperationWork,
 	type ProgressEvent,
@@ -27,7 +28,7 @@ type Context = Input & {
 	accountResults: readonly AccountImportReport[]
 	error: unknown
 	settlement: ImportSettlement
-	result: ImportResult | undefined
+	result: ImportOutcome | undefined
 }
 type Output = ImportResult
 function combinedCounts(previous: ImportCounts, current: ImportCounts): ImportCounts {
@@ -42,7 +43,7 @@ function combinedCounts(previous: ImportCounts, current: ImportCounts): ImportCo
 function accountReport(context: Context, result: ImportResult) {
 	return {
 		counts: combinedCounts(context.counts, result.counts),
-		accountResults: [...context.accountResults, ...(result.accountResults ?? [])],
+		accountResults: [...context.accountResults, ...result.accountResults],
 		accountCounts: emptyCounts(),
 		error: result.error,
 		settlement: result.settlement

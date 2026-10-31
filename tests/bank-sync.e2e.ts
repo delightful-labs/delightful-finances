@@ -814,12 +814,19 @@ test(
 		await expect(sync).toBeEnabled()
 		release.resolve()
 		expect((await syncLog(page)).attempts).toMatchObject([
-			{ outcome: 'cancelled', importSettlement: 'notStarted' }
+			{
+				outcome: 'cancelled',
+				importSettlement: 'notStarted',
+				importedCount: null,
+				existingCount: null,
+				omittedCount: null
+			}
 		])
 		const history = page.getByRole('region', { name: 'Sync history', exact: true })
 		await expect(history.locator(':scope > details > summary')).toContainText('Cancelled')
 		await history.locator(':scope > details > summary').click()
 		await expect(history.getByText('No import started', { exact: true })).toBeVisible()
+		await expect(history.getByText('Unknown', { exact: true })).toHaveCount(3)
 		await completed.promise
 		expect(operations).toEqual(['claim', 'discover', 'sync'])
 		await expect(main.getByText(/Imported:/)).toHaveCount(0)

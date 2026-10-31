@@ -23,7 +23,7 @@ export type AccountImportReport = {
 	counts: ImportCounts
 	settlement: ImportSettlement
 }
-export type ImportResult = (
+export type ImportOutcome =
 	| { kind: 'complete'; counts: ImportCounts; error: undefined; settlement: 'settled' }
 	| {
 			kind: 'cancelled' | 'failed'
@@ -31,7 +31,8 @@ export type ImportResult = (
 			error: unknown
 			settlement: ImportSettlement
 	  }
-) & { accountResults?: readonly AccountImportReport[] }
+
+export type ImportResult = ImportOutcome & { accountResults: readonly AccountImportReport[] }
 export type ProviderResponse = Awaited<ReturnType<typeof fetchAccounts>>
 export type BankCommand =
 	| { type: 'DISCOVER' }

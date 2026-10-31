@@ -23,7 +23,7 @@ import type {
 } from '#lib/contracts/bank-sync-log.js'
 
 type Input = { command: BankCommand; discovered: ProviderSummary[] }
-export type LoggedOperationResult = OperationResult & { logging?: SyncLogOutput | undefined }
+export type LoggedOperationResult = OperationResult & { logging: SyncLogOutput | undefined }
 type Context = Input & {
 	identity: RequestIdentity
 	start: SyncLogStart | undefined
@@ -59,7 +59,7 @@ const failureCodes: Readonly<Record<string, NonNullable<SyncLogCompletion['failu
 }
 function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }> {
 	const result = required(context.result)
-	const reports = result.accountResults ?? []
+	const reports = result.accountResults
 	const accounts: SyncLogAccountResult[] = []
 	for (const report of reports) {
 		if (report.account)

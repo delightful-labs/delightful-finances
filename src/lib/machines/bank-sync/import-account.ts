@@ -10,6 +10,7 @@ import {
 	type ImportCounts,
 	type ImportSettlement,
 	type ImportResult,
+	type ImportOutcome,
 	type OperationWork,
 	type ProgressEvent,
 	type ProviderResponse
@@ -29,7 +30,7 @@ type Context = Input & {
 	counts: ImportCounts
 	error: unknown
 	settlement: ImportSettlement
-	result: ImportResult | undefined
+	result: ImportOutcome | undefined
 }
 export type AccountImportResult = ImportResult
 

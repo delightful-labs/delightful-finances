@@ -4,7 +4,7 @@ import { Transaction } from 'jazz-tools'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import { createSyncLogRetentionMachine, type RetentionScope } from './log-retention.js'
 import type { SyncAttempt } from '#lib/schema.js'
-import type { OperationResult } from './operation.js'
+import type { LoggedOperationResult } from './logged-operation.js'
 import { createBankSyncMachine, selectBankView } from './index.js'
 import { bankAvailabilityMachine, bankObservation } from './availability.js'
 import { bankHistoryMachine } from './history.js'
@@ -12,7 +12,7 @@ import { availabilityReport, publishBankSource } from './reports.fixture.js'
 import type { BankSource, BankSyncDependencies, Connection } from './types.js'
 
 const settlements = vi.hoisted(() => new WeakMap<object, () => void>())
-const operationResults = vi.hoisted(() => new WeakMap<object, OperationResult>())
+const operationResults = vi.hoisted(() => new WeakMap<object, LoggedOperationResult>())
 
 // The supervisor must wait for these resource-owning children to acknowledge cancellation.
 vi.mock('./logged-operation.js', () => ({
@@ -30,13 +30,15 @@ function delayedOperation() {
 			settling: { on: { CANCEL: {}, FINISH: 'failed' } },
 			failed: { type: 'final' }
 		},
-		output: ({ self }): OperationResult =>
+		output: ({ self }): LoggedOperationResult =>
 			operationResults.get(self) ?? {
 				kind: 'failed',
 				error: new Error('private'),
 				counts: { imported: 1, existing: 0, omitted: 0 },
 				settlement: 'settled',
-				discovered: undefined
+				discovered: undefined,
+				accountResults: [],
+				logging: undefined
 			}
 	})
 }
@@ -473,6 +475,7 @@ describe('bank-owned log retention', () => {
 		if (!operation) throw new Error('Expected operation')
 		operationResults.set(operation, {
 			kind: 'complete',
+			accountResults: [],
 			counts: { imported: 0, existing: 0, omitted: 0 },
 			discovered: undefined,
 			settlement: 'settled',

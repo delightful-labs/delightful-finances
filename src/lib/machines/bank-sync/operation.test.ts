@@ -48,9 +48,13 @@ vi.mock('./accounts.js', () => ({
 vi.mock('./import.js', () => ({
 	createImportMachine: () =>
 		success(
-			{ kind: 'complete', counts, error: undefined, settlement: 'settled' } satisfies OutputFrom<
-				ReturnType<typeof import('./import.js').createImportMachine>
-			>,
+			{
+				kind: 'complete',
+				counts,
+				error: undefined,
+				settlement: 'settled',
+				accountResults: []
+			} satisfies OutputFrom<ReturnType<typeof import('./import.js').createImportMachine>>,
 			imported
 		)
 }))

@@ -13,7 +13,7 @@ import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { required } from './identity.js'
 import { createBankSetupMachine } from './setup.js'
 import { createBankOperationMachine, type OperationResult } from './operation.js'
-import { createLoggedBankOperationMachine } from './logged-operation.js'
+import { createLoggedBankOperationMachine, type LoggedOperationResult } from './logged-operation.js'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
 import {
@@ -67,10 +67,13 @@ type Context = BankData & {
 	counts: ImportCounts
 }
 
-function operationCompletion(context: Context, result: OperationResult) {
+function operationCompletion(context: Context, result: LoggedOperationResult | OperationResult) {
 	return {
 		counts: result.counts,
-		logging: context.operationConnectionId === context.connection?.id ? result.logging : undefined
+		logging:
+			context.operationConnectionId === context.connection?.id && 'logging' in result
+				? result.logging
+				: undefined
 	}
 }
 

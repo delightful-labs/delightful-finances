@@ -1,4 +1,3 @@
-import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
 import type { EventObject } from 'xstate'
 import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
 import type { ErrorActorEvent } from 'xstate'
@@ -43,22 +42,21 @@ type Context = Input & {
 	counts: ImportCounts
 	accountResults: readonly AccountImportReport[]
 	result: ProviderSummary[] | undefined
-	completion: OperationResult | undefined
+	completion: OperationOutcome | undefined
 	error: unknown
 	importSettlement: ImportSettlement
 	writeSettlement: ImportSettlement
 	outcome: SyncOutcome | undefined
 }
 type OperationSummary = {
-	logging?: SyncLogOutput | undefined
-	accountResults?: readonly AccountImportReport[]
 	counts: ImportCounts
 	discovered: ProviderSummary[] | undefined
 	settlement: ImportSettlement
 }
-export type OperationResult =
+type OperationOutcome =
 	| (OperationSummary & { kind: 'complete' | 'partial' })
 	| (OperationSummary & { kind: 'failed' | 'cancelled'; error: unknown })
+export type OperationResult = OperationOutcome & { accountResults: readonly AccountImportReport[] }
 type SyncOutcome =
 	| { lastOutcome: 'succeeded' | 'partial'; lastError: null }
 	| { lastOutcome: 'failed'; lastError: 'operation-failed' }
@@ -66,7 +64,7 @@ type SyncOutcome =
 function importCompletion(result: ImportResult) {
 	return {
 		counts: result.counts,
-		accountResults: result.accountResults ?? [],
+		accountResults: result.accountResults,
 		importSettlement: result.settlement
 	}
 }

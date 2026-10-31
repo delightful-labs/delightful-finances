@@ -122,12 +122,60 @@ it.each(['saved', 'rejected'])(
 			settlement: 'settled',
 			logging:
 				status === 'saved'
-					? { kind: 'recorded', result: { outcome: 'cancelled', importSettlement: 'notStarted' } }
+					? {
+							kind: 'recorded',
+							result: {
+								outcome: 'cancelled',
+								importSettlement: 'notStarted',
+								importedCount: null,
+								existingCount: null,
+								omittedCount: null
+							}
+						}
 					: { kind: 'notStarted', reason: 'startWriteFailed' }
 		})
 		expect(f.fetch).not.toHaveBeenCalled()
 	}
 )
+it('preserves unknown counts when cancelled before unlocking finishes', async () => {
+	const pending = Promise.withResolvers<string>()
+	const f = start()
+	f.unlock.mockReturnValue(pending.promise)
+	await vi.waitFor(() => expect(f.unlock).toHaveBeenCalledOnce())
+	f.actor.send({ type: 'CANCEL' })
+	expect(await toPromise(f.actor)).toMatchObject({
+		kind: 'cancelled',
+		accountResults: [],
+		logging: {
+			kind: 'recorded',
+			result: {
+				outcome: 'cancelled',
+				importedCount: null,
+				existingCount: null,
+				omittedCount: null
+			}
+		}
+	})
+	expect(f.fetch).not.toHaveBeenCalled()
+	pending.resolve('https://unused.example')
+})
+it('records known zero counts for a completed empty sync', async () => {
+	const f = start()
+	f.fetch.mockResolvedValue({ errors: [], accounts: [] })
+	expect(await toPromise(f.actor)).toMatchObject({
+		kind: 'complete',
+		accountResults: [],
+		logging: {
+			kind: 'recorded',
+			result: {
+				outcome: 'succeeded',
+				importedCount: 0,
+				existingCount: 0,
+				omittedCount: 0
+			}
+		}
+	})
+})
 it('waits for final logging after bank cleanup and preserves imports when the log write fails', async () => {
 	const pending = Promise.withResolvers<void>()
 	const f = start({ finish: () => pending.promise })
