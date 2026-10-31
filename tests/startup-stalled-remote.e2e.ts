@@ -546,7 +546,7 @@ test(
 				const history = page.getByRole('region', { name: 'Sync history', exact: true })
 				await expect(history.locator(':scope > details')).toHaveCount(1)
 				await history.locator(':scope > details > summary').click()
-				await expect(history.getByText('You', { exact: true })).toBeVisible()
+				await expect(history.getByText('Unavailable', { exact: true })).toBeVisible()
 				await history
 					.locator('summary')
 					.filter({ hasText: 'Historical bank ledger — Succeeded' })

@@ -127,7 +127,6 @@
 		"log_imported": "Imported",
 		"log_existing": "Already present",
 		"log_omitted": "Omitted",
-		"log_locallyPersisted": "Saved locally; remote acceptance not confirmed",
 		"log_confirmed": "Remote acceptance confirmed",
 		"log_unresolved": "Import settlement unresolved",
 		"log_availability": "Showing locally available history. More entries may appear as this device syncs."
@@ -507,6 +506,7 @@
 		"loading_subject": "Loading {subject}…",
 		"removed_subject_name": "{subject} {name} removed.",
 		"restoring_subject": "Restoring {subject}…",
+		"saved": "Saved",
 		"saved_subject": "{subject} saved.",
 		"saved_subject_name": "{subject} {name} saved.",
 		"selected_subject_name": "{subject} {name} selected.",

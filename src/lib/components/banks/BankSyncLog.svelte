@@ -39,7 +39,7 @@
 	})
 	const settlements = $derived({
 		notStarted: m['bank.step_upcoming'](),
-		locallyPersisted: m['bank.log_locallyPersisted'](),
+		locallyPersisted: m['status.saved'](),
 		confirmed: m['bank.log_confirmed'](),
 		unresolved: m['bank.log_unresolved']()
 	})

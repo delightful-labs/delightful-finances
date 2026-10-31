@@ -213,15 +213,28 @@ test(
 		).toHaveCount(0)
 		await page.getByRole('button', { name: 'Add Account “Provider Savings”', exact: true }).click()
 		await expect(page.getByText('Linked to Provider Savings', { exact: true })).toBeVisible()
+		await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const session = getCurrentJazzSession()?.getSnapshot()
+			const db = session?.client?.db,
+				userId = session?.account?.id
+			if (!db || !userId) throw new Error('Missing session')
+			const [profile] = await db.all(app.profiles.where({ userId }))
+			if (!profile) throw new Error('Missing profile')
+			await db
+				.update(app.profiles, profile.id, { displayName: 'Sync Operator' })
+				.wait({ tier: 'local' })
+		})
 		expect(await syncLog(page)).toEqual({ attempts: [], accounts: [] })
 		const history = page.getByRole('region', { name: 'Sync history', exact: true })
 		await expect(
-			history.getByText(
-				'No sync attempts are available on this device. Logging starts with this feature.',
-				{
-					exact: true
-				}
-			)
+			history.getByText('No Sync history yet.', {
+				exact: true
+			})
 		).toBeVisible()
 		const sync = pageContent(page).getByRole('button', {
 			name: 'Sync now (last 90 days)',
@@ -262,10 +275,8 @@ test(
 		const firstAttempt = history.locator(':scope > details').first()
 		await expect(history.locator(':scope > details')).toHaveCount(1)
 		await firstAttempt.locator(':scope > summary').click()
-		await expect(firstAttempt.getByText('You', { exact: true })).toBeVisible()
-		await expect(
-			firstAttempt.getByText('Saved locally; remote acceptance not confirmed', { exact: true })
-		).toBeVisible()
+		await expect(firstAttempt.getByText('Sync Operator', { exact: true })).toBeVisible()
+		await expect(firstAttempt.getByText('Saved', { exact: true })).toBeVisible()
 		const checkingResult = firstAttempt
 			.locator('details')
 			.filter({ has: page.locator('summary', { hasText: 'Provider Checking — Partial' }) })
@@ -356,7 +367,7 @@ test(
 		await expect(history.locator(':scope > details')).toHaveCount(2)
 		await context.setOffline(true)
 		await history.locator(':scope > details > summary').first().click()
-		await expect(history.getByText('You', { exact: true }).first()).toBeVisible()
+		await expect(history.getByText('Sync Operator', { exact: true }).first()).toBeVisible()
 		await expect(sync).toBeDisabled()
 		await context.setOffline(false)
 		await expect(sync).toBeEnabled()
@@ -380,8 +391,13 @@ test(
 		const failedAttempt = history.locator(':scope > details').first()
 		await expect(failedAttempt.locator(':scope > summary')).toContainText('Failed')
 		await failedAttempt.locator(':scope > summary').click()
-		await expect(failedAttempt.getByText('Unknown', { exact: true })).toHaveCount(3)
-		await expect(failedAttempt.getByText('Provider request failed', { exact: true })).toBeVisible()
+		await expect(failedAttempt.getByText('Unspecified', { exact: true })).toHaveCount(3)
+		await expect(
+			failedAttempt.getByText(
+				'SimpleFIN could not complete the request. Check connectivity or reauthorize your accounts at SimpleFIN, then retry manually.',
+				{ exact: true }
+			)
+		).toBeVisible()
 		// Older records exercise pagination without issuing additional provider operations.
 		const seededConnections = await page.evaluate(async () => {
 			const schemaPath = '/src/lib/schema.ts',
@@ -464,23 +480,19 @@ test(
 			}
 		})
 		await expect(history.locator(':scope > details')).toHaveCount(20)
-		await history.getByRole('button', { name: 'Load earlier attempts', exact: true }).click()
+		await history.getByRole('button', { name: 'More Sync history', exact: true }).click()
 		await expect(history.locator(':scope > details')).toHaveCount(24)
 		await expect(
-			history.getByRole('button', { name: 'Load earlier attempts', exact: true })
+			history.getByRole('button', { name: 'More Sync history', exact: true })
 		).toHaveCount(0)
-		await expect(history.locator(':scope > details > summary').last()).toContainText(
-			'Unfinished — final result unknown'
-		)
+		await expect(history.locator(':scope > details > summary').last()).toContainText('Unspecified')
 		const connectionSelector = history.getByRole('combobox', {
-			name: 'Bank connection',
+			name: 'Bank sync',
 			exact: true
 		})
 		await connectionSelector.selectOption(seededConnections.other)
 		await expect(history.locator(':scope > details')).toHaveCount(1)
-		await expect(history.locator(':scope > details > summary')).toContainText(
-			'Unfinished — final result unknown'
-		)
+		await expect(history.locator(':scope > details > summary')).toContainText('Unspecified')
 		await connectionSelector.selectOption(seededConnections.current)
 		await expect(history.locator(':scope > details')).toHaveCount(20)
 		await page.setViewportSize({ width: 390, height: 844 })
@@ -510,9 +522,7 @@ test(
 		await page.goto(`/settings/banks?workspace=${secondWorkspaceId}`)
 		await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
 		await expect(history.locator('details')).toHaveCount(0)
-		await expect(
-			history.getByRole('combobox', { name: 'Bank connection', exact: true })
-		).toHaveCount(0)
+		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toHaveCount(0)
 		await selectWorkspace(
 			page.getByLabel('Current Workspace', { exact: true }),
 			seededConnections.organizationId
@@ -823,10 +833,12 @@ test(
 			}
 		])
 		const history = page.getByRole('region', { name: 'Sync history', exact: true })
-		await expect(history.locator(':scope > details > summary')).toContainText('Cancelled')
+		await expect(history.locator(':scope > details > summary')).toContainText(
+			'The request was cancelled.'
+		)
 		await history.locator(':scope > details > summary').click()
-		await expect(history.getByText('No import started', { exact: true })).toBeVisible()
-		await expect(history.getByText('Unknown', { exact: true })).toHaveCount(3)
+		await expect(history.getByText('not completed', { exact: true })).toBeVisible()
+		await expect(history.getByText('Unspecified', { exact: true })).toHaveCount(3)
 		await completed.promise
 		expect(operations).toEqual(['claim', 'discover', 'sync'])
 		await expect(main.getByText(/Imported:/)).toHaveCount(0)
@@ -930,7 +942,7 @@ for (const failure of ['start', 'result']) {
 					page
 						.getByRole('region', { name: 'Sync history', exact: true })
 						.locator(':scope > details > summary')
-				).toContainText('Unfinished — final result unknown')
+				).toContainText('Unspecified')
 			}
 			await expect(sync).toBeEnabled()
 		}
@@ -1103,7 +1115,7 @@ test(
 		expect(providerRequests).toEqual(['claim'])
 		const history = page.getByRole('region', { name: 'Sync history', exact: true })
 		await history
-			.getByRole('combobox', { name: 'Bank connection', exact: true })
+			.getByRole('combobox', { name: 'Bank sync', exact: true })
 			.selectOption(seeded.otherConnectionId)
 		await expect(history.locator(':scope > details')).toHaveCount(1)
 		const sync = pageContent(page).getByRole('button', {
@@ -1124,9 +1136,9 @@ test(
 		const afterSync = await syncLog(page)
 		expect(afterSync.attempts).toHaveLength(102)
 		expect(afterSync.attempts.some((row) => row.id === seeded.otherAttempt)).toBe(true)
-		await expect(
-			history.getByRole('combobox', { name: 'Bank connection', exact: true })
-		).toHaveValue(seeded.otherConnectionId)
+		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toHaveValue(
+			seeded.otherConnectionId
+		)
 		await expect(history.locator(':scope > details')).toHaveCount(1)
 		expect(providerRequests).toEqual(['claim', 'sync'])
 	}
@@ -1211,12 +1223,10 @@ test(
 		await navigateSidebar(page, 'Bank sync')
 		await expect(page.locator('html')).toHaveAttribute('data-profile-lookup-failed', 'true')
 		await expect(history.locator(':scope > details')).toHaveCount(1)
-		await expect(
-			history.getByRole('combobox', { name: 'Bank connection', exact: true })
-		).toBeEnabled()
+		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toBeEnabled()
 		await history.locator(':scope > details > summary').click()
-		await expect(history.getByText('You', { exact: true })).toBeVisible()
-		await expect(history.getByText('No import started', { exact: true })).toBeVisible()
+		await expect(history.getByText('Unavailable', { exact: true })).toBeVisible()
+		await expect(history.getByText('not completed', { exact: true })).toBeVisible()
 		for (const name of ['Imported', 'Already present', 'Omitted'])
 			await expect(
 				history
