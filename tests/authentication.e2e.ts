@@ -1,7 +1,17 @@
-import { prepareSidebar, openCreationModal, closeCreationModal } from './helpers/ui.js'
+import {
+	prepareSidebar,
+	openCreationModal,
+	closeCreationModal,
+	navigateSidebar
+} from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
 import { generateAuthSecret } from 'jazz-tools'
+
+// These scenarios reveal or enter real disposable credentials. Playwright 1.64 also honors
+// this flag when collecting failure-page ARIA snapshots; trace/screenshot settings alone do not.
+process.env.PLAYWRIGHT_NO_COPY_PROMPT = '1'
+test.use({ trace: 'off', screenshot: 'off', video: 'off' })
 
 async function createAccount(page: Page, name: string) {
 	await page.goto('/accounts')
@@ -129,7 +139,7 @@ test(
 )
 
 test(
-	'recovery modal clears its content and confirmation on every dismissal',
+	'recovery modal clears its phrase on every dismissal and preserves profile editing',
 	{ tag: ['@workflow-completion', '@identity'] },
 	async ({ page }) => {
 		await createAccount(page, 'Recovery modal checking')
@@ -137,25 +147,20 @@ test(
 		const show = page.getByRole('button', { name: 'Show Recovery phrase' })
 		const dialog = page.getByRole('dialog', { name: 'Account recovery' })
 		const phrase = page.getByLabel('Your recovery phrase', { exact: true })
-		const confirmation = page.getByLabel('I saved this phrase somewhere safe.')
-		const complete = page.getByRole('button', { name: 'I saved the phrase', exact: true })
+		await expect.poll(() => currentIdentity(page)).toBeTruthy()
+		const identity = await currentIdentity(page)
 
-		for (const dismissal of ['close', 'escape', 'backdrop', 'complete']) {
+		for (const dismissal of ['close', 'escape', 'backdrop']) {
 			await show.click()
 			await expect(dialog).toBeVisible()
 			// Never include recovery secrets in assertion output or test artifacts.
 			expect(
 				await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)
 			).toBe(true)
-			await expect(confirmation).not.toBeChecked()
-			await expect(complete).toBeDisabled()
+			await expect(dialog.getByRole('checkbox')).toHaveCount(0)
 			await phrase.click()
 			await expect(dialog).toBeVisible()
-			if (dismissal === 'complete') {
-				await confirmation.check()
-				await complete.click()
-			} else if (dismissal === 'escape') {
-				await confirmation.check()
+			if (dismissal === 'escape') {
 				await page.keyboard.press('Escape')
 			} else if (dismissal === 'backdrop') {
 				await page.mouse.click(1, 1)
@@ -166,6 +171,84 @@ test(
 			await expect(phrase).toHaveCount(0)
 			await expect(show).toBeFocused()
 		}
+		expect(await currentIdentity(page)).toBe(identity)
+		await page.getByLabel('Display name', { exact: true }).fill('Library recovery owner')
+		await page.getByRole('button', { name: 'Save', exact: true }).click()
+		await expect(
+			page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
+		).toHaveCount(1)
+		expect(await currentIdentity(page)).toBe(identity)
+		await page.reload()
+		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue(
+			'Library recovery owner'
+		)
+	}
+)
+
+test(
+	'recovery clears on route unmount and remounts on the same host identity',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Recovery unmount checking')
+		await page.goto('/account')
+		await expect.poll(() => currentIdentity(page)).toBeTruthy()
+		const identity = await currentIdentity(page)
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		const phrase = page.getByLabel('Your recovery phrase', { exact: true })
+		await expect(phrase).toBeVisible()
+		// Trigger the existing host navigation while the modal makes the sidebar inert.
+		await page
+			.locator('aside')
+			.getByRole('link', {
+				name: 'Manage Accounts',
+				exact: true,
+				includeHidden: true
+			})
+			.evaluate((element: HTMLAnchorElement) => element.click())
+		await expect(page).toHaveURL((url) => url.pathname === '/accounts')
+		await expect(phrase).toHaveCount(0)
+		expect(await currentIdentity(page)).toBe(identity)
+		await navigateSidebar(page, 'Account')
+		await expect(phrase).toHaveCount(0)
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		expect(await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)).toBe(
+			true
+		)
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		expect(await currentIdentity(page)).toBe(identity)
+	}
+)
+
+test(
+	'recovery invalidates a revealed phrase when the host replaces the account',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Recovery replacement checking')
+		await page.goto('/account')
+		await expect.poll(() => currentIdentity(page)).toBeTruthy()
+		const identity = await currentIdentity(page)
+		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
+		const phrase = page.getByLabel('Your recovery phrase', { exact: true })
+		await expect(phrase).toBeVisible()
+		// One public SDK operation on Finance's existing session, not a new provider/client.
+		await page.evaluate(async () => {
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const session = getCurrentJazzSession()
+			if (!session) throw new Error('Test session is not ready')
+			await session.createLocalFirst()
+		})
+		await expect(phrase).toHaveCount(0)
+		await expect.poll(() => currentIdentity(page)).not.toBe(identity)
+		const show = page.getByRole('button', { name: 'Show Recovery phrase', exact: true })
+		await expect(show).toBeEnabled()
+		await show.click()
+		expect(await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)).toBe(
+			true
+		)
+		await page.getByRole('button', { name: 'Close', exact: true }).click()
+		await expect(phrase).toHaveCount(0)
 	}
 )
 
