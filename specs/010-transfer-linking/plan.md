@@ -94,3 +94,19 @@ No tests are added or run in these slices until the user reviews and approves th
 ## Complexity Tracking
 
 No constitution violations are planned. The new relationship table, one persistence statechart, and account-level delete capability each directly enforce approved transfer invariants and do not introduce a generic abstraction.
+
+## Transfer list review cycle
+
+Use `TransferView` as the Jazz integration boundary for workspace-scoped accounts, relationships, and transactions. Resolve effective reciprocal links with the existing domain helper and project readable pairs for presentation; this is a synchronous read projection without new actors, persistence, or workflows. `TransferList` composes the existing pure `TransactionList` through a row snippet, disabling daily totals. Extract `TransactionRowLayout` to share row spacing, link semantics, focus treatment, and amount placement with income/expense rows. Keep posting dates and currencies independent. Add `/transfers` and update navigation. This focused cycle spans seven implementation files plus feature artifacts; tests remain behind implementation approval.
+
+### Sidebar and saved-transfer refinement
+
+Mount `TransferView` in `/transfers/+layout.svelte` and compose the existing pure `TransactionWorkspace` so index, creation, and detail routes share the sidebar. Keep Jazz subscriptions in that integration and derive the selected pair independently of account-filtered list rows. `SavedTransferForm` receives both rows and account data and renders prefilled disabled controls plus each transaction link. Preserve the existing unlink-before-financial-edit rule without adding a new persistence workflow. Carry the list page through row selection and mobile back navigation. This review cycle changes six implementation files; no actors or persistence helpers change.
+
+Filter changes reset pagination through a replacing route navigation (`reset: false`), keeping focus/scroll and the selected transfer while updating the route URL read by pagination. A shallow URL update does not update that source in the installed SvelteKit version.
+
+### Production route and CI verification
+
+Match the existing transaction detail route option (`prerender = false`) on `/transfers/[id]` while retaining prerendered list/new shells. Include UUID transfer detail document navigations in the existing service-worker public-shell fallback; continue excluding non-document fetches, POST requests, malformed IDs, and unsupported paths. Extend the PWA cache assertion for the transfer index and cover a saved transfer after full browser/worker exit with HTTP cache cleared and the restarted browser offline. Verify production builds and browser suites in an isolated checkout with independent dependencies and generated files.
+
+The same PR CI run exposed an existing account-order snapshot subscription gap after reload: observations can precede the ready sidebar's subscription. Keep actor ownership and its RESET/OBSERVE/MOVE protocol unchanged; select its current snapshot through `useSelector`, which reads the actor on subscription, so the sidebar's capabilities reflect observations already received. Existing account-order unit and browser suites cover ordering and scope replacement.

@@ -20,6 +20,7 @@ export type BankSyncControls = {
 	outcome: LastSync | undefined
 	visible: boolean
 	disabled: boolean
+	loading: boolean
 	sync: () => void
 }
 

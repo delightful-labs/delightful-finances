@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte'
+	import type { TransactionRow } from '#lib/schema.js'
 	import { Details, Heading, Pagination, Text } from 'delightful-ui'
 	import Icon from '../navigation/AppIcon.svelte'
 	import ChevronDown from 'tdesign-icons-svg/src/chevron-down.svg?component'
@@ -18,7 +20,9 @@
 		noAccountsSelected,
 		requestedPage,
 		pageHref,
-		transactionHref
+		transactionHref,
+		item,
+		showTotals = true
 	}: {
 		groups: readonly TransactionDay[]
 		categoryNames: ReadonlyMap<string, string>
@@ -27,6 +31,8 @@
 		requestedPage: number
 		pageHref: (page: number) => string
 		transactionHref: (id: string) => string
+		item?: Snippet<[TransactionRow]>
+		showTotals?: boolean
 	} = $props()
 	const pageSize = 25
 	const transactionCount = $derived(
@@ -90,7 +96,7 @@
 						</Heading>
 						{#snippet trailing()}
 							<div class="totals">
-								{#each [...group.totals] as [currency, amount] (currency)}
+								{#each showTotals ? [...group.totals] : [] as [currency, amount] (currency)}
 									<Text
 										size="sm"
 										as="span"
@@ -107,12 +113,16 @@
 				{/snippet}
 				<ul class="entries">
 					{#each group.transactions as transaction (transaction.id)}
-						<TransactionListItem
-							href={transactionHref(transaction.id)}
-							{transaction}
-							categoryName={categoryNames.get(transaction.categoryId)}
-							tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
-						/>
+						{#if item}
+							{@render item(transaction)}
+						{:else}
+							<TransactionListItem
+								href={transactionHref(transaction.id)}
+								{transaction}
+								categoryName={categoryNames.get(transaction.categoryId)}
+								tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
+							/>
+						{/if}
 					{/each}
 				</ul>
 			</Details>

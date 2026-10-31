@@ -189,3 +189,36 @@ No setup tasks.
 ## Implementation Strategy
 
 Deliver the relationship and policy first, then existing-transaction suggestions/linking, paired manual creation, reporting, and finally lifecycle/deletion. Each stage is a focused review checkpoint. Do not expose a persistent link or paired creation until account histories, totals, and privacy behavior are coherent. Keep all test edits and execution behind review of the production code they cover.
+
+## Transfer list implementation review
+
+- [x] Add workspace-scoped `/transfers` with one row per effective readable pair and account filters matching either endpoint.
+- [x] Reuse date grouping, pagination, and empty feedback; extract a pure row layout shared with income/expense rows.
+- [x] Show both accounts and posting dates, descriptions, and currency-aware amounts; omit daily totals. Open a saved-transfer detail route from each row.
+- [x] Point navigation at the list and retain the existing add-transfer route. Reuse all existing localization messages.
+- [x] User review and approval of implementation and test execution.
+- [x] Inspect affected fixtures and add focused coverage in `tests/transfer-create.e2e.ts`; run existing shared-list/workspace regression suites and effective-link/date-grouping unit coverage. See verification below.
+
+### Sidebar refinement review
+
+- [x] Share the existing transaction sidebar/mobile workspace across transfer list, creation, and detail routes.
+- [x] Open each relationship by transfer ID with prefilled disabled fields and links to both transaction editors. Preserve separate dates/currencies and existing linked-edit protections.
+- [x] Keep the selected transfer independent of list account filters and preserve pagination through detail/back links.
+- [x] Cover desktop/mobile sidebar behavior, disabled prefilled fields, both transaction links, distinct dates/currencies, unavailable transfers after unlink, and filter/pagination behavior.
+
+### Transfer list verification
+
+- `pnpm exec vitest run src/lib/domain/internal-transfer.test.ts src/lib/domain/transaction-groups.test.ts`: 13 tests passed.
+- Focused Playwright coverage: 23 distinct scenarios passed across `tests/features/transaction-list.e2e.ts`, `tests/transaction-workspace.e2e.ts`, and `tests/transfer-create.e2e.ts`. All five transfer scenarios passed again after the pagination fix; the 18 unchanged shared-list/workspace regression scenarios passed in the preceding run.
+- The pagination fixture initially omitted opening the Accounts disclosure; it now uses the existing `openSidebarSection` helper. Once corrected, it exposed a real reset bug: SvelteKit 3 shallow `replaceState` updated the browser URL without updating the route URL consumed by pagination. `TransferView` now uses a replacing navigation with scroll/focus reset disabled when a changed filter must return to page one. The selected detail remains open.
+- `pnpm exec svelte-check --tsconfig ./tsconfig.json`: zero errors and warnings. `pnpm exec tsc --project tests/tsconfig.json --noEmit`, focused Prettier checks, and `git diff --check` passed.
+- No new actors, persistence operations, schemas, or permissions were introduced. Existing effective/pending/conflicted-link unit coverage is reused; browser coverage verifies unlink disappearance and unavailable detail without claiming a fresh cross-identity policy audit.
+
+### PR #34 CI follow-up
+
+- [x] Diagnose CI run `41206172782`: the build, startup, and production PWA jobs failed because `/transfers/[id]` inherited prerendering without build-time IDs. Match the existing income/expense detail route's `prerender = false` option.
+- [x] Include `/transfers` in the public-shell cache assertion and UUID transfer detail documents in the existing offline fallback. Keep API requests, non-document fetches, POSTs, and malformed paths outside that fallback.
+- [x] Add a cold offline transfer regression that clears the HTTP cache, exits the browser and its database worker, reopens the saved detail URL offline, verifies disabled saved fields and both transaction links, and reloads the public shell without embedding account names in its HTML.
+- [x] Reproduce the application-shard account-order failure after reload. Read the actor's current snapshot when the ready sidebar subscribes; preserve the actor lifetime and observation/mutation protocol.
+- [x] Verify production builds both without a live Jazz service and against a disposable in-memory Jazz server in an isolated checkout. Svelte checks, service-worker/test TypeScript checks, formatting, and diff checks pass. Existing account-order unit coverage: 6 passed; browser coverage: 5 passed. PWA coverage: 16 distinct scenarios passed, including the new cold offline transfer regression after correcting its form scope.
+- [x] Production startup suite: all 6 scenarios passed, including live grant updates, cold local reads/saves, remote rejection, and bank history after restart. Total focused follow-up coverage: 27 browser scenarios and 6 unit tests passed.

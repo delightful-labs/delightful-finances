@@ -1,16 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, createMachine, type ActorRefFrom } from 'xstate'
-import type { OperationResult } from './operation.js'
+import { createActor, createMachine, fromPromise, waitFor, type ActorRefFrom } from 'xstate'
+import { Transaction } from 'jazz-tools'
+import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
+import { createSyncLogRetentionMachine, type RetentionScope } from './log-retention.js'
+import type { SyncAttempt } from '#lib/schema.js'
+import type { LoggedOperationResult } from './logged-operation.js'
 import { createBankSyncMachine, selectBankView } from './index.js'
-import { bankAvailabilityMachine } from './availability.js'
+import { bankAvailabilityMachine, bankObservation } from './availability.js'
 import { bankHistoryMachine } from './history.js'
 import { availabilityReport, publishBankSource } from './reports.fixture.js'
 import type { BankSource, BankSyncDependencies, Connection } from './types.js'
 
 const settlements = vi.hoisted(() => new WeakMap<object, () => void>())
+const operationResults = vi.hoisted(() => new WeakMap<object, LoggedOperationResult>())
 
 // The supervisor must wait for these resource-owning children to acknowledge cancellation.
-vi.mock('./operation.js', () => ({ createBankOperationMachine: () => delayedOperation() }))
+vi.mock('./logged-operation.js', () => ({
+	createLoggedBankOperationMachine: () => delayedOperation()
+}))
 vi.mock('./setup.js', () => ({ createBankSetupMachine: () => delayedOperation() }))
 function delayedOperation() {
 	return createMachine({
@@ -23,13 +30,16 @@ function delayedOperation() {
 			settling: { on: { CANCEL: {}, FINISH: 'failed' } },
 			failed: { type: 'final' }
 		},
-		output: (): OperationResult => ({
-			kind: 'failed',
-			error: new Error('private'),
-			counts: { imported: 1, existing: 0, omitted: 0 },
-			settlement: 'settled',
-			discovered: undefined
-		})
+		output: ({ self }): LoggedOperationResult =>
+			operationResults.get(self) ?? {
+				kind: 'failed',
+				error: new Error('private'),
+				counts: { imported: 1, existing: 0, omitted: 0 },
+				settlement: 'settled',
+				discovered: undefined,
+				accountResults: [],
+				logging: undefined
+			}
 	})
 }
 function finish(actor: object) {
@@ -77,6 +87,7 @@ const dependencies: BankSyncDependencies = {
 	read: () => source,
 	passkeyName: () => 'Test'
 }
+const retentionDependencies = { db: dependencies.db, observe: () => bankObservation(source) }
 const actors: ActorRefFrom<ReturnType<typeof createBankSyncMachine>>[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
@@ -404,4 +415,154 @@ describe('bank report currency and command gating', () => {
 		finish(child)
 		expect(actor.getSnapshot().status).toBe('done')
 	})
+})
+
+describe('bank-owned log retention', () => {
+	function monitoredRetention(checks: RetentionScope[]) {
+		return createSyncLogRetentionCoordinator(retentionDependencies).provide({
+			actors: {
+				retention: createSyncLogRetentionMachine(retentionDependencies).provide({
+					actors: {
+						authorization: fromPromise(async ({ input }) => {
+							checks.push(input.scope)
+							return false
+						})
+					}
+				})
+			}
+		})
+	}
+	it('forwards the current bank connection on online, replacement and access observations', async () => {
+		const checks: RetentionScope[] = []
+		const actor = start({ actors: { retention: monitoredRetention(checks) } })
+		expect(checks).toHaveLength(0)
+		actor.send({ type: 'NETWORK_CHANGED', offline: false })
+		await vi.waitFor(() => expect(checks).toHaveLength(1))
+		expect(checks[0]).toEqual({
+			organizationId: source.organizationId,
+			userId: source.userId,
+			connectionId: connection.id
+		})
+		const retention = actor.getSnapshot().children.retention
+		if (!retention) throw new Error('Expected retention coordinator')
+		await waitFor(retention, (snapshot) => snapshot.matches('idle'))
+		const replacement = { ...connection, id: 'replacement' }
+		actor.send({ type: 'CONNECTIONS_CHANGED', revision: 0, connections: [replacement] })
+		await vi.waitFor(() => expect(checks).toHaveLength(2))
+		expect(checks[1]?.connectionId).toBe(replacement.id)
+		actor.send({ type: 'NETWORK_CHANGED', offline: true })
+		actor.send({ type: 'CONNECTIONS_CHANGED', revision: 0, connections: [connection] })
+		await Promise.resolve()
+		expect(checks).toHaveLength(2)
+		actor.send({ type: 'NETWORK_CHANGED', offline: false })
+		await vi.waitFor(() => expect(checks).toHaveLength(3))
+		expect(checks[2]?.connectionId).toBe(connection.id)
+		publishBankSource(actor, { ...source, membership: null }, 1)
+		await Promise.resolve()
+		expect(actor.getSnapshot().children.operation).toBeUndefined()
+		expect(checks).toHaveLength(3)
+	})
+	it('checks retention immediately after a recorded sync completion', async () => {
+		const checks: RetentionScope[] = []
+		const actor = start({ actors: { retention: monitoredRetention(checks) } })
+		actor.send({ type: 'NETWORK_CHANGED', offline: false })
+		await vi.waitFor(() => expect(checks).toHaveLength(1))
+		const retention = actor.getSnapshot().children.retention
+		if (!retention) throw new Error('Expected retention coordinator')
+		await waitFor(retention, (snapshot) => snapshot.matches('idle'))
+		actor.send({ type: 'SYNC' })
+		const operation = actor.getSnapshot().children.operation
+		if (!operation) throw new Error('Expected operation')
+		operationResults.set(operation, {
+			kind: 'complete',
+			accountResults: [],
+			counts: { imported: 0, existing: 0, omitted: 0 },
+			discovered: undefined,
+			settlement: 'settled',
+			logging: {
+				kind: 'recorded',
+				attemptId: 'completed-attempt',
+				result: {
+					outcome: 'succeeded',
+					finishedAt: new Date(),
+					importSettlement: 'notStarted',
+					failureCode: null,
+					importedCount: 0,
+					existingCount: 0,
+					omittedCount: 0
+				}
+			}
+		})
+		operation.send({ type: 'CANCEL' })
+		finish(operation)
+		await vi.waitFor(() => expect(checks).toHaveLength(2))
+		expect(checks[1]?.connectionId).toBe(connection.id)
+		expect(retention.getSnapshot().context.completion).toBe('completed-attempt')
+	})
+	it.each(['SYNC', 'CONNECT'])(
+		'drains retention as well as %s before closing and ignores late observations',
+		async (command) => {
+			const opening = Promise.withResolvers<Transaction<'exclusive'>>()
+			const rollback = Promise.withResolvers<boolean>()
+			const tx = new Transaction('exclusive', () => {
+				throw new Error('Unit fixture must not open Jazz')
+			})
+			const rows: SyncAttempt[] = Array.from({ length: 101 }, (_, index) => ({
+				id: String(index),
+				organizationId: 'organization',
+				connectionId: connection.id,
+				initiatedBy: 'owner',
+				startedAt: new Date(0),
+				finishedAt: new Date(1),
+				outcome: 'succeeded',
+				importSettlement: 'notStarted',
+				failureCode: null,
+				importedCount: 0,
+				existingCount: 0,
+				omittedCount: 0
+			}))
+			const retentionLogic = createSyncLogRetentionCoordinator(retentionDependencies).provide({
+				actors: {
+					retention: createSyncLogRetentionMachine(retentionDependencies).provide({
+						actors: {
+							authorization: fromPromise(async () => true),
+							history: fromPromise(async (): Promise<SyncAttempt[]> => rows),
+							accounts: fromPromise(
+								async (): Promise<import('#lib/schema.js').SyncAccountResult[]> => []
+							),
+							open: fromPromise(() => opening.promise),
+							rollback: fromPromise(() => rollback.promise)
+						}
+					})
+				}
+			})
+			const actor = start({ actors: { retention: retentionLogic } })
+			actor.send({ type: 'NETWORK_CHANGED', offline: false })
+			const retention = actor.getSnapshot().children.retention
+			if (!retention) throw new Error('Expected retention coordinator')
+			await waitFor(retention, (snapshot) => snapshot.matches('working'))
+			const cleanup = retention.getSnapshot().children.retention
+			if (!cleanup) throw new Error('Expected transaction owner')
+			await waitFor(cleanup, (snapshot) => snapshot.matches({ running: { work: 'opening' } }))
+			if (command === 'SYNC') actor.send({ type: 'SYNC' })
+			else actor.send({ type: 'CONNECT', token: 'secret' })
+			const operation = actor.getSnapshot().children.operation ?? actor.getSnapshot().children.setup
+			if (!operation) throw new Error('Expected active bank work')
+			actor.send({ type: 'SHUTDOWN' })
+			finish(operation)
+			expect(actor.getSnapshot().matches('drainingRetention')).toBe(true)
+			actor.send({ type: 'NETWORK_CHANGED', offline: false })
+			publishBankSource(actor, source, 1)
+			actor.send({ type: 'RESET' })
+			actor.send({ type: 'SYNC' })
+			expect(actor.getSnapshot().matches('drainingRetention')).toBe(true)
+			opening.resolve(tx)
+			await waitFor(cleanup, (snapshot) => snapshot.matches({ running: { work: 'rollingBack' } }))
+			expect(actor.getSnapshot().status).toBe('active')
+			rollback.resolve(true)
+			await waitFor(actor, (snapshot) => snapshot.status === 'done')
+			expect(actor.getSnapshot().context.command).toBeUndefined()
+			expect(actor.getSnapshot().context.setupToken).toBeUndefined()
+		}
+	)
 })

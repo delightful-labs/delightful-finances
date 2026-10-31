@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
-	import { Button, Table } from 'delightful-ui'
+	import { Button, ButtonContent, Table } from 'delightful-ui'
+	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
 	import type { Tag } from '#lib/schema.js'
 	import type { ManagementView } from '#lib/contracts/management-contract.js'
 	import { formReasonText } from '#lib/forms/form-messages.js'
@@ -85,7 +86,7 @@
 								aria-label={m['actions.archive_subject']({ subject: tag.name })}
 								onclick={() => onArchive(tag.id)}
 							>
-								{m['actions.archive_button']()}
+								<ButtonContent icon={ArchiveIcon} text={m['actions.archive_button']()} />
 							</Button>
 						{/if}</td
 					>

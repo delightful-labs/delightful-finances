@@ -1,5 +1,7 @@
+import type { SyncLogOutput } from './bank-sync-log.js'
 import { m } from '#lib/paraglide/messages.js'
-import type { Account } from '../schema.js'
+import type { Account, SyncAttempt, SyncAccountResult } from '../schema.js'
+import type { Connection } from '../machines/bank-sync/types.js'
 export type BankSetupView =
 	| 'creating'
 	| 'test-encryption'
@@ -40,7 +42,8 @@ export const bankSetupSteps = [
 	{ id: 'verify', label: () => m['bank.step_verify']() },
 	{ id: 'connect', label: () => m['bank.step_connect']() }
 ] satisfies [SetupStep, ...SetupStep[]]
-export type BankStatus = { key: BankStatusKey; label: () => string }
+export type BankMessage = { label: () => string }
+export type BankStatus = BankMessage & { key: BankStatusKey }
 export type LastSync = {
 	time: Date
 	outcomeKey: 'bank.succeeded' | 'bank.partial' | 'bank.failed'
@@ -59,6 +62,7 @@ export type ProviderAccountView = {
 	showExisting: boolean
 }
 export type BankPresentation = {
+	logging?: SyncLogOutput | undefined
 	mode:
 		| { kind: 'restricted' }
 		| { kind: 'setup'; step: number; stage: BankSetupView | null }
@@ -67,4 +71,19 @@ export type BankPresentation = {
 	status: BankStatus | undefined
 	history: LastSync | undefined
 	providerAccounts: readonly ProviderAccountView[]
+}
+
+export type BankLogPresentation = {
+	connections: readonly (Pick<Connection, 'id' | 'ownerId' | 'claimedAt'> & {
+		status: BankMessage
+	})[]
+	attempts: readonly (Omit<SyncAttempt, 'outcome' | 'importSettlement' | 'failureCode'> & {
+		outcome: BankMessage
+		importSettlement: BankMessage
+		failure: BankMessage | undefined
+	})[]
+	accounts: readonly (Omit<SyncAccountResult, 'outcome' | 'failureCode'> & {
+		outcome: BankMessage
+		failure: BankMessage | undefined
+	})[]
 }

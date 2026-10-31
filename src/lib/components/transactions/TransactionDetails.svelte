@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
+	import { SYSTEM_ACCOUNT_ID } from 'jazz-tools'
 	import { Details } from 'delightful-ui'
 	import type { TransactionDetail } from '#lib/schema.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
@@ -23,6 +24,11 @@
 		creatorProfile: AttributionProfile | null | undefined
 		editorProfile: AttributionProfile | null | undefined
 	} = $props()
+	function authorName(accountId: string, profile: AttributionProfile | null | undefined) {
+		return accountId === SYSTEM_ACCOUNT_ID
+			? m['bank.system_account_name']()
+			: profile?.displayName || accountId
+	}
 	const timestamps = $derived(
 		new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 	)
@@ -41,7 +47,7 @@
 					avatarMimeType={creatorProfile?.avatarMimeType}
 					alt=""
 				/>
-				<span>{creatorProfile?.displayName || transaction.$createdBy.account}</span>
+				<span>{authorName(transaction.$createdBy.account, creatorProfile)}</span>
 			</dd>
 			<dt>{m['transactions.created_at']()}</dt>
 			<dd>
@@ -56,7 +62,7 @@
 					avatarMimeType={editorProfile?.avatarMimeType}
 					alt=""
 				/>
-				<span>{editorProfile?.displayName || transaction.$updatedBy.account}</span>
+				<span>{authorName(transaction.$updatedBy.account, editorProfile)}</span>
 			</dd>
 			<dt>{m['transactions.updated_at']()}</dt>
 			<dd>

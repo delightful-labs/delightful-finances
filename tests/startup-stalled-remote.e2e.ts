@@ -466,3 +466,121 @@ test('reports a real server rejection after a locally successful save with stale
 		await context.close()
 	}
 })
+
+test(
+	'bank sync history survives a cold restart with an unanswered authority and then offline',
+	{ tag: ['@bank-sync'] },
+	async ({ playwright, baseURL, authority, remote, profile }) => {
+		if (!baseURL) throw new Error('Expected isolated production preview URL')
+		let current: BrowserContext | undefined
+		let providerRequests = 0
+		const monitor = async (context: BrowserContext) => {
+			await context.route('**/api/simplefin', async (route) => {
+				providerRequests += 1
+				await route.abort()
+			})
+		}
+		try {
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow'
+			})
+			await monitor(current)
+			const warm = current.pages()[0] ?? (await current.newPage())
+			const { workspace } = await prepareSavedExpense(warm)
+			const organization = await authority.one(app.organizations.where({ id: workspace }), {
+				tier: 'remote'
+			})
+			const account = await authority.one(app.accounts.where({ organizationId: workspace }), {
+				tier: 'remote'
+			})
+			if (!organization || !account) throw new Error('Missing workspace fixture')
+			const connectionId = crypto.randomUUID(),
+				attemptId = crypto.randomUUID()
+			await authority
+				.insert(
+					app.simplefinConnections,
+					{
+						organizationId: workspace,
+						ownerId: organization.ownerId,
+						accessUrl: '',
+						status: 'revoked',
+						claimedAt: new Date('2026-10-30T12:00:00Z')
+					},
+					{ id: connectionId }
+				)
+				.wait({ tier: 'global' })
+			await authority
+				.insert(
+					app.simplefinSyncAttempts,
+					{
+						organizationId: workspace,
+						connectionId,
+						initiatedBy: organization.ownerId,
+						startedAt: new Date('2026-10-30T12:01:00Z'),
+						finishedAt: new Date('2026-10-30T12:02:00Z'),
+						outcome: 'succeeded',
+						importSettlement: 'notStarted',
+						importedCount: 0,
+						existingCount: 3,
+						omittedCount: 0
+					},
+					{ id: attemptId }
+				)
+				.wait({ tier: 'global' })
+			await authority
+				.insert(app.simplefinSyncAccountResults, {
+					organizationId: workspace,
+					attemptId,
+					accountId: account.id,
+					accountName: 'Historical bank ledger',
+					outcome: 'succeeded',
+					importedCount: 0,
+					existingCount: 3,
+					omittedCount: 0
+				})
+				.wait({ tier: 'global' })
+			const target = `/settings/banks?workspace=${workspace}`
+			await warm.goto(target)
+			const expand = async (page: Page) => {
+				const history = page.getByRole('region', { name: 'Sync history', exact: true })
+				await expect(history.locator(':scope > details')).toHaveCount(1)
+				await history.locator(':scope > details > summary').click()
+				await expect(history.getByText('Unavailable', { exact: true })).toBeVisible()
+				await history
+					.locator('summary')
+					.filter({ hasText: 'Historical bank ledger — Succeeded' })
+					.click()
+				await expect(history.locator('details details dd')).toHaveText(['0', '3', '0'])
+			}
+			await expand(warm)
+			await current.close()
+			current = undefined
+			remote.silence()
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow'
+			})
+			await monitor(current)
+			const stalled = current.pages()[0] ?? (await current.newPage())
+			await stalled.goto(target)
+			await expand(stalled)
+			await expect.poll(() => remote.observed.opened).toBeGreaterThan(0)
+			await expect.poll(() => remote.observed.clientBytes).toBeGreaterThan(0)
+			await current.close()
+			current = undefined
+			current = await playwright.chromium.launchPersistentContext(profile, {
+				baseURL,
+				serviceWorkers: 'allow',
+				offline: true
+			})
+			await monitor(current)
+			const offline = current.pages()[0] ?? (await current.newPage())
+			await offline.goto(target)
+			await expand(offline)
+			expect(providerRequests).toBe(0)
+		} finally {
+			await current?.close()
+		}
+	}
+)

@@ -10,6 +10,7 @@ import {
 	type ImportCounts,
 	type ImportSettlement,
 	type ImportResult,
+	type ImportOutcome,
 	type OperationWork,
 	type ProgressEvent,
 	type ProviderResponse
@@ -29,7 +30,7 @@ type Context = Input & {
 	counts: ImportCounts
 	error: unknown
 	settlement: ImportSettlement
-	result: ImportResult | undefined
+	result: ImportOutcome | undefined
 }
 export type AccountImportResult = ImportResult
 
@@ -107,7 +108,22 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 			result: undefined
 		}),
 		initial: 'checkingMapping',
-		output: ({ context }) => required(context.result),
+		output: ({ context }) => {
+			const result = required(context.result)
+			return {
+				...result,
+				accountResults: [
+					{
+						account: context.account
+							? { id: context.account.id, name: context.account.name }
+							: undefined,
+						kind: result.kind,
+						counts: result.counts,
+						settlement: result.settlement
+					}
+				]
+			}
+		},
 		on: { CANCEL: '.cancelled' },
 		states: {
 			checkingMapping: {
