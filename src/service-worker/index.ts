@@ -7,7 +7,7 @@ const cacheName = `${cachePrefix}${version}`
 const scopePath = new URL(self.registration.scope).pathname
 const offlineShellPath = new URL('offline', self.registration.scope).pathname
 const financeDetailPath =
-	/^(?:expenses|income)\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+	/^(?:expenses|income|transfers)\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const cachedPaths = new Set(
 	[...immutable, ...assets, ...prerendered].map(
 		({ path }) => new URL(path.replace(/^\//, ''), self.registration.scope).pathname
