@@ -79,8 +79,17 @@ Real held-write browser checks retain the acknowledgement only after actual SDK 
 They do not replace the database with a fake. Bank import switching and recovery and transfer
 switching pass: issued source writes persist exactly once, destination work cannot mount early,
 and restoration cannot start before application release. No stopped-actor assertion was removed.
-The final combined browser run and GitHub CI results belong in the PR; local results do not imply
-that every application/PWA scenario has been rerun.
+The final combined browser run passes 20 scenarios and fails only the retained transfer-recovery
+regression below. The broader unit run passes 1,667 cases and times out once in an unchanged
+income-payment permission test; rerunning that permission file without competing qualification
+processes passes all 82 cases. All 122 unit files therefore have passing results across these runs;
+the initial all-suite timeout is retained in the PR record. This does not claim one entirely green
+all-suite run or that every application/PWA scenario was rerun.
+
+Draft PRs: [Finance #40](https://github.com/delightful-labs/delightful-finances/pull/40) and
+[library #5](https://github.com/delightful-labs/delightful-local-first/pull/5). Library `pnpm verify`
+passes, including 219 unit cases, types, formatting/lint, package/publint, consumer checks, and the
+Storybook build. Required GitHub CI remains a separate merge gate.
 
 Five production cold-start/remote-boundary checks pass in an isolated checkout with its own
 dependencies and generated environment:
