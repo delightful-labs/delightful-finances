@@ -19,19 +19,27 @@ remain available during workspace-catalog loading or failure.
 
 Creation uses the shared form modal. While submitting, it keeps Close and a persistent screen-reader
 progress region, without an extra visible preparation message or Cancel button. Status/alert nodes
-survive feedback and success transitions. Creation does not select its result automatically.
+survive feedback and success transitions. Creation does not select its result automatically. Equivalent editing-view observations preserve
+the local name draft; entering a new editing session resets it.
 
 ## Actor ownership
 
 ```mermaid
 flowchart TD
   App[Application readiness] --> Coordinator[Workspace readiness: database attachment]
-  Integration[WorkspaceBootstrap: Jazz and browser adapters] -. observations .-> Coordinator
+  App --> SelectionAttachment[Selection attachment]
+  SelectionAttachment --> SharedSelection[Shared workspace selection]
+  App --> TransferOwner[Scoped transfer mutation owner]
+  App --> Drain[Finite selection drain join]
+  Integration[WorkspaceBootstrap: Jazz and browser adapters] -. observations .-> App
+  App -. ordered facts and selection leases .-> Coordinator
   Coordinator --> Startup[Identity initialization owner]
   Coordinator --> Creation[Identity-bound creation owner]
-  Coordinator --> Integrity[Selected-binding integrity owner]
   Coordinator --> Navigation[Navigation actor]
-  Coordinator --> Bank[Existing bank actor]
+  Coordinator --> Resources[Selected-resource owner: one lease]
+  Resources --> Integrity[Selected-binding integrity owner]
+  Resources --> Bank[Bank supervisor]
+  Bank --> Retention[Sync-log retention coordinator]
   Startup --> Initialization[Initialization workflow]
   Creation --> Operation[Creation operation]
   Operation --> Journal[IndexedDB journal resource owner]
@@ -42,15 +50,22 @@ flowchart TD
 ```
 
 Integration binds subscriptions, browser effects and actor attachments. Pure presentation receives
-data and callbacks. The coordinator determines membership/access once; navigation consumes that
-decision. Initialization, integrity and navigation reports carry request/generation correlation.
+data and callbacks. Shared selection consumes exact local membership facts independently from directory availability;
+the coordinator and navigation consume its lease/status alongside Finance-specific permissions. Initialization, integrity and navigation reports carry request/generation correlation.
 Creation exposes an identity-bound public view. Stale reports cannot enable a replacement selection,
 including A → B → A. Exact database attachment identity prevents obsolete detach events from closing
 a replacement owner.
 
-Startup, creation and integrity retain separate owners because their lifetimes and cleanup differ.
-Fixed children remain invoked through normal work and draining. Parents await live dependents;
-already-failed/completed children cannot be expected to acknowledge another shutdown command.
+Startup, creation, and navigation remain fixed identity-bound children. Each selected scope gets a
+distinct resource owner that invokes bank/retention and integrity through work and drain. The
+coordinator waits for its finite result before replacement, retains unresolved evidence, and never
+restarts automatically after an unsolicited resource stop. Selection changes do not shut down
+creation. Whole-coordinator shutdown drains the resource owner alongside the identity-bound children.
+Public actor liveness only avoids dead-child sends; queued finite completion/error still determines
+release. The application now supplies shared selection leases; the former native directory-based
+selection verdict and temporary host lease issuance are removed. This handoff awaits runtime verification.
+The [incremental adoption notes](../../docs/local-first-workspace-selection-plan.md) record the reviewed
+boundaries and focused verification.
 The [orchestration spec](../008-actor-orchestration/spec.md) defines these responsibilities.
 
 ## Initialization
@@ -91,7 +106,163 @@ with reassessment and settlement. Attribution-only partial results remain financ
 repair, blocked-partial branches and legacy backfill are absent. Required categories are created at
 workspace creation; transaction forms retain their normal category validation.
 
-## Completion and future work
+## Shared selection application handoff
+
+The application owns the selection attachment and transfer mutation owner as siblings for the
+whole application lifetime. The existing coordinator continues to own startup, creation,
+navigation, and selected bank/integrity resources. A finite drain join is an application child
+for one library drain request; it never owns or recreates the two resource owners it waits for.
+
+```mermaid
+flowchart TD
+  Application[Application readiness] --> Attachment[Selection attachment]
+  Attachment --> Selection[Shared selection actor]
+  Application --> Transfers[Transfer mutation owner]
+  Application --> Join[Finite workspace drain join]
+  Application --> Coordinator[Workspace coordinator]
+  Coordinator --> Startup[Startup]
+  Coordinator --> Creation[Creation]
+  Coordinator --> Navigation[Navigation]
+  Coordinator --> Resources[Selected bank and integrity resources]
+  Selection -- invalidate and request drain --> Application
+  Join -- exact drain command --> Transfers
+  Join -- exact drain command --> Resources
+  Resources -- finite output via coordinator and application --> Join
+  Transfers -- correlated finite response --> Join
+  Join -- combined outcome --> Application
+  Application -- exact acknowledgement --> Selection
+```
+
+### Binding and observation protocol
+
+Each coordinator attachment receives a fresh selection attachment token and increasing revision,
+even if the SDK retains the same database client after recovery. The application waits for the
+selection attachment's release and coordinator closure before installing another attachment.
+The selection wrapper stays invoked across SDK retry/recovery; detach closes its current fixed
+selection child, without stopping a child that is still requesting cleanup.
+
+Bootstrap sends one typed readiness observation with its exact attachment identity to the
+application. The application rejects old attachments, forwards accepted observations to the
+coordinator, and supplies target-specific facts to shared selection. It is the single ordering
+boundary; two unrelated Svelte effects must not independently drive old and new selection policy.
+Use a fresh selection attempt on target changes and a monotonically increasing observation
+generation within the attachment. Overflow fails closed; counters must not wrap.
+
+The explicit URL target determines selection intent. Malformed or conflicting scope cannot select
+another workspace. An unscoped management/identity route suspends selection and drains any old
+lease without ending creation, startup, or navigation. No automatic first-workspace selection is
+added. Available local membership for the exact user/workspace supplies target access independently
+of directory loading, absence, or failure. Missing/loading membership is unknown, failed membership
+observation is failed, mismatched membership is denied, and an unavailable session is unavailable.
+Directory records remain chooser facts and never establish or revoke target authorization.
+
+### Lease and transfer request protocol
+
+On a current selected report, the application binds transfer scope using
+`transferScopeForWorkspaceLease` for binding/workspace and an application-lifetime monotonic
+generation, then publishes that exact lease to the coordinator. The generation cannot reset with
+a new attachment: the long-lived transfer owner rejects generations older than its last binding. Equivalent
+selected reports retain existing owners; they do not rebind/reset transfer outcome evidence.
+The coordinator creates bank/integrity resources with the supplied lease after their existing
+initialization prerequisites. It stops issuing temporary host leases. Its native directory-based
+selection verdict is replaced by shared selection status, while membership and bank credential
+permissions retain their existing domain checks.
+
+Transfer eligibility must not depend on bank resource acquisition, profile initialization, or a
+nonempty workspace directory. Both transfer integrations provide a scope-capture capability bound
+to their original database dependency. The request actor captures the current lease when it is
+created, before submitting or waiting. Creation and link/unlink/delete callers currently invoke
+that request actor immediately from the operation transition; retain this ordering. If preparation
+is later moved ahead of that invocation, capture must move to the original operation transition.
+Validate the captured database, identity, and requested workspace against the published lease.
+Copy the scope fields into the immutable request; do not look up scope again in the submit action.
+
+The application accepts a request only while that exact lease remains published and its binding,
+workspace, epoch, original database and identity are current. It rejects requests while invalidated,
+draining, recovering, closing, or failed with an existing not-started operation result. Export/reuse
+the transfer owner's rejection classification rather than duplicating its result union. Do not
+attach the latest scope to an old request. Cancellation continues to reach the original owner.
+Remove production `TRANSFER_SCOPE_CHANGED` forwarding only when both callers use scoped requests.
+
+### Drain, recovery, and failure protocol
+
+`WORKSPACE_SCOPE_INVALIDATED` immediately clears published capabilities and the coordinator lease.
+This precedes the separately delivered drain request, so new transfer requests must already be
+rejected in that interval. On `WORKSPACE_DRAIN_REQUESTED`, capture the old resource actor and start
+one drain join. If it already completed independently, forward its actual saved finite output for
+the same lease. No acquired resource means the join's resource leg is released; public actor status
+alone never supplies that evidence. The coordinator forwards actual completion or a correlated
+crash while retaining its own existing cleanup classification. Never stop the join to replace it.
+
+The application acknowledges released evidence with `DRAINED`, known released failure with
+`DRAIN_FAILED: released`, and uncertainty with `DRAIN_FAILED: unresolved`. A known released failure
+requires explicit retry and fresh observations. An unresolved result enters an explicit cleanup
+failure state; it cannot install another attachment, certify clean shutdown, retry the SDK, or
+restore identity. Unexpected join/selection/transfer-owner errors take that same conservative path
+and continue cleanup of surviving owners. Stale child errors and drain responses cannot affect a
+replacement. Selection failure must be visible through existing readiness error presentation.
+
+Retry and identity restoration wait for coordinator closure, selection attachment release, and
+the finite join result before issuing their SDK operation. Whole-application shutdown drains
+selection before terminating the transfer owner, so the owner remains available for its scoped
+acknowledgement. Retain existing startup/observer cleanup and recovery/shutdown priority. These
+barriers must be explicit machine states/guards, not a pair of mirrored completion booleans.
+
+### Implementation and review sequence
+
+The coordinated implementation batch touches application readiness, workspace readiness, Bootstrap,
+the transfer request actor, both transfer integration components, and the owner's shared rejection
+classification. A small typed observation adapter may be separate if needed; it must only map facts,
+not become another owner or hide orchestration. No schema, localized string, CSS, or UI redesign is
+part of this batch. Show the implementation before updating or running its tests.
+
+After implementation review, update application/coordinator fixtures to speak the public
+selection/lease/resource protocols. Verify local access with an empty/loading/failed directory,
+transfers before bank initialization, equivalent observations, A -> B -> A stale requests, access
+revocation between invalidation and drain request, both cleanup orders, independent completion,
+unresolved outcomes, recovery with a retained client, attachment replacement, stale errors, and
+shutdown while draining. Browser coverage must include workspace switching with held bank/transfer
+work, ordinary transfer operations, creation surviving selection changes, and identity recovery.
+The original 39 drain-join unit cases have been extended to 47 cases covering captured transfer
+scope, absent/preclosed owners, and retained finite evidence. Application and caller verification
+also covers the integrated handoff; the current results and qualification limits are recorded below.
+
+## Completion status
+
+Shared-selection adoption is wired into the application, coordinator, and both transfer integrations.
+The application owns attachment replacement and exact drain acknowledgement; the coordinator consumes
+shared leases and forwards actual finite resource outputs. Request actors capture scope at creation.
+SDK retry/recovery waits for both coordinator closure and shared selection release. Unknown cleanup
+enters an explicit failure state and cannot certify clean shutdown or issue another identity change.
+A selected library lease that was invalidated before publication has no acquired transfer scope;
+the join accepts that absence explicitly. Already-closed/crashed transfer owners contribute finite
+release/unresolved evidence rather than receiving a command they can no longer acknowledge.
+
+After implementation review, the shared selection handoff passes 191 focused unit cases across six
+files, including 73 application cases. Coordinator fixtures run real shared selection and its public
+lease/drain protocol; request and transaction fixtures capture the original scope. The application
+now waits for the coordinator's actual finite onDone output, treating its terminal-entry closing
+notice as informational. A closing notice alone cannot release an SDK retry/recovery barrier.
+The join consumes preclosed resource evidence as input, avoiding a late send to an immediately
+completed join. Full source/service-worker and browser-test types pass. The corrected final browser
+run passes all 16 focused scenarios: identity recovery/sign-in, bank cancellation/retention,
+workspace selector/filter/revocation/creation-survival, readiness/reload, transfer link/unlink/delete,
+and offline/cross-currency transfer creation. The final server log has no stopped-actor warnings.
+Five production cold-start/remote-boundary checks now pass: cold offline and unanswered remote
+reads/saves, an already negotiated connection ceasing to answer, later authority rejection, and bank
+history across cold restarts without provider fetches. Real held-write switching passes for bank
+imports and transfers; held bank-write recovery passes. A cancellation after settled bank imports
+now reports clean release, while unresolved settlement remains unresolved; two regressions cover it.
+The focused bank/application/coordinator/join rerun passes 216 cases and source/browser types pass.
+
+The slice remains blocked for merge: held transfer-write recovery releases the application barrier
+but Jazz restoration waits for pending global synchronization. An actor-independent SDK probe also
+leaves a locally persisted three-row transfer globally unacknowledged while ordinary/simple transaction
+writes are acknowledged. The pinned SDK, transfer permission graph, or their interaction needs a
+reduced reproduction and correction. The browser regression remains enabled and failing; do not
+bypass synchronization or call this release-ready. See the current
+[adoption design and qualification](../../docs/local-first-workspace-selection-plan.md) for evidence.
+PRs must remain draft until this regression and required CI pass.
 
 Reviewed focused checks cover creation, recovery, offline behavior, isolation, URL/history scope,
 authorization, stale reports, input/filter reset, accessible announcements and resource cleanup.

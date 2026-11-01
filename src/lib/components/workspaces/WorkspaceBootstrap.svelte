@@ -194,10 +194,6 @@
 		}
 	}
 	readiness.actor.send({ type: 'ATTACH_WORKSPACE', attachment })
-	$effect(() => {
-		const workspaceId = organizationId ?? undefined
-		untrack(() => readiness.actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId }))
-	})
 	const workspaceActor = $derived(selectAttachedWorkspace(applicationState.current, attachment))
 	setContext<WorkspaceContext>(workspaceKey, {
 		get actor() {
@@ -219,7 +215,10 @@
 	$effect(() => {
 		const observation = readReadiness()
 		const actor = workspaceActor
-		untrack(() => actor?.send({ type: 'OBSERVED', observation }))
+		untrack(() => {
+			if (actor)
+				readiness.actor.send({ type: 'WORKSPACE_SELECTION_OBSERVED', attachment, observation })
+		})
 	})
 	$effect(() => {
 		const actor = workspaceActor

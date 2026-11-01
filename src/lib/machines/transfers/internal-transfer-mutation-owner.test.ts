@@ -113,7 +113,7 @@ describe('internal transfer mutation owner', () => {
 			type: 'REQUEST_TRANSFER_MUTATION',
 			request: deleteRequest('delete-first', firstDb.db, firstResponses)
 		})
-		await waitFor(actor, (snapshot) => snapshot.matches('deleting'))
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { work: 'deleting' } }))
 		actor.send({
 			type: 'REQUEST_TRANSFER_MUTATION',
 			request: linkRequest('link-second', secondDb.db, secondResponses)
@@ -124,7 +124,7 @@ describe('internal transfer mutation owner', () => {
 
 		firstRead.release()
 		await waitFor(actor, () => secondDb.beginTransaction.mock.calls.length === 1)
-		await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { work: 'idle' } }))
 
 		expect(firstResponses[0]?.result).toEqual({
 			operation: 'delete',
@@ -153,7 +153,7 @@ describe('internal transfer mutation owner', () => {
 			type: 'REQUEST_TRANSFER_MUTATION',
 			request: linkRequest('first', firstDb.db, firstResponses)
 		})
-		await waitFor(actor, (snapshot) => snapshot.matches('linking'))
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { work: 'linking' } }))
 		actor.send({
 			type: 'REQUEST_TRANSFER_MUTATION',
 			request: linkRequest('second', secondDb.db, secondResponses)
@@ -164,7 +164,7 @@ describe('internal transfer mutation owner', () => {
 
 		firstRead.release()
 		await waitFor(actor, () => secondDb.beginTransaction.mock.calls.length === 1)
-		await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { work: 'idle' } }))
 
 		expect(firstResponses).toEqual([
 			{
@@ -231,7 +231,7 @@ describe('internal transfer mutation owner', () => {
 			type: 'REQUEST_TRANSFER_MUTATION',
 			request: linkRequest('shutdown', db.db, responses)
 		})
-		await waitFor(actor, (snapshot) => snapshot.matches('linking'))
+		await waitFor(actor, (snapshot) => snapshot.matches({ running: { work: 'linking' } }))
 		actor.send({ type: 'SHUTDOWN' })
 
 		expect(actor.getSnapshot().status).toBe('active')

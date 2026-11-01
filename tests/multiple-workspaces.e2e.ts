@@ -825,3 +825,71 @@ for (const duplicate of [false, true]) {
 		}
 	)
 }
+
+test(
+	'submitted workspace creation survives selecting another workspace',
+	{ tag: ['@workspaces'] },
+	async ({ page }) => {
+		const errors: string[] = []
+		page.on('pageerror', (error) => errors.push(error.message))
+		page.on('console', (message) => {
+			if (message.type() === 'warning' && message.text().includes('sent to stopped actor'))
+				errors.push(message.text())
+		})
+		await start(page)
+		const target = workspaceId(await create(page, 'Selection destination'))
+		await closeCreationModal(page)
+		const first = await page.evaluate(async (target) => {
+			const { db, app } = window.workspaceSettingsTest
+			const row = (await db.all(app.organizations)).find((row) => row.id !== target)
+			if (!row) throw new Error('Missing initial workspace')
+			return row.id
+		}, target)
+		const selector = page.getByLabel('Select Workspace', { exact: true })
+		await selector.selectOption(first)
+		await expect(page).toHaveURL(`/settings/workspace?workspace=${first}`)
+		const dialog = await openCreationModal(page, 'Create Workspace')
+		await expect(dialog.getByLabel('Workspace name', { exact: true })).toBeEnabled()
+		await dialog.getByLabel('Workspace name', { exact: true }).fill('Creation across selection')
+		await expect(dialog.getByLabel('Workspace name', { exact: true })).toHaveValue(
+			'Creation across selection'
+		)
+		const gate = await page.evaluateHandle(() => {
+			const digest = crypto.subtle.digest.bind(crypto.subtle)
+			let release = () => {}
+			const pending = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			crypto.subtle.digest = (algorithm, data) => pending.then(() => digest(algorithm, data))
+			return {
+				release: () => {
+					crypto.subtle.digest = digest
+					release()
+				}
+			}
+		})
+		try {
+			await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+			await expect(dialog.getByRole('status')).toHaveText('Preparing your workspace…')
+			await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+			await selector.selectOption(target)
+			await expect(page).toHaveURL(`/settings/workspace?workspace=${target}`)
+			await openCreationModal(page, 'Create Workspace')
+			await expect(dialog.getByRole('status')).toHaveText('Preparing your workspace…')
+		} finally {
+			await gate.evaluate((control) => control.release())
+			await gate.dispose()
+		}
+		await expect(dialog.getByRole('status')).toHaveText('Workspace saved.')
+		await expect(page).toHaveURL(`/settings/workspace?workspace=${target}`)
+		expect(
+			await page.evaluate(async () => {
+				const { db, app } = window.workspaceSettingsTest
+				return (await db.all(app.organizations)).filter(
+					(row) => row.name === 'Creation across selection'
+				).length
+			})
+		).toBe(1)
+		expect(errors).toEqual([])
+	}
+)

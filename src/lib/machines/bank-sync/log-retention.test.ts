@@ -253,3 +253,85 @@ it('rolls back when an authority-confirmed snapshot cannot be rechecked locally'
 	expect(f.rollback).toHaveBeenCalledOnce()
 	expect(f.stage).not.toHaveBeenCalled()
 })
+
+it('coordinator releases an idle lifetime without running a transaction', () => {
+	const f = fixture()
+	const actor = createActor(createSyncLogRetentionCoordinator(f.deps)).start()
+	actor.send({ type: 'SHUTDOWN' })
+	expect(actor.getSnapshot().output).toEqual({ outcome: 'released' })
+	expect(f.opened).not.toHaveBeenCalled()
+})
+it.each(['normal', 'replacement', 'shutdown'])(
+	'coordinator preserves unresolved commit settlement during %s',
+	async (intent) => {
+		const f = fixture()
+		const pending = Promise.withResolvers<void>()
+		f.settle.mockReturnValueOnce(pending.promise)
+		const actor = createActor(
+			createSyncLogRetentionCoordinator(f.deps).provide({ actors: { retention: f.logic } })
+		).start()
+		actor.send({ type: 'CHECK', scope, completion: undefined })
+		const cleanup = actor.getSnapshot().children.retention
+		if (!cleanup) throw new Error('Missing retention transaction owner')
+		await waitFor(cleanup, (snapshot) => snapshot.matches({ running: { work: 'settling' } }))
+		expect(f.settle).toHaveBeenCalledOnce()
+		if (intent === 'replacement')
+			actor.send({ type: 'CHECK', scope: undefined, completion: undefined })
+		if (intent === 'shutdown') actor.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().output).toBeUndefined()
+		pending.reject(new Error('settlement unavailable'))
+		if (intent !== 'shutdown') {
+			await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+			actor.send({ type: 'SHUTDOWN' })
+		}
+		await waitFor(actor, (snapshot) => snapshot.status === 'done')
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+	}
+)
+it('coordinator keeps uncertainty after a successful later cleanup', async () => {
+	const f = fixture()
+	f.settle.mockRejectedValueOnce(new Error('first settlement unavailable'))
+	const actor = createActor(
+		createSyncLogRetentionCoordinator(f.deps).provide({ actors: { retention: f.logic } })
+	).start()
+	actor.send({ type: 'CHECK', scope, completion: 'first' })
+	await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+	actor.send({ type: 'CHECK', scope, completion: 'next' })
+	await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+	expect(f.settle).toHaveBeenCalledTimes(2)
+	actor.send({ type: 'SHUTDOWN' })
+	expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+})
+it.each(['normal', 'replacement', 'shutdown'])(
+	'coordinator retains a transaction child crash during %s',
+	async (intent) => {
+		const f = fixture()
+		const pending = Promise.withResolvers<ReturnType<typeof resource>>()
+		f.opened.mockReturnValueOnce(pending.promise)
+		let broken = false
+		const logic = f.logic.provide({
+			guards: {
+				interrupted: () => {
+					if (broken) throw new Error('controlled child crash')
+					return false
+				}
+			}
+		})
+		const actor = createActor(
+			createSyncLogRetentionCoordinator(f.deps).provide({ actors: { retention: logic } })
+		).start()
+		actor.send({ type: 'CHECK', scope, completion: undefined })
+		await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce())
+		if (intent === 'replacement')
+			actor.send({ type: 'CHECK', scope: undefined, completion: undefined })
+		if (intent === 'shutdown') actor.send({ type: 'SHUTDOWN' })
+		broken = true
+		pending.resolve(f.tx)
+		if (intent !== 'shutdown') {
+			await waitFor(actor, (snapshot) => snapshot.matches('idle'))
+			actor.send({ type: 'SHUTDOWN' })
+		}
+		await waitFor(actor, (snapshot) => snapshot.status === 'done')
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+	}
+)

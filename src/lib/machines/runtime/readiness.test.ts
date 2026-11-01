@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assign, createActor, createMachine, setup, sendTo, waitFor } from 'xstate'
+import { assign, createActor, createMachine, fromCallback, setup, sendTo, waitFor } from 'xstate'
+import type { InspectionEvent, ActorRefFrom } from 'xstate'
 import type {
 	InitializationRequest,
 	InitializationStatusEvent,
@@ -16,10 +17,83 @@ import {
 	createWorkspaceReadinessMachine,
 	selectWorkspaceView,
 	type ReadinessObservation,
-	type WorkspaceAttachment
+	type WorkspaceAttachment,
+	workspaceBankActor
 } from './readiness.js'
+import type {
+	WorkspaceLease,
+	WorkspaceDrainRequest,
+	WorkspaceSelectionReport,
+	WorkspaceSelectionRequest
+} from 'delightful-local-first/workspace/contracts'
+import { createWorkspaceSelectionMachine } from 'delightful-local-first/workspace/workflow'
+import {
+	workspaceSelectionTarget,
+	workspaceSelectionObservation
+} from './workspace-selection-observation.js'
+import type { SelectedResourceOutput } from '../../contracts/workspace-selected-resources.js'
+import type { WorkspaceResourceRelease } from '../../contracts/workspace-resource-release.js'
+import type { BankEvent } from '../bank-sync/types.js'
 import { scope, membership, records } from '../workspaces/workspace-integrity.fixture.js'
 
+type ControlEvent = { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' }
+type ResourceControl = {
+	actor: object
+	send: (event: ControlEvent) => void
+	getSnapshot: () => { status: string; matches: (value: string) => boolean }
+}
+type IdentityControl = {
+	actor: object
+	send: (event: { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'FAIL' }) => void
+	getSnapshot: () => { status: string; matches: (state: string) => boolean }
+}
+const { bankControls, integrityControls, resourceResults, startupControls, creationControls } =
+	vi.hoisted(() => ({
+		bankControls: new WeakMap<object, ResourceControl>(),
+		startupControls: new WeakMap<object, IdentityControl>(),
+		creationControls: new WeakMap<
+			object,
+			Omit<IdentityControl, 'send'> & {
+				send: (event: { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' }) => void
+			}
+		>(),
+		integrityControls: new WeakMap<object, ResourceControl>(),
+		resourceResults: new WeakMap<object, WorkspaceResourceRelease>()
+	}))
+function controlFor(self: {
+	send: (event: ControlEvent) => void
+	getSnapshot: () => { status: string; value: unknown }
+}): ResourceControl {
+	return {
+		actor: self,
+		send: (event) => self.send(event),
+		getSnapshot: () => ({
+			status: self.getSnapshot().status,
+			matches: (value) => self.getSnapshot().value === value
+		})
+	}
+}
+const ownerFailure = vi.hoisted(() => ({ shutdown: false }))
+vi.mock('./workspace-selected-resources.js', async (original) => {
+	const actual = await original<typeof import('./workspace-selected-resources.js')>()
+	return {
+		...actual,
+		createWorkspaceSelectedResources: (
+			input: Parameters<typeof actual.createWorkspaceSelectedResources>[0]
+		) => {
+			const logic = actual.createWorkspaceSelectedResources(input)
+			return ownerFailure.shutdown
+				? logic.provide({
+						actions: {
+							shutDownChildren: () => {
+								throw new Error('controlled owner crash')
+							}
+						}
+					})
+				: logic
+		}
+	}
+})
 const { bankStart, bankObservation, startupObservation } = vi.hoisted(() => ({
 	bankStart: vi.fn(),
 	bankObservation: vi.fn(),
@@ -42,6 +116,15 @@ vi.mock('../workspaces/workspace-startup.js', () => ({
 		>({}).createMachine({
 			context: ({ input }) => input,
 			initial: 'checking',
+			entry: ({ self }) =>
+				startupControls.set(self, {
+					actor: self,
+					send: (event) => self.send(event),
+					getSnapshot: () => ({
+						status: self.getSnapshot().status,
+						matches: (state) => self.getSnapshot().value === state
+					})
+				}),
 			on: {
 				OBSERVED: {
 					target: '.checking',
@@ -97,7 +180,9 @@ vi.mock('../bank-sync/index.js', () => ({
 	createBankSyncMachine: () =>
 		createMachine({
 			initial: 'working',
-			entry: bankStart,
+			entry: [({ self }) => bankControls.set(self, controlFor(self)), bankStart],
+			output: ({ self }): WorkspaceResourceRelease =>
+				resourceResults.get(self) ?? { outcome: 'released' },
 			on: {
 				WORKSPACE_ACCESS_CHANGED: { actions: bankObservation },
 				CONNECTIONS_CHANGED: { actions: bankObservation },
@@ -105,8 +190,29 @@ vi.mock('../bank-sync/index.js', () => ({
 				HISTORY_CHANGED: { actions: bankObservation }
 			},
 			states: {
-				working: { on: { SHUTDOWN: 'closing', RESET: 'closed' } },
-				closing: { on: { SHUTDOWN: 'closed' } },
+				working: {
+					on: {
+						SHUTDOWN: 'closed',
+						RESET: 'closed',
+						HOLD: 'held',
+						CRASH: {
+							actions: () => {
+								throw new Error('controlled bank crash')
+							}
+						}
+					}
+				},
+				held: {
+					on: {
+						SHUTDOWN: 'closing',
+						CRASH: {
+							actions: () => {
+								throw new Error('controlled bank crash')
+							}
+						}
+					}
+				},
+				closing: { on: { FINISH: 'closed', SHUTDOWN: {} } },
 				closed: { type: 'final' }
 			}
 		})
@@ -116,20 +222,34 @@ vi.mock('../workspaces/workspace-integrity-owner.js', () => ({
 		type Input = { request: IntegrityRequest; recipient: IntegrityRecipient }
 		return setup<
 			Input,
-			{ type: 'OBSERVED'; request: IntegrityRequest } | { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' },
+			| { type: 'OBSERVED'; request: IntegrityRequest }
+			| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
 			{},
 			{},
 			{},
 			{},
 			never,
 			string,
-			Input
+			Input,
+			WorkspaceResourceRelease
 		>({}).createMachine({
 			context: ({ input }) => input,
+			entry: ({ self }) => integrityControls.set(self, controlFor(self)),
+			output: ({ self }) => resourceResults.get(self) ?? { outcome: 'released' },
 			initial: 'active',
 			on: { OBSERVED: { actions: assign({ request: ({ event }) => event.request }) } },
 			states: {
-				active: { on: { SHUTDOWN: 'closed', HOLD: 'held' } },
+				active: {
+					on: {
+						SHUTDOWN: 'closed',
+						HOLD: 'held',
+						CRASH: {
+							actions: () => {
+								throw new Error('controlled integrity crash')
+							}
+						}
+					}
+				},
 				held: { on: { SHUTDOWN: 'draining' } },
 				draining: { on: { FINISH: 'closed' } },
 				closed: { type: 'final' }
@@ -161,6 +281,15 @@ vi.mock('../workspaces/workspace-creation.js', async () => {
 			>({}).createMachine({
 				context: ({ input }) => input,
 				initial: 'active',
+				entry: ({ self }) =>
+					creationControls.set(self, {
+						actor: self,
+						send: (event) => self.send(event),
+						getSnapshot: () => ({
+							status: self.getSnapshot().status,
+							matches: (state) => self.getSnapshot().value === state
+						})
+					}),
 				on: { OBSERVED: { actions: assign({ binding: ({ event }) => event.binding }) } },
 				states: {
 					active: { on: { SHUTDOWN: 'closed', HOLD: 'held' } },
@@ -176,12 +305,13 @@ afterEach(() => {
 	for (const dispose of cleanup.splice(0)) dispose()
 })
 beforeEach(() => {
+	ownerFailure.shutdown = false
 	vi.clearAllMocks()
 	bankStart.mockImplementation(() => {})
 	bankObservation.mockImplementation(() => {})
 	startupObservation.mockImplementation(() => {})
 })
-function start() {
+function start(inspect: (event: InspectionEvent) => void = () => {}) {
 	const observation: ReadinessObservation = {
 		source: {
 			userId: scope.userId,
@@ -196,13 +326,14 @@ function start() {
 		organizationsError: undefined,
 		route: { pathname: '/settings/workspace', search: '', hash: '' }
 	}
+	let current = observation
 	const navigate = vi.fn(async () => {})
 	const attachment: WorkspaceAttachment = {
 		environment: 'test',
 		dependencies: {
 			db: vi.fn<() => WorkspaceAttachment['dependencies']['db']>()(),
 			read: () => ({
-				...observation.source,
+				...current.source,
 				sessionReady: true,
 				connections: [],
 				accounts: [],
@@ -210,21 +341,112 @@ function start() {
 			}),
 			passkeyName: () => 'Test'
 		},
-		read: () => observation,
+		read: () => current,
 		navigate
 	}
+	let selection: ActorRefFrom<ReturnType<typeof createWorkspaceSelectionMachine>> | undefined
+	let pendingDrain: WorkspaceDrainRequest | undefined
+	const selectionScope = { binding: {}, attachment: {} }
+	let request: WorkspaceSelectionRequest | undefined
+	let attempt = 0
+	let generation = 0
+	let suspended = false
+	function acknowledge(release: WorkspaceResourceRelease) {
+		if (!selection || !pendingDrain) return
+		const value = pendingDrain
+		pendingDrain = undefined
+		selection.send(
+			release.outcome === 'released'
+				? { type: 'DRAINED', drain: value }
+				: {
+						type: 'DRAIN_FAILED',
+						drain: value,
+						outcome: release.outcome === 'unresolved' ? 'unresolved' : 'released'
+					}
+		)
+	}
+	type ParentEvent =
+		| { type: 'SELECTED_RESOURCES_RELEASED'; result: SelectedResourceOutput }
+		| { type: 'SELECTED_RESOURCES_CRASHED'; lease: WorkspaceLease }
 	const parent = createActor(
-		createMachine({ invoke: { id: 'workspace', src: createWorkspaceReadinessMachine(attachment) } })
+		setup<{}, ParentEvent, { workspace: ReturnType<typeof createWorkspaceReadinessMachine> }>({
+			actors: { workspace: createWorkspaceReadinessMachine(attachment) }
+		}).createMachine({
+			invoke: { id: 'workspace', src: 'workspace' },
+			on: {
+				SELECTED_RESOURCES_RELEASED: {
+					actions: ({ event }) => {
+						if (pendingDrain && event.result.lease.epoch === pendingDrain.lease.epoch)
+							acknowledge(event.result.release)
+					}
+				},
+				SELECTED_RESOURCES_CRASHED: { actions: () => acknowledge({ outcome: 'unresolved' }) }
+			}
+		}),
+		{ inspect }
 	).start()
 	const candidate = parent.getSnapshot().children.workspace
 	if (!candidate) throw new Error('Missing coordinator')
 	const actor = candidate
-	const { bank, startup, integrity, creation } = actor.getSnapshot().children
-	if (!bank || !startup || !integrity || !creation) throw new Error('Missing owned children')
-	cleanup.push(() => parent.stop())
+	const recipient = createActor(
+		fromCallback<WorkspaceSelectionReport>(({ receive }) => {
+			receive((report) => {
+				if (report.type === 'WORKSPACE_SELECTION') {
+					suspended = report.status === 'suspended'
+					actor.send({
+						type: 'SELECTION',
+						status: report.status,
+						lease: report.status === 'selected' ? report.lease : undefined
+					})
+				}
+				if (report.type === 'WORKSPACE_SCOPE_INVALIDATED')
+					actor.send({ type: 'SELECTION', status: 'waiting', lease: undefined })
+				if (report.type === 'WORKSPACE_DRAIN_REQUESTED') {
+					pendingDrain = report.drain
+					const owned = actor.getSnapshot().context
+					if (!owned.resourceActor)
+						acknowledge(owned.resourceResult?.release ?? { outcome: 'released' })
+				}
+			})
+		})
+	).start()
+	selection = createActor(createWorkspaceSelectionMachine(), {
+		input: { reportTo: recipient }
+	}).start()
+	selection.send({ type: 'BIND', scope: selectionScope })
+	const { startup, creation, navigation } = actor.getSnapshot().children
+	if (!startup || !creation || !navigation) throw new Error('Missing owned children')
+	cleanup.push(
+		() => parent.stop(),
+		() => selection?.stop(),
+		() => recipient.stop()
+	)
 	function observe(next: ReadinessObservation) {
+		current = next
 		actor.send({ type: 'OBSERVED', observation: next })
+		const target = workspaceSelectionTarget(next)
+		if (!target) {
+			request = undefined
+			selection?.send({ type: 'SUSPEND', scope: selectionScope })
+			return
+		}
+		if (request?.workspaceId !== target) {
+			request = { workspaceId: target, attempt: ++attempt }
+			selection?.send({ type: 'SELECT', scope: selectionScope, request })
+		}
+		selection?.send({
+			type: suspended ? 'RESUME' : 'OBSERVED',
+			observation: workspaceSelectionObservation(next, selectionScope, request, ++generation)
+		})
 	}
+	function retrySelection() {
+		if (!request) throw new Error('Missing selection request')
+		selection?.send({
+			type: 'RETRY',
+			observation: workspaceSelectionObservation(current, selectionScope, request, ++generation)
+		})
+	}
+
 	function selected(
 		id = scope.organizationId,
 		overrides: Partial<ReadinessObservation> = {}
@@ -245,32 +467,65 @@ function start() {
 		status: IntegrityStatus,
 		request: IntegrityRequest = actor.getSnapshot().context.integrityRequest
 	) {
-		const report: IntegrityReport = { request, status }
-		actor.send({ type: 'INTEGRITY_STATUS', report })
+		const lease = actor.getSnapshot().context.resourceLease
+		if (!lease) throw new Error('Missing selected lease')
+		const report = { request, status, lease }
+		actor.send({ type: 'SELECTED_INTEGRITY_STATUS', lease, report })
 		return report
 	}
 	return {
 		actor,
-		bank,
-		startup,
-		integrity,
-		creation,
+		get bank() {
+			const child =
+				workspaceBankActor(actor.getSnapshot()) ??
+				actor.getSnapshot().context.resourceActor?.getSnapshot().children.bank
+			const control = child && bankControls.get(child)
+			if (!control) throw new Error('Missing selected bank')
+			return control
+		},
+		get startup() {
+			const value = startupControls.get(startup)
+			if (!value) throw new Error('Missing startup control')
+			return value
+		},
+		get integrity() {
+			const child = actor.getSnapshot().context.resourceActor?.getSnapshot().children.integrity
+			const control = child && integrityControls.get(child)
+			if (!control) throw new Error('Missing selected integrity')
+			return control
+		},
+		navigation,
+		canSync: () =>
+			actor.getSnapshot().can({
+				type: 'BANK',
+				lease: actor.getSnapshot().context.resourceLease,
+				event: { type: 'SYNC' }
+			}),
+		sendBank: (event: BankEvent) =>
+			actor.send({ type: 'BANK', lease: actor.getSnapshot().context.resourceLease, event }),
+		get creation() {
+			const value = creationControls.get(creation)
+			if (!value) throw new Error('Missing creation control')
+			return value
+		},
 		observation,
 		navigate,
 		observe,
+		retrySelection,
 		selected,
 		report
 	}
 }
-const sync = { type: 'BANK', event: { type: 'SYNC' } }
 
 describe('workspace readiness supervision', () => {
 	it('drains resource owners and navigation before completing shutdown', () => {
 		const f = start()
+		f.observe(f.selected())
+		f.bank.send({ type: 'HOLD' })
 		f.creation.send({ type: 'HOLD' })
 		f.integrity.send({ type: 'HOLD' })
 		f.actor.send({ type: 'SHUTDOWN' })
-		f.bank.send({ type: 'SHUTDOWN' })
+		f.bank.send({ type: 'FINISH' })
 		f.startup.send({ type: 'FINISH' })
 		expect(f.actor.getSnapshot().status).toBe('active')
 		f.creation.send({ type: 'FINISH' })
@@ -283,9 +538,11 @@ describe('workspace readiness supervision', () => {
 			throw new Error('private')
 		})
 		const f = start()
-		f.startup.send({ type: 'FINISH' })
-		expect(f.actor.getSnapshot().matches('failed')).toBe(true)
+		f.observe(f.selected())
+		expect(f.actor.getSnapshot().matches({ active: { resources: 'unresolved' } })).toBe(true)
+		expect(f.actor.getSnapshot().children.startup).toBe(f.startup.actor)
 		f.actor.send({ type: 'SHUTDOWN' })
+		f.startup.send({ type: 'FINISH' })
 		expect(f.actor.getSnapshot().status).toBe('done')
 	})
 	it('drains remaining live children when the bank observer fails', () => {
@@ -295,17 +552,17 @@ describe('workspace readiness supervision', () => {
 		})
 		bankObservation.mockClear()
 		f.observe(f.selected())
-		f.startup.send({ type: 'FINISH' })
-		expect(f.actor.getSnapshot().matches('failed')).toBe(true)
+		expect(f.actor.getSnapshot().matches({ active: { resources: 'unresolved' } })).toBe(true)
 		f.observe(f.observation)
 		expect(bankObservation).toHaveBeenCalledTimes(1)
 	})
 	it('treats unexpected bank completion as failure', () => {
 		const f = start()
-		f.actor.send({ type: 'BANK', event: { type: 'RESET' } })
-		f.startup.send({ type: 'FINISH' })
-		expect(f.actor.getSnapshot().matches('failed')).toBe(true)
-		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(false)
+		f.observe(f.selected())
+		f.sendBank({ type: 'RESET' })
+		expect(f.actor.getSnapshot().matches({ active: { resources: 'failed' } })).toBe(true)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
+		expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
 	})
 	it('ignores observations and domain status while shutdown drains', () => {
 		const f = start()
@@ -313,9 +570,8 @@ describe('workspace readiness supervision', () => {
 		const stale = f.report({ kind: 'complete', settlement: 'notStarted' })
 		f.actor.send({ type: 'SHUTDOWN' })
 		f.observe(f.observation)
-		f.actor.send({ type: 'INTEGRITY_STATUS', report: stale })
+		f.actor.send({ type: 'SELECTED_INTEGRITY_STATUS', lease: stale.lease, report: stale })
 		expect(selectWorkspaceView(f.actor.getSnapshot()).canSync).toBe(false)
-		f.bank.send({ type: 'SHUTDOWN' })
 		f.startup.send({ type: 'FINISH' })
 		expect(f.actor.getSnapshot().status).toBe('done')
 	})
@@ -325,9 +581,8 @@ describe('workspace readiness supervision', () => {
 			throw new Error('startup owner failed')
 		})
 		f.observe({ ...f.observation, sessionStatus: 'transitioning' })
-		expect(f.actor.getSnapshot().matches('closing')).toBe(true)
+		expect(f.actor.getSnapshot().matches('failed')).toBe(true)
 		f.actor.send({ type: 'SHUTDOWN' })
-		f.bank.send({ type: 'SHUTDOWN' })
 		expect(f.actor.getSnapshot().status).toBe('done')
 	})
 })
@@ -347,11 +602,11 @@ describe('workspace public capability and report currency', () => {
 		(status) => {
 			const f = start()
 			f.observe(f.selected())
-			expect(f.actor.getSnapshot().can(sync)).toBe(true)
+			expect(f.canSync()).toBe(true)
 			const revision = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
 			bankObservation.mockClear()
 			f.report(status)
-			expect(f.actor.getSnapshot().can(sync)).toBe(true)
+			expect(f.canSync()).toBe(true)
 			expect(f.actor.getSnapshot().context.integrityReport?.status).toEqual(status)
 			expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(revision)
 			expect(bankObservation).not.toHaveBeenCalled()
@@ -372,7 +627,7 @@ describe('workspace public capability and report currency', () => {
 				source: { ...selected.source, membership: { ...membership, role } }
 			})
 			f.report({ kind: 'complete', settlement: 'notStarted' })
-			expect(f.actor.getSnapshot().can(sync)).toBe(allowed)
+			expect(f.canSync()).toBe(allowed)
 		}
 	)
 	it('rejects prior-visit reports after A → B → A', () => {
@@ -381,11 +636,11 @@ describe('workspace public capability and report currency', () => {
 		const old = f.report({ kind: 'complete', settlement: 'notStarted' })
 		f.observe(f.selected(scope.profileId))
 		f.observe(f.selected())
-		f.actor.send({ type: 'INTEGRITY_STATUS', report: old })
+		f.actor.send({ type: 'SELECTED_INTEGRITY_STATUS', lease: old.lease, report: old })
 		expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
-		expect(f.actor.getSnapshot().can(sync)).toBe(true)
+		expect(f.canSync()).toBe(true)
 		f.report({ kind: 'complete', settlement: 'notStarted' })
-		expect(f.actor.getSnapshot().can(sync)).toBe(true)
+		expect(f.canSync()).toBe(true)
 	})
 	it.each(['loading', 'error', 'role'])(
 		'invalidates %s authority and never restores old status',
@@ -404,13 +659,13 @@ describe('workspace public capability and report currency', () => {
 								source: { ...selected.source, membership: { ...membership, role: 'member' } }
 							}
 			f.observe(changed)
-			expect(f.actor.getSnapshot().can(sync)).toBe(false)
+			expect(f.canSync()).toBe(false)
 			f.observe(selected)
-			f.actor.send({ type: 'INTEGRITY_STATUS', report: old })
+			f.actor.send({ type: 'SELECTED_INTEGRITY_STATUS', lease: old.lease, report: old })
 			expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
-			expect(f.actor.getSnapshot().can(sync)).toBe(true)
+			expect(f.canSync()).toBe(true)
 			f.report({ kind: 'complete', settlement: 'notStarted' })
-			expect(f.actor.getSnapshot().can(sync)).toBe(true)
+			expect(f.canSync()).toBe(true)
 		}
 	)
 	it('does not restart equivalent observations but assigns a fresh generation to explicit retry', () => {
@@ -418,13 +673,15 @@ describe('workspace public capability and report currency', () => {
 		const selected = f.selected()
 		f.observe(selected)
 		const before: IntegrityRequest = f.actor.getSnapshot().context.integrityRequest
+		const owner = f.actor.getSnapshot().context.resourceActor
 		f.observe(selected)
 		expect(f.actor.getSnapshot().context.integrityRequest).toEqual(before)
+		expect(f.actor.getSnapshot().context.resourceActor).toBe(owner)
 		f.report({ kind: 'failed', settlement: 'notStarted' })
 		f.actor.send({ type: 'RETRY_INTEGRITY' })
 		expect(f.actor.getSnapshot().context.integrityRequest.generation).toBe(before.generation + 1)
 		expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
-		expect(f.actor.getSnapshot().can(sync)).toBe(true)
+		expect(f.canSync()).toBe(true)
 	})
 	it('rejects a report for another binding even if its generation matches', () => {
 		const f = start()
@@ -436,7 +693,7 @@ describe('workspace public capability and report currency', () => {
 			{ ...request, binding: { ...request.binding, organizationId: scope.profileId } }
 		)
 		expect(f.actor.getSnapshot().context.integrityReport).toBeUndefined()
-		expect(f.actor.getSnapshot().can(sync)).toBe(true)
+		expect(f.canSync()).toBe(true)
 	})
 	it.each([
 		'?workspace=invalid',
@@ -458,16 +715,17 @@ describe('workspace public capability and report currency', () => {
 		f.observe(selected)
 		f.observe({ ...selected, source: { ...selected.source, membership: undefined } })
 		await waitFor(f.actor, (s) => selectWorkspaceView(s).navigation === 'unavailable')
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
+		expect(f.canSync()).toBe(false)
 		expect(f.navigate).not.toHaveBeenCalled()
 	})
-	it('retries initialization without replacing unrelated owners and ignores old identity reports', async () => {
+	it('retries initialization while preserving identity-bound owners and ignores old reports', async () => {
 		const f = start()
 		const oldRequest: InitializationRequest = f.actor.getSnapshot().context.initializationRequest
 		f.startup.send({ type: 'FAIL' })
 		f.actor.send({ type: 'RETRY' })
 		await waitFor(f.actor, (s) => selectWorkspaceView(s).ready)
-		expect(f.actor.getSnapshot().children.bank).toBe(f.bank)
+		expect(f.actor.getSnapshot().children.startup).toBe(f.startup.actor)
+		expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
 		f.actor.send({
 			type: 'INITIALIZATION_STATUS',
 			report: { request: oldRequest, status: { kind: 'failed' } }
@@ -479,7 +737,7 @@ describe('workspace public capability and report currency', () => {
 		f.observe(f.selected())
 		f.creation.send({ type: 'HOLD' })
 		f.observe(f.selected(scope.profileId))
-		expect(f.actor.getSnapshot().children.creation).toBe(f.creation)
+		expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
 		expect(f.creation.getSnapshot().matches('held')).toBe(true)
 	})
 	it('waits for initial discovery before redirecting an empty unscoped finance route', async () => {
@@ -517,7 +775,7 @@ describe('workspace public capability and report currency', () => {
 		await waitFor(f.actor, (snapshot) => selectWorkspaceView(snapshot).navigation === 'scoped')
 		expect(f.actor.getSnapshot().matches({ active: { workspace: 'waiting' } })).toBe(true)
 		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
+		expect(f.canSync()).toBe(false)
 		expect(f.navigate).not.toHaveBeenCalled()
 	})
 	it('keeps local navigation available when provenance initialization fails', async () => {
@@ -528,7 +786,7 @@ describe('workspace public capability and report currency', () => {
 		expect(selectWorkspaceView(f.actor.getSnapshot()).ready).toBe(true)
 		expect(selectWorkspaceView(f.actor.getSnapshot()).failed).toBe(true)
 		expect(f.navigate).not.toHaveBeenCalled()
-		expect(f.actor.getSnapshot().can(sync)).toBe(false)
+		expect(f.canSync()).toBe(false)
 	})
 	it('supports workspace management without a selected workspace or bank setup', () => {
 		const f = start()
@@ -603,10 +861,150 @@ describe('scoped bank observations', () => {
 		})
 		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(first + 1)
 		f.observe(f.selected(scope.profileId))
+		const second = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
+		if (second === undefined) throw new Error('Missing second access revision')
+		expect(second).toBeGreaterThan(first + 1)
 		f.observe(selected)
-		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(first + 3)
+		const returned = selectWorkspaceView(f.actor.getSnapshot()).bankRevision
+		expect(returned).toBeGreaterThan(second)
 		f.report({ kind: 'failed', settlement: 'notStarted' })
 		f.actor.send({ type: 'RETRY_INTEGRITY' })
-		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(first + 3)
+		expect(selectWorkspaceView(f.actor.getSnapshot()).bankRevision).toBe(returned)
 	})
+})
+
+describe('selected resource migration', () => {
+	it('keeps identity owners alive and coalesces A → B → A until both old resources release', () => {
+		const f = start()
+		f.observe(f.selected())
+		const oldOwner = f.actor.getSnapshot().context.resourceActor
+		const oldLease = f.actor.getSnapshot().context.resourceLease
+		if (!oldOwner || !oldLease) throw new Error('Missing original resource lease')
+		const bank = f.bank,
+			integrity = f.integrity
+		const beforeRevision = f.actor.getSnapshot().context.bankRevision
+		bank.send({ type: 'HOLD' })
+		integrity.send({ type: 'HOLD' })
+		f.creation.send({ type: 'HOLD' })
+		f.observe(f.selected(scope.profileId))
+		f.observe(f.selected())
+		expect(f.actor.getSnapshot().context.resourceActor).toBe(oldOwner)
+		expect(bankStart).toHaveBeenCalledOnce()
+		expect(f.canSync()).toBe(false)
+		expect(f.actor.getSnapshot().children.startup).toBe(f.startup.actor)
+		expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
+		expect(f.actor.getSnapshot().children.navigation).toBe(f.navigation)
+		expect(f.creation.getSnapshot().matches('held')).toBe(true)
+		bank.send({ type: 'FINISH' })
+		expect(f.actor.getSnapshot().context.resourceActor).toBe(oldOwner)
+		integrity.send({ type: 'FINISH' })
+		const next = f.actor.getSnapshot().context.resourceActor
+		expect(next).not.toBe(oldOwner)
+		expect(f.actor.getSnapshot().context.resourceLease?.epoch).toBe(oldLease.epoch + 1)
+		expect(f.actor.getSnapshot().context.bankRevision).toBeGreaterThan(beforeRevision)
+		expect(bankStart).toHaveBeenCalledTimes(2)
+		f.actor.send({ type: 'BANK', lease: oldLease, event: { type: 'RESET' } })
+		f.actor.send({
+			type: `xstate.done.actor.${oldOwner.id}`,
+			actorId: oldOwner.id,
+			output: { lease: oldLease, drain: undefined, release: { outcome: 'unresolved' } }
+		})
+		f.actor.send({
+			type: `xstate.error.actor.${oldOwner.id}`,
+			actorId: oldOwner.id,
+			error: new Error('stale owner')
+		})
+		expect(f.actor.getSnapshot().context.resourceActor).toBe(next)
+		expect(f.canSync()).toBe(true)
+		expect(f.actor.getSnapshot().context.resourceRelease).toEqual({ outcome: 'released' })
+	})
+	it.each(['bank', 'integrity'] satisfies ('bank' | 'integrity')[])(
+		'blocks replacement after unresolved %s release while preserving creation',
+		(resource) => {
+			const f = start()
+			f.observe(f.selected())
+			const held = f[resource]
+			held.send({ type: 'HOLD' })
+			resourceResults.set(held.actor, { outcome: 'unresolved' })
+			f.observe(f.selected(scope.profileId))
+			held.send({ type: 'FINISH' })
+			expect(f.actor.getSnapshot().matches({ active: { resources: 'unresolved' } })).toBe(true)
+			expect(bankStart).toHaveBeenCalledOnce()
+			expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
+			f.actor.send({ type: 'SHUTDOWN' })
+			f.startup.send({ type: 'FINISH' })
+			expect(f.actor.getSnapshot().output).toEqual({ selectedResources: { outcome: 'unresolved' } })
+		}
+	)
+	it('retains a known released partial result and requires explicit retry before replacement', () => {
+		const f = start()
+		f.observe(f.selected())
+		resourceResults.set(f.integrity.actor, { outcome: 'releasedWithFailure' })
+		f.observe(f.selected(scope.profileId))
+		expect(f.canSync()).toBe(false)
+		expect(bankStart).toHaveBeenCalledOnce()
+		f.retrySelection()
+		expect(f.canSync()).toBe(true)
+		expect(f.actor.getSnapshot().context.resourceRelease).toEqual({
+			outcome: 'releasedWithFailure'
+		})
+		expect(bankStart).toHaveBeenCalledTimes(2)
+	})
+	it('does not construct a bank owner on identity/global/workspace management routes', () => {
+		const f = start()
+		for (const pathname of ['/account', '/settings/workspace', '/login']) {
+			f.observe({ ...f.observation, route: { pathname, search: '', hash: '' } })
+		}
+		expect(bankStart).not.toHaveBeenCalled()
+		expect(workspaceBankActor(f.actor.getSnapshot())).toBeUndefined()
+		expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
+	})
+	it('rejects stale data revisions after returning to the same workspace', () => {
+		const f = start()
+		f.observe(f.selected())
+		const oldRevision = f.actor.getSnapshot().context.bankRevision
+		f.observe(f.selected(scope.profileId))
+		f.observe(f.selected())
+		bankObservation.mockClear()
+		f.actor.send({
+			type: 'BANK_OBSERVED',
+			organizationId: scope.organizationId,
+			userId: scope.userId,
+			event: { type: 'HISTORY_CHANGED', revision: oldRevision, records: [] }
+		})
+		expect(bankObservation).not.toHaveBeenCalled()
+		expect(f.actor.getSnapshot().context.bankRevision).toBeGreaterThan(oldRevision)
+	})
+})
+
+it('keeps identity owners alive and preserves uncertainty when the selected owner itself crashes', () => {
+	const f = start()
+	ownerFailure.shutdown = true
+	f.observe(f.selected())
+	f.observe(f.selected(scope.profileId))
+	expect(f.actor.getSnapshot().matches({ active: { resources: 'unresolved' } })).toBe(true)
+	expect(f.actor.getSnapshot().context.resourceRelease).toEqual({ outcome: 'unresolved' })
+	expect(f.actor.getSnapshot().children.creation).toBe(f.creation.actor)
+	expect(f.actor.getSnapshot().children.startup).toBe(f.startup.actor)
+	expect(bankStart).toHaveBeenCalledOnce()
+})
+
+it('does not forward integrity observations after an old owner has synchronously closed', () => {
+	let oldOwner: object | undefined
+	const late: string[] = []
+	const f = start((event) => {
+		if (
+			event.type === '@xstate.event' &&
+			event.actorRef === oldOwner &&
+			event.event.type === 'INTEGRITY' &&
+			event.actorRef.getSnapshot().status !== 'active'
+		)
+			late.push(event.event.type)
+	})
+	f.observe(f.selected())
+	oldOwner = f.actor.getSnapshot().context.resourceActor
+	f.observe(f.selected(scope.profileId))
+	expect(late).toEqual([])
+	expect(bankStart).toHaveBeenCalledTimes(2)
+	expect(f.canSync()).toBe(true)
 })

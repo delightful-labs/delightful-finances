@@ -6,11 +6,16 @@ import {
 } from './log-retention.js'
 import { required } from './identity.js'
 import type { Dependencies } from './types.js'
+import {
+	retainResourceRelease,
+	type WorkspaceResourceRelease
+} from '../../contracts/workspace-resource-release.js'
 
 type Event =
 	| { type: 'CHECK'; scope: RetentionScope | undefined; completion: string | undefined }
 	| { type: 'SHUTDOWN' }
 type Context = {
+	release: WorkspaceResourceRelease
 	scope: RetentionScope | undefined
 	completion: string | undefined
 	result: RetentionResult | undefined
@@ -21,6 +26,11 @@ function sameScope(left: RetentionScope | undefined, right: RetentionScope | und
 		left?.organizationId === right?.organizationId &&
 		left?.userId === right?.userId
 	)
+}
+
+function retentionRelease(result: RetentionResult): WorkspaceResourceRelease {
+	if (result.settlement === 'unresolved') return { outcome: 'unresolved' }
+	return { outcome: result.kind === 'failed' ? 'releasedWithFailure' : 'released' }
 }
 
 /** Rebind only after the previous transaction owner has drained. */
@@ -36,7 +46,9 @@ export function createSyncLogRetentionCoordinator(
 		{},
 		{ closing: undefined; replacing: undefined; hasScope: undefined },
 		never,
-		string
+		string,
+		unknown,
+		WorkspaceResourceRelease
 	>({
 		actors,
 		guards: {
@@ -47,7 +59,13 @@ export function createSyncLogRetentionCoordinator(
 		delays: { retry: 60_000 }
 	}).createMachine({
 		id: 'sync-log-retention-coordinator',
-		context: { scope: undefined, completion: undefined, result: undefined },
+		context: {
+			scope: undefined,
+			completion: undefined,
+			result: undefined,
+			release: { outcome: 'released' }
+		},
+		output: ({ context }) => context.release,
 		initial: 'idle',
 		states: {
 			idle: {
@@ -87,21 +105,46 @@ export function createSyncLogRetentionCoordinator(
 					src: 'retention',
 					input: ({ context }) => ({ scope: required(context.scope) }),
 					onDone: [
-						{ guard: 'closing', target: 'closed' },
+						{
+							guard: 'closing',
+							target: 'closed',
+							actions: assign(({ context, event }) => ({
+								result: event.output,
+								release: retainResourceRelease(context.release, retentionRelease(event.output))
+							}))
+						},
 						{
 							guard: 'replacing',
 							target: 'choosing',
-							actions: assign({ result: ({ event }) => event.output })
+							actions: assign(({ context, event }) => ({
+								result: event.output,
+								release: retainResourceRelease(context.release, retentionRelease(event.output))
+							}))
 						},
-						{ target: 'idle', actions: assign({ result: ({ event }) => event.output }) }
+						{
+							target: 'idle',
+							actions: assign(({ context, event }) => ({
+								result: event.output,
+								release: retainResourceRelease(context.release, retentionRelease(event.output))
+							}))
+						}
 					],
 					onError: [
-						{ guard: 'closing', target: 'closed' },
-						{ guard: 'replacing', target: 'choosing' },
+						{
+							guard: 'closing',
+							target: 'closed',
+							actions: assign({ release: { outcome: 'unresolved' } })
+						},
+						{
+							guard: 'replacing',
+							target: 'choosing',
+							actions: assign({ release: { outcome: 'unresolved' } })
+						},
 						{
 							target: 'idle',
 							actions: assign({
-								result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
+								result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' },
+								release: { outcome: 'unresolved' }
 							})
 						}
 					]

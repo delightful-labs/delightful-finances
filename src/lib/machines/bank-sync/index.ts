@@ -1,6 +1,6 @@
 import { m } from '#lib/paraglide/messages.js'
 import type { BankPresentation } from '#lib/contracts/bank-presentation-contract.js'
-import type { ActorRefFrom, EventObject, SnapshotFrom } from 'xstate'
+import type { ActorRefFrom, EventObject, SnapshotFrom, OutputFrom } from 'xstate'
 import { and, assign, not, or, raise, sendTo, setup, stateIn } from 'xstate'
 import {
 	bankAvailabilityMachine,
@@ -17,6 +17,10 @@ import { createBankOperationMachine, type OperationResult } from './operation.js
 import { createLoggedBankOperationMachine, type LoggedOperationResult } from './logged-operation.js'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import type { SyncLogOutput } from '#lib/contracts/bank-sync-log.js'
+import {
+	retainResourceRelease,
+	type WorkspaceResourceRelease
+} from '../../contracts/workspace-resource-release.js'
 import {
 	bankCredentialFingerprint,
 	bankObservation,
@@ -51,6 +55,7 @@ type Event =
 	| { type: 'RETENTION_STOPPED' }
 	| { type: `xstate.error.actor.${string}`; error: unknown }
 type Context = BankData & {
+	release: WorkspaceResourceRelease
 	browserOffline: boolean
 	logging: SyncLogOutput | undefined
 	operationConnectionId: string | undefined
@@ -75,6 +80,39 @@ function operationCompletion(context: Context, result: LoggedOperationResult | O
 			context.operationConnectionId === context.connection?.id && 'logging' in result
 				? result.logging
 				: undefined
+	}
+}
+
+function setupRelease(
+	result: OutputFrom<ReturnType<typeof createBankSetupMachine>>
+): WorkspaceResourceRelease {
+	if (result.kind === 'complete') return { outcome: 'released' }
+	if (result.settlement === 'unresolved') return { outcome: 'unresolved' }
+	return {
+		outcome:
+			result.kind === 'failed' || result.settlement === 'locallyPersisted'
+				? 'releasedWithFailure'
+				: 'released'
+	}
+}
+function operationRelease(
+	result: LoggedOperationResult | OperationResult
+): WorkspaceResourceRelease {
+	// A cancelled import may have confirmed writes. Counts describe retained business progress;
+	// they do not turn successful resource release into a cleanup failure.
+	// Log write failures do not carry settlement proof in the current logging contract.
+	const logging = 'logging' in result ? result.logging : undefined
+	if (
+		result.settlement === 'unresolved' ||
+		(logging?.kind === 'notStarted' && logging.reason === 'startWriteFailed') ||
+		(logging?.kind === 'resultUnrecorded' && logging.reason !== 'invalidResult')
+	)
+		return { outcome: 'unresolved' }
+	return {
+		outcome:
+			result.kind === 'failed' || result.kind === 'partial' || logging?.kind === 'resultUnrecorded'
+				? 'releasedWithFailure'
+				: 'released'
 	}
 }
 
@@ -106,7 +144,11 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		Event,
 		typeof actors,
 		{},
-		{},
+		{
+			retainRelease: { result: WorkspaceResourceRelease }
+			markUnresolved: undefined
+			markFailure: undefined
+		},
 		{
 			isNeutral: undefined
 			newAccess: undefined
@@ -118,11 +160,20 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		never,
 		string,
 		unknown,
-		unknown,
+		WorkspaceResourceRelease,
 		EventObject,
 		BankViewMeta
 	>({
 		actors,
+		actions: {
+			retainRelease: assign(({ context }, params) => ({
+				release: retainResourceRelease(context.release, params.result)
+			})),
+			markUnresolved: assign({ release: { outcome: 'unresolved' } }),
+			markFailure: assign(({ context }) => ({
+				release: retainResourceRelease(context.release, { outcome: 'releasedWithFailure' })
+			}))
+		},
 		guards: {
 			acceptObservations: not(
 				or([
@@ -171,8 +222,16 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 	})
 	const shutdownRetention = workflow.enqueueActions(({ self, enqueue }) => {
 		const child = self.getSnapshot()?.children.retention
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
-		else enqueue.raise({ type: 'RETENTION_STOPPED' })
+		const snapshot = child?.getSnapshot()
+		if (child && snapshot?.status === 'active') {
+			enqueue.sendTo(child, { type: 'SHUTDOWN' })
+			return
+		}
+		// Finite output can precede its queued onDone event; liveness alone is not release proof.
+		if (snapshot?.status === 'done' && snapshot.output)
+			enqueue({ type: 'retainRelease', params: { result: snapshot.output } })
+		else enqueue('markUnresolved')
+		enqueue.raise({ type: 'RETENTION_STOPPED' })
 	})
 	const clear = workflow.assign({ command: undefined, setupToken: undefined })
 	const cancelOperation = workflow.enqueueActions(({ self, enqueue }) => {
@@ -267,8 +326,13 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			{
 				id: 'retention',
 				src: 'retention',
-				onDone: { actions: raise({ type: 'RETENTION_STOPPED' }) },
-				onError: { actions: raise({ type: 'RETENTION_STOPPED' }) }
+				onDone: {
+					actions: [
+						{ type: 'retainRelease', params: ({ event }) => ({ result: event.output }) },
+						raise({ type: 'RETENTION_STOPPED' })
+					]
+				},
+				onError: { actions: ['markUnresolved', raise({ type: 'RETENTION_STOPPED' })] }
 			},
 			{
 				id: 'availability',
@@ -282,7 +346,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					generation: context.generation,
 					recipient: self
 				}),
-				onError: { actions: raise({ type: 'SHUTDOWN' }) }
+				onError: { actions: ['markFailure', raise({ type: 'SHUTDOWN' })] }
 			},
 			{
 				id: 'history',
@@ -291,11 +355,13 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					revision: context.revision,
 					recipient: self
 				}),
-				onError: { actions: raise({ type: 'SHUTDOWN' }) }
+				onError: { actions: ['markFailure', raise({ type: 'SHUTDOWN' })] }
 			}
 		],
+		output: ({ context }) => context.release,
 		context: () => {
 			return {
+				release: { outcome: 'released' },
 				browserOffline: true,
 				accounts: [],
 				mappings: new Map(),
@@ -317,7 +383,7 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 		},
 		on: {
 			// Mapping children are pure; active resource owners still settle via SHUTDOWN.
-			'xstate.error.actor.*': { actions: raise({ type: 'SHUTDOWN' }) },
+			'xstate.error.actor.*': { actions: ['markFailure', raise({ type: 'SHUTDOWN' })] },
 			SHUTDOWN: { target: '.drainingRetention' },
 			NETWORK_CHANGED: {
 				actions: [assign({ browserOffline: ({ event }) => event.offline }), refreshRetention]
@@ -646,40 +712,83 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					},
 					onSnapshot: { actions: assign({ setupToken: undefined }) },
 					onDone: [
-						{ guard: stateIn({ setup: 'shuttingDown' }), target: 'drainingRetention' },
+						{
+							guard: stateIn({ setup: 'shuttingDown' }),
+							target: 'drainingRetention',
+							actions: {
+								type: 'retainRelease',
+								params: ({ event }) => ({ result: setupRelease(event.output) })
+							}
+						},
 						{
 							guard: stateIn({ setup: 'resetting' }),
 							target: 'ready.neutral',
-							actions: assign({ error: undefined, counts: emptyCounts() })
-						},
-						{ guard: stateIn({ setup: 'cancelling' }), target: 'ready.cancelled' },
-						{
-							guard: ({ event }) => event.output.kind === 'cancelled',
-							target: 'ready.cancelled'
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'failed',
-							target: 'ready.failure',
-							actions: assign({
-								error: ({ event }) =>
-									event.output.kind === 'failed' ? event.output.error : undefined
-							})
-						},
-						{ target: 'ready.success.complete' }
-					],
-					onError: [
-						{ guard: stateIn({ setup: 'shuttingDown' }), target: 'drainingRetention' },
-						{
-							guard: stateIn({ setup: 'resetting' }),
-							target: 'ready.neutral',
-							actions: assign({ error: undefined, counts: emptyCounts() })
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: setupRelease(event.output) })
+								},
+								assign({ error: undefined, counts: emptyCounts() })
+							]
 						},
 						{
 							guard: stateIn({ setup: 'cancelling' }),
 							target: 'ready.cancelled',
-							actions: assign({ error: undefined })
+							actions: {
+								type: 'retainRelease',
+								params: ({ event }) => ({ result: setupRelease(event.output) })
+							}
 						},
-						{ target: 'ready.failure', actions: assign({ error: ({ event }) => event.error }) }
+						{
+							guard: ({ event }) => event.output.kind === 'cancelled',
+							target: 'ready.cancelled',
+							actions: {
+								type: 'retainRelease',
+								params: ({ event }) => ({ result: setupRelease(event.output) })
+							}
+						},
+						{
+							guard: ({ event }) => event.output.kind === 'failed',
+							target: 'ready.failure',
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: setupRelease(event.output) })
+								},
+								assign({
+									error: ({ event }) =>
+										event.output.kind === 'failed' ? event.output.error : undefined
+								})
+							]
+						},
+						{
+							target: 'ready.success.complete',
+							actions: {
+								type: 'retainRelease',
+								params: ({ event }) => ({ result: setupRelease(event.output) })
+							}
+						}
+					],
+					onError: [
+						{
+							guard: stateIn({ setup: 'shuttingDown' }),
+							target: 'drainingRetention',
+							actions: 'markUnresolved'
+						},
+						{
+							guard: stateIn({ setup: 'resetting' }),
+							target: 'ready.neutral',
+							actions: ['markUnresolved', assign({ error: undefined, counts: emptyCounts() })]
+						},
+						{
+							guard: stateIn({ setup: 'cancelling' }),
+							target: 'ready.cancelled',
+							actions: ['markUnresolved', assign({ error: undefined })]
+						},
+						{
+							target: 'ready.failure',
+							actions: ['markUnresolved', assign({ error: ({ event }) => event.error })]
+						}
 					]
 				},
 				on: {
@@ -743,62 +852,112 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					// Observe child transitions without mirroring their state into context.
 					onSnapshot: {},
 					onDone: [
-						{ guard: stateIn({ running: 'shuttingDown' }), target: 'drainingRetention' },
+						{
+							guard: stateIn({ running: 'shuttingDown' }),
+							target: 'drainingRetention',
+							actions: {
+								type: 'retainRelease',
+								params: ({ event }) => ({ result: operationRelease(event.output) })
+							}
+						},
 						{
 							guard: stateIn({ running: 'resetting' }),
 							target: 'ready.neutral',
-							actions: assign({ error: undefined, counts: emptyCounts() })
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: operationRelease(event.output) })
+								},
+								assign({ error: undefined, counts: emptyCounts() })
+							]
 						},
 						{
 							guard: stateIn({ running: 'cancelling' }),
 							target: 'ready.cancelled',
-							actions: assign(({ context, event }) => operationCompletion(context, event.output))
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: operationRelease(event.output) })
+								},
+								assign(({ context, event }) => operationCompletion(context, event.output))
+							]
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'cancelled',
 							target: 'ready.cancelled',
-							actions: assign(({ context, event }) => ({
-								...operationCompletion(context, event.output),
-								error: event.output.kind === 'cancelled' ? event.output.error : undefined
-							}))
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: operationRelease(event.output) })
+								},
+								assign(({ context, event }) => ({
+									...operationCompletion(context, event.output),
+									error: event.output.kind === 'cancelled' ? event.output.error : undefined
+								}))
+							]
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'failed',
 							target: 'ready.failure',
-							actions: assign(({ context, event }) => ({
-								...operationCompletion(context, event.output),
-								error: event.output.kind === 'failed' ? event.output.error : undefined
-							}))
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: operationRelease(event.output) })
+								},
+								assign(({ context, event }) => ({
+									...operationCompletion(context, event.output),
+									error: event.output.kind === 'failed' ? event.output.error : undefined
+								}))
+							]
 						},
 						{
 							guard: ({ event }) => event.output.kind === 'partial',
 							target: 'ready.success.partial',
-							actions: assign(({ context, event }) => ({
-								...operationCompletion(context, event.output),
-								discovered: event.output.discovered ?? context.discovered
-							}))
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: operationRelease(event.output) })
+								},
+								assign(({ context, event }) => ({
+									...operationCompletion(context, event.output),
+									discovered: event.output.discovered ?? context.discovered
+								}))
+							]
 						},
 						{
 							target: 'ready.success.complete',
-							actions: assign(({ context, event }) => ({
-								...operationCompletion(context, event.output),
-								discovered: event.output.discovered ?? context.discovered
-							}))
+							actions: [
+								{
+									type: 'retainRelease',
+									params: ({ event }) => ({ result: operationRelease(event.output) })
+								},
+								assign(({ context, event }) => ({
+									...operationCompletion(context, event.output),
+									discovered: event.output.discovered ?? context.discovered
+								}))
+							]
 						}
 					],
 					onError: [
-						{ guard: stateIn({ running: 'shuttingDown' }), target: 'drainingRetention' },
+						{
+							guard: stateIn({ running: 'shuttingDown' }),
+							target: 'drainingRetention',
+							actions: 'markUnresolved'
+						},
 						{
 							guard: stateIn({ running: 'resetting' }),
 							target: 'ready.neutral',
-							actions: assign({ error: undefined, counts: emptyCounts() })
+							actions: ['markUnresolved', assign({ error: undefined, counts: emptyCounts() })]
 						},
 						{
 							guard: stateIn({ running: 'cancelling' }),
 							target: 'ready.cancelled',
-							actions: assign({ error: undefined })
+							actions: ['markUnresolved', assign({ error: undefined })]
 						},
-						{ target: 'ready.failure', actions: assign({ error: ({ event }) => event.error }) }
+						{
+							target: 'ready.failure',
+							actions: ['markUnresolved', assign({ error: ({ event }) => event.error })]
+						}
 					]
 				},
 				on: {
@@ -833,7 +992,18 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 }
 
 // Select presentation data from the current machine and its active child states.
-export function selectBankView(snapshot: SnapshotFrom<ReturnType<typeof createBankSyncMachine>>) {
+export function selectBankView(
+	snapshot: SnapshotFrom<ReturnType<typeof createBankSyncMachine>> | undefined
+) {
+	if (!snapshot)
+		return {
+			mode: { kind: 'restricted' },
+			activity: { kind: 'idle' },
+			status: undefined,
+			history: undefined,
+			logging: undefined,
+			providerAccounts: []
+		} satisfies BankPresentation
 	const operation = snapshot.children.operation?.getSnapshot()
 	const nestedOperation =
 		operation && 'operation' in operation.children
