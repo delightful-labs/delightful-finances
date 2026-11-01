@@ -1,9 +1,9 @@
 # Shared workspace selection: Finance adoption
 
-Status: implemented on `plan/workspace-lifecycle`; qualification is blocked by transfer recovery.
-The shared selection package is integrated and normal switching/recovery checks pass. A real locally
-persisted transfer can remain unacknowledged remotely, leaving Jazz identity restoration waiting.
-Keep the PRs draft until this is resolved; this document does not certify release readiness.
+Status: implemented on `plan/workspace-lifecycle`. The transfer-recovery blocker is corrected by
+the user-approved acyclic Finance insertion policy; real held-write recovery now passes with its
+transfer records retained. All 102 permission tests and 21 focused browser scenarios pass, along
+with source/service-worker and browser-test types. Refreshed CI remains a merge gate.
 
 ## Ownership
 
@@ -79,8 +79,8 @@ Real held-write browser checks retain the acknowledgement only after actual SDK 
 They do not replace the database with a fake. Bank import switching and recovery and transfer
 switching pass: issued source writes persist exactly once, destination work cannot mount early,
 and restoration cannot start before application release. No stopped-actor assertion was removed.
-The final combined browser run passes 20 scenarios and fails only the retained transfer-recovery
-regression below. The broader unit run passes 1,667 cases and times out once in an unchanged
+The pre-fix combined browser run passed 20 scenarios and failed the transfer-recovery
+regression corrected below. The broader unit run passes 1,667 cases and times out once in an unchanged
 income-payment permission test; rerunning that permission file without competing qualification
 processes passes all 82 cases. All 122 unit files therefore have passing results across these runs;
 the initial all-suite timeout is retained in the PR record. This does not claim one entirely green
@@ -104,30 +104,35 @@ These use retained browser storage, cleared HTTP cache, all clients/SharedWorker
 restart, the production service worker, and the real local Jazz authority. They do not establish
 remote acceptance of an unrelated pending transfer.
 
-## Blocking transfer-recovery result
+## Resolved transfer-recovery authorization boundary
 
-The retained regression is `retains an issued transfer write through workspace recover` in
-`tests/transfer-create.e2e.ts`. Local persistence completes and the application correctly waits for
-its deliberately held acknowledgement before calling SDK restoration. After release, the SDK
-enters `restoreLocalFirst` but remains transitioning rather than reopening the workspace within the
-existing assertion deadline. No timeout was raised and no expected-failure/skip annotation was added.
+The enabled regression `retains an issued transfer write through workspace recover` originally
+failed after the application released its drain barrier: Jazz waited for pending global writes.
+An SDK-only browser probe and a direct full-policy regression isolated two permission issues: the
+nested two-account predicate failed to settle, and the new endpoints and transfer depended on
+one another for insertion authorization. Jazz explicitly disallows that circular grant graph.
 
-An isolated browser probe bypassing all Finance workflow actors reproduced the remote boundary:
-ordinary account insertion and a simple account transaction received global acknowledgement;
-a three-row transaction inserting both transfer endpoints and their link persisted locally but
-its global wait neither resolved nor rejected within the same 15-second deadline. Pre-acknowledging
-fixture accounts and using SPA navigation did not resolve the application regression.
+The user approved the smaller acyclic fix. New manual transactions still require all direct account,
+workspace, category, currency/archive, and check-reference conditions, but their forward marker is
+not an insertion-time access grant. Transfer insertion retains complete endpoint-fact validation and
+uses the existing factored two-account authorization predicate. Marker updates, existing financial
+fact immutability, read and delete policies remain enforced. The three rows remain one locally
+settled mergeable transaction; restoration still waits for actual SDK synchronization.
 
-The installed Jazz `2.0.0-alpha.59` session implementation calls client shutdown with
-`waitForSync: true` before restoration, and that shutdown waits for pending writes at global tier.
-This explains where recovery waits; it does not prove whether the underlying cause is SDK handling,
-the existing transfer permission graph, or their interaction. Local success must not be relabeled
-server acceptance, and identity replacement must not bypass pending-write synchronization.
+The explicit integrity tradeoff is that an authorized manually constructed new manual transaction
+may carry an orphan marker. Finance handles it as an integrity error; it is no longer denied solely
+for the missing relationship. New provider transactions do not gain this exception. Regression
+coverage names this boundary and retains rejection of inventing a marker through an update.
 
-Next: reduce the paired-write/permission reproduction and fix or obtain an SDK correction, rerun the
-retained recovery regression, then require green CI before merging either PR. Shared private
-workspace creation remains the next extraction after this gate, with Finance-specific schemas,
-financial starter records, and reconciliation journals retained by the host.
+The focused browser rerun passes recovery, cross-currency creation, linking/unlinking, delete-both,
+and unlink-and-delete. No timeout was raised, test disabled, permission preflight introduced, or SDK
+shutdown bypass added. See [the investigation and exact policy decision](transfer-creation-permission-investigation.md).
+The final full-policy run passes 102 cases (20 new); all 21 focused browser cases pass. Recovery
+also passes a stronger error-free SDK-ready assertion with retained rows. Source/service-worker
+checking reports zero errors/warnings, and browser-test types, formatting and diff checks pass.
+Require refreshed green CI before merging. Shared private workspace creation remains the
+next extraction, with Finance schemas, financial starter records, and reconciliation journals
+retained by the host.
 
 The known disposable agent server is http://127.0.0.1:5184. User development servers and persistent
 browser/Jazz data were not changed.

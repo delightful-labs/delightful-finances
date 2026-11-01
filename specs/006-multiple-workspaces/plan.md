@@ -255,14 +255,20 @@ imports and transfers; held bank-write recovery passes. A cancellation after set
 now reports clean release, while unresolved settlement remains unresolved; two regressions cover it.
 The focused bank/application/coordinator/join rerun passes 216 cases and source/browser types pass.
 
-The slice remains blocked for merge: held transfer-write recovery releases the application barrier
-but Jazz restoration waits for pending global synchronization. An actor-independent SDK probe also
-leaves a locally persisted three-row transfer globally unacknowledged while ordinary/simple transaction
-writes are acknowledged. The pinned SDK, transfer permission graph, or their interaction needs a
-reduced reproduction and correction. The browser regression remains enabled and failing; do not
-bypass synchronization or call this release-ready. See the current
-[adoption design and qualification](../../docs/local-first-workspace-selection-plan.md) for evidence.
-PRs must remain draft until this regression and required CI pass.
+The transfer-recovery blocker is corrected locally by the user-approved acyclic insertion policy.
+New manual transactions derive insertion authority from existing account/workspace facts, while
+transfer insertion still validates both endpoints and both account grants. The factored account
+predicate avoids the original stalled global wait. Marker updates and other read/update/delete
+restrictions remain enforced. Authorized new manual orphan markers are explicitly an application
+integrity boundary; provider inserts do not receive that exception. No schema migration or transaction
+splitting is introduced. The real held-write recovery regression now passes with the rows retained,
+alongside cross-currency creation, linking/unlinking and both deletion choices.
+
+See the [adoption design](../../docs/local-first-workspace-selection-plan.md) and
+[permission investigation](../../docs/transfer-creation-permission-investigation.md) for the approved
+boundary and qualification. The 102-case full-policy suite, all 21 focused browser scenarios,
+and source/service-worker/browser types pass. The stronger error-free recovery assertion also
+passes with records retained. Refreshed green CI remains a merge gate.
 
 Reviewed focused checks cover creation, recovery, offline behavior, isolation, URL/history scope,
 authorization, stale reports, input/filter reset, accessible announcements and resource cleanup.

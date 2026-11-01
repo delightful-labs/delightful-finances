@@ -472,7 +472,7 @@ for (const interruption of ['switch', 'recover'] satisfies ('switch' | 'recover'
 					expect(errors).toEqual([])
 					await expect
 						.poll(() => gate.evaluate((value) => value.snapshot()))
-						.toMatchObject({ status: 'ready' })
+						.toMatchObject({ status: 'ready', pending: null, hasClient: true, errorName: null })
 					await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(
 						accounts.organizationId
 					)

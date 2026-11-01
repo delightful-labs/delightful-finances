@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPolicyTestApp, type PolicyTestApp, type TestDb } from 'jazz-tools/testing'
-import { app } from './schema.js'
+import { app, type TransactionRow } from './schema.js'
 import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import {
 	transactionAttachmentReplacementMachine,
@@ -1596,3 +1596,179 @@ describe.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
 		)
 	}
 )
+
+describe('new paired transfer insertion', () => {
+	function pairRecords(
+		income: Pick<TransactionRow, 'accountId' | 'amountMinor' | 'currency'> = {
+			accountId: otherAccountId,
+			amountMinor: 100,
+			currency: 'USD'
+		}
+	) {
+		const transferId = crypto.randomUUID()
+		const expenseTransactionId = crypto.randomUUID()
+		const incomeTransactionId = crypto.randomUUID()
+		return {
+			transferId,
+			expenseTransactionId,
+			incomeTransactionId,
+			expense: { ...transaction('expense'), internalTransferId: transferId },
+			income: { ...transaction('income'), ...income, internalTransferId: transferId },
+			transfer: {
+				organizationId,
+				expenseTransactionId,
+				incomeTransactionId,
+				expenseAccountId: accountId,
+				incomeAccountId: income.accountId,
+				expenseAmountMinor: 100,
+				incomeAmountMinor: income.amountMinor,
+				expenseCurrency: 'USD',
+				incomeCurrency: income.currency
+			}
+		}
+	}
+
+	it.each(moveCases)(
+		'globally authorizes a new pair for $label: $allowed',
+		async ({ label, role, mode, source, target, allowed }) => {
+			const actorSession = {
+				user_id: `paired-create-${label}`,
+				authMode: 'local-first',
+				claims: {}
+			} satisfies import('jazz-tools/testing').PolicyTestSession
+			const writer = fixture.as(actorSession)
+			const userId = fixture.accountFor(actorSession)
+			if (role !== null)
+				await fixture.seed((seed) =>
+					seed.insert(app.organizationMembers, {
+						organizationId,
+						userId,
+						role,
+						accountAccessMode: mode
+					})
+				)
+			for (const [id, access] of [
+				[accountId, source],
+				[otherAccountId, target]
+			] satisfies [string, 'write' | 'read' | 'none'][]) {
+				if (access !== 'none')
+					await fixture.seed((seed) =>
+						seed.insert(app.accountMemberships, {
+							organizationId,
+							userId,
+							accountId: id,
+							access,
+							canDelete: false
+						})
+					)
+			}
+			const pair = pairRecords()
+			const write = await writer.transaction((tx) => {
+				tx.insert(app.transactions, pair.expense, { id: pair.expenseTransactionId })
+				tx.insert(app.transactions, pair.income, { id: pair.incomeTransactionId })
+				tx.insert(app.internalTransfers, pair.transfer, { id: pair.transferId })
+			})
+			if (allowed) {
+				await write.wait({ tier: 'global' })
+				expect(
+					(
+						await writer.one(app.internalTransfers.where({ id: pair.transferId }), {
+							tier: 'remote'
+						})
+					)?.id
+				).toBe(pair.transferId)
+			} else {
+				await expect(write.wait({ tier: 'global' })).rejects.toThrow(
+					/permission_denied|AuthorizationDenied|Write rejected by server authorization/
+				)
+				expect(
+					await db.one(app.internalTransfers.where({ id: pair.transferId }), { tier: 'remote' })
+				).toBeNull()
+				expect(
+					await db.one(app.transactions.where({ id: pair.expenseTransactionId }), {
+						tier: 'remote'
+					})
+				).toBeNull()
+				expect(
+					await db.one(app.transactions.where({ id: pair.incomeTransactionId }), { tier: 'remote' })
+				).toBeNull()
+			}
+		}
+	)
+
+	it('globally accepts a cross-currency pair without converting its amounts', async () => {
+		const account = await db
+			.insert(app.accounts, { organizationId, name: 'Paired TZS', kind: 'cash', currency: 'TZS' })
+			.wait({ tier: 'global' })
+		const pair = pairRecords({ accountId: account.id, amountMinor: 65000, currency: 'TZS' })
+		const write = await db.transaction((tx) => {
+			tx.insert(app.transactions, pair.expense, { id: pair.expenseTransactionId })
+			tx.insert(app.transactions, pair.income, { id: pair.incomeTransactionId })
+			tx.insert(app.internalTransfers, pair.transfer, { id: pair.transferId })
+		})
+		await write.wait({ tier: 'global' })
+		expect(
+			await db.one(app.internalTransfers.where({ id: pair.transferId }), { tier: 'remote' })
+		).toMatchObject({
+			expenseAmountMinor: 100,
+			expenseCurrency: 'USD',
+			incomeAmountMinor: 65000,
+			incomeCurrency: 'TZS'
+		})
+	})
+
+	it.each([
+		{ label: 'amount', overrides: { expenseAmountMinor: 101 } },
+		{ label: 'currency', overrides: { incomeCurrency: 'TZS' } },
+		{ label: 'account', overrides: { expenseAccountId: otherAccountId } },
+		{ label: 'workspace', overrides: { organizationId: otherOrganizationId } },
+		{ label: 'endpoint', overrides: { incomeTransactionId: crypto.randomUUID() } }
+	])('rejects forged transfer $label facts atomically', async ({ overrides }) => {
+		const pair = pairRecords()
+		const write = await db.transaction((tx) => {
+			tx.insert(app.transactions, pair.expense, { id: pair.expenseTransactionId })
+			tx.insert(app.transactions, pair.income, { id: pair.incomeTransactionId })
+			tx.insert(app.internalTransfers, { ...pair.transfer, ...overrides }, { id: pair.transferId })
+		})
+		await expect(write.wait({ tier: 'global' })).rejects.toThrow(
+			/permission_denied|AuthorizationDenied|Write rejected by server authorization/
+		)
+		expect(
+			await db.one(app.internalTransfers.where({ id: pair.transferId }), { tier: 'remote' })
+		).toBeNull()
+		expect(
+			await db.one(app.transactions.where({ id: pair.expenseTransactionId }), { tier: 'remote' })
+		).toBeNull()
+		expect(
+			await db.one(app.transactions.where({ id: pair.incomeTransactionId }), { tier: 'remote' })
+		).toBeNull()
+	})
+
+	it('admits a standalone manual marker under account access but still rejects inventing one by update', async () => {
+		const marker = crypto.randomUUID()
+		const orphan = await db
+			.insert(app.transactions, { ...transaction('expense'), internalTransferId: marker })
+			.wait({ tier: 'global' })
+		expect(
+			(await db.one(app.transactions.where({ id: orphan.id }), { tier: 'remote' }))
+				?.internalTransferId
+		).toBe(marker)
+		const ordinary = await db
+			.insert(app.transactions, transaction('expense'))
+			.wait({ tier: 'global' })
+		await db.expectDenied((writer) =>
+			writer.update(app.transactions, ordinary.id, { internalTransferId: marker })
+		)
+	})
+
+	it('does not admit a new provider transaction with an orphan marker', async () => {
+		await db.expectDenied((writer) =>
+			writer.insert(app.transactions, {
+				...transaction('expense'),
+				source: 'simplefin',
+				externalId: 'forged-transfer-marker',
+				internalTransferId: crypto.randomUUID()
+			})
+		)
+	})
+})

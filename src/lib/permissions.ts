@@ -1,6 +1,7 @@
 import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
+import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
 import { schema as s } from 'jazz-tools'
 import { type RowContext, type RowRefValue } from 'jazz-tools/permissions'
 import {
@@ -486,7 +487,14 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	policy.transactions.allowInsert.where((transaction) =>
 		allOf([
 			canWriteTransaction(transaction),
-			anyOf([transactionHasNoTransfer(), transactionTransferRelationshipExists(transaction)])
+			// New manual endpoints must be grounded in existing account permissions, not in
+			// the new transfer that itself requires these endpoints. Orphan markers are an
+			// integrity boundary; complete-transfer facts and marker updates stay enforced.
+			anyOf([
+				transactionHasNoTransfer(),
+				{ source: TRANSACTION_SOURCE.MANUAL },
+				transactionTransferRelationshipExists(transaction)
+			])
 		])
 	)
 	policy.transactions.allowUpdate
@@ -533,11 +541,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		])
 	)
 	policy.internalTransfers.allowInsert.where((transfer) =>
-		allOf([
-			transferEndpointFactsMatch(transfer),
-			canWriteAccount(transfer.expenseAccountId, transfer.organizationId),
-			canWriteAccount(transfer.incomeAccountId, transfer.organizationId)
-		])
+		allOf([transferEndpointFactsMatch(transfer), canWriteTransferAccounts(transfer)])
 	)
 	policy.internalTransfers.allowUpdate.never()
 	policy.internalTransfers.allowDelete.where((transfer) => canWriteTransferAccounts(transfer))
