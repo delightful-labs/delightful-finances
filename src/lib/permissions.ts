@@ -1,6 +1,7 @@
 import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
+import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
 import { schema as s } from 'jazz-tools'
 import { type RowContext, type RowRefValue } from 'jazz-tools/permissions'
 import {
@@ -191,7 +192,10 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			})
 		])
 
-	const transferEndpointFactsMatch = (transfer: InternalTransferContext) =>
+	const transferEndpointFactsMatch = (
+		transfer: InternalTransferContext,
+		marker: RowRefValue | { isNull: true } = transfer.id
+	) =>
 		allOf([
 			anyOf([
 				policy.transactions.exists.where({
@@ -201,7 +205,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: EXPENSE,
 					amountMinor: transfer.expenseAmountMinor,
 					currency: transfer.expenseCurrency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				}),
 				policy.transactions.exists.where({
 					id: transfer.expenseTransactionId,
@@ -210,7 +214,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: EXPENSE,
 					amountMinor: transfer.amountMinor,
 					currency: transfer.currency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				})
 			]),
 			anyOf([
@@ -221,7 +225,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: INCOME,
 					amountMinor: transfer.incomeAmountMinor,
 					currency: transfer.incomeCurrency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				}),
 				policy.transactions.exists.where({
 					id: transfer.incomeTransactionId,
@@ -230,7 +234,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: INCOME,
 					amountMinor: transfer.amountMinor,
 					currency: transfer.currency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				})
 			])
 		])
@@ -486,7 +490,14 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	policy.transactions.allowInsert.where((transaction) =>
 		allOf([
 			canWriteTransaction(transaction),
-			anyOf([transactionHasNoTransfer(), transactionTransferRelationshipExists(transaction)])
+			// New manual endpoints must be grounded in existing account permissions, not in
+			// the new transfer that itself requires these endpoints. Orphan markers are an
+			// integrity boundary; complete-transfer facts and marker updates stay enforced.
+			anyOf([
+				transactionHasNoTransfer(),
+				{ source: TRANSACTION_SOURCE.MANUAL },
+				transactionTransferRelationshipExists(transaction)
+			])
 		])
 	)
 	policy.transactions.allowUpdate
@@ -534,9 +545,13 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 	)
 	policy.internalTransfers.allowInsert.where((transfer) =>
 		allOf([
-			transferEndpointFactsMatch(transfer),
-			canWriteAccount(transfer.expenseAccountId, transfer.organizationId),
-			canWriteAccount(transfer.incomeAccountId, transfer.organizationId)
+			// Existing unlinked endpoints anchor linking without circular marker-update grants.
+			// The final linked pair and a matching pending-unlink record are both valid states.
+			anyOf([
+				transferEndpointFactsMatch(transfer),
+				transferEndpointFactsMatch(transfer, { isNull: true })
+			]),
+			canWriteTransferAccounts(transfer)
 		])
 	)
 	policy.internalTransfers.allowUpdate.never()

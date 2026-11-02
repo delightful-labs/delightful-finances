@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, setup, sendParent, waitFor, fromCallback, type ActorRefFrom } from 'xstate'
+import {
+	assign,
+	createActor,
+	setup,
+	sendParent,
+	waitFor,
+	fromCallback,
+	type ActorRefFrom,
+	type InspectionEvent
+} from 'xstate'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
 import { createJazzSessionReadinessAdapter } from 'delightful-local-first/backend/jazz/session-readiness'
 import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
@@ -14,29 +23,99 @@ import type { JazzClient, JazzSession, getDb } from 'jazz-tools/svelte'
 import {
 	createApplicationReadinessMachine,
 	selectAttachedWorkspace,
-	selectRecoveryView
+	selectRecoveryView,
+	captureTransferMutationScope
 } from './application-readiness.js'
-import type { WorkspaceAttachment } from './readiness.js'
+import type { WorkspaceAttachment, ReadinessObservation } from './readiness.js'
+import type {
+	SelectedResourceCommand,
+	SelectedResourceOutput
+} from '../../contracts/workspace-selected-resources.js'
+import type { WorkspaceResourceRelease } from '../../contracts/workspace-resource-release.js'
+import type { TransferMutationRequest } from '../transfers/internal-transfer-mutation-owner.js'
+import type { WorkspaceLease } from 'delightful-local-first/workspace/contracts'
+import { membership, scope } from '../workspaces/workspace-integrity.fixture.js'
 
+function heldResources() {
+	type Input = { lease: WorkspaceLease; release: WorkspaceResourceRelease }
+	type Context = Input & { drain: SelectedResourceOutput['drain'] }
+	return setup<
+		Context,
+		SelectedResourceCommand | { type: 'FINISH' },
+		{},
+		{},
+		{},
+		{},
+		never,
+		string,
+		Input,
+		SelectedResourceOutput
+	>({}).createMachine({
+		context: ({ input }) => ({ ...input, drain: undefined }),
+		initial: 'active',
+		output: ({ context }) => ({
+			lease: context.lease,
+			drain: context.drain,
+			release: context.release
+		}),
+		states: {
+			active: {
+				on: {
+					DRAIN: { target: 'draining', actions: assign({ drain: ({ event }) => event.drain }) },
+					SHUTDOWN: 'draining'
+				}
+			},
+			draining: { on: { FINISH: 'closed' } },
+			closed: { type: 'final' }
+		}
+	})
+}
+type HeldResources = ActorRefFrom<ReturnType<typeof heldResources>>
+const heldActors: HeldResources[] = []
 const { workspaceStart, workspaceControls } = vi.hoisted(() => ({
 	workspaceStart: vi.fn(),
-	workspaceControls: new Map<string, { close: () => void; crash: () => void }>()
+	workspaceControls: new Map<
+		string,
+		{
+			close: () => void
+			crash: () => void
+			resource: (lease: WorkspaceLease, actor: HeldResources) => void
+		}
+	>()
 }))
 
 // Delay workspace acknowledgement so shutdown races can be exercised deterministically.
 vi.mock('./readiness.js', () => ({
 	createWorkspaceReadinessMachine: () =>
-		setup<{ value: undefined }, { type: 'SHUTDOWN' } | { type: 'ACK_CLOSE' } | { type: 'CRASH' }>(
-			{}
-		).createMachine({
-			context: { value: undefined },
+		setup<
+			{
+				observation: ReadinessObservation | undefined
+				lease: WorkspaceLease | undefined
+				resourceLease: WorkspaceLease | undefined
+				resourceActor: HeldResources | undefined
+			},
+			| { type: 'SHUTDOWN' }
+			| { type: 'ACK_CLOSE' }
+			| { type: 'CRASH' }
+			| { type: 'OBSERVED'; observation: ReadinessObservation }
+			| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+			| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources }
+		>({}).createMachine({
+			context: {
+				observation: undefined,
+				lease: undefined,
+				resourceLease: undefined,
+				resourceActor: undefined
+			},
 			initial: 'active',
+			output: () => ({ selectedResources: { outcome: 'released' } }),
 			entry: [
 				workspaceStart,
 				({ self }) => {
 					workspaceControls.set(self.id, {
 						close: () => self.send({ type: 'ACK_CLOSE' }),
-						crash: () => self.send({ type: 'CRASH' })
+						crash: () => self.send({ type: 'CRASH' }),
+						resource: (lease, actor) => self.send({ type: 'SET_RESOURCES', lease, actor })
 					})
 				}
 			],
@@ -48,7 +127,19 @@ vi.mock('./readiness.js', () => ({
 				}
 			},
 			states: {
-				active: { on: { SHUTDOWN: 'closing' } },
+				active: {
+					on: {
+						SHUTDOWN: 'closing',
+						SET_RESOURCES: {
+							actions: assign({
+								resourceLease: ({ event }) => event.lease,
+								resourceActor: ({ event }) => event.actor
+							})
+						},
+						OBSERVED: { actions: assign({ observation: ({ event }) => event.observation }) },
+						SELECTION: { actions: assign({ lease: ({ event }) => event.lease }) }
+					}
+				},
 				closing: { on: { ACK_CLOSE: 'closed' } },
 				closed: {
 					type: 'final',
@@ -109,6 +200,7 @@ function reportStatus(
 }
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
+	for (const actor of heldActors.splice(0)) actor.stop()
 	for (const owner of owners.splice(0)) owner.stop()
 	startupBindings.clear()
 	workspaceControls.clear()
@@ -147,10 +239,15 @@ function session(db?: MutationErrorDb) {
 	}
 	return { value, getSnapshot, subscribe, unsubscribe, notify: () => notify() }
 }
-async function start(open: () => Promise<Session>, existing?: Session) {
+async function start(
+	open: () => Promise<Session>,
+	existing?: Session,
+	inspect: (event: InspectionEvent) => void = () => {}
+) {
 	const startup = startupOwner(open, existing)
 	const actor = createActor(
-		createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter)
+		createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter),
+		{ inspect }
 	).start()
 	startupBindings.set(actor, startup)
 	actors.push(actor)
@@ -160,7 +257,7 @@ async function start(open: () => Promise<Session>, existing?: Session) {
 	}
 	return actor
 }
-function attach(actor: Awaited<ReturnType<typeof start>>) {
+function attach(actor: Awaited<ReturnType<typeof start>>, observed?: ReadinessObservation) {
 	// The workspace factory above owns no database effects in this test.
 	const source = {
 		organizationId: null,
@@ -178,16 +275,17 @@ function attach(actor: Awaited<ReturnType<typeof start>>) {
 			read: () => source,
 			passkeyName: () => 'Test'
 		},
-		read: () => ({
-			source,
-			sessionStatus: 'ready',
-			membershipLoading: false,
-			membershipError: undefined,
-			organizations: [],
-			organizationsLoading: false,
-			organizationsError: undefined,
-			route: { pathname: '/settings/workspace', search: '', hash: '' }
-		}),
+		read: () =>
+			observed ?? {
+				source,
+				sessionStatus: 'ready',
+				membershipLoading: false,
+				membershipError: undefined,
+				organizations: [],
+				organizationsLoading: false,
+				organizationsError: undefined,
+				route: { pathname: '/settings/workspace', search: '', hash: '' }
+			},
 		navigate: vi.fn(async () => {})
 	}
 	actor.send({ type: 'ATTACH_WORKSPACE', attachment })
@@ -197,17 +295,29 @@ function attach(actor: Awaited<ReturnType<typeof start>>) {
 }
 
 describe('application readiness supervision', () => {
-	it('forwards active workspace observations to the transfer mutation owner', async () => {
+	it('uses a shared local lease to bind the transfer owner independently of the directory', async () => {
 		const current = session()
 		const actor = await start(async () => current.value, current.value)
+		const observation: ReadinessObservation = {
+			source: { organizationId: scope.organizationId, userId: scope.userId, membership },
+			sessionStatus: 'ready',
+			membershipLoading: false,
+			membershipError: undefined,
+			organizations: [],
+			organizationsLoading: false,
+			organizationsError: undefined,
+			route: { pathname: '/expenses', search: `?workspace=${scope.organizationId}`, hash: '' }
+		}
+		const workspace = attach(actor, observation)
 		const mutationOwner = actor.getSnapshot().children.transferMutationOwner
-		if (!mutationOwner) throw new Error('Expected transfer mutation owner')
-
-		actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId: 'workspace-a' })
-		expect(mutationOwner.getSnapshot().context.workspaceId).toBe('workspace-a')
-
-		actor.send({ type: 'WORKSPACE_SCOPE_OBSERVED', workspaceId: undefined })
-		expect(mutationOwner.getSnapshot().context.workspaceId).toBeUndefined()
+		expect(actor.getSnapshot().context.selectionLease?.request.workspaceId).toBe(
+			scope.organizationId
+		)
+		expect(mutationOwner?.getSnapshot().context.workspaceId).toBe(scope.organizationId)
+		actor.send({ type: 'SHUTDOWN' })
+		control(workspace).close()
+		await waitFor(actor, (snapshot) => snapshot.status === 'done')
+		expect(current.value.close).not.toHaveBeenCalled()
 	})
 
 	it('correlates late transfer rejections and releases the Jazz observer on shutdown', async () => {
@@ -461,7 +571,7 @@ describe('application readiness supervision', () => {
 		expect(actor.getSnapshot().status).toBe('done')
 	})
 
-	it('releases a failed workspace while retaining healthy session observation', async () => {
+	it('fails cleanup conservatively when a workspace crashes, retaining healthy session observation', async () => {
 		const current = session()
 		const actor = await start(async () => current.value, current.value)
 		workspaceStart.mockImplementationOnce(() => {
@@ -499,11 +609,11 @@ describe('application readiness supervision', () => {
 				navigate: vi.fn(async () => {})
 			}
 		})
-		expect(actor.getSnapshot().matches('observerFailed')).toBe(true)
+		expect(actor.getSnapshot().matches('cleanupFailed')).toBe(true)
 		expect(actor.getSnapshot().context.workspace).toBeUndefined()
 		expect(current.unsubscribe).not.toHaveBeenCalled()
 		actor.send({ type: 'RETRY' })
-		expect(actor.getSnapshot().matches({ running: 'ready' })).toBe(true)
+		expect(actor.getSnapshot().matches('cleanupFailed')).toBe(true)
 		expect(current.subscribe).toHaveBeenCalledOnce()
 		expect(current.value.retry).not.toHaveBeenCalled()
 	})
@@ -561,7 +671,7 @@ function accountSnapshot(id: string): ReturnType<Session['getSnapshot']> {
 	Object.defineProperty(snapshot, 'account', { value: { id } })
 	return snapshot
 }
-async function mutationFixture() {
+async function mutationFixture(observed?: ReadinessObservation) {
 	const current = session()
 	current.getSnapshot.mockReturnValue(accountSnapshot('restored'))
 	const pending = Promise.withResolvers<void>()
@@ -588,7 +698,7 @@ async function mutationFixture() {
 	startupBindings.set(actor, startupOwner(open, current.value))
 	beginStartup(actor)
 	await waitFor(actor, (state) => state.matches({ running: 'ready' }))
-	const workspace = attach(actor)
+	const workspace = attach(actor, observed)
 	const attachment = actor.getSnapshot().context.attachment
 	if (!attachment) throw new Error('Expected attachment')
 	const phrase = RecoveryPhrase.fromSecret(generateAuthSecret())
@@ -1232,4 +1342,260 @@ describe('shared acquired session readiness integration', () => {
 		expect(f.retry).toHaveBeenCalledOnce()
 		expect(f.current.value.close).not.toHaveBeenCalled()
 	})
+})
+
+function localObservation(overrides: Partial<ReadinessObservation> = {}): ReadinessObservation {
+	return {
+		source: { userId: scope.userId, organizationId: scope.organizationId, membership },
+		sessionStatus: 'ready',
+		membershipLoading: false,
+		membershipError: undefined,
+		organizations: [],
+		organizationsLoading: false,
+		organizationsError: undefined,
+		route: { pathname: '/expenses', search: `?workspace=${scope.organizationId}`, hash: '' },
+		...overrides
+	}
+}
+async function selectedApplication(release: WorkspaceResourceRelease['outcome'] = 'released') {
+	const current = session()
+	const actor = await start(async () => current.value, current.value)
+	const facts = localObservation()
+	const workspace = attach(actor, facts)
+	const attachment = actor.getSnapshot().context.attachment
+	const lease = actor.getSnapshot().context.selectionLease
+	if (!attachment || !lease) throw new Error('Missing local selection')
+	const resource = createActor(heldResources(), {
+		input: { lease, release: { outcome: release } }
+	}).start()
+	heldActors.push(resource)
+	control(workspace).resource(lease, resource)
+	function finish() {
+		resource.send({ type: 'FINISH' })
+		const result = resource.getSnapshot().output
+		if (!result) throw new Error('Expected actual finite resource output')
+		actor.send({ type: 'SELECTED_RESOURCES_RELEASED', result })
+	}
+	return { actor, current, facts, workspace, attachment, lease, resource, finish }
+}
+
+describe('application shared-selection handoff', () => {
+	it.each([
+		{ organizations: undefined, organizationsLoading: true, organizationsError: undefined },
+		{
+			organizations: undefined,
+			organizationsLoading: false,
+			organizationsError: new Error('Directory failed')
+		}
+	])('publishes local selection despite directory availability: %j', async (directory) => {
+		const current = session()
+		const actor = await start(async () => current.value, current.value)
+		attach(actor, localObservation(directory))
+		expect(actor.getSnapshot().context.selectionLease?.request.workspaceId).toBe(
+			scope.organizationId
+		)
+		expect(actor.getSnapshot().context.transferScope?.workspaceId).toBe(scope.organizationId)
+	})
+	it.each([
+		'released',
+		'releasedWithFailure',
+		'unresolved'
+	] satisfies WorkspaceResourceRelease['outcome'][])(
+		'waits for %s resource evidence after coordinator closure before SDK retry',
+		async (outcome) => {
+			const test = await selectedApplication(outcome)
+			test.actor.send({ type: 'RETRY' })
+			expect(test.resource.getSnapshot().matches('draining')).toBe(true)
+			test.actor.send({ type: 'WORKSPACE_CLOSED', actor: test.workspace })
+			expect(test.actor.getSnapshot().context.workspace).toBe(test.workspace)
+			control(test.workspace).close()
+			expect(test.actor.getSnapshot().context.workspace).toBeUndefined()
+			expect(test.actor.getSnapshot().context.selectionBinding).toBeDefined()
+			expect(test.current.value.retry).not.toHaveBeenCalled()
+			test.finish()
+			if (outcome === 'unresolved') {
+				expect(test.actor.getSnapshot().matches('cleanupFailed')).toBe(true)
+				test.actor.send({ type: 'RETRY' })
+				expect(test.current.value.retry).not.toHaveBeenCalled()
+			} else {
+				await waitFor(test.actor, (snapshot) => snapshot.matches({ running: 'ready' }))
+				expect(test.current.value.retry).toHaveBeenCalledOnce()
+			}
+		}
+	)
+	it('keeps the transfer owner alive until selection cleanup has finished during whole shutdown', async () => {
+		const test = await selectedApplication()
+		const owner = test.actor.getSnapshot().children.transferMutationOwner
+		test.actor.send({ type: 'SHUTDOWN' })
+		control(test.workspace).close()
+		expect(owner?.getSnapshot().status).toBe('active')
+		expect(test.actor.getSnapshot().status).toBe('active')
+		test.finish()
+		await waitFor(test.actor, (snapshot) => snapshot.status === 'done')
+		expect(owner?.getSnapshot().status).toBe('done')
+		expect(test.current.value.close).not.toHaveBeenCalled()
+	})
+	it('rejects an original A request after A -> B -> A, with no SDK mutation', async () => {
+		const test = await selectedApplication()
+		const responses: unknown[] = []
+		const request: Extract<TransferMutationRequest, { operation: 'link' }> = {
+			requestId: 'old-a',
+			workspaceId: scope.organizationId,
+			operation: 'link',
+			recipient: { send: (event) => responses.push(event) },
+			input: {
+				db: test.attachment.dependencies.db,
+				identityId: scope.userId,
+				organizationId: scope.organizationId,
+				expenseTransactionId: 'expense',
+				incomeTransactionId: 'income',
+				trackWrite() {}
+			}
+		}
+		const original = captureTransferMutationScope(test.actor.getSnapshot(), request)
+		if (!original) throw new Error('Missing captured transfer scope')
+		const next = localObservation({
+			source: {
+				userId: scope.userId,
+				organizationId: scope.profileId,
+				membership: { ...membership, organizationId: scope.profileId }
+			},
+			route: { pathname: '/expenses', search: `?workspace=${scope.profileId}`, hash: '' }
+		})
+		test.actor.send({
+			type: 'WORKSPACE_SELECTION_OBSERVED',
+			attachment: test.attachment,
+			observation: next
+		})
+		const drain = test.actor.getSnapshot().context.selectionDrain
+		if (!drain) throw new Error('Missing retained drain')
+		test.actor.send({
+			type: 'WORKSPACE_SELECTION_OBSERVED',
+			attachment: test.attachment,
+			observation: test.facts
+		})
+		expect(test.actor.getSnapshot().context.selectionLease).toBeUndefined()
+		test.finish()
+		const current = test.actor.getSnapshot().context.selectionLease
+		expect(current?.request.workspaceId).toBe(scope.organizationId)
+		expect(current?.epoch).toBeGreaterThan(test.lease.epoch)
+		test.actor.send({ type: 'TRANSFER_MUTATION_REQUEST', request: { ...request, scope: original } })
+		expect(responses).toEqual([
+			{
+				type: 'TRANSFER_MUTATION_RESULT',
+				requestId: request.requestId,
+				result: { operation: 'link', result: { outcome: 'unavailable', settlement: 'notStarted' } }
+			}
+		])
+		test.actor.send({ type: 'WORKSPACE_DRAIN_REQUESTED', drain })
+		test.actor.send({ type: 'SELECTED_RESOURCES_CRASHED', lease: test.lease })
+		test.actor.send({ type: 'WORKSPACE_SCOPE_INVALIDATED', lease: test.lease })
+		expect(test.actor.getSnapshot().context.selectionLease).toEqual(current)
+		expect(test.actor.getSnapshot().context.cleanupRelease.outcome).toBe('released')
+	})
+	it('advances transfer generations when attachment replacement restarts library epoch', async () => {
+		const current = session()
+		const actor = await start(async () => current.value, current.value)
+		const first = attach(actor, localObservation())
+		const before = actor.getSnapshot().context.transferScope
+		const lease = actor.getSnapshot().context.selectionLease
+		if (!before || !lease) throw new Error('Missing initial scope')
+		const attachment = actor.getSnapshot().context.attachment
+		if (!attachment) throw new Error('Missing attachment')
+		actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...attachment } })
+		control(first).close()
+		const next = actor.getSnapshot().context.transferScope
+		expect(actor.getSnapshot().context.selectionLease?.epoch).toBe(1)
+		expect(next?.binding).not.toBe(before.binding)
+		expect(next?.generation).toBeGreaterThan(before.generation)
+		expect(actor.getSnapshot().children.transferMutationOwner?.getSnapshot().context.scope).toEqual(
+			next
+		)
+	})
+})
+
+it('retains selected-resource drain before restoration, then reattaches after a recoverable SDK failure', async () => {
+	const observed = localObservation({
+		source: {
+			userId: 'restored',
+			organizationId: scope.organizationId,
+			membership: { ...membership, userId: 'restored' }
+		}
+	})
+	const test = await mutationFixture(observed)
+	const lease = test.actor.getSnapshot().context.selectionLease
+	if (!lease) throw new Error('Missing selected lease')
+	const resource = createActor(heldResources(), {
+		input: { lease, release: { outcome: 'released' } }
+	}).start()
+	heldActors.push(resource)
+	control(test.workspace).resource(lease, resource)
+	test.actor.send(test.command)
+	await waitFor(test.actor, (snapshot) => snapshot.matches({ running: { recovering: 'draining' } }))
+	control(test.workspace).close()
+	expect(test.restore).not.toHaveBeenCalled()
+	resource.send({ type: 'FINISH' })
+	const result = resource.getSnapshot().output
+	if (!result) throw new Error('Missing finite resource result')
+	test.actor.send({ type: 'SELECTED_RESOURCES_RELEASED', result })
+	await vi.waitFor(() => expect(test.restore).toHaveBeenCalledOnce())
+	test.pending.reject(new Error('Recoverable SDK failure'))
+	await waitFor(
+		test.actor,
+		(snapshot) => snapshot.context.recoveryResult?.outcome === 'restoreFailed'
+	)
+	expect(test.actor.getSnapshot().context.attachmentRevision).toBe(1)
+	const fresh = attach(test.actor, observed)
+	expect(fresh).not.toBe(test.workspace)
+	expect(test.actor.getSnapshot().context.selectionLease?.scope.attachment).not.toBe(
+		lease.scope.attachment
+	)
+	expect(test.current.value.close).not.toHaveBeenCalled()
+})
+
+it('does not forward saved resource output to an immediately completed drain join', async () => {
+	const late: string[] = []
+	const current = session()
+	const actor = await start(
+		async () => current.value,
+		current.value,
+		(event) => {
+			if (
+				event.type === '@xstate.event' &&
+				event.event.type === 'SELECTED_RESOURCES_RELEASED' &&
+				event.actorRef.getSnapshot().status === 'done'
+			)
+				late.push(event.event.type)
+		}
+	)
+	const facts = localObservation()
+	const workspace = attach(actor, facts)
+	const lease = actor.getSnapshot().context.selectionLease
+	const attachment = actor.getSnapshot().context.attachment
+	if (!lease || !attachment) throw new Error('Missing lease')
+	const resource = createActor(heldResources(), {
+		input: { lease, release: { outcome: 'released' } }
+	}).start()
+	heldActors.push(resource)
+	control(workspace).resource(lease, resource)
+	actor.send({ type: 'WORKSPACE_SCOPE_INVALIDATED', lease })
+	resource.send({ type: 'SHUTDOWN' })
+	resource.send({ type: 'FINISH' })
+	const result = resource.getSnapshot().output
+	if (!result) throw new Error('Missing finite result')
+	actor.send({ type: 'SELECTED_RESOURCES_RELEASED', result })
+	actor.send({
+		type: 'WORKSPACE_SELECTION_OBSERVED',
+		attachment,
+		observation: localObservation({
+			source: {
+				userId: scope.userId,
+				organizationId: scope.profileId,
+				membership: { ...membership, organizationId: scope.profileId }
+			},
+			route: { pathname: '/expenses', search: `?workspace=${scope.profileId}`, hash: '' }
+		})
+	})
+	expect(actor.getSnapshot().context.selectionLease?.request.workspaceId).toBe(scope.profileId)
+	expect(late).toEqual([])
 })

@@ -9,6 +9,10 @@ import {
 } from '../../contracts/workspace-integrity-contract.js'
 import type { IntegrityResult } from './workspace-integrity-transaction.js'
 import { workspaceIntegrity } from './workspace-integrity.js'
+import {
+	retainResourceRelease,
+	type WorkspaceResourceRelease
+} from '../../contracts/workspace-resource-release.js'
 
 export type {
 	IntegrityBinding,
@@ -16,6 +20,7 @@ export type {
 } from '../../contracts/workspace-integrity-contract.js'
 type Input = { request: IntegrityRequest; recipient: IntegrityRecipient }
 type Context = Input & {
+	release: WorkspaceResourceRelease
 	operation: IntegrityRequest | undefined
 	result: IntegrityResult | undefined
 }
@@ -25,6 +30,15 @@ type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig
 function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error('Missing integrity operation result')
 	return value
+}
+
+function integrityRelease(result: IntegrityResult): WorkspaceResourceRelease {
+	if (result.settlement === 'unresolved') return { outcome: 'unresolved' }
+	return {
+		outcome: ['failed', 'partial', 'conflict', 'unavailable'].includes(result.outcome)
+			? 'releasedWithFailure'
+			: 'released'
+	}
 }
 
 /** The database binding is fixed; its parent drains this owner before replacing the database. */
@@ -38,7 +52,8 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 		{ bindingChanged: undefined; closing: undefined; replacing: undefined },
 		never,
 		string,
-		Input
+		Input,
+		WorkspaceResourceRelease
 	>({
 		actors: { repair: workspaceIntegrity },
 		guards: {
@@ -60,7 +75,13 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 	const settlement = (context: Context) => required(context.result).settlement
 	return model.createMachine({
 		id: 'workspace-integrity-owner',
-		context: ({ input }) => ({ ...input, operation: undefined, result: undefined }),
+		context: ({ input }) => ({
+			...input,
+			operation: undefined,
+			result: undefined,
+			release: { outcome: 'released' }
+		}),
+		output: ({ context }) => context.release,
 		initial: 'checking',
 		on: {
 			OBSERVED: {
@@ -118,16 +139,32 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 						{
 							guard: 'closing',
 							target: 'closed',
-							actions: assign({ result: ({ event }) => event.output })
+							actions: assign(({ context, event }) => ({
+								result: event.output,
+								release: retainResourceRelease(context.release, integrityRelease(event.output))
+							}))
 						},
-						{ guard: 'replacing', target: 'checking' },
-						{ target: 'classifying', actions: assign({ result: ({ event }) => event.output }) }
+						{
+							guard: 'replacing',
+							target: 'checking',
+							actions: assign(({ context, event }) => ({
+								release: retainResourceRelease(context.release, integrityRelease(event.output))
+							}))
+						},
+						{
+							target: 'classifying',
+							actions: assign(({ context, event }) => ({
+								result: event.output,
+								release: retainResourceRelease(context.release, integrityRelease(event.output))
+							}))
+						}
 					],
 					onError: [
 						{
 							guard: 'closing',
 							target: 'closed',
 							actions: assign({
+								release: { outcome: 'unresolved' },
 								result: ({ event }): IntegrityResult => ({
 									outcome: 'failed',
 									settlement: 'unresolved',
@@ -135,10 +172,15 @@ export function createWorkspaceIntegrityOwner(db: Db) {
 								})
 							})
 						},
-						{ guard: 'replacing', target: 'checking' },
+						{
+							guard: 'replacing',
+							target: 'checking',
+							actions: assign({ release: { outcome: 'unresolved' } })
+						},
 						{
 							target: 'unresolved',
 							actions: assign({
+								release: { outcome: 'unresolved' },
 								result: ({ event }): IntegrityResult => ({
 									outcome: 'failed',
 									settlement: 'unresolved',

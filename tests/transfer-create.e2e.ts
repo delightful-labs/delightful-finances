@@ -1,5 +1,17 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openSidebarSection } from './helpers/ui.js'
+import {
+	holdWorkspaceWrite,
+	machineErrors,
+	ownRecoveryPhrase,
+	requestRecovery
+} from './helpers/workspace-drain.js'
+import {
+	openCreationModal,
+	closeCreationModal,
+	navigateSidebar,
+	selectWorkspace,
+	openSidebarSection
+} from './helpers/ui.js'
 
 async function seedAccounts(page: Page) {
 	await page.goto('/accounts')
@@ -41,7 +53,12 @@ async function seedAccounts(page: Page) {
 				currency: 'TZS'
 			})
 			.wait({ tier: 'local' })
-		return { checkingId: checking.id, cardId: card.id, tanzanianAccountId: tanzanianAccount.id }
+		return {
+			organizationId: organization.id,
+			checkingId: checking.id,
+			cardId: card.id,
+			tanzanianAccountId: tanzanianAccount.id
+		}
 	})
 }
 
@@ -395,3 +412,81 @@ test(
 		await expect(content.locator('.entries > li')).toHaveCount(25)
 	}
 )
+
+for (const interruption of ['switch', 'recover'] satisfies ('switch' | 'recover')[]) {
+	test(
+		`retains an issued transfer write through workspace ${interruption}`,
+		{ tag: ['@transactions'] },
+		async ({ page }) => {
+			const errors = machineErrors(page)
+			const accounts = await seedAccounts(page)
+			let destination = ''
+			let phrase = ''
+			if (interruption === 'switch') {
+				await navigateSidebar(page, 'Workspaces')
+				const dialog = await openCreationModal(page, 'Create Workspace')
+				await dialog
+					.getByLabel('Workspace name', { exact: true })
+					.fill('Transfer drain destination')
+				await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+				await expect(dialog.getByRole('status')).toHaveText('Workspace saved.')
+				const href = await page
+					.getByRole('link', { name: 'Open Workspace: Transfer drain destination', exact: true })
+					.getAttribute('href')
+				if (!href) throw new Error('Missing destination')
+				destination = new URL(href, page.url()).searchParams.get('workspace') ?? ''
+				await closeCreationModal(page)
+			} else phrase = await ownRecoveryPhrase(page)
+			if (interruption === 'recover') {
+				await navigateSidebar(page, 'Transfers')
+				await page.getByRole('link', { name: 'Add Transfer', exact: true }).click()
+			} else await page.goto(`/transfers/new?workspace=${accounts.organizationId}`)
+			await page.getByLabel('Source Account', { exact: true }).selectOption(accounts.checkingId)
+			await page.getByLabel('Destination Account', { exact: true }).selectOption(accounts.cardId)
+			await page.getByLabel('Amount', { exact: true }).fill('42.17')
+			await page.getByLabel('Date', { exact: true }).fill('2026-10-25')
+			const gate = await holdWorkspaceWrite(page, 'transfer')
+			try {
+				await page.getByRole('button', { name: 'Save Transfer', exact: true }).click()
+				await expect.poll(() => gate.evaluate((value) => value.started)).toBe(true)
+				if (interruption === 'switch') {
+					await selectWorkspace(page.getByLabel('Current Workspace', { exact: true }), destination)
+					await expect(page).toHaveURL(`/transfers/new?workspace=${destination}`)
+					await expect(
+						page.getByRole('button', { name: 'Save Transfer', exact: true })
+					).toHaveCount(0)
+				} else {
+					await requestRecovery(page, phrase)
+					expect(await gate.evaluate((value) => value.restores)).toBe(0)
+				}
+				await gate.evaluate((value) => value.release())
+				if (interruption === 'switch') {
+					await expect(page.getByLabel('Source Account', { exact: true })).toBeVisible()
+					await expect(
+						page
+							.getByLabel('Source Account', { exact: true })
+							.locator(`option[value="${accounts.checkingId}"]`)
+					).toHaveCount(0)
+				} else {
+					await expect.poll(() => gate.evaluate((value) => value.restores)).toBe(1)
+					expect(errors).toEqual([])
+					await expect
+						.poll(() => gate.evaluate((value) => value.snapshot()))
+						.toMatchObject({ status: 'ready', pending: null, hasClient: true, errorName: null })
+					await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(
+						accounts.organizationId
+					)
+				}
+				const saved = await persistedTransfer(page, accounts.checkingId)
+				expect(saved.rows).toHaveLength(1)
+				expect(saved.links).toHaveLength(1)
+				expect(saved.links[0]?.organizationId).toBe(accounts.organizationId)
+				expect((await persistedTransfer(page, accounts.cardId)).rows).toHaveLength(1)
+				expect(errors).toEqual([])
+			} finally {
+				await gate.evaluate((value) => value.restore())
+				await gate.dispose()
+			}
+		}
+	)
+}

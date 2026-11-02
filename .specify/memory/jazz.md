@@ -95,13 +95,34 @@ even after its `internalTransferId` marker has been cleared. Keep the marker-cle
 then delete the transfer row and the selected transaction rows together in the final mergeable
 bundle. The full app policy suite verifies this bundle at global durability.
 
-The transfer deletion permission must preserve the same account security as write access to both
-endpoints. In the full app, expressing this as two nested `canWriteAccount` predicates did not
-settle the linked deletion globally. The equivalent transfer-specific expression—owner/admin or
-all-account write access, or a selected-account member with write grants to both endpoint
-accounts—settled successfully. Keep the existing insert predicate separate; applying that rewrite
-to inserts caused the transfer-link browser flow to be rejected. Reverify both policy paths against
-the installed Jazz version before changing either expression.
+The transfer deletion and insertion permissions must preserve write access to both endpoint
+accounts. On alpha.59, two nested `canWriteAccount` predicates prevented the new paired transaction
+from settling globally. Use the equivalent factored transfer-specific predicate: owner/admin or
+all-account write access, or a selected-account member with write grants to both endpoint accounts.
+An earlier experiment applying this to inserts rejected the browser flow; the later investigation
+identified the separate circular insertion dependency rather than treating that warning as final.
+
+[Jazz's documented transaction authorization](https://jazz.tools/docs/auth/permissions) permits
+references to the transaction's own independently authorized writes, but not new rows granting each
+other access in a cycle. Transfer endpoints requiring the new transfer, and the transfer requiring
+both new endpoints, form such a cycle. Rearranging boolean expressions or write order does not fix it.
+
+The user approved direct account-based insertion authorization for new **manual** transaction rows,
+including their forward marker, while retaining all existing reference/access checks and full
+transfer endpoint validation. Authorized standalone manual orphan markers are now an application
+integrity boundary, not an insertion denial. Provider inserts do not gain that exception. Keep marker
+update guards, financial-fact immutability and transfer/read/delete checks; do not replace local
+settlement with global waits or split the three-row atomic operation. Verify accepted roles/grants,
+forged-fact atomic rollback, provider orphan rejection and manual orphan/update boundaries explicitly.
+Linking already-accepted provider endpoints has a separate cycle: both marker updates require the
+new transfer, while its insert previously required both new markers. Transfer insertion now accepts
+complete matching endpoint facts with either both markers pointing to that transfer or both markers
+clear. The latter anchors authorization in accepted unlinked rows and also admits the already-supported
+pending-unlink state. Both-account write access and marker-update guards remain mandatory; mismatched
+facts and endpoints claimed by another transfer are rejected. New links write all six side-specific
+account/amount/currency facts. Synced-provider browser fixtures must confirm global acceptance before
+linking; link fixtures also confirm global acceptance so optimistic UI cannot conceal rollback.
+See `docs/transfer-creation-permission-investigation.md` for the exact decision and reproduction.
 
 Before relying on a new policy shape, validate it against the installed Jazz version and its actual
 policy test/runtime path. Include both accepted and rejected cases for the precise relationship and

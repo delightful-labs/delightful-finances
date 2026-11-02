@@ -1,4 +1,5 @@
 import { assign, setup } from 'xstate'
+import type { TransferMutationScope } from '../../contracts/transfer-scope-drain.js'
 import type {
 	TransferMutationRecipient,
 	TransferMutationRequest,
@@ -7,6 +8,7 @@ import type {
 } from './internal-transfer-mutation-owner.js'
 
 export type TransferMutationGateway = {
+	captureScope?: (request: TransferMutationRequestInput) => TransferMutationScope | undefined
 	send: (
 		event:
 			| { type: 'TRANSFER_MUTATION_REQUEST'; request: TransferMutationRequest }
@@ -68,7 +70,14 @@ export function createTransferMutationRequestMachine(gateway: TransferMutationGa
 	})
 	return machine.createMachine({
 		id: 'transfer-mutation-request',
-		context: ({ input, self }) => ({ request: input, requestId: self.id, result: undefined }),
+		context: ({ input, self }) => {
+			const scope = input.scope ?? gateway.captureScope?.(input)
+			return {
+				request: scope ? { ...input, scope: Object.freeze({ ...scope }) } : { ...input },
+				requestId: self.id,
+				result: undefined
+			}
+		},
 		initial: 'waiting',
 		output: ({ context }) => required(context.result),
 		states: {

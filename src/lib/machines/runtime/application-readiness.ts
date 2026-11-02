@@ -8,15 +8,15 @@ import {
 	stateIn,
 	raise,
 	sendTo,
-	setup,
-	stopChild
+	setup
 } from 'xstate'
-import type { ActorRefFrom, SnapshotFrom } from 'xstate'
+import type { ActorRefFrom, SnapshotFrom, DoneActorEvent } from 'xstate'
 import type { JazzClient, JazzSession } from 'jazz-tools/svelte'
 import type { MutationErrorEvent } from 'jazz-tools'
 import type { TransferWriteTracking } from '../transfers/internal-transfer.js'
 import {
 	createInternalTransferMutationOwner,
+	rejectedTransferMutation,
 	type TransferMutationRequest
 } from '../transfers/internal-transfer-mutation-owner.js'
 import {
@@ -32,7 +32,40 @@ import type {
 	SessionStartupReport
 } from 'delightful-local-first/session/contracts'
 import type { JazzStartupBinding } from '#lib/runtime/jazz-session.js'
-import { createWorkspaceReadinessMachine, type WorkspaceAttachment } from './readiness.js'
+import {
+	createWorkspaceReadinessMachine,
+	type WorkspaceAttachment,
+	type ReadinessObservation
+} from './readiness.js'
+import type {
+	WorkspaceLease,
+	WorkspaceDrainRequest,
+	WorkspaceSelectionRequest
+} from 'delightful-local-first/workspace/contracts'
+import {
+	createWorkspaceSelectionAttachmentMachine,
+	type WorkspaceSelectionBinding,
+	type WorkspaceSelectionAttachmentReport
+} from './workspace-selection-attachment.js'
+import {
+	createWorkspaceSelectionDrainMachine,
+	transferScopeForWorkspaceLease,
+	type WorkspaceSelectionDrainOutput
+} from './workspace-selection-drain.js'
+import {
+	sameWorkspaceLease,
+	type SelectedResourceOutput
+} from '../../contracts/workspace-selected-resources.js'
+import {
+	retainResourceRelease,
+	type WorkspaceResourceRelease
+} from '../../contracts/workspace-resource-release.js'
+import {
+	workspaceSelectionTarget,
+	workspaceSelectionObservation
+} from './workspace-selection-observation.js'
+import type { TransferMutationScope } from '../../contracts/transfer-scope-drain.js'
+import type { TransferMutationRequestInput } from '../transfers/internal-transfer-mutation-request.js'
 import { required } from '../bank-sync/identity.js'
 import {
 	sessionRecoveryMachine,
@@ -54,6 +87,23 @@ export type MutationNotice =
 			transferId: string
 	  }
 type Context = {
+	selectionBinding: WorkspaceSelectionBinding | undefined
+	selectionRevision: number
+	selectionLease: WorkspaceLease | undefined
+	transferScope: TransferMutationScope | undefined
+	transferLease: WorkspaceLease | undefined
+	transferGeneration: number
+	selectionRequest: WorkspaceSelectionRequest | undefined
+	selectionAttempt: number
+	selectionGeneration: number
+	selectionStatus:
+		'waiting' | 'selected' | 'denied' | 'unavailable' | 'failed' | 'suspended' | 'drainFailed'
+	selectionFacts: ReadinessObservation | undefined
+	selectionDrain: WorkspaceDrainRequest | undefined
+	handledDrains: WeakSet<object>
+	drainActor: ActorRefFrom<ReturnType<typeof createWorkspaceSelectionDrainMachine>> | undefined
+	resourceResult: SelectedResourceOutput | undefined
+	cleanupRelease: WorkspaceResourceRelease
 	attachmentRevision: number
 	recoveryDraftRevision: number
 	recoveryAttempt: number
@@ -74,6 +124,17 @@ type Context = {
 	transferMutationOwnerClosed: boolean
 }
 type Event =
+	| WorkspaceSelectionAttachmentReport
+	| DoneActorEvent<WorkspaceSelectionDrainOutput | { selectedResources: WorkspaceResourceRelease }>
+	| {
+			type: 'WORKSPACE_SELECTION_OBSERVED'
+			attachment: WorkspaceAttachment
+			observation: ReadinessObservation
+	  }
+	| { type: 'SELECTED_RESOURCES_RELEASED'; result: SelectedResourceOutput }
+	| { type: 'SELECTED_RESOURCES_CRASHED'; lease: WorkspaceLease }
+	| { type: 'CLEANUP_FAILED' }
+	| { type: 'RESOURCE_OWNER_FAILED' }
 	| RecoveryNotice
 	| SessionStartupReport<Session>
 	| SessionReadinessReport
@@ -100,6 +161,21 @@ type Event =
 	| { type: 'SHUTDOWN' }
 	| { type: `xstate.error.actor.${string}`; actorId: string; error: unknown }
 
+function workspaceReleased(context: Context) {
+	return (
+		!context.workspace &&
+		!context.selectionBinding &&
+		!context.drainActor &&
+		context.cleanupRelease.outcome !== 'unresolved'
+	)
+}
+function currentSelectionScope(context: Context, scope: WorkspaceLease['scope']) {
+	return (
+		context.selectionBinding?.scope.binding === scope.binding &&
+		context.selectionBinding.scope.attachment === scope.attachment
+	)
+}
+
 /** Layout-owned factories bind acquired session capabilities; Finance owns domain coordination. */
 export function createApplicationReadinessMachine(
 	navigation: { readHref: () => string; navigate: (destination: string) => Promise<void> } = {
@@ -113,6 +189,7 @@ export function createApplicationReadinessMachine(
 ) {
 	const actors = {
 		recovery: sessionRecoveryMachine,
+		selectionAttachment: createWorkspaceSelectionAttachmentMachine(),
 		transferMutationOwner: createInternalTransferMutationOwner(),
 		startup: createSessionStartupMachine<Session>(),
 		sessionReadiness: createSessionReadinessMachine(),
@@ -150,6 +227,9 @@ export function createApplicationReadinessMachine(
 			recoveryObserverFailed: undefined
 			recoveryStartupFailed: undefined
 			recoveryReadinessCrashed: undefined
+			cleanupPending: undefined
+			recoveryCleanupFailed: undefined
+			retryCleanupFailed: undefined
 		},
 		never,
 		string
@@ -177,6 +257,7 @@ export function createApplicationReadinessMachine(
 			})
 		},
 		guards: {
+			cleanupPending: ({ context }) => context.cleanupRelease.outcome === 'unresolved',
 			currentReadiness: ({ context, event }) =>
 				'scope' in event &&
 				event.scope.binding === context.readinessScope?.binding &&
@@ -227,24 +308,69 @@ export function createApplicationReadinessMachine(
 			recoveryClosing: stateIn({ running: { recovering: 'closing' } }),
 			recoveryObserverFailed: stateIn({ running: { recovering: 'observerFailed' } }),
 			recoveryStartupFailed: stateIn({ running: { recovering: 'startupFailed' } }),
-			recoveryReadinessCrashed: stateIn({ running: { recovering: 'readinessCrashed' } })
+			recoveryReadinessCrashed: stateIn({ running: { recovering: 'readinessCrashed' } }),
+			recoveryCleanupFailed: stateIn({ running: { recovering: 'cleanupFailed' } }),
+			retryCleanupFailed: stateIn({ running: { retrying: 'cleanupFailed' } })
 		}
 	})
-	const attach = workflow.assign(({ context, spawn }) => ({
-		attachment: context.pending,
-		workspace: spawn(createWorkspaceReadinessMachine(required(context.pending))),
-		pending: undefined
-	}))
+	const attach = workflow.enqueueActions(({ context, enqueue }) => {
+		if (context.selectionRevision >= Number.MAX_SAFE_INTEGER) {
+			enqueue.raise({ type: 'CLEANUP_FAILED' })
+			return
+		}
+		const attachment = required(context.pending)
+		const binding: WorkspaceSelectionBinding = {
+			scope: { binding: attachment.dependencies.db, attachment: {} },
+			revision: context.selectionRevision + 1
+		}
+		enqueue.assign(({ spawn }) => ({
+			attachment,
+			workspace: spawn(createWorkspaceReadinessMachine(attachment)),
+			pending: undefined,
+			selectionBinding: binding,
+			selectionRevision: binding.revision,
+			selectionLease: undefined,
+			transferScope: undefined,
+			transferLease: undefined,
+			selectionRequest: undefined,
+			selectionAttempt: 0,
+			selectionGeneration: 0,
+			selectionStatus: 'waiting',
+			selectionFacts: undefined,
+			cleanupRelease: { outcome: 'released' },
+			resourceResult: undefined
+		}))
+		enqueue.sendTo('selectionAttachment', { type: 'ATTACH', binding })
+	})
+	const detachSelection = workflow.enqueueActions(({ context, enqueue }) => {
+		enqueue.assign({ selectionLease: undefined, selectionRequest: undefined })
+		if (context.selectionBinding)
+			enqueue.sendTo('selectionAttachment', { type: 'DETACH', binding: context.selectionBinding })
+		if (context.workspace?.getSnapshot().matches('active')) {
+			enqueue.sendTo(context.workspace, {
+				type: 'SELECTION',
+				lease: undefined,
+				status: 'suspended'
+			})
+		}
+	})
 	const shutDownWorkspace = workflow.enqueueActions(({ context, enqueue }) => {
 		enqueue.assign({ pending: undefined })
-		enqueue.sendTo('transferMutationOwner', {
-			type: 'TRANSFER_SCOPE_CHANGED',
-			workspaceId: undefined
-		})
+		enqueue(detachSelection)
 		if (context.workspace?.getSnapshot().status === 'active')
 			enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 	})
-	const release = workflow.enqueueActions(({ context, enqueue }) => {
+	const release = workflow.enqueueActions(({ context, event, enqueue }) => {
+		enqueue(detachSelection)
+		if (event.type.startsWith('xstate.error.actor.')) {
+			enqueue.assign({ cleanupRelease: { outcome: 'unresolved' } })
+			if (context.drainActor?.getSnapshot().status === 'active' && context.selectionDrain)
+				enqueue.sendTo(context.drainActor, {
+					type: 'SELECTED_RESOURCES_CRASHED',
+					lease: context.selectionDrain.lease
+				})
+			enqueue.raise({ type: 'CLEANUP_FAILED' })
+		}
 		enqueue.stopChild(required(context.workspace))
 		enqueue.assign({ workspace: undefined, attachment: undefined })
 		enqueue.raise({ type: 'ATTACH_PENDING' })
@@ -290,7 +416,23 @@ export function createApplicationReadinessMachine(
 	return workflow.createMachine({
 		id: 'application-readiness',
 		initial: 'waitingForStartup',
-		context: {
+		context: () => ({
+			selectionBinding: undefined,
+			selectionRevision: -1,
+			selectionLease: undefined,
+			transferScope: undefined,
+			transferLease: undefined,
+			transferGeneration: 0,
+			selectionRequest: undefined,
+			selectionAttempt: 0,
+			selectionGeneration: 0,
+			selectionStatus: 'waiting',
+			selectionFacts: undefined,
+			selectionDrain: undefined,
+			handledDrains: new WeakSet(),
+			drainActor: undefined,
+			resourceResult: undefined,
+			cleanupRelease: { outcome: 'released' },
 			attachmentRevision: 0,
 			recoveryDraftRevision: 0,
 			recoveryAttempt: 0,
@@ -309,17 +451,22 @@ export function createApplicationReadinessMachine(
 			trackedTransferWrites: [],
 			mutationNotice: undefined,
 			transferMutationOwnerClosed: false
-		},
+		}),
 		invoke: [
 			{
 				id: 'startup',
 				src: 'startup',
 				input: ({ self }) => ({ reportTo: self }),
 				onDone: [
+					{ guard: 'cleanupPending', actions: raise({ type: 'STARTUP_RELEASED' }) },
 					{ guard: 'shuttingDown', actions: raise({ type: 'STARTUP_RELEASED' }) },
 					{ target: '.settlingStartupFailure' }
 				],
 				onError: [
+					{
+						guard: 'cleanupPending',
+						actions: ['retireStartup', raise({ type: 'STARTUP_RELEASED' })]
+					},
 					{
 						guard: 'shuttingDown',
 						actions: ['retireStartup', raise({ type: 'STARTUP_RELEASED' })]
@@ -332,18 +479,62 @@ export function createApplicationReadinessMachine(
 				src: 'sessionReadiness',
 				input: ({ self }) => ({ reportTo: self }),
 				onDone: [
+					{ guard: 'cleanupPending', actions: raise({ type: 'READINESS_RELEASED' }) },
 					{ guard: 'readinessStopping', actions: raise({ type: 'READINESS_RELEASED' }) },
 					{ target: '.settlingReadinessCrash' }
 				],
 				onError: [
+					{ guard: 'cleanupPending', actions: raise({ type: 'READINESS_RELEASED' }) },
 					{ guard: 'shuttingDown', actions: raise({ type: 'READINESS_RELEASED' }) },
 					{ target: '.settlingReadinessCrash' }
 				]
 			},
-			{ id: 'transferMutationOwner', src: 'transferMutationOwner' }
+			{
+				id: 'selectionAttachment',
+				src: 'selectionAttachment',
+				input: ({ self }) => ({ reportTo: self }),
+				onError: { actions: raise({ type: 'CLEANUP_FAILED' }) }
+			},
+			{
+				id: 'transferMutationOwner',
+				src: 'transferMutationOwner',
+				onDone: [
+					{
+						guard: and(['shuttingDown', ({ event }) => event.output.outcome === 'closed']),
+						actions: assign({ transferMutationOwnerClosed: true })
+					},
+					{ actions: raise({ type: 'CLEANUP_FAILED' }) }
+				],
+				onError: {
+					actions: workflow.enqueueActions(({ context, enqueue }) => {
+						if (context.drainActor?.getSnapshot().status === 'active' && context.selectionDrain)
+							enqueue.sendTo(context.drainActor, {
+								type: 'TRANSFER_OWNER_CRASHED',
+								drain: context.selectionDrain
+							})
+						enqueue.raise({ type: 'CLEANUP_FAILED' })
+					})
+				}
+			}
 		],
 		on: {
 			'xstate.error.actor.*': [
+				{
+					guard: ({ context, event }) => context.drainActor?.id === event.actorId,
+					actions: workflow.enqueueActions(({ context, enqueue }) => {
+						if (context.selectionBinding && context.selectionDrain)
+							enqueue.sendTo('selectionAttachment', {
+								type: 'SELECTION_COMMAND',
+								binding: context.selectionBinding,
+								command: {
+									type: 'DRAIN_FAILED',
+									drain: context.selectionDrain,
+									outcome: 'unresolved'
+								}
+							})
+						enqueue.raise({ type: 'CLEANUP_FAILED' })
+					})
+				},
 				{
 					guard: ({ context, event }) => context.workspace?.id === event.actorId,
 					target: '.settlingObserverFailure',
@@ -382,21 +573,37 @@ export function createApplicationReadinessMachine(
 				actions: raise({ type: 'STARTUP_UNAVAILABLE' })
 			},
 			STARTUP_UNAVAILABLE: { target: '.settlingStartupFailure' },
-			TRANSFER_MUTATION_REQUEST: {
-				actions: sendTo('transferMutationOwner', ({ event }) => ({
-					type: 'REQUEST_TRANSFER_MUTATION',
-					request: event.request
-				}))
-			},
-			CANCEL_TRANSFER_MUTATION: {
-				actions: sendTo('transferMutationOwner', ({ event }) => event)
-			},
-			WORKSPACE_SCOPE_OBSERVED: {
-				actions: sendTo('transferMutationOwner', ({ event }) => ({
-					type: 'TRANSFER_SCOPE_CHANGED',
-					workspaceId: event.workspaceId
-				}))
-			},
+			TRANSFER_MUTATION_REQUEST: [
+				{
+					guard: and([
+						stateIn({ running: 'ready' }),
+						({ context, event }) => {
+							const scope = contextTransferScope(context, event.request)
+							return (
+								scope !== undefined &&
+								event.request.scope !== undefined &&
+								scope.binding === event.request.scope.binding &&
+								scope.workspaceId === event.request.scope.workspaceId &&
+								scope.generation === event.request.scope.generation
+							)
+						}
+					]),
+					actions: sendTo('transferMutationOwner', ({ event }) => ({
+						type: 'REQUEST_TRANSFER_MUTATION',
+						request: event.request
+					}))
+				},
+				{
+					actions: ({ event }) =>
+						event.request.recipient.send({
+							type: 'TRANSFER_MUTATION_RESULT',
+							requestId: event.request.requestId,
+							result: rejectedTransferMutation(event.request)
+						})
+				}
+			],
+			CANCEL_TRANSFER_MUTATION: { actions: sendTo('transferMutationOwner', ({ event }) => event) },
+			WORKSPACE_SCOPE_OBSERVED: {},
 			TRANSFER_MUTATION_OWNER_CLOSED: {
 				actions: assign({ transferMutationOwnerClosed: true })
 			},
@@ -410,25 +617,20 @@ export function createApplicationReadinessMachine(
 						context.attachment === event.attachment || context.pending === event.attachment
 				},
 				{
-					guard: ({ context }) => Boolean(context.workspace),
+					guard: ({ context }) =>
+						Boolean(context.workspace || context.selectionBinding || context.drainActor),
 					actions: [
 						assign({ pending: ({ event }) => event.attachment }),
-						sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' }),
-						sendTo('transferMutationOwner', ({ event }) => ({
-							type: 'TRANSFER_SCOPE_CHANGED',
-							workspaceId: event.attachment.dependencies.read().organizationId ?? undefined
-						}))
+						detachSelection,
+						workflow.enqueueActions(({ context, enqueue }) => {
+							if (context.workspace?.getSnapshot().status === 'active')
+								enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
+						})
 					]
 				},
 				{
-					actions: [
-						sendTo('transferMutationOwner', ({ event }) => ({
-							type: 'TRANSFER_SCOPE_CHANGED',
-							workspaceId: event.attachment.dependencies.read().organizationId ?? undefined
-						})),
-						assign({ pending: ({ event }) => event.attachment }),
-						attach
-					]
+					guard: ({ context }) => context.cleanupRelease.outcome !== 'unresolved',
+					actions: [assign({ pending: ({ event }) => event.attachment }), attach]
 				}
 			],
 			DETACH_WORKSPACE: [
@@ -437,34 +639,472 @@ export function createApplicationReadinessMachine(
 					actions: assign({ pending: undefined })
 				},
 				{
-					guard: ({ context, event }) =>
-						context.attachment === event.attachment &&
-						context.workspace?.getSnapshot().status === 'active',
+					guard: ({ context, event }) => context.attachment === event.attachment,
 					actions: [
-						sendTo(({ context }) => required(context.workspace), { type: 'SHUTDOWN' }),
-						sendTo('transferMutationOwner', {
-							type: 'TRANSFER_SCOPE_CHANGED',
-							workspaceId: undefined
+						detachSelection,
+						workflow.enqueueActions(({ context, enqueue }) => {
+							if (context.workspace?.getSnapshot().status === 'active')
+								enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 						})
 					]
 				}
 			],
-			WORKSPACE_CLOSED: {
-				guard: ({ context, event }) => context.workspace === event.actor,
-				actions: release
-			},
+			WORKSPACE_CLOSED: {},
 			ATTACH_PENDING: {
-				guard: ({ context }) => Boolean(context.pending),
+				guard: ({ context }) => Boolean(context.pending) && workspaceReleased(context),
+				actions: attach
+			},
+			RESOURCE_OWNER_FAILED: { target: '.settlingResourceFailure' },
+			CLEANUP_FAILED: {
+				target: '.cleanupFailed',
+				actions: assign({ cleanupRelease: { outcome: 'unresolved' } })
+			},
+			WORKSPACE_SELECTION_ATTACHED: {
+				guard: ({ context, event }) =>
+					event.binding.revision === context.selectionBinding?.revision &&
+					currentSelectionScope(context, event.binding.scope),
+				actions: workflow.enqueueActions(({ context, enqueue }) => {
+					if (context.attachment)
+						enqueue.raise({
+							type: 'WORKSPACE_SELECTION_OBSERVED',
+							attachment: context.attachment,
+							observation: context.attachment.read()
+						})
+				})
+			},
+			WORKSPACE_SELECTION_RELEASED: {
+				guard: ({ context, event }) =>
+					event.binding.revision === context.selectionBinding?.revision &&
+					currentSelectionScope(context, event.binding.scope),
 				actions: [
-					sendTo('transferMutationOwner', ({ context }) => ({
-						type: 'TRANSFER_SCOPE_CHANGED',
-						workspaceId: required(context.pending).dependencies.read().organizationId ?? undefined
-					})),
-					attach
+					assign({ selectionBinding: undefined, selectionLease: undefined }),
+					raise({ type: 'ATTACH_PENDING' })
 				]
+			},
+			WORKSPACE_SELECTION_ATTACHMENT_FAILED: {
+				guard: ({ context, event }) =>
+					event.binding.revision === context.selectionBinding?.revision &&
+					currentSelectionScope(context, event.binding.scope),
+				actions: raise({ type: 'CLEANUP_FAILED' })
+			},
+			WORKSPACE_SELECTION_OBSERVED: {
+				guard: ({ context, event }) =>
+					context.attachment === event.attachment &&
+					context.workspace?.getSnapshot().matches('active') === true &&
+					context.selectionBinding !== undefined &&
+					context.cleanupRelease.outcome !== 'unresolved',
+				actions: workflow.enqueueActions(({ context, event, self, enqueue }) => {
+					if (
+						!self
+							.getSnapshot()
+							.children.selectionAttachment?.getSnapshot()
+							.matches({ holding: 'active' })
+					)
+						return
+					if (event.type !== 'WORKSPACE_SELECTION_OBSERVED')
+						throw new Error('Unexpected selection event')
+					if (
+						context.selectionFacts &&
+						context.selectionFacts.source.userId !== event.observation.source.userId
+					) {
+						enqueue.assign({ pending: event.attachment })
+						enqueue(detachSelection)
+						enqueue.sendTo(required(context.workspace), { type: 'SHUTDOWN' })
+						return
+					}
+					const binding = required(context.selectionBinding)
+					const target = workspaceSelectionTarget(event.observation)
+					enqueue.assign({ selectionFacts: event.observation })
+					enqueue.sendTo(required(context.workspace), {
+						type: 'OBSERVED',
+						observation: event.observation
+					})
+					if (
+						context.selectionGeneration >= Number.MAX_SAFE_INTEGER ||
+						context.selectionAttempt >= Number.MAX_SAFE_INTEGER
+					) {
+						enqueue.raise({ type: 'CLEANUP_FAILED' })
+						return
+					}
+					if (!target) {
+						enqueue.assign({ selectionLease: undefined, selectionRequest: undefined })
+						enqueue.sendTo('selectionAttachment', {
+							type: 'SELECTION_COMMAND',
+							binding,
+							command: { type: 'SUSPEND', scope: binding.scope }
+						})
+						return
+					}
+					const changed = target !== context.selectionRequest?.workspaceId
+					const request = changed
+						? { workspaceId: target, attempt: context.selectionAttempt + 1 }
+						: required(context.selectionRequest)
+					const generation = context.selectionGeneration + 1
+					enqueue.assign({
+						selectionRequest: request,
+						selectionAttempt: request.attempt,
+						selectionGeneration: generation
+					})
+					if (changed) {
+						enqueue.assign({ selectionLease: undefined })
+						enqueue.sendTo('selectionAttachment', {
+							type: 'SELECTION_COMMAND',
+							binding,
+							command: { type: 'SELECT', scope: binding.scope, request }
+						})
+					}
+					enqueue.sendTo('selectionAttachment', {
+						type: 'SELECTION_COMMAND',
+						binding,
+						command: {
+							type: context.selectionStatus === 'suspended' ? 'RESUME' : 'OBSERVED',
+							observation: workspaceSelectionObservation(
+								event.observation,
+								binding.scope,
+								request,
+								generation
+							)
+						}
+					})
+				})
+			},
+			WORKSPACE_SELECTION: {
+				guard: ({ context, event }) =>
+					currentSelectionScope(
+						context,
+						event.status === 'selected' ? event.lease.scope : event.scope
+					) &&
+					(event.status === 'selected' ||
+						(event.status === 'suspended' && !context.selectionLease) ||
+						(event.request?.workspaceId === context.selectionRequest?.workspaceId &&
+							event.request?.attempt === context.selectionRequest?.attempt)) &&
+					(event.status !== 'selected' ||
+						(event.lease.request.workspaceId === context.selectionRequest?.workspaceId &&
+							event.lease.request.attempt === context.selectionRequest.attempt &&
+							context.selectionFacts !== undefined &&
+							workspaceSelectionTarget(context.selectionFacts) ===
+								event.lease.request.workspaceId &&
+							workspaceSelectionObservation(
+								context.selectionFacts,
+								event.lease.scope,
+								event.lease.request,
+								0
+							).access === 'allowed')),
+				actions: workflow.enqueueActions(({ context, event, self, enqueue }) => {
+					if (
+						!self
+							.getSnapshot()
+							.children.selectionAttachment?.getSnapshot()
+							.matches({ holding: 'active' })
+					)
+						return
+					if (event.type !== 'WORKSPACE_SELECTION') throw new Error('Unexpected selection event')
+					if (event.status === 'selected') {
+						if (
+							!context.workspace?.getSnapshot().matches('active') ||
+							context.pending ||
+							context.cleanupRelease.outcome === 'unresolved'
+						)
+							return
+						if (
+							!context.selectionLease ||
+							!sameWorkspaceLease(context.selectionLease, event.lease)
+						) {
+							if (context.transferGeneration >= Number.MAX_SAFE_INTEGER) {
+								enqueue.raise({ type: 'CLEANUP_FAILED' })
+								return
+							}
+							const scope = {
+								...transferScopeForWorkspaceLease(event.lease),
+								generation: context.transferGeneration + 1
+							}
+							enqueue.assign({
+								transferScope: scope,
+								transferLease: event.lease,
+								transferGeneration: scope.generation
+							})
+							enqueue.sendTo('transferMutationOwner', { type: 'BIND_TRANSFER_SCOPE', scope })
+							enqueue.assign({ resourceResult: undefined })
+						}
+						enqueue.assign({ selectionLease: event.lease, selectionStatus: event.status })
+						enqueue.sendTo(context.workspace, {
+							type: 'SELECTION',
+							status: event.status,
+							lease: event.lease
+						})
+						return
+					}
+					enqueue.assign({ selectionLease: undefined, selectionStatus: event.status })
+					if (context.workspace?.getSnapshot().status === 'active')
+						enqueue.sendTo(context.workspace, {
+							type: 'SELECTION',
+							status: event.status,
+							lease: undefined
+						})
+					if (
+						event.status === 'suspended' &&
+						context.attachment &&
+						context.workspace?.getSnapshot().matches('active')
+					)
+						enqueue.raise({
+							type: 'WORKSPACE_SELECTION_OBSERVED',
+							attachment: context.attachment,
+							observation: context.attachment.read()
+						})
+				})
+			},
+			WORKSPACE_SCOPE_INVALIDATED: {
+				guard: ({ context, event }) =>
+					currentSelectionScope(context, event.lease.scope) &&
+					context.transferLease !== undefined &&
+					sameWorkspaceLease(context.transferLease, event.lease),
+				actions: [
+					assign({ selectionLease: undefined }),
+					workflow.enqueueActions(({ context, enqueue }) => {
+						if (context.workspace?.getSnapshot().status === 'active')
+							enqueue.sendTo(context.workspace, {
+								type: 'SELECTION',
+								lease: undefined,
+								status: 'waiting'
+							})
+					})
+				]
+			},
+			WORKSPACE_DRAIN_REQUESTED: {
+				guard: ({ context, event }) =>
+					currentSelectionScope(context, event.drain.lease.scope) &&
+					!context.drainActor &&
+					!context.handledDrains.has(event.drain.token) &&
+					(!context.transferLease || event.drain.lease.epoch >= context.transferLease.epoch),
+				actions: [
+					workflow.assign(({ context, event, self, spawn }) => {
+						if (event.type !== 'WORKSPACE_DRAIN_REQUESTED')
+							throw new Error('Unexpected selection event')
+						context.handledDrains.add(event.drain.token)
+						const workspace = context.workspace?.getSnapshot().context
+						const owner =
+							workspace?.resourceLease &&
+							sameWorkspaceLease(workspace.resourceLease, event.drain.lease)
+								? workspace.resourceActor
+								: undefined
+						const snapshot = owner?.getSnapshot()
+						const actual =
+							snapshot?.status === 'done'
+								? snapshot.output
+								: (workspace?.resourceResult ?? context.resourceResult)
+						const transfers = required(self.getSnapshot().children.transferMutationOwner)
+						const transferOwned =
+							context.transferLease !== undefined &&
+							sameWorkspaceLease(context.transferLease, event.drain.lease)
+						const transferSnapshot = transfers.getSnapshot()
+						const transferRelease: WorkspaceResourceRelease = !transferOwned
+							? { outcome: 'released' }
+							: transferSnapshot.status === 'done' && transferSnapshot.output.outcome === 'closed'
+								? { outcome: 'released' }
+								: { outcome: 'unresolved' }
+						const release =
+							actual && sameWorkspaceLease(actual.lease, event.drain.lease)
+								? retainResourceRelease(context.cleanupRelease, actual.release)
+								: context.cleanupRelease
+						return {
+							selectionDrain: event.drain,
+							cleanupRelease: snapshot?.status === 'error' ? { outcome: 'unresolved' } : release,
+							drainActor: spawn(createWorkspaceSelectionDrainMachine(), {
+								input: {
+									drain: event.drain,
+									resources: snapshot?.status === 'active' ? owner : undefined,
+									resourceRelease:
+										snapshot?.status === 'error'
+											? { outcome: 'unresolved' }
+											: actual && sameWorkspaceLease(actual.lease, event.drain.lease)
+												? actual.release
+												: { outcome: 'released' },
+									...(context.transferScope ? { transferScope: context.transferScope } : {}),
+									transfers:
+										transferOwned && transferSnapshot.status === 'active' ? transfers : undefined,
+									transferRelease:
+										transferOwned && transferSnapshot.status === 'active'
+											? { outcome: 'released' }
+											: transferRelease
+								}
+							})
+						}
+					})
+				]
+			},
+			SELECTED_RESOURCES_RELEASED: {
+				guard: ({ context, event }) =>
+					currentSelectionScope(context, event.result.lease.scope) &&
+					context.transferLease !== undefined &&
+					sameWorkspaceLease(context.transferLease, event.result.lease),
+				actions: workflow.enqueueActions(({ context, event, enqueue }) => {
+					if (event.type !== 'SELECTED_RESOURCES_RELEASED')
+						throw new Error('Unexpected selection event')
+					enqueue.assign({
+						resourceResult: event.result,
+						cleanupRelease: retainResourceRelease(context.cleanupRelease, event.result.release)
+					})
+					if (
+						context.drainActor?.getSnapshot().status === 'active' &&
+						context.selectionDrain &&
+						sameWorkspaceLease(context.selectionDrain.lease, event.result.lease)
+					)
+						enqueue.sendTo(context.drainActor, event)
+					else if (
+						context.selectionLease &&
+						context.selectionFacts &&
+						sameWorkspaceLease(context.selectionLease, event.result.lease) &&
+						workspaceSelectionObservation(
+							context.selectionFacts,
+							event.result.lease.scope,
+							event.result.lease.request,
+							0
+						).access === 'allowed'
+					) {
+						enqueue.assign({
+							selectionLease: undefined,
+							cleanupRelease: retainResourceRelease(context.cleanupRelease, {
+								outcome:
+									event.result.release.outcome === 'unresolved'
+										? 'unresolved'
+										: 'releasedWithFailure'
+							})
+						})
+						enqueue.raise({ type: 'RESOURCE_OWNER_FAILED' })
+					}
+					if (event.result.release.outcome === 'unresolved')
+						enqueue.raise({ type: 'CLEANUP_FAILED' })
+				})
+			},
+			SELECTED_RESOURCES_CRASHED: {
+				guard: ({ context, event }) =>
+					currentSelectionScope(context, event.lease.scope) &&
+					context.transferLease !== undefined &&
+					sameWorkspaceLease(context.transferLease, event.lease),
+				actions: workflow.enqueueActions(({ context, event, enqueue }) => {
+					if (event.type !== 'SELECTED_RESOURCES_CRASHED')
+						throw new Error('Unexpected selection event')
+					enqueue.assign({
+						resourceResult: {
+							lease: event.lease,
+							drain: undefined,
+							release: { outcome: 'unresolved' }
+						}
+					})
+					if (context.drainActor?.getSnapshot().status === 'active')
+						enqueue.sendTo(context.drainActor, event)
+					enqueue.raise({ type: 'CLEANUP_FAILED' })
+				})
+			},
+			'xstate.done.actor.*': [
+				{
+					guard: ({ context, event }) =>
+						context.workspace?.id === event.actorId && 'selectedResources' in event.output,
+					actions: workflow.enqueueActions(({ context, event, enqueue }) => {
+						if (!('output' in event) || !('selectedResources' in event.output))
+							throw new Error('Missing workspace completion')
+						enqueue.assign({
+							cleanupRelease: retainResourceRelease(
+								context.cleanupRelease,
+								event.output.selectedResources
+							)
+						})
+						enqueue(release)
+						if (event.output.selectedResources.outcome === 'unresolved')
+							enqueue.raise({ type: 'CLEANUP_FAILED' })
+					})
+				},
+				{
+					guard: ({ context, event }) =>
+						event.actorId === context.drainActor?.id &&
+						'drain' in event.output &&
+						context.selectionDrain !== undefined &&
+						event.output.drain.token === context.selectionDrain.token &&
+						sameWorkspaceLease(event.output.drain.lease, context.selectionDrain.lease),
+					actions: workflow.enqueueActions(({ context, event, enqueue }) => {
+						if (!('output' in event) || !('drain' in event.output))
+							throw new Error('Missing drain completion')
+						const release = retainResourceRelease(context.cleanupRelease, event.output.release)
+						enqueue.stopChild(required(context.drainActor))
+						enqueue.assign({
+							drainActor: undefined,
+							selectionDrain: undefined,
+							cleanupRelease: release
+						})
+						enqueue.sendTo('selectionAttachment', {
+							type: 'SELECTION_COMMAND',
+							binding: required(context.selectionBinding),
+							command:
+								release.outcome === 'released'
+									? { type: 'DRAINED', drain: event.output.drain }
+									: {
+											type: 'DRAIN_FAILED',
+											drain: event.output.drain,
+											outcome: release.outcome === 'unresolved' ? 'unresolved' : 'released'
+										}
+						})
+						if (release.outcome === 'unresolved') enqueue.raise({ type: 'CLEANUP_FAILED' })
+					})
+				}
+			],
+			WORKSPACE_DRAIN_FAILED: {
+				guard: ({ context, event }) =>
+					currentSelectionScope(context, event.drain.lease.scope) &&
+					event.drain.token === context.selectionDrain?.token &&
+					event.outcome === 'unresolved',
+				actions: raise({ type: 'CLEANUP_FAILED' })
 			}
 		},
 		states: {
+			settlingResourceFailure: {
+				entry: shutDownWorkspace,
+				always: { guard: ({ context }) => workspaceReleased(context), target: 'resourceFailed' },
+				on: {
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					START: {},
+					RETRY: {},
+					RECOVER: {},
+					RETRY_NAVIGATION: {},
+					RESOURCE_OWNER_FAILED: {}
+				}
+			},
+			resourceFailed: {
+				tags: 'startup-error',
+				on: {
+					RETRY: { target: 'running.preparingRetry' },
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					START: {},
+					RECOVER: {},
+					RETRY_NAVIGATION: {},
+					RESOURCE_OWNER_FAILED: {}
+				}
+			},
+			cleanupFailed: {
+				tags: 'startup-error',
+				entry: [
+					shutDownWorkspace,
+					workflow.enqueueActions(({ self, enqueue }) => {
+						const owner = self.getSnapshot().children.transferMutationOwner
+						if (owner?.getSnapshot().status === 'active')
+							enqueue.sendTo(owner, { type: 'SHUTDOWN' })
+					})
+				],
+				on: {
+					START: {},
+					RETRY: {},
+					RECOVER: {},
+					RETRY_NAVIGATION: {},
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					CLEANUP_FAILED: {},
+					RESOURCE_OWNER_FAILED: {},
+					STARTUP_UNAVAILABLE: {},
+					OBSERVATION_UNAVAILABLE: {},
+					ACQUIRED_STATUS: {}
+				}
+			},
 			waitingForStartup: {
 				on: {
 					START: {
@@ -547,7 +1187,7 @@ export function createApplicationReadinessMachine(
 					releasingReadiness: { on: { READINESS_RELEASED: 'workspace' } },
 					workspace: {
 						always: {
-							guard: ({ context }) => !context.workspace,
+							guard: ({ context }) => workspaceReleased(context),
 							target: '#application-readiness.startupActorFailed'
 						}
 					}
@@ -585,7 +1225,7 @@ export function createApplicationReadinessMachine(
 			},
 			settlingReadinessCrash: {
 				entry: shutDownWorkspace,
-				always: { guard: ({ context }) => !context.workspace, target: 'readinessCrashed' },
+				always: { guard: ({ context }) => workspaceReleased(context), target: 'readinessCrashed' },
 				on: {
 					ATTACH_WORKSPACE: {},
 					ATTACH_PENDING: {},
@@ -610,7 +1250,7 @@ export function createApplicationReadinessMachine(
 			},
 			settlingObserverFailure: {
 				entry: shutDownWorkspace,
-				always: { guard: ({ context }) => !context.workspace, target: 'observerFailed' },
+				always: { guard: ({ context }) => workspaceReleased(context), target: 'observerFailed' },
 				on: { ATTACH_WORKSPACE: {}, ATTACH_PENDING: {}, RETRY: {}, START: {} }
 			},
 			observerFailed: {
@@ -760,7 +1400,7 @@ export function createApplicationReadinessMachine(
 						entry: shutDownWorkspace,
 						always: {
 							guard: ({ context }) =>
-								!context.workspace && context.retryAttempt < Number.MAX_SAFE_INTEGER,
+								workspaceReleased(context) && context.retryAttempt < Number.MAX_SAFE_INTEGER,
 							target: 'retrying'
 						},
 						on: {
@@ -784,7 +1424,16 @@ export function createApplicationReadinessMachine(
 							}))
 						],
 						on: {
+							RESOURCE_OWNER_FAILED: '.observerFailed',
+							CLEANUP_FAILED: {
+								target: '.cleanupFailed',
+								actions: assign({ cleanupRelease: { outcome: 'unresolved' } })
+							},
 							SESSION_RETRY_SETTLED: [
+								{
+									guard: and(['currentRetry', 'retryCleanupFailed']),
+									target: '#application-readiness.cleanupFailed'
+								},
 								{
 									guard: and(['currentRetry', 'shuttingDown']),
 									target: '#application-readiness.closing',
@@ -854,6 +1503,18 @@ export function createApplicationReadinessMachine(
 									}
 								}
 							},
+							cleanupFailed: {
+								...retryDrain,
+								on: {
+									...retryDrain.on,
+									STARTUP_UNAVAILABLE: {},
+									OBSERVATION_UNAVAILABLE: {},
+									CLEANUP_FAILED: {},
+									RESOURCE_OWNER_FAILED: {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									'xstate.error.actor.sessionReadiness': {}
+								}
+							},
 							observerFailed: retryDrain,
 							startupFailed: {
 								...retryDrain,
@@ -902,6 +1563,11 @@ export function createApplicationReadinessMachine(
 							}),
 							onDone: [
 								{
+									guard: 'recoveryCleanupFailed',
+									target: '#application-readiness.cleanupFailed',
+									actions: assign({ recoveryRequest: undefined })
+								},
+								{
 									guard: 'recoveryClosing',
 									target: '#application-readiness.closing',
 									actions: assign({ recoveryRequest: undefined })
@@ -937,6 +1603,11 @@ export function createApplicationReadinessMachine(
 							],
 							onError: [
 								{
+									guard: 'recoveryCleanupFailed',
+									target: '#application-readiness.cleanupFailed',
+									actions: assign({ recoveryRequest: undefined })
+								},
+								{
 									guard: 'recoveryClosing',
 									target: '#application-readiness.closing',
 									actions: assign({ recoveryRequest: undefined })
@@ -965,6 +1636,11 @@ export function createApplicationReadinessMachine(
 							ATTACH_WORKSPACE: { actions: retainAttachment },
 							ATTACH_PENDING: {},
 							ACQUIRED_STATUS: { actions: assign({ status: ({ event }) => event.status }) },
+							RESOURCE_OWNER_FAILED: '.observerFailed',
+							CLEANUP_FAILED: {
+								target: '.cleanupFailed',
+								actions: assign({ cleanupRelease: { outcome: 'unresolved' } })
+							},
 							RECOVERY_VALIDATED: {
 								guard: ({ context, event }) => event.attempt === context.recoveryAttempt,
 								actions: assign({
@@ -992,12 +1668,24 @@ export function createApplicationReadinessMachine(
 							draining: {
 								entry: shutDownWorkspace,
 								always: {
-									guard: ({ context }) => !context.workspace,
+									guard: ({ context }) => workspaceReleased(context),
 									target: 'operating',
 									actions: sendTo('recovery', { type: 'WORKSPACE_DRAINED' })
 								}
 							},
 							operating: {},
+							cleanupFailed: {
+								...recoveryDrain,
+								on: {
+									...recoveryDrain.on,
+									STARTUP_UNAVAILABLE: {},
+									OBSERVATION_UNAVAILABLE: {},
+									CLEANUP_FAILED: {},
+									RESOURCE_OWNER_FAILED: {},
+									'xstate.error.actor.startup': { actions: 'retireStartup' },
+									'xstate.error.actor.sessionReadiness': {}
+								}
+							},
 							observerFailed: recoveryDrain,
 							readinessCrashed: {
 								...recoveryDrain,
@@ -1041,14 +1729,33 @@ export function createApplicationReadinessMachine(
 				}
 			},
 			closing: {
-				always: {
-					guard: ({ context }) => !context.workspace && context.transferMutationOwnerClosed,
-					target: 'releasingReadiness'
+				initial: 'workspace',
+				states: {
+					workspace: {
+						always: [
+							{
+								guard: ({ context }) => context.cleanupRelease.outcome === 'unresolved',
+								target: '#application-readiness.cleanupFailed'
+							},
+							{ guard: ({ context }) => workspaceReleased(context), target: 'transfers' }
+						]
+					},
+					transfers: {
+						entry: workflow.enqueueActions(({ self, enqueue }) => {
+							const owner = self.getSnapshot().children.transferMutationOwner
+							if (owner?.getSnapshot().status === 'active')
+								enqueue.sendTo(owner, { type: 'SHUTDOWN' })
+						}),
+						always: {
+							guard: ({ context }) => context.transferMutationOwnerClosed,
+							target: '#application-readiness.releasingReadiness'
+						}
+					}
 				},
 				entry: [
 					'shutDownReadiness',
 					workflow.enqueueActions(({ context, enqueue }) => {
-						enqueue.sendTo('transferMutationOwner', { type: 'SHUTDOWN' })
+						enqueue(detachSelection)
 						if (context.workspace?.getSnapshot().status === 'active')
 							enqueue.sendTo(context.workspace, { type: 'SHUTDOWN' })
 					})
@@ -1060,16 +1767,9 @@ export function createApplicationReadinessMachine(
 						{
 							guard: ({ context, event }) => context.workspace?.id === event.actorId,
 							actions: release
-						},
-						{}
+						}
 					],
-					WORKSPACE_CLOSED: {
-						guard: ({ context, event }) => context.workspace === event.actor,
-						actions: [
-							stopChild(({ context }) => required(context.workspace)),
-							assign({ workspace: undefined, attachment: undefined })
-						]
-					},
+					WORKSPACE_CLOSED: {},
 					TRANSFER_MUTATION_OWNER_CLOSED: {
 						actions: assign({ transferMutationOwnerClosed: true })
 					},
@@ -1149,4 +1849,40 @@ export function selectRecoveryView(
 		canRetryNavigation: result?.outcome === 'navigationFailed' && result.navigation !== undefined,
 		draftRevision: snapshot.context.recoveryDraftRevision
 	}
+}
+
+function contextTransferScope(
+	context: Context,
+	request: TransferMutationRequestInput
+): TransferMutationScope | undefined {
+	const { selectionLease: lease, attachment, selectionFacts } = context
+	if (
+		!lease ||
+		!context.transferLease ||
+		!sameWorkspaceLease(lease, context.transferLease) ||
+		!attachment ||
+		!selectionFacts ||
+		!context.workspace?.getSnapshot().matches('active') ||
+		context.cleanupRelease.outcome === 'unresolved' ||
+		context.pending ||
+		request.input.db !== attachment.dependencies.db ||
+		request.input.identityId !== selectionFacts.source.userId ||
+		request.workspaceId !== lease.request.workspaceId ||
+		request.input.organizationId !== lease.request.workspaceId ||
+		workspaceSelectionTarget(selectionFacts) !== lease.request.workspaceId ||
+		workspaceSelectionObservation(selectionFacts, lease.scope, lease.request, 0).access !==
+			'allowed'
+	)
+		return undefined
+	return context.transferScope
+}
+
+/** Capture once at request creation. Submission must validate, never relabel, this scope. */
+export function captureTransferMutationScope(
+	snapshot: SnapshotFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+	request: TransferMutationRequestInput
+): TransferMutationScope | undefined {
+	return snapshot.matches({ running: 'ready' })
+		? contextTransferScope(snapshot.context, request)
+		: undefined
 }

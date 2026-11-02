@@ -75,6 +75,100 @@ describe('workspace navigation public contract', () => {
 		await waitFor(f.actor, (s) => s.matches('settled'))
 		expect(f.navigate.mock.calls[0]?.[0]).toBe('/settings/workspace')
 	})
+	it('resolves an automatic empty-catalog chooser when a sole workspace arrives later', async () => {
+		const origin = {
+			...facts,
+			pathname: '/expenses',
+			search: '?page=2',
+			hash: '#row',
+			organizations: []
+		}
+		const f = fixture(origin)
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls[0]?.[0]).toBe('/settings/workspace')
+		f.actor.send({
+			type: 'OBSERVED',
+			facts: { ...origin, pathname: '/settings/workspace', search: '', hash: '', generation: 1 }
+		})
+		expect(f.actor.getSnapshot().matches('directory')).toBe(true)
+		f.actor.send({
+			type: 'OBSERVED',
+			facts: { ...facts, pathname: '/settings/workspace', generation: 2 }
+		})
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate).toHaveBeenLastCalledWith(
+			`/expenses?page=2&workspace=${scope.organizationId}#row`,
+			expect.any(AbortSignal),
+			'/settings/workspace',
+			true
+		)
+	})
+	it('handles the sole workspace arriving before the automatic chooser navigation completes', async () => {
+		const pending = Promise.withResolvers<void>()
+		const f = fixture({ ...facts, ready: false, organizations: [] })
+		f.navigate.mockImplementation(() => pending.promise)
+		f.actor.send({ type: 'OBSERVED', facts: { ...facts, organizations: [] } })
+		f.actor.send({ type: 'OBSERVED', facts: { ...facts, generation: 1 } })
+		f.actor.send({
+			type: 'OBSERVED',
+			facts: { ...facts, pathname: '/settings/workspace', generation: 2 }
+		})
+		pending.resolve()
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls.map(([destination]) => destination)).toEqual([
+			'/settings/workspace',
+			workspaceHref(scope.organizationId)
+		])
+	})
+	it('does not resolve an automatic chooser while the arriving catalog is loading or failed', async () => {
+		const f = fixture({ ...facts, organizations: [] })
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		for (const state of [
+			{ loading: true, error: undefined },
+			{ loading: false, error: new Error('Catalog failed') }
+		]) {
+			f.actor.send({
+				type: 'OBSERVED',
+				facts: { ...facts, ...state, pathname: '/settings/workspace' }
+			})
+			expect(f.actor.getSnapshot().matches('directory')).toBe(true)
+		}
+		expect(f.navigate).toHaveBeenCalledTimes(1)
+		f.actor.send({ type: 'OBSERVED', facts: { ...facts, pathname: '/settings/workspace' } })
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls.at(-1)?.[0]).toBe(workspaceHref(scope.organizationId))
+	})
+	it.each(['identity', 'session', 'route', 'ambiguous', 'selection'])(
+		'discards automatic empty-entry intent after a %s change',
+		async (change) => {
+			const f = fixture({ ...facts, organizations: [] })
+			await waitFor(f.actor, (s) => s.matches('settled'))
+			const directory = { ...facts, pathname: '/settings/workspace', organizations: [] }
+			f.actor.send({ type: 'OBSERVED', facts: directory })
+			if (change === 'selection') {
+				f.actor.send({ type: 'SELECT', workspaceId: scope.organizationId })
+				await waitFor(f.actor, (s) => s.matches('settled'))
+			} else {
+				const workspace = facts.organizations[0]
+				if (!workspace) throw new Error('Missing workspace')
+				f.actor.send({
+					type: 'OBSERVED',
+					facts: {
+						...directory,
+						userId: change === 'identity' ? scope.profileId : facts.userId,
+						ready: change !== 'session',
+						pathname: change === 'route' ? '/account' : directory.pathname,
+						organizations:
+							change === 'ambiguous' ? [workspace, { ...workspace, id: scope.profileId }] : []
+					}
+				})
+			}
+			const count = f.navigate.mock.calls.length
+			f.actor.send({ type: 'OBSERVED', facts: { ...facts, pathname: '/settings/workspace' } })
+			expect(f.actor.getSnapshot().matches('directory')).toBe(true)
+			expect(f.navigate).toHaveBeenCalledTimes(count)
+		}
+	)
 	it('never redirects a denied explicit scope to another workspace', () => {
 		const f = fixture({
 			...facts,

@@ -595,7 +595,11 @@ test(
 		} finally {
 			await page.context().setOffline(false)
 		}
-		await expect.poll(async () => (await avatarRecord(page, true)).byteLength).toBe(0)
+		// A reconnect can initially return no remote profile. Retry the read as well as
+		// the assertion; expect.poll stops immediately if avatarRecord throws.
+		await expect(async () => {
+			expect((await avatarRecord(page, true)).byteLength).toBe(0)
+		}).toPass({ timeout: 15_000 })
 		await page.reload()
 		await expect(page.getByLabel('Avatar', { exact: true })).toBeEnabled()
 		await expect(page.getByRole('button', { name: 'Save Avatar', exact: true })).toHaveCount(0)
@@ -611,7 +615,9 @@ test(
 		await uploadAvatar(page, await avatarImage(page, 300, 600))
 		await waitForAvatar(page, 256, 256)
 		const original = await avatarRecord(page)
-		await expect.poll(() => avatarRecord(page, true)).toEqual(original)
+		await expect(async () => {
+			expect(await avatarRecord(page, true)).toEqual(original)
+		}).toPass({ timeout: 15_000 })
 		await page.getByRole('button', { name: 'Show Recovery phrase' }).click()
 		const phrase = await page.getByLabel('Your recovery phrase').inputValue()
 		await page.getByRole('button', { name: 'Close', exact: true }).click()

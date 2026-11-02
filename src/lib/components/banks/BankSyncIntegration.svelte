@@ -1,13 +1,16 @@
 <script lang="ts">
-	import { setContext, type Snippet, type ComponentProps } from 'svelte'
+	import { setContext, untrack, type Snippet, type ComponentProps } from 'svelte'
 	import {
 		bankSyncKey,
 		type BankSyncContext,
 		type BankSyncControls,
-		type BankSyncEvent
+		type BankSyncEvent,
+		type BankSyncActor,
+		type BankSyncSnapshot
 	} from '#lib/runtime/bank-sync.js'
 	import { getWorkspace } from '#lib/runtime/workspace.js'
-	import { workspaceBankActor } from '#lib/machines/runtime/readiness.js'
+	import type { WorkspaceLease } from 'delightful-local-first/workspace/contracts'
+	import { workspaceBankActor, selectWorkspaceView } from '#lib/machines/runtime/readiness.js'
 	import { beforeNavigate } from '$app/navigation'
 	import { page } from '$app/state'
 	import { QuerySubscription } from 'jazz-tools/svelte'
@@ -45,20 +48,45 @@
 	const workspace = getWorkspace()
 	const workspaceActor = workspace.actor
 	if (!workspaceActor) throw new Error('Workspace integration must own the coordinator')
-	const actorRef = workspaceBankActor(workspaceActor.getSnapshot())
-	if (!actorRef) throw new Error('Workspace readiness must own the bank actor')
-	const send = (event: BankSyncEvent) => workspaceActor.send({ type: 'BANK', event })
+	const binding = readable<{ actor: BankSyncActor; lease: WorkspaceLease } | undefined>(
+		undefined,
+		(set) => {
+			let current: BankSyncActor | undefined
+			let currentLease: WorkspaceLease | undefined
+			const subscription = workspaceActor.subscribe((state) => {
+				const actor = workspaceBankActor(state)
+				const lease = selectWorkspaceView(state).resourceLease
+				if (actor === current && lease === currentLease) return
+				current = actor
+				currentLease = lease
+				set(actor && lease ? { actor, lease } : undefined)
+			})
+			return () => subscription.unsubscribe()
+		}
+	)
+	const bankBinding = fromStore(binding)
+	const send = (event: BankSyncEvent, lease: WorkspaceLease | undefined) => {
+		if (lease) workspaceActor.send({ type: 'BANK', lease, event })
+	}
 	const syncDisabled = $derived(!workspace.view.canSync)
 
-	// Child state changes can leave the root snapshot identity unchanged.
-	const snapshot = readable(actorRef.getSnapshot(), (set) => {
-		const subscription = actorRef.subscribe(set)
-		return () => subscription.unsubscribe()
+	// Follow replacement references and subscribe directly to the selected bank's public snapshots.
+	const snapshot = readable<BankSyncSnapshot | undefined>(undefined, (set) => {
+		let child: { unsubscribe: () => void } | undefined
+		const subscription = binding.subscribe((value) => {
+			child?.unsubscribe()
+			set(value?.actor.getSnapshot())
+			child = value?.actor.subscribe(set)
+		})
+		return () => {
+			child?.unsubscribe()
+			subscription()
+		}
 	})
 	const bankState = fromStore(snapshot)
 	const view = $derived(selectBankView(bankState.current))
 	const historyOrganizationId = $derived(
-		page.url.pathname === '/settings/banks' && bankState.current.context.access.kind === 'allowed'
+		page.url.pathname === '/settings/banks' && bankState.current?.context.access.kind === 'allowed'
 			? bankState.current.context.access.organizationId
 			: undefined
 	)
@@ -78,7 +106,7 @@
 			historyOrganizationId,
 			historySelection,
 			historyScope,
-			bankState.current.context.connection?.id
+			bankState.current?.context.connection?.id
 		)
 	)
 	const historyConnections = $derived(selectedHistory.connections)
@@ -135,17 +163,20 @@
 		logPage = nextHistoryPage(logPage, logScope)
 	}
 	$effect(() => {
-		actorRef.send({ type: 'NETWORK_CHANGED', offline: browserOffline })
+		const current = bankBinding.current
+		const offline = browserOffline
+		if (current)
+			untrack(() => workspaceActor.send({ type: 'BANK_NETWORK', lease: current.lease, offline }))
 	})
 	const workflowTrace = createBankTrace('workflow')
-	function dispatch(event: BankSyncEvent) {
+	function dispatch(event: BankSyncEvent, lease: WorkspaceLease | undefined) {
 		workflowTrace.log('event', {
 			event: event.type,
 			state:
 				(view.mode.kind === 'setup' ? view.mode.stage : null) ??
-				(bankState.current.matches('running') ? 'running' : 'idle')
+				(bankState.current?.matches('running') ? 'running' : 'idle')
 		})
-		send(event)
+		send(event, lease)
 	}
 	$effect(() => {
 		workflowTrace.log('queries', {
@@ -158,7 +189,9 @@
 	})
 
 	const controls: BankSyncContext = {
-		actor: actorRef,
+		get actor() {
+			return bankBinding.current?.actor
+		},
 		snapshot,
 		get status() {
 			return view.status
@@ -175,14 +208,14 @@
 		get loading() {
 			return view.activity.kind === 'working'
 		},
-		sync: () => dispatch({ type: 'SYNC' }),
-		cancel: () => dispatch({ type: 'CANCEL' }),
+		sync: () => dispatch({ type: 'SYNC' }, bankBinding.current?.lease),
+		cancel: () => dispatch({ type: 'CANCEL' }, bankBinding.current?.lease),
 		get view() {
 			return bankView
 		}
 	}
 	setContext(bankSyncKey, controls)
-	beforeNavigate(() => dispatch({ type: 'CANCEL' }))
+	beforeNavigate(() => dispatch({ type: 'CANCEL' }, bankBinding.current?.lease))
 </script>
 
 {#snippet bankView()}
@@ -191,21 +224,22 @@
 		loadingMessage={m['status.loading_subject']({ subject: m['bank.title']() })}
 		errorMessage={m['errors.load_subject']({ subject: m['bank.title']() })}
 	>
-		{#key `${userId}:${organizationId}`}
+		{#key bankBinding.current?.lease}
+			{@const lease = bankBinding.current?.lease}
 			<BankSync
 				{browserOffline}
 				{view}
 				{syncDisabled}
-				onTestEncryption={() => dispatch({ type: 'TEST_ENCRYPTION' })}
-				onVerifyDecryption={() => dispatch({ type: 'VERIFY_DECRYPTION' })}
-				onSaveConnection={() => dispatch({ type: 'SAVE_CONNECTION' })}
-				onConnect={(token) => dispatch({ type: 'CONNECT', token })}
-				onDiscover={() => dispatch({ type: 'DISCOVER' })}
-				onSync={() => dispatch({ type: 'SYNC' })}
-				onMap={(providerId, accountId) => dispatch({ type: 'MAP', providerId, accountId })}
-				onCreateAccount={(providerId) => dispatch({ type: 'CREATE_ACCOUNT', providerId })}
-				onDisconnect={() => dispatch({ type: 'DISCONNECT' })}
-				onCancel={() => dispatch({ type: 'CANCEL' })}
+				onTestEncryption={() => dispatch({ type: 'TEST_ENCRYPTION' }, lease)}
+				onVerifyDecryption={() => dispatch({ type: 'VERIFY_DECRYPTION' }, lease)}
+				onSaveConnection={() => dispatch({ type: 'SAVE_CONNECTION' }, lease)}
+				onConnect={(token) => dispatch({ type: 'CONNECT', token }, lease)}
+				onDiscover={() => dispatch({ type: 'DISCOVER' }, lease)}
+				onSync={() => dispatch({ type: 'SYNC' }, lease)}
+				onMap={(providerId, accountId) => dispatch({ type: 'MAP', providerId, accountId }, lease)}
+				onCreateAccount={(providerId) => dispatch({ type: 'CREATE_ACCOUNT', providerId }, lease)}
+				onDisconnect={() => dispatch({ type: 'DISCONNECT' }, lease)}
+				onCancel={() => dispatch({ type: 'CANCEL' }, lease)}
 			/>
 			{#if historyOrganizationId}
 				<QueryContent

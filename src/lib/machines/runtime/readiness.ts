@@ -10,7 +10,9 @@ import {
 	setup,
 	stateIn,
 	type SnapshotFrom,
-	type ActorRefFrom
+	type ActorRefFrom,
+	type DoneActorEvent,
+	type ErrorActorEvent
 } from 'xstate'
 import { createWorkspaceStartupMachine } from '../workspaces/workspace-startup.js'
 import {
@@ -32,20 +34,35 @@ import {
 	type NavigationReport,
 	type NavigationStatusEvent
 } from '../../contracts/workspace-orchestration-contract.js'
-import { createWorkspaceIntegrityOwner } from '../workspaces/workspace-integrity-owner.js'
+import {
+	createWorkspaceSelectedResources,
+	selectedResourceBankActor
+} from './workspace-selected-resources.js'
+import {
+	sameWorkspaceLease,
+	type SelectedResourceOutput,
+	type SelectedResourceCommand,
+	type SelectedResourceReport
+} from '../../contracts/workspace-selected-resources.js'
+import {
+	retainResourceRelease,
+	type WorkspaceResourceRelease
+} from '../../contracts/workspace-resource-release.js'
+import type {
+	WorkspaceLease,
+	WorkspaceSelectionReport
+} from 'delightful-local-first/workspace/contracts'
 import {
 	sameIntegrityBinding,
 	sameIntegrityRequest,
 	selectWorkspaceIntegrityView,
 	type IntegrityBinding,
 	type IntegrityRequest,
-	type IntegrityReport,
-	type IntegrityStatusEvent
+	type IntegrityReport
 } from '../../contracts/workspace-integrity-contract.js'
 
 import type { Organization } from '#lib/schema.js'
 import { workspaceRoute } from '../../domain/workspace-routes.js'
-import { createBankSyncMachine } from '../bank-sync/index.js'
 import { required } from '../bank-sync/identity.js'
 import { canManageBankCredentials } from '../../domain/organization-permissions.js'
 import type {
@@ -89,12 +106,21 @@ type Context = ReadinessObservation & {
 	integrityReport: IntegrityReport | undefined
 	creationActor: ActorRefFrom<ReturnType<typeof createWorkspaceCreationMachine>> | undefined
 	initialization: { userId: string; profileId: string } | undefined
-	integrityActor: ActorRefFrom<ReturnType<typeof createWorkspaceIntegrityOwner>> | undefined
-	bankActor: ActorRefFrom<ReturnType<typeof createBankSyncMachine>> | undefined
+	resourceActor: ActorRefFrom<ReturnType<typeof createWorkspaceSelectedResources>> | undefined
+	resourceLease: WorkspaceLease | undefined
+	resourceUserId: string | undefined
+	selectionLease: WorkspaceLease | undefined
+	selectionStatus: Extract<WorkspaceSelectionReport, { type: 'WORKSPACE_SELECTION' }>['status']
+	resourceResult: SelectedResourceOutput | undefined
+	resourceRelease: WorkspaceResourceRelease
+	bankRevision: number
 	startupActor: ActorRefFrom<ReturnType<typeof createWorkspaceStartupMachine>> | undefined
 }
 type Event =
-	| IntegrityStatusEvent
+	| { type: 'SELECTION'; lease: WorkspaceLease | undefined; status: Context['selectionStatus'] }
+	| SelectedResourceReport
+	| DoneActorEvent<SelectedResourceOutput>
+	| ErrorActorEvent
 	| InitializationStatusEvent
 	| NavigationStatusEvent
 	| { type: 'INITIALIZATION_PENDING' }
@@ -117,13 +143,14 @@ type Event =
 	| { type: 'INTEGRITY_REQUESTED'; binding: IntegrityBinding | undefined; restart: boolean }
 	| { type: 'OBSERVED'; observation: ReadinessObservation }
 	| { type: 'REEVALUATE' }
-	| { type: 'BANK'; event: BankEvent }
+	| { type: 'BANK'; lease?: WorkspaceLease | undefined; event: BankEvent }
+	| { type: 'BANK_NETWORK'; lease: WorkspaceLease; offline: boolean }
 	| { type: 'SHUTDOWN' }
 	| { type: 'RETRY' }
 	| { type: 'STARTUP_STOPPED' }
-	| { type: 'BANK_STOPPED' }
+	| { type: 'RESOURCES_STOPPED' }
 	| {
-			type: 'INTEGRITY_STOPPED' | 'RETRY_INTEGRITY' | 'CREATION_STOPPED' | 'OBSERVE_CREATION'
+			type: 'RETRY_INTEGRITY' | 'CREATION_STOPPED' | 'OBSERVE_CREATION'
 	  }
 
 export function createWorkspaceReadinessMachine({
@@ -133,10 +160,8 @@ export function createWorkspaceReadinessMachine({
 	navigate
 }: WorkspaceAttachment) {
 	const actors = {
-		bank: createBankSyncMachine(dependencies),
 		navigation: createWorkspaceNavigationMachine(dependencies.db, navigate),
 		startup: createWorkspaceStartupMachine(dependencies.db),
-		integrity: createWorkspaceIntegrityOwner(dependencies.db),
 		creation: createWorkspaceCreationMachine(dependencies.db)
 	}
 	return setup<
@@ -144,7 +169,13 @@ export function createWorkspaceReadinessMachine({
 		Event,
 		typeof actors,
 		{},
-		{ publishBank: undefined },
+		{
+			publishBank: undefined
+			startResources: undefined
+			shutDownResources: undefined
+			releaseResources: undefined
+			failResources: undefined
+		},
 		{
 			bankAccessAllowed: undefined
 			navigationAlive: undefined
@@ -157,16 +188,78 @@ export function createWorkspaceReadinessMachine({
 			canUseWorkspace: undefined
 			workspaceReady: undefined
 			closingDrain: undefined
-			bankAlive: undefined
+			resourceBound: undefined
+			resourceMatches: undefined
+			resourceEligible: undefined
+			nativeAssessmentSettled: undefined
 			startupAlive: undefined
-			integrityAlive: undefined
 			canObserveIntegrity: undefined
 			canObserveCreation: undefined
 			creationAlive: undefined
-		}
+		},
+		never,
+		string,
+		unknown,
+		{ selectedResources: WorkspaceResourceRelease }
 	>({
 		actors,
 		actions: {
+			startResources: assign(({ context, self, spawn }) => {
+				const resourceLease = required(context.selectionLease)
+				return {
+					resourceLease,
+					resourceUserId: context.source.userId,
+					resourceResult: undefined,
+					bankAccess: undefined,
+					integrityReport: undefined,
+					resourceActor: spawn(
+						createWorkspaceSelectedResources({
+							dependencies,
+							lease: resourceLease,
+							userId: required(context.source.userId)
+						}),
+						{
+							input: { recipient: self }
+						}
+					)
+				}
+			}),
+			shutDownResources: enqueueActions(({ context, enqueue }) => {
+				if (context.resourceActor?.getSnapshot().status === 'active')
+					enqueue.sendTo(context.resourceActor, { type: 'SHUTDOWN' })
+			}),
+			releaseResources: enqueueActions(({ context, event, enqueue }) => {
+				if (!('output' in event)) throw new Error('Missing resource completion')
+				enqueue.sendParent({ type: 'SELECTED_RESOURCES_RELEASED', result: event.output })
+				enqueue.stopChild(required(context.resourceActor))
+				enqueue.assign({
+					resourceActor: undefined,
+					resourceResult: event.output,
+					resourceRelease: retainResourceRelease(context.resourceRelease, event.output.release),
+					bankAccess: undefined,
+					integrityReport: undefined
+				})
+				enqueue.raise({ type: 'RESOURCES_STOPPED' })
+			}),
+			failResources: enqueueActions(({ context, enqueue }) => {
+				enqueue.sendParent({
+					type: 'SELECTED_RESOURCES_CRASHED',
+					lease: required(context.resourceLease)
+				})
+				enqueue.stopChild(required(context.resourceActor))
+				enqueue.assign({
+					resourceActor: undefined,
+					resourceResult: {
+						lease: required(context.resourceLease),
+						drain: undefined,
+						release: { outcome: 'unresolved' }
+					},
+					resourceRelease: { outcome: 'unresolved' },
+					bankAccess: undefined,
+					integrityReport: undefined
+				})
+				enqueue.raise({ type: 'RESOURCES_STOPPED' })
+			}),
 			publishBank: enqueueActions(({ context, check, enqueue }) => {
 				const access: BankAccess = check('bankAccessAllowed')
 					? {
@@ -190,14 +283,20 @@ export function createWorkspaceReadinessMachine({
 					sameIntegrityBinding(previous.authority, authority)
 				)
 					return
-				const revision = (previous?.revision ?? -1) + 1
-				enqueue.assign({ bankAccess: { revision, access, authority } })
-				enqueue.sendTo('bank', { type: 'WORKSPACE_ACCESS_CHANGED', revision, access })
+				const revision = context.bankRevision + 1
+				enqueue.assign({ bankAccess: { revision, access, authority }, bankRevision: revision })
+				if (context.resourceActor?.getSnapshot().status === 'active' && context.resourceLease)
+					enqueue.sendTo(context.resourceActor, {
+						type: 'BANK',
+						lease: context.resourceLease,
+						event: { type: 'WORKSPACE_ACCESS_CHANGED', revision, access }
+					})
 			})
 		},
 		guards: {
 			bankAccessAllowed: and([
 				'canUseWorkspace',
+				'resourceBound',
 				({ context }) =>
 					canManageBankCredentials(context.source.membership, context.source.organizationId ?? '')
 			]),
@@ -240,9 +339,38 @@ export function createWorkspaceReadinessMachine({
 			}),
 			workspaceReady: stateIn({ active: { workspace: 'ready' } }),
 			closingDrain: stateIn({ closing: { intent: 'shutdown' } }),
-			bankAlive: ({ context }) => context.bankActor?.getSnapshot().status === 'active',
+			resourceBound: and([
+				stateIn({ active: { resources: 'bound' } }),
+				({ context }) =>
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease)
+			]),
+			nativeAssessmentSettled: not(
+				or([
+					stateIn({ active: { session: 'checking' } }),
+					stateIn({ active: { selection: 'checking' } }),
+					stateIn({ active: { selection: 'checkingQuery' } }),
+					stateIn({ active: { selection: 'choosingOrganization' } }),
+					stateIn({ active: { organization: 'checking' } }),
+					stateIn({ active: { organization: 'checkingMembership' } })
+				])
+			),
+			resourceMatches: and([
+				'canUseWorkspace',
+				({ context }) =>
+					context.resourceLease !== undefined &&
+					context.selectionLease !== undefined &&
+					sameWorkspaceLease(context.resourceLease, context.selectionLease) &&
+					context.resourceLease.request.workspaceId === context.source.organizationId &&
+					context.resourceUserId === context.source.userId
+			]),
+			resourceEligible: and([
+				'canUseWorkspace',
+				({ context }) => context.selectionLease !== undefined
+			]),
 			startupAlive: ({ context }) => context.startupActor?.getSnapshot().status === 'active',
-			integrityAlive: ({ context }) => context.integrityActor?.getSnapshot().status === 'active',
 			creationAlive: ({ context }) => context.creationActor?.getSnapshot().status === 'active',
 			canObserveCreation: and([
 				stateIn({ active: { session: 'ready', workspace: 'ready' } }),
@@ -252,6 +380,7 @@ export function createWorkspaceReadinessMachine({
 			]),
 			canObserveIntegrity: and([
 				'canUseWorkspace',
+				'resourceBound',
 				({ context }) =>
 					context.initialization !== undefined &&
 					context.initialization.userId === context.source.userId
@@ -259,6 +388,7 @@ export function createWorkspaceReadinessMachine({
 		}
 	}).createMachine({
 		id: 'workspace-readiness',
+		output: ({ context }) => ({ selectedResources: context.resourceRelease }),
 		initial: 'active',
 		context: () => {
 			const observation = read()
@@ -285,20 +415,20 @@ export function createWorkspaceReadinessMachine({
 				creationView: unavailableWorkspaceCreationView,
 				integrityRequest: { generation: 0, binding: undefined },
 				integrityReport: undefined,
-				bankActor: undefined,
+				resourceActor: undefined,
+				resourceLease: undefined,
+				resourceUserId: undefined,
+				selectionLease: undefined,
+				selectionStatus: 'waiting',
+				resourceResult: undefined,
+				resourceRelease: { outcome: 'released' },
+				bankRevision: -1,
 				startupActor: undefined,
-				integrityActor: undefined,
 				creationActor: undefined,
 				navigationActor: undefined
 			}
 		},
 		invoke: [
-			{
-				id: 'bank',
-				src: 'bank',
-				onDone: { actions: raise({ type: 'BANK_STOPPED' }) },
-				onError: { actions: raise({ type: 'BANK_STOPPED' }) }
-			},
 			{
 				id: 'startup',
 				src: 'startup',
@@ -313,13 +443,7 @@ export function createWorkspaceReadinessMachine({
 				onDone: { actions: raise({ type: 'NAVIGATION_STOPPED' }) },
 				onError: { actions: raise({ type: 'NAVIGATION_STOPPED' }) }
 			},
-			{
-				id: 'integrity',
-				src: 'integrity',
-				input: ({ context, self }) => ({ request: context.integrityRequest, recipient: self }),
-				onDone: { actions: raise({ type: 'INTEGRITY_STOPPED' }) },
-				onError: { actions: raise({ type: 'INTEGRITY_STOPPED' }) }
-			},
+
 			{
 				id: 'creation',
 				src: 'creation',
@@ -346,17 +470,55 @@ export function createWorkspaceReadinessMachine({
 			}
 		],
 		on: {
-			OBSERVE_BANK: { guard: stateIn('active'), actions: 'publishBank' },
+			'xstate.done.actor.*': {
+				guard: ({ context, event }) =>
+					context.resourceActor?.id === event.actorId &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(event.output.lease, context.resourceLease),
+				actions: 'releaseResources'
+			},
+			'xstate.error.actor.*': [
+				{
+					guard: ({ context, event }) => context.resourceActor?.id === event.actorId,
+					actions: 'failResources'
+				},
+				{}
+			],
+			SELECTED_RESOURCE_DRAIN_REJECTED: {},
+			BANK_NETWORK: {
+				guard: and([
+					'resourceBound',
+					({ context, event }) =>
+						context.resourceLease !== undefined &&
+						sameWorkspaceLease(event.lease, context.resourceLease)
+				]),
+				actions: sendTo(
+					({ context }) => required(context.resourceActor),
+					({ event }): SelectedResourceCommand => ({
+						type: 'BANK',
+						lease: event.lease,
+						event: { type: 'NETWORK_CHANGED', offline: event.offline }
+					})
+				)
+			},
+			OBSERVE_BANK: { guard: 'resourceBound', actions: 'publishBank' },
 			BANK_OBSERVED: {
 				guard: and([
-					stateIn('active'),
+					'resourceBound',
 					({ context, event }) =>
 						context.bankAccess !== undefined &&
 						event.event.revision === context.bankAccess.revision &&
 						event.organizationId === context.bankAccess.access.organizationId &&
 						event.userId === context.bankAccess.access.userId
 				]),
-				actions: sendTo('bank', ({ event }) => event.event)
+				actions: sendTo(
+					({ context }) => required(context.resourceActor),
+					({ context, event }) => ({
+						type: 'BANK',
+						lease: required(context.resourceLease),
+						event: event.event
+					})
+				)
 			},
 			SHUTDOWN: { target: '.closing.intent.shutdown' },
 			RETRY: {
@@ -433,8 +595,12 @@ export function createWorkspaceReadinessMachine({
 							generation: context.navigationFacts.generation + 1,
 							userId: context.source.userId,
 							ready: event.ready,
-							loading: context.organizationsLoading || context.organizations === undefined,
-							error: context.organizationsError,
+							loading:
+								!workspaceRoute(context.route.search).scoped &&
+								(context.organizationsLoading || context.organizations === undefined),
+							error: workspaceRoute(context.route.search).scoped
+								? undefined
+								: context.organizationsError,
 							organizations: context.organizations ?? [],
 							access: event.access
 						}),
@@ -505,10 +671,14 @@ export function createWorkspaceReadinessMachine({
 							}),
 							integrityReport: undefined
 						}),
-						sendTo('integrity', ({ context }) => ({
-							type: 'OBSERVED',
-							request: context.integrityRequest
-						})),
+						enqueueActions(({ context, check, enqueue }) => {
+							if (check('resourceBound') && context.resourceActor && context.resourceLease)
+								enqueue.sendTo(context.resourceActor, {
+									type: 'INTEGRITY',
+									lease: context.resourceLease,
+									request: context.integrityRequest
+								})
+						}),
 						raise({ type: 'OBSERVE_BANK' })
 					]
 				},
@@ -516,16 +686,59 @@ export function createWorkspaceReadinessMachine({
 			],
 			BANK: [
 				{
-					guard: ({ event }) => event.event.type === 'CANCEL' || event.event.type === 'RESET',
-					actions: sendTo('bank', ({ event }) => event.event)
+					guard: and([
+						'resourceBound',
+						({ context, event }) =>
+							event.lease !== undefined &&
+							context.resourceLease !== undefined &&
+							sameWorkspaceLease(event.lease, context.resourceLease) &&
+							(event.event.type === 'CANCEL' || event.event.type === 'RESET')
+					]),
+					actions: sendTo(
+						({ context }) => required(context.resourceActor),
+						({ context, event }) => ({
+							type: 'BANK',
+							lease: required(context.resourceLease),
+							event: event.event
+						})
+					)
 				},
 				{
-					guard: and(['bankAccessAllowed', ({ event }) => event.event.type === 'SYNC']),
-					actions: sendTo('bank', ({ event }) => event.event)
+					guard: and([
+						'bankAccessAllowed',
+						({ context, event }) =>
+							event.lease !== undefined &&
+							context.resourceLease !== undefined &&
+							sameWorkspaceLease(event.lease, context.resourceLease) &&
+							event.event.type === 'SYNC'
+					]),
+					actions: sendTo(
+						({ context }) => required(context.resourceActor),
+						({ context, event }) => ({
+							type: 'BANK',
+							lease: required(context.resourceLease),
+							event: event.event
+						})
+					)
 				},
 				{
-					guard: and(['canUseWorkspace', ({ event }) => event.event.type !== 'SYNC']),
-					actions: sendTo('bank', ({ event }) => event.event)
+					guard: and([
+						'canUseWorkspace',
+						'resourceBound',
+						({ context, event }) =>
+							event.lease !== undefined &&
+							context.resourceLease !== undefined &&
+							sameWorkspaceLease(event.lease, context.resourceLease) &&
+							event.event.type !== 'SYNC'
+					]),
+					actions: sendTo(
+						({ context }) => required(context.resourceActor),
+						({ context, event }) => ({
+							type: 'BANK',
+							lease: required(context.resourceLease),
+							event: event.event
+						})
+					)
 				}
 			],
 			OBSERVED: {
@@ -543,23 +756,92 @@ export function createWorkspaceReadinessMachine({
 			active: {
 				type: 'parallel',
 				on: {
+					SELECTION: {
+						actions: [
+							assign({
+								selectionLease: ({ event }) => event.lease,
+								selectionStatus: ({ event }) => event.status
+							}),
+							raise({ type: 'REEVALUATE' }),
+							raise({ type: 'OBSERVE_NAVIGATION' }),
+							raise({ type: 'OBSERVE_BANK' })
+						]
+					},
 					NAVIGATION_STATUS: {
 						guard: ({ context, event }) =>
 							context.navigationFacts.generation === event.report.generation,
 						actions: assign({ navigationReport: ({ event }) => event.report })
 					},
-					INTEGRITY_STATUS: {
+					SELECTED_INTEGRITY_STATUS: {
 						guard: ({ context, event }) =>
+							context.resourceLease !== undefined &&
+							sameWorkspaceLease(event.lease, context.resourceLease) &&
 							sameIntegrityRequest(context.integrityRequest, event.report.request),
 						actions: assign({ integrityReport: ({ event }) => event.report })
 					},
 					NAVIGATION_STOPPED: '#workspace-readiness.closing.intent.failed',
-					BANK_STOPPED: '#workspace-readiness.closing.intent.failed',
 					STARTUP_STOPPED: '#workspace-readiness.closing.intent.failed',
-					INTEGRITY_STOPPED: '#workspace-readiness.closing.intent.failed',
 					CREATION_STOPPED: '#workspace-readiness.closing.intent.failed'
 				},
 				states: {
+					resources: {
+						initial: 'unbound',
+						states: {
+							unbound: {
+								always: { guard: 'resourceEligible', target: 'bound', actions: 'startResources' }
+							},
+							bound: {
+								entry: raise({ type: 'OBSERVE_INTEGRITY', restart: true }),
+								always: {
+									guard: and(['nativeAssessmentSettled', not('resourceMatches')]),
+									target: 'draining'
+								},
+								on: {
+									SELECTED_RESOURCES_STOPPING: {
+										guard: ({ context, event }) =>
+											context.resourceLease !== undefined &&
+											sameWorkspaceLease(event.lease, context.resourceLease),
+										target: 'failing'
+									},
+									RESOURCES_STOPPED: 'unresolved'
+								}
+							},
+							draining: {
+								entry: [
+									assign({ bankAccess: undefined, integrityReport: undefined }),
+									'shutDownResources'
+								],
+								on: {
+									RESOURCES_STOPPED: [
+										{
+											guard: ({ context }) =>
+												context.resourceResult?.release.outcome === 'unresolved',
+											target: 'unresolved'
+										},
+										{ target: 'unbound' }
+									]
+								}
+							},
+							failing: {
+								entry: [
+									assign({ bankAccess: undefined, integrityReport: undefined }),
+									'shutDownResources'
+								],
+								on: {
+									RESOURCES_STOPPED: [
+										{
+											guard: ({ context }) =>
+												context.resourceResult?.release.outcome === 'unresolved',
+											target: 'unresolved'
+										},
+										{ target: 'failed' }
+									]
+								}
+							},
+							failed: { tags: 'workspace-error' },
+							unresolved: { tags: 'workspace-error' }
+						}
+					},
 					session: {
 						initial: 'checking',
 						on: { REEVALUATE: '.checking' },
@@ -664,28 +946,32 @@ export function createWorkspaceReadinessMachine({
 									{ target: 'waiting' }
 								]
 							},
-							checkingQuery: {
-								always: [
-									{ guard: ({ context }) => context.organizationsError != null, target: 'failed' },
-									{ guard: ({ context }) => context.organizationsLoading, target: 'waiting' },
-									{ guard: ({ context }) => !context.organizations, target: 'waiting' },
-									{ target: 'choosingOrganization' }
-								]
-							},
+							checkingQuery: { always: 'choosingOrganization' },
 							choosingOrganization: {
 								always: [
 									{
 										guard: ({ context }) =>
-											context.organizations?.some(
-												(row) => row.id === context.source.organizationId
-											) ?? false,
+											context.selectionStatus === 'selected' &&
+											context.selectionLease?.request.workspaceId === context.source.organizationId,
 										target: 'selected'
 									},
 									{
-										guard: ({ context }) => context.source.organizationId != null,
+										guard: ({ context }) =>
+											context.selectionStatus === 'failed' ||
+											context.selectionStatus === 'drainFailed',
+										target: 'failed'
+									},
+									{
+										guard: ({ context }) =>
+											context.selectionStatus === 'denied' ||
+											context.selectionStatus === 'unavailable',
 										target: 'unavailableSelection'
 									},
-									{ target: 'unselected' }
+									{
+										guard: ({ context }) => context.source.organizationId == null,
+										target: 'unselected'
+									},
+									{ target: 'waiting' }
 								]
 							},
 							unselected: {},
@@ -747,9 +1033,7 @@ export function createWorkspaceReadinessMachine({
 					navigationReport: undefined,
 					creationView: unavailableWorkspaceCreationView,
 					navigationActor: ({ self }) => self.getSnapshot().children.navigation,
-					bankActor: ({ self }) => self.getSnapshot().children.bank,
 					startupActor: ({ self }) => self.getSnapshot().children.startup,
-					integrityActor: ({ self }) => self.getSnapshot().children.integrity,
 					creationActor: ({ self }) => self.getSnapshot().children.creation
 				}),
 				on: {
@@ -791,16 +1075,19 @@ export function createWorkspaceReadinessMachine({
 							stopped: { type: 'final' }
 						}
 					},
-					bank: {
+					resources: {
 						initial: 'checking',
 						states: {
 							checking: {
-								always: [{ guard: 'bankAlive', target: 'stopping' }, { target: 'stopped' }]
+								always: [
+									{
+										guard: ({ context }) => context.resourceActor !== undefined,
+										target: 'stopping'
+									},
+									{ target: 'stopped' }
+								]
 							},
-							stopping: {
-								entry: sendTo('bank', { type: 'SHUTDOWN' }),
-								on: { BANK_STOPPED: 'stopped' }
-							},
+							stopping: { entry: 'shutDownResources', on: { RESOURCES_STOPPED: 'stopped' } },
 							stopped: { type: 'final' }
 						}
 					},
@@ -817,19 +1104,7 @@ export function createWorkspaceReadinessMachine({
 							stopped: { type: 'final' }
 						}
 					},
-					integrity: {
-						initial: 'checking',
-						states: {
-							checking: {
-								always: [{ guard: 'integrityAlive', target: 'stopping' }, { target: 'stopped' }]
-							},
-							stopping: {
-								entry: sendTo('integrity', { type: 'SHUTDOWN' }),
-								on: { INTEGRITY_STOPPED: 'stopped' }
-							},
-							stopped: { type: 'final' }
-						}
-					},
+
 					startup: {
 						initial: 'checking',
 						states: {
@@ -889,7 +1164,15 @@ export function selectWorkspaceView(snapshot: WorkspaceCoordinatorSnapshot | und
 		ready: snapshot?.matches({ active: { session: 'ready' } }) === true,
 		failed: snapshot?.hasTag('workspace-error') ?? false,
 		canRetry: snapshot?.hasTag('workspace-retryable') ?? false,
-		canSync: snapshot?.can({ type: 'BANK', event: { type: 'SYNC' } }) ?? false,
+		canSync:
+			snapshot?.can({
+				type: 'BANK',
+				lease: snapshot.context.resourceLease,
+				event: { type: 'SYNC' }
+			}) ?? false,
+		resourceLease: snapshot?.matches({ active: { resources: 'bound' } })
+			? snapshot.context.resourceLease
+			: undefined,
 		navigation: snapshot?.context.navigationReport?.status ?? 'waiting',
 		creation: snapshot?.context.creationView ?? unavailableWorkspaceCreationView,
 		integrity: selectWorkspaceIntegrityView(snapshot?.context.integrityReport)
@@ -897,5 +1180,7 @@ export function selectWorkspaceView(snapshot: WorkspaceCoordinatorSnapshot | und
 }
 /** Public actor reference for integration subscriptions; bank workflow internals stay encapsulated. */
 export function workspaceBankActor(snapshot: WorkspaceCoordinatorSnapshot) {
-	return snapshot.children.bank
+	return snapshot.matches({ active: { resources: 'bound' } })
+		? selectedResourceBankActor(snapshot.context.resourceActor?.getSnapshot())
+		: undefined
 }

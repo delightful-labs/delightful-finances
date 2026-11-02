@@ -34,6 +34,7 @@
 	import { createActor } from 'xstate'
 	import { createTransactionEditMachine } from '#lib/machines/transactions/transaction-edit.js'
 	import { transactionAttachmentManagerMachine } from '#lib/machines/transactions/attachments/transaction-attachment-manager.js'
+	import { captureTransferMutationScope } from '#lib/machines/runtime/application-readiness.js'
 	import { getReadiness } from '#lib/runtime/bank-sync.js'
 	import type { TransferWriteTracking } from '#lib/machines/transfers/internal-transfer.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -69,6 +70,7 @@
 		getAttachments: () => selectedAttachments
 	})
 	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite, {
+		captureScope: (request) => captureTransferMutationScope(readiness.actor.getSnapshot(), request),
 		send: (event) => readiness.actor.send(event)
 	})
 	const editActor = createActor(editWorkflow.logic, {

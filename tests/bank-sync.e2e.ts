@@ -1,3 +1,9 @@
+import {
+	holdWorkspaceWrite,
+	machineErrors,
+	ownRecoveryPhrase,
+	requestRecovery
+} from './helpers/workspace-drain.js'
 import { pageContent } from './helpers/ui.js'
 import { expect, test, type Page } from '@playwright/test'
 import {
@@ -1278,3 +1284,140 @@ test(
 		expect(operations).toEqual(['claim', 'sync'])
 	}
 )
+
+for (const interruption of ['switch', 'recover'] satisfies ('switch' | 'recover')[]) {
+	test(
+		`retains an issued bank import write through workspace ${interruption}`,
+		{ tag: ['@bank-sync'] },
+		async ({ page }) => {
+			const errors = machineErrors(page)
+			await installPasskey(page)
+			const operations: string[] = []
+			await page.route('**/api/simplefin', async (route) => {
+				const body: unknown = route.request().postDataJSON()
+				if (
+					!body ||
+					typeof body !== 'object' ||
+					!('operation' in body) ||
+					typeof body.operation !== 'string'
+				)
+					throw new Error('Invalid provider command')
+				operations.push(body.operation)
+				if (body.operation === 'claim') {
+					await route.fulfill({
+						contentType: 'text/plain',
+						body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+					})
+					return
+				}
+				await route.fulfill({
+					json: {
+						errors: [],
+						accounts: [
+							{
+								id: 'held-write-account',
+								name: 'Held write checking',
+								currency: 'USD',
+								org: { domain: 'bank.example', 'sfin-url': 'https://bank.example' },
+								transactions:
+									body.operation === 'sync'
+										? [
+												{
+													id: 'held-write-expense',
+													amount: '-12.34',
+													posted: 1792000000,
+													description: 'Held import write'
+												}
+											]
+										: []
+							}
+						]
+					}
+				})
+			})
+			await page.goto('/settings/banks')
+			await expect(page.getByLabel('SimpleFIN Bridge setup token', { exact: true })).toBeVisible()
+			const source = new URL(page.url()).searchParams.get('workspace')
+			if (!source) throw new Error('Missing source workspace')
+			let destination = ''
+			let phrase = ''
+			if (interruption === 'switch') {
+				await navigateSidebar(page, 'Workspaces')
+				const dialog = await openCreationModal(page, 'Create Workspace')
+				await dialog.getByLabel('Workspace name', { exact: true }).fill('Bank drain destination')
+				await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+				await expect(dialog.getByRole('status')).toHaveText('Workspace saved.')
+				const href = await page
+					.getByRole('link', { name: 'Open Workspace: Bank drain destination', exact: true })
+					.getAttribute('href')
+				if (!href) throw new Error('Missing destination')
+				destination = new URL(href, page.url()).searchParams.get('workspace') ?? ''
+				await closeCreationModal(page)
+			} else phrase = await ownRecoveryPhrase(page)
+			await page.goto(`/settings/banks?workspace=${source}`)
+			await page
+				.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+				.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+			for (const name of [
+				'Create Passkey',
+				'Test encryption with my passkey',
+				'Test unlocking with my passkey',
+				'Connect and save securely'
+			])
+				await page.getByRole('button', { name, exact: true }).click()
+			await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+			await page
+				.getByRole('button', { name: 'Add Account “Held write checking”', exact: true })
+				.click()
+			await expect(page.getByText('Linked to Held write checking', { exact: true })).toBeVisible()
+			const gate = await holdWorkspaceWrite(page, 'bank')
+			try {
+				await pageContent(page)
+					.getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+					.click()
+				await expect.poll(() => gate.evaluate((value) => value.started)).toBe(true)
+				if (interruption === 'switch') {
+					await selectWorkspace(page.getByLabel('Current Workspace', { exact: true }), destination)
+					await expect(page).toHaveURL(`/settings/banks?workspace=${destination}`)
+					await expect(
+						page.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+					).toHaveCount(0)
+				} else {
+					await requestRecovery(page, phrase)
+					expect(await gate.evaluate((value) => value.restores)).toBe(0)
+				}
+				await gate.evaluate((value) => value.release())
+				if (interruption === 'switch')
+					await expect(
+						page.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+					).toBeVisible()
+				else {
+					await expect.poll(() => gate.evaluate((value) => value.restores)).toBe(1)
+					await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(source)
+				}
+				await expect
+					.poll(async () => (await syncLog(page)).attempts)
+					.toMatchObject([{ outcome: 'cancelled', importSettlement: 'locallyPersisted' }])
+				const rows = await page.evaluate(async () => {
+					const schemaPath = '/src/lib/schema.ts',
+						sessionPath = '/src/lib/runtime/jazz-session.ts'
+					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+						await import(sessionPath)
+					const db = getCurrentJazzSession()?.getSnapshot().client?.db
+					if (!db) throw new Error('Missing SDK database')
+					return (await db.all(app.transactions)).map(({ organizationId, description }) => ({
+						organizationId,
+						description
+					}))
+				})
+				expect(rows).toEqual([{ organizationId: source, description: 'Held import write' }])
+				expect(operations).toEqual(['claim', 'discover', 'sync'])
+				expect(errors).toEqual([])
+			} finally {
+				await gate.evaluate((value) => value.restore())
+				await gate.dispose()
+			}
+		}
+	)
+}

@@ -72,7 +72,10 @@ function fixture() {
 	const db = {} as ReturnType<typeof getDb>
 	const options = createTransactionEditFormOptions({ binding, observe: () => facts, db })
 	const requests: TransferMutationRequest[] = []
+	const capturedScope = { binding, workspaceId: organizationId, generation: 7 }
+	const captureScope = vi.fn(() => capturedScope)
 	const gateway: TransferMutationGateway = {
+		captureScope,
 		send(event) {
 			if (event.type === 'TRANSFER_MUTATION_REQUEST') requests.push(event.request)
 		}
@@ -80,7 +83,7 @@ function fixture() {
 	const workflow = createTransactionEditMachine(options, db, vi.fn(), gateway)
 	const actor = createActor(workflow.logic, { input: facts }).start()
 	actors.push(actor)
-	return { actor, facts, requests, workflow }
+	return { actor, facts, requests, workflow, capturedScope, captureScope }
 }
 
 function transfer(): InternalTransfer {
@@ -156,10 +159,14 @@ describe('transaction edit transfer deletion', () => {
 			await waitFor(f.actor, () => f.requests.length === 1)
 			expect(f.requests[0]).toMatchObject({
 				workspaceId: organizationId,
+				scope: f.capturedScope,
 				operation: 'delete',
 				input: { transferId, choice }
 			})
 			expect(f.workflow.selectFormView(f.actor.getSnapshot()).fieldsEditable).toBe(false)
+			expect(f.captureScope).toHaveBeenCalledOnce()
+			f.capturedScope.generation = 8
+			expect(f.requests[0]?.scope?.generation).toBe(7)
 		}
 	)
 

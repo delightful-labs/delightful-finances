@@ -14,8 +14,8 @@ export type BankSyncSnapshot = SnapshotFrom<BankSyncMachine>
 export type BankSyncActor = ActorRefFrom<BankSyncMachine>
 
 export type BankSyncControls = {
-	actor: BankSyncActor
-	snapshot: Readable<BankSyncSnapshot>
+	actor: BankSyncActor | undefined
+	snapshot: Readable<BankSyncSnapshot | undefined>
 	status: BankStatus | undefined
 	outcome: LastSync | undefined
 	visible: boolean

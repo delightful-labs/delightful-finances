@@ -22,8 +22,9 @@
 	} = $props()
 	const formView = $derived(workspaceCreationFormView(view))
 	let name = $state('')
+	const editing = $derived(view.mode === 'editing')
 	$effect(() => {
-		if (view.mode === 'editing') name = ''
+		if (editing) name = ''
 	})
 	const descriptions = {
 		unavailable: () => m['workspace.create_unavailable'](),

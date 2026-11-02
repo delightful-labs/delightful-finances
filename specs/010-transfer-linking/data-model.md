@@ -4,23 +4,44 @@
 
 Represents a single relationship between one expense and one income transaction. The transactions may predate the relationship (when linking synced or manually entered entries) or be created in the same user action as the relationship.
 
-| Field                  | Required | Rule                                           |
-| ---------------------- | -------- | ---------------------------------------------- |
-| `organizationId`       | Yes      | Same workspace as both referenced transactions |
-| `expenseTransactionId` | Yes      | References an expense transaction              |
-| `incomeTransactionId`  | Yes      | References an income transaction               |
-| `expenseAccountId`     | Policy   | Snapshot of the expense transaction's account  |
-| `incomeAccountId`      | Policy   | Snapshot of the income transaction's account   |
-| `expenseAmountMinor`   | Policy   | Amount in the expense account's minor units    |
+| Field                  | Required | Rule                                            |
+| ---------------------- | -------- | ----------------------------------------------- |
+| `organizationId`       | Yes      | Same workspace as both referenced transactions  |
+| `expenseTransactionId` | Yes      | References an expense transaction               |
+| `incomeTransactionId`  | Yes      | References an income transaction                |
+| `expenseAccountId`     | Policy   | Snapshot of the expense transaction's account   |
+| `incomeAccountId`      | Policy   | Snapshot of the income transaction's account    |
+| `expenseAmountMinor`   | Policy   | Amount in the expense account's minor units     |
 | `expenseCurrency`      | Policy   | Currency of the expense account and transaction |
-| `incomeAmountMinor`    | Policy   | Amount in the income account's minor units     |
-| `incomeCurrency`       | Policy   | Currency of the income account and transaction |
+| `incomeAmountMinor`    | Policy   | Amount in the income account's minor units      |
+| `incomeCurrency`       | Policy   | Currency of the income account and transaction  |
 
 The six policy-fact fields are nullable in the structural schema only to support the additive
 migration. New relationships must populate them. Jazz permissions compare each endpoint against
 these stored facts; rows missing any fact fail closed and cannot be read, changed, or deleted through
 the transfer policy. The application supplies the facts from both current local endpoints inside one
 mergeable transaction, which commits locally without waiting for the Jazz authority.
+
+### Insertion authorization boundary
+
+New manual transaction endpoints are authorized by existing account/workspace membership, valid
+category/account references, currency/archive rules, and check-reference conditions. Their forward
+`internalTransferId` does not have to reference an already admissible transfer at insertion: Jazz
+forbids new rows granting one another access in a cycle. Transfer insertion still validates the
+complete endpoint facts and requires write access to both accounts, using the factored transfer
+account predicate. Existing marker updates and financial-fact restrictions remain enforced.
+
+For linking existing rows, insertion accepts matching endpoint facts with both markers either pointing
+to the inserted transfer or clear. Accepted unlinked endpoints provide an acyclic authorization root
+for the same atomic link operation. This also permits the supported pending-unlink state; mismatched
+facts and endpoints marked to another transfer remain denied. Marker updates still require the actual
+matching relationship. Newly staged links populate both sides' account, amount and currency facts.
+
+The user approved this acyclic boundary to retain atomic local-first paired creation. A manually
+constructed standalone manual transaction with an orphan marker is consequently an application
+integrity error rather than an insertion denial. New provider rows do not gain this exception.
+Finance's creation statechart still validates and stages a complete three-row pair in one mergeable
+transaction. No migration, separate commit, remote preflight, or SDK shutdown bypass is required.
 
 ### Invariants
 

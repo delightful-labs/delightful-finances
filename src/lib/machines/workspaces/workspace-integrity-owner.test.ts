@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, waitFor } from 'xstate'
+import { workspaceIntegrity } from './workspace-integrity.js'
 import { workspaceReports } from './workspace-reports.fixture.js'
 import {
 	selectWorkspaceIntegrityView,
@@ -18,10 +19,14 @@ const binding: IntegrityBinding = {
 	role: 'owner',
 	accountAccessMode: 'all'
 }
-function start(f: ReturnType<typeof integrityFixture>, value: IntegrityBinding | undefined) {
+function start(
+	f: ReturnType<typeof integrityFixture>,
+	value: IntegrityBinding | undefined,
+	repair = workspaceIntegrity
+) {
 	const recipient = workspaceReports<IntegrityStatusEvent>()
 	actors.push(recipient)
-	const actor = createActor(createWorkspaceIntegrityOwner(f.db), {
+	const actor = createActor(createWorkspaceIntegrityOwner(f.db).provide({ actors: { repair } }), {
 		input: { request: { generation: 0, binding: value }, recipient }
 	}).start()
 	actors.push(actor)
@@ -160,3 +165,87 @@ describe('integrity binding ownership', () => {
 		expect(reports().at(-1)?.report.status).toEqual({ kind: 'closed', settlement: 'unresolved' })
 	})
 })
+
+describe('finite integrity resource release', () => {
+	it('releases an unbound owner without issuing repair', () => {
+		const f = integrityFixture()
+		const { actor } = start(f, undefined)
+		actor.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'released' })
+		expect(f.beginTransaction).not.toHaveBeenCalled()
+	})
+	it('releases a completed assessment without repair', async () => {
+		const f = integrityFixture(records())
+		const { actor } = start(f, binding)
+		await waitFor(actor, (snapshot) => snapshot.matches('complete'))
+		actor.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'released' })
+	})
+	it('returns releasedWithFailure for the existing usable partial outcome', async () => {
+		const f = integrityFixture(
+			records({ memberships: [{ ...membership, role: 'viewer', profileId: null }] })
+		)
+		const { actor } = start(f, { ...binding, role: 'viewer' })
+		await waitFor(actor, (snapshot) => snapshot.matches('partial'))
+		actor.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'releasedWithFailure' })
+	})
+	it.each(['normal', 'replacement', 'shutdown'])(
+		'retains unresolved repair settlement through %s and later success',
+		async (intent) => {
+			const f = integrityFixture()
+			const pending = Promise.withResolvers<void>()
+			f.wait.mockReturnValueOnce(pending.promise)
+			const { actor } = start(f, binding)
+			await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
+			if (intent === 'replacement')
+				actor.send({ type: 'OBSERVED', request: { generation: 1, binding: undefined } })
+			if (intent === 'shutdown') actor.send({ type: 'SHUTDOWN' })
+			expect(actor.getSnapshot().output).toBeUndefined()
+			pending.reject(new Error('settlement unavailable'))
+			if (intent !== 'shutdown') {
+				await waitFor(actor, (snapshot) =>
+					snapshot.matches(intent === 'replacement' ? 'waiting' : 'unresolved')
+				)
+				const repaired = records()
+				for (const rows of [repaired.profiles, repaired.organizations, repaired.memberships])
+					f.discover.mockResolvedValueOnce(rows)
+				actor.send({ type: 'OBSERVED', request: { generation: 2, binding } })
+				await waitFor(actor, (snapshot) => snapshot.matches('complete'))
+				actor.send({ type: 'SHUTDOWN' })
+			}
+			await waitFor(actor, (snapshot) => snapshot.status === 'done')
+			expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+		}
+	)
+})
+
+it.each(['normal', 'replacement', 'shutdown'])(
+	'integrity owner retains a repair child crash during %s',
+	async (intent) => {
+		const f = integrityFixture()
+		const pending = Promise.withResolvers<void>()
+		f.wait.mockReturnValueOnce(pending.promise)
+		const repair = workspaceIntegrity.provide({
+			guards: {
+				closing: () => {
+					throw new Error('controlled repair crash')
+				}
+			}
+		})
+		const { actor } = start(f, binding, repair)
+		await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
+		if (intent === 'replacement')
+			actor.send({ type: 'OBSERVED', request: { generation: 1, binding: undefined } })
+		if (intent === 'shutdown') actor.send({ type: 'SHUTDOWN' })
+		pending.resolve()
+		if (intent !== 'shutdown') {
+			await waitFor(actor, (snapshot) =>
+				snapshot.matches(intent === 'replacement' ? 'waiting' : 'unresolved')
+			)
+			actor.send({ type: 'SHUTDOWN' })
+		}
+		await waitFor(actor, (snapshot) => snapshot.status === 'done')
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+	}
+)

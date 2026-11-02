@@ -13,6 +13,7 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import { readinessKey, type ReadinessContext } from '#lib/runtime/bank-sync.js'
+	import { captureTransferMutationScope } from '#lib/machines/runtime/application-readiness.js'
 	import PairedTransferForm from './PairedTransferForm.svelte'
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -64,7 +65,11 @@
 			db,
 			observe,
 			trackWrite: (write) => readiness.actor.send({ type: 'TRANSFER_WRITE_TRACKED', write }),
-			mutationGateway: { send: (event) => readiness.actor.send(event) }
+			mutationGateway: {
+				captureScope: (request) =>
+					captureTransferMutationScope(readiness.actor.getSnapshot(), request),
+				send: (event) => readiness.actor.send(event)
+			}
 		})
 	)
 	const writableAccounts = $derived(selectInternalTransferEntryAccounts(observe()))

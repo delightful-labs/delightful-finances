@@ -17,6 +17,9 @@ export async function seedTransaction(
 		page.getByRole('main').getByRole('button', { name: 'Add Account', exact: true })
 	).toBeEnabled({ timeout: 30_000 })
 	return page.evaluate(async (scenario) => {
+		// These provider rows represent already-synced endpoints. A later transaction's
+		// permission checks cannot rely on unaccepted writes from this fixture.
+		const tier = scenario === 'transfer' ? 'global' : 'local'
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../../src/lib/schema.js') = await import(schemaPath)
@@ -34,7 +37,7 @@ export async function seedTransaction(
 				kind: 'cash',
 				currency: 'USD'
 			})
-			.wait({ tier: 'local' })
+			.wait({ tier })
 		const destination =
 			scenario === 'check' || scenario === 'transfer'
 				? await db
@@ -44,7 +47,7 @@ export async function seedTransaction(
 							kind: 'cash',
 							currency: 'USD'
 						})
-						.wait({ tier: 'local' })
+						.wait({ tier })
 				: null
 		const category = await db
 			.insert(app.categories, {
@@ -53,7 +56,7 @@ export async function seedTransaction(
 				kind: scenario === 'check' || scenario === 'imported-income' ? 'income' : 'expense',
 				isSystem: false
 			})
-			.wait({ tier: 'local' })
+			.wait({ tier })
 		const base = {
 			organizationId: organization.id,
 			accountId: account.id,
@@ -73,7 +76,7 @@ export async function seedTransaction(
 							checkNumber: '100',
 							checkDate: base.bookedOn
 						})
-						.wait({ tier: 'local' })
+						.wait({ tier })
 				: null
 		const destinationCategory =
 			scenario === 'transfer'
@@ -84,7 +87,7 @@ export async function seedTransaction(
 							kind: 'income',
 							isSystem: false
 						})
-						.wait({ tier: 'local' })
+						.wait({ tier })
 				: null
 		const saved = await db
 			.insert(app.transactions, {
@@ -99,7 +102,7 @@ export async function seedTransaction(
 					: {}),
 				...(check ? { paymentMethod: 'check', checkId: check.id } : {})
 			})
-			.wait({ tier: 'local' })
+			.wait({ tier })
 		const counterpart =
 			destination && destinationCategory
 				? await db
@@ -111,7 +114,7 @@ export async function seedTransaction(
 							source: 'simplefin',
 							externalId: 'imported-transfer-counterpart'
 						})
-						.wait({ tier: 'local' })
+						.wait({ tier })
 				: null
 		if (scenario === 'transfer' && destination && destinationCategory) {
 			await db
@@ -123,7 +126,7 @@ export async function seedTransaction(
 					kind: 'income',
 					source: 'manual'
 				})
-				.wait({ tier: 'local' })
+				.wait({ tier })
 		}
 		const tag = await db
 			.insert(app.tags, {
@@ -132,17 +135,17 @@ export async function seedTransaction(
 				name: 'Historical',
 				categoryId: category.id
 			})
-			.wait({ tier: 'local' })
+			.wait({ tier })
 		const link = await db
 			.insert(app.transactionTags, {
 				organizationId: organization.id,
 				transactionId: saved.id,
 				tagId: tag.id
 			})
-			.wait({ tier: 'local' })
-		await db.update(app.tags, link.tagId, { archivedAt: new Date() }).wait({ tier: 'local' })
+			.wait({ tier })
+		await db.update(app.tags, link.tagId, { archivedAt: new Date() }).wait({ tier })
 		if (scenario === 'archived')
-			await db.update(app.accounts, account.id, { archivedAt: new Date() }).wait({ tier: 'local' })
+			await db.update(app.accounts, account.id, { archivedAt: new Date() }).wait({ tier })
 		if (scenario === 'viewer') {
 			const [member] = await db.all(
 				app.organizationMembers.where({
@@ -151,9 +154,7 @@ export async function seedTransaction(
 				})
 			)
 			if (!member) throw new Error('Missing membership')
-			await db
-				.update(app.organizationMembers, member.id, { role: 'viewer' })
-				.wait({ tier: 'local' })
+			await db.update(app.organizationMembers, member.id, { role: 'viewer' }).wait({ tier })
 		}
 		return {
 			id: saved.id,

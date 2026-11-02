@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, createMachine, fromPromise, waitFor, type ActorRefFrom } from 'xstate'
+import {
+	createActor,
+	createMachine,
+	fromPromise,
+	waitFor,
+	type ActorRefFrom,
+	type OutputFrom
+} from 'xstate'
 import { Transaction } from 'jazz-tools'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import { createSyncLogRetentionMachine, type RetentionScope } from './log-retention.js'
 import type { SyncAttempt } from '#lib/schema.js'
+import type { createBankSetupMachine } from './setup.js'
 import type { LoggedOperationResult } from './logged-operation.js'
 import { createBankSyncMachine, selectBankView } from './index.js'
 import { bankAvailabilityMachine, bankObservation } from './availability.js'
@@ -13,12 +21,38 @@ import type { BankSource, BankSyncDependencies, Connection } from './types.js'
 
 const settlements = vi.hoisted(() => new WeakMap<object, () => void>())
 const operationResults = vi.hoisted(() => new WeakMap<object, LoggedOperationResult>())
+type SetupResult = OutputFrom<ReturnType<typeof createBankSetupMachine>>
+const setupResults = vi.hoisted(() => new WeakMap<object, SetupResult>())
+const crashing = vi.hoisted(() => new WeakSet<object>())
 
 // The supervisor must wait for these resource-owning children to acknowledge cancellation.
 vi.mock('./logged-operation.js', () => ({
 	createLoggedBankOperationMachine: () => delayedOperation()
 }))
-vi.mock('./setup.js', () => ({ createBankSetupMachine: () => delayedOperation() }))
+vi.mock('./setup.js', () => ({ createBankSetupMachine: () => delayedSetup() }))
+function delayedSetup() {
+	return createMachine({
+		initial: 'working',
+		entry: ({ self }) => {
+			settlements.set(self, () => self.send({ type: 'FINISH' }))
+		},
+		states: {
+			working: { on: { CANCEL: 'settling' } },
+			settling: { on: { CANCEL: {}, FINISH: 'complete' } },
+			complete: { type: 'final' }
+		},
+		output: ({ self }): SetupResult => {
+			if (crashing.has(self)) throw new Error('controlled setup crash')
+			return (
+				setupResults.get(self) ?? {
+					kind: 'failed',
+					error: new Error('private'),
+					settlement: 'notStarted'
+				}
+			)
+		}
+	})
+}
 function delayedOperation() {
 	return createMachine({
 		initial: 'working',
@@ -30,16 +64,20 @@ function delayedOperation() {
 			settling: { on: { CANCEL: {}, FINISH: 'failed' } },
 			failed: { type: 'final' }
 		},
-		output: ({ self }): LoggedOperationResult =>
-			operationResults.get(self) ?? {
-				kind: 'failed',
-				error: new Error('private'),
-				counts: { imported: 1, existing: 0, omitted: 0 },
-				settlement: 'settled',
-				discovered: undefined,
-				accountResults: [],
-				logging: undefined
-			}
+		output: ({ self }): LoggedOperationResult => {
+			if (crashing.has(self)) throw new Error('controlled operation crash')
+			return (
+				operationResults.get(self) ?? {
+					kind: 'failed',
+					error: new Error('private'),
+					counts: { imported: 1, existing: 0, omitted: 0 },
+					settlement: 'settled',
+					discovered: undefined,
+					accountResults: [],
+					logging: undefined
+				}
+			)
+		}
 	})
 }
 function finish(actor: object) {
@@ -565,4 +603,218 @@ describe('bank-owned log retention', () => {
 			expect(actor.getSnapshot().context.setupToken).toBeUndefined()
 		}
 	)
+})
+
+describe('finite bank resource release', () => {
+	function result(
+		overrides: Partial<Pick<LoggedOperationResult, 'counts' | 'settlement' | 'logging'>> & {
+			kind?: 'complete' | 'partial'
+		} = {}
+	): LoggedOperationResult {
+		return {
+			kind: 'complete',
+			counts: { imported: 0, existing: 0, omitted: 0 },
+			discovered: undefined,
+			accountResults: [],
+			settlement: 'settled',
+			logging: undefined,
+			...overrides
+		}
+	}
+	it.each(['settled', 'unresolved'] satisfies ('settled' | 'unresolved')[])(
+		'retains confirmed import progress while classifying cancelled cleanup as %s',
+		(settlement) => {
+			const actor = start()
+			actor.send({ type: 'SYNC' })
+			const child = actor.getSnapshot().children.operation
+			if (!child) throw new Error('Missing operation')
+			operationResults.set(child, {
+				...result({ settlement, counts: { imported: 1, existing: 0, omitted: 0 } }),
+				kind: 'cancelled',
+				error: undefined
+			})
+			actor.send({ type: 'SHUTDOWN' })
+			expect(actor.getSnapshot().output).toBeUndefined()
+			finish(child)
+			expect(actor.getSnapshot().output).toEqual({
+				outcome: settlement === 'unresolved' ? 'unresolved' : 'released'
+			})
+		}
+	)
+	it('releases an idle owner cleanly', () => {
+		const actor = start()
+		actor.send({ type: 'SHUTDOWN' })
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'released' })
+	})
+	it.each(['normal', 'cancel', 'reset', 'shutdown', 'replacement'])(
+		'retains unresolved operation evidence through %s',
+		(intent) => {
+			const actor = start()
+			actor.send({ type: 'SYNC' })
+			const child = actor.getSnapshot().children.operation
+			if (!child) throw new Error('Missing operation')
+			operationResults.set(child, result({ settlement: 'unresolved' }))
+			if (intent === 'cancel') actor.send({ type: 'CANCEL' })
+			if (intent === 'reset') actor.send({ type: 'RESET' })
+			if (intent === 'shutdown') actor.send({ type: 'SHUTDOWN' })
+			if (intent === 'replacement') publishBankSource(actor, { ...source, membership: null }, 1)
+			child.send({ type: 'CANCEL' })
+			expect(actor.getSnapshot().output).toBeUndefined()
+			finish(child)
+			if (intent !== 'shutdown') actor.send({ type: 'SHUTDOWN' })
+			expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+		}
+	)
+	it.each(['normal', 'cancel', 'reset', 'shutdown', 'replacement'])(
+		'retains unresolved setup evidence through %s',
+		(intent) => {
+			const actor = start()
+			actor.send({ type: 'CONNECT', token: 'secret' })
+			const child = actor.getSnapshot().children.setup
+			if (!child) throw new Error('Missing setup')
+			setupResults.set(child, { kind: 'cancelled', settlement: 'unresolved' })
+			if (intent === 'cancel') actor.send({ type: 'CANCEL' })
+			if (intent === 'reset') actor.send({ type: 'RESET' })
+			if (intent === 'shutdown') actor.send({ type: 'SHUTDOWN' })
+			if (intent === 'replacement') publishBankSource(actor, { ...source, membership: null }, 1)
+			child.send({ type: 'CANCEL' })
+			expect(actor.getSnapshot().output).toBeUndefined()
+			finish(child)
+			if (intent !== 'shutdown') actor.send({ type: 'SHUTDOWN' })
+			expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+		}
+	)
+	it.each(['SYNC', 'CONNECT'])('retains a %s child crash during shutdown', (command) => {
+		const actor = start()
+		if (command === 'SYNC') actor.send({ type: 'SYNC' })
+		else actor.send({ type: 'CONNECT', token: 'secret' })
+		const child = actor.getSnapshot().children.operation ?? actor.getSnapshot().children.setup
+		if (!child) throw new Error('Missing child')
+		crashing.add(child)
+		actor.send({ type: 'SHUTDOWN' })
+		finish(child)
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+	})
+	it.each(['unresolved', 'releasedWithFailure'] satisfies ('unresolved' | 'releasedWithFailure')[])(
+		'does not erase %s after reset and a subsequent successful operation',
+		(outcome) => {
+			const actor = start()
+			actor.send({ type: 'SYNC' })
+			const first = actor.getSnapshot().children.operation
+			if (!first) throw new Error('Missing first operation')
+			operationResults.set(
+				first,
+				outcome === 'unresolved'
+					? result({ settlement: 'unresolved' })
+					: result({ kind: 'partial' })
+			)
+			first.send({ type: 'CANCEL' })
+			finish(first)
+			actor.send({ type: 'RESET' })
+			actor.send({ type: 'SYNC' })
+			const next = actor.getSnapshot().children.operation
+			if (!next) throw new Error('Missing next operation')
+			operationResults.set(next, result())
+			next.send({ type: 'CANCEL' })
+			finish(next)
+			actor.send({ type: 'SHUTDOWN' })
+			expect(actor.getSnapshot().output).toEqual({ outcome })
+		}
+	)
+	it.each([
+		{ kind: 'notStarted', attemptId: 'attempt', reason: 'startWriteFailed' },
+		{
+			kind: 'resultUnrecorded',
+			attemptId: 'attempt',
+			reason: 'resultWriteFailed',
+			result: {
+				outcome: 'succeeded',
+				finishedAt: new Date(0),
+				importSettlement: 'notStarted',
+				importedCount: 0,
+				existingCount: 0,
+				omittedCount: 0,
+				failureCode: null
+			}
+		},
+		{
+			kind: 'resultUnrecorded',
+			attemptId: 'attempt',
+			reason: 'accountWriteFailed',
+			result: {
+				outcome: 'succeeded',
+				finishedAt: new Date(0),
+				importSettlement: 'notStarted',
+				importedCount: 0,
+				existingCount: 0,
+				omittedCount: 0,
+				failureCode: null
+			}
+		}
+	] satisfies NonNullable<LoggedOperationResult['logging']>[])(
+		'treats a $reason logging result without settlement proof as unresolved',
+		(logging) => {
+			const actor = start()
+			actor.send({ type: 'SYNC' })
+			const child = actor.getSnapshot().children.operation
+			if (!child) throw new Error('Missing operation')
+			operationResults.set(child, result({ logging }))
+			actor.send({ type: 'SHUTDOWN' })
+			finish(child)
+			expect(actor.getSnapshot().output).toEqual({ outcome: 'unresolved' })
+		}
+	)
+	it.each(['released', 'unresolved'] satisfies ('released' | 'unresolved')[])(
+		'consumes retention %s output when shutdown precedes its queued completion event',
+		async (outcome) => {
+			const logic = createSyncLogRetentionCoordinator(retentionDependencies).provide({
+				actors: {
+					retention: createSyncLogRetentionMachine(retentionDependencies).provide({
+						guards: {
+							identityCurrent: unavailable
+						}
+					})
+				}
+			})
+			const actor = start({ actors: { retention: logic } })
+			const retention = actor.getSnapshot().children.retention
+			if (!retention) throw new Error('Missing retention coordinator')
+			if (outcome === 'unresolved') {
+				actor.send({ type: 'NETWORK_CHANGED', offline: false })
+				await waitFor(retention, (snapshot) => snapshot.matches('idle'))
+			}
+			let completedBeforeNotification = false
+			const subscription = retention.subscribe((snapshot) => {
+				if (snapshot.status !== 'done') return
+				completedBeforeNotification = actor.getSnapshot().status === 'active'
+				actor.send({ type: 'SHUTDOWN' })
+			})
+			retention.send({ type: 'SHUTDOWN' })
+			expect(completedBeforeNotification).toBe(true)
+			expect(actor.getSnapshot().output).toEqual({ outcome })
+			subscription.unsubscribe()
+		}
+	)
+	it('records pure observer failure without claiming uncertain writes', () => {
+		const actor = start({
+			actors: { history: bankHistoryMachine.provide({ actions: { summarize: unavailable } }) }
+		})
+		actor.send({
+			type: 'HISTORY_CHANGED',
+			revision: 0,
+			records: [{ ...connection, lastSyncAt: new Date(), lastOutcome: 'succeeded' }]
+		})
+		expect(actor.getSnapshot().output).toEqual({ outcome: 'releasedWithFailure' })
+	})
+})
+
+it('renders a missing selected bank owner as restricted idle presentation', () => {
+	expect(selectBankView(undefined)).toEqual({
+		mode: { kind: 'restricted' },
+		activity: { kind: 'idle' },
+		status: undefined,
+		history: undefined,
+		logging: undefined,
+		providerAccounts: []
+	})
 })
