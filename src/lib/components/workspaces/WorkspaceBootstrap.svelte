@@ -135,7 +135,7 @@
 			return accountBalances
 		}
 	})
-	const organizations = $derived(organizationQuery.current ?? [])
+	const organizations = $derived(organizationQuery.current)
 	const activeAccounts = $derived(orderAccounts(accountQuery.current ?? [], preferredOrder))
 	const userId = $derived(session.current.account?.id)
 	const organizationId = $derived(filters.activeOrganizationId)

@@ -394,6 +394,12 @@ for (const offline of [false, true]) {
 						.locator(`option[value="${createdId}"]`)
 				).toHaveText('Cold local workspace')
 				await expect(cold.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspace)
+				// Switching must use the retained local directory and membership facts too.
+				await cold.getByLabel('Select Workspace', { exact: true }).selectOption(createdId)
+				await expect(cold).toHaveURL(`/settings/workspace?workspace=${createdId}`)
+				await expect(cold.getByLabel('Current Workspace', { exact: true })).toHaveValue(createdId)
+				await cold.reload()
+				await expect(cold.getByLabel('Select Workspace', { exact: true })).toHaveValue(createdId)
 				expect(errors).toEqual([])
 			} finally {
 				await current?.close()

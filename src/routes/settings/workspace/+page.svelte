@@ -67,7 +67,7 @@
 	errorMessage={m['errors.load_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
 >
 	<WorkspaceSelector
-		organizations={organizations.current ?? []}
+		organizations={organizations.current}
 		organizationId={filters.activeOrganizationId}
 		label={m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}
 		onchange={(workspaceId) => coordinator.actor?.send({ type: 'SELECT_WORKSPACE', workspaceId })}

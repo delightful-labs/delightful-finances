@@ -22,7 +22,7 @@
 	}: {
 		pathname: string
 		onNavigate: () => void
-		organizations: readonly Organization[]
+		organizations: readonly Organization[] | undefined
 		organizationId: string | null
 		organizationQueries: ComponentProps<typeof QueryContent>['queries']
 		onOrganizationChange: (value: string) => void
