@@ -41,7 +41,7 @@
 		bankSync: BankSyncControls
 		syncConfigured: boolean
 		browserOffline: boolean
-		organizations: readonly Organization[]
+		organizations: readonly Organization[] | undefined
 		accountBalances?: ReadonlyMap<string, bigint> | null
 		accounts: readonly Account[]
 		organizationId: string | null
