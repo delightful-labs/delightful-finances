@@ -52,13 +52,16 @@ async function seedLinkedTransfer(page: Page, expenseId: string, incomeId: strin
 						incomeTransactionId: income.id,
 						expenseAccountId: expense.accountId,
 						incomeAccountId: income.accountId,
-						amountMinor: expense.amountMinor,
-						currency: expense.currency
+						expenseAmountMinor: expense.amountMinor,
+						expenseCurrency: expense.currency,
+						incomeAmountMinor: income.amountMinor,
+						incomeCurrency: income.currency
 					},
 					{ id: transferId }
 				)
 			})
-			await write.wait({ tier: 'local' })
+			// Establish an accepted link before navigating or deliberately corrupting its markers.
+			await write.wait({ tier: 'global' })
 		},
 		{ expenseId, incomeId }
 	)

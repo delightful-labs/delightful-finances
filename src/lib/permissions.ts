@@ -192,7 +192,10 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 			})
 		])
 
-	const transferEndpointFactsMatch = (transfer: InternalTransferContext) =>
+	const transferEndpointFactsMatch = (
+		transfer: InternalTransferContext,
+		marker: RowRefValue | { isNull: true } = transfer.id
+	) =>
 		allOf([
 			anyOf([
 				policy.transactions.exists.where({
@@ -202,7 +205,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: EXPENSE,
 					amountMinor: transfer.expenseAmountMinor,
 					currency: transfer.expenseCurrency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				}),
 				policy.transactions.exists.where({
 					id: transfer.expenseTransactionId,
@@ -211,7 +214,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: EXPENSE,
 					amountMinor: transfer.amountMinor,
 					currency: transfer.currency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				})
 			]),
 			anyOf([
@@ -222,7 +225,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: INCOME,
 					amountMinor: transfer.incomeAmountMinor,
 					currency: transfer.incomeCurrency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				}),
 				policy.transactions.exists.where({
 					id: transfer.incomeTransactionId,
@@ -231,7 +234,7 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 					kind: INCOME,
 					amountMinor: transfer.amountMinor,
 					currency: transfer.currency,
-					internalTransferId: transfer.id
+					internalTransferId: marker
 				})
 			])
 		])
@@ -541,7 +544,15 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		])
 	)
 	policy.internalTransfers.allowInsert.where((transfer) =>
-		allOf([transferEndpointFactsMatch(transfer), canWriteTransferAccounts(transfer)])
+		allOf([
+			// Existing unlinked endpoints anchor linking without circular marker-update grants.
+			// The final linked pair and a matching pending-unlink record are both valid states.
+			anyOf([
+				transferEndpointFactsMatch(transfer),
+				transferEndpointFactsMatch(transfer, { isNull: true })
+			]),
+			canWriteTransferAccounts(transfer)
+		])
 	)
 	policy.internalTransfers.allowUpdate.never()
 	policy.internalTransfers.allowDelete.where((transfer) => canWriteTransferAccounts(transfer))

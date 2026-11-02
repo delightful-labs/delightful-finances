@@ -24,9 +24,8 @@ creation authorization graph.
 
 The original browser recovery regression reaches SDK readiness with the factored account predicate,
 but the authority rejects and rolls back the transfer. That is not a fix: retaining the rows is part
-of the regression and remains asserted. Existing linking/unlinking passes with this factored
-predicate in the current browser fixture; the older memory warning is not proof for this version's
-entire behavior.
+of the regression and remains asserted. The initial browser linking checks observed optimistic local completion. PR #40 CI later exposed
+a separate rejection when linking existing provider endpoints; see the follow-up below.
 
 [Jazz's permission documentation](https://jazz.tools/docs/auth/permissions) explicitly disallows
 new rows granting one another access in a cycle. A transaction may reference its own authorized
@@ -38,7 +37,8 @@ membership facts are suitable roots; the new transfer and its new endpoints are 
 
 1. Use the existing `canWriteTransferAccounts` expression for transfer insertion. It checks
    owner/admin or all-account member rights, or selected-member write grants to both endpoint
-   accounts. Keep `transferEndpointFactsMatch` unchanged.
+   accounts. Retain complete endpoint-fact validation; the existing-row follow-up below adds an
+   acyclic marker alternative.
 2. Continue requiring `canWriteTransaction` for every new transaction. This retains account/workspace
    write access, category/account tenancy, currency/archive checks, and check-reference validation.
 3. Permit new manual transactions under those direct checks, including their forward transfer
@@ -84,12 +84,38 @@ not an acceptable workaround.
 - Relevant source/browser types and formatting, then update the ownership plan and Jazz memory
   with the agreed boundary and results.
 
-The five-case real browser run passes: held-write identity recovery with both transfer rows retained,
+The initial five-case real browser run passed: held-write identity recovery with both transfer rows retained,
 cross-currency creation, ordinary linking/unlinking, delete-both, and unlink-and-delete. The complete
 permission suite adds a role/grant matrix, cross-currency global acceptance, forged-fact atomic
-rollback, and explicit manual/provider orphan-marker boundaries. All 102 full-policy cases pass,
-including 20 new paired-insertion and boundary cases. The full 21-scenario focused browser rerun
-passes. Recovery additionally passes with a stronger assertion requiring SDK readiness, a live
+rollback, and explicit manual/provider orphan-marker boundaries. The initial 102 full-policy cases passed,
+including 20 new paired-insertion and boundary cases. The initial 21-scenario focused browser rerun
+passed; those linking fixtures did not yet require global acceptance. Recovery additionally passes with a stronger assertion requiring SDK readiness, a live
 client, no pending operation and no SDK error, plus exactly-once retained source rows. Full
 source/service-worker checking reports zero errors/warnings; browser-test types, formatting and
 diff checks pass. Refreshed GitHub CI remains a merge gate.
+
+## PR #40 CI follow-up: existing provider links
+
+The inconsistent-transfer browser scenario failed before deliberate corruption: the authority rejected
+the initial link and rolled its markers back. Globally accepting provider fixture rows first and waiting
+for global link acceptance reproduced the rejection directly. This was not a locator timing issue.
+
+Existing-row linking had a second cycle: each marker update depended on the new transfer, whose insert
+required both new markers. Transfer insertion now accepts complete endpoint facts with either both
+markers pointing to that transfer or both clear. Accepted unlinked endpoints supply an independent
+permission root; the final linked state still passes the original branch. The atomic operation and local
+production settlement are unchanged. The linking actor now writes all six current side-specific facts.
+
+The additional accepted state is a fully matching transfer with both markers clear, already supported
+as pending unlink. No mismatched financial facts, missing account grants, or endpoints marked to another
+transfer are admitted. Tests explicitly cover this boundary, forged facts with clear markers, claimed
+endpoints, and the full role/grant matrix using globally accepted provider rows. Browser fixture setup
+now confirms provider and link acceptance globally so optimistic state cannot mask server rollback.
+
+Follow-up validation: all 122 full-policy cases and 21 transfer actor cases pass (143 total).
+The initial concurrent run hit five 5-second deadlines; the provider matrix passed independently,
+and the complete relevant run passed without competing browser/source-check workloads, with no
+changed timeout. All five transfer-linking browser scenarios pass, including the exact reported
+CI case with globally confirmed fixture writes. Three creation regressions also pass: offline,
+cross-currency, and held-write identity recovery. Source/service-worker checking reports zero errors
+and warnings; browser-test types, formatting, and diff checks pass.

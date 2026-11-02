@@ -31,6 +31,12 @@ forbids new rows granting one another access in a cycle. Transfer insertion stil
 complete endpoint facts and requires write access to both accounts, using the factored transfer
 account predicate. Existing marker updates and financial-fact restrictions remain enforced.
 
+For linking existing rows, insertion accepts matching endpoint facts with both markers either pointing
+to the inserted transfer or clear. Accepted unlinked endpoints provide an acyclic authorization root
+for the same atomic link operation. This also permits the supported pending-unlink state; mismatched
+facts and endpoints marked to another transfer remain denied. Marker updates still require the actual
+matching relationship. Newly staged links populate both sides' account, amount and currency facts.
+
 The user approved this acyclic boundary to retain atomic local-first paired creation. A manually
 constructed standalone manual transaction with an orphan marker is consequently an application
 integrity error rather than an insertion denial. New provider rows do not gain this exception.

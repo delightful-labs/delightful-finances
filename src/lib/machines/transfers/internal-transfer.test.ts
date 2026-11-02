@@ -257,8 +257,10 @@ describe('internal transfer link machine', () => {
 				incomeTransactionId: incomeId,
 				expenseAccountId,
 				incomeAccountId,
-				amountMinor: 4500,
-				currency: 'USD'
+				expenseAmountMinor: 4500,
+				expenseCurrency: 'USD',
+				incomeAmountMinor: 4500,
+				incomeCurrency: 'USD'
 			}),
 			{ id: transferId }
 		)

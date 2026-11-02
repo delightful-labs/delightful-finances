@@ -114,6 +114,14 @@ integrity boundary, not an insertion denial. Provider inserts do not gain that e
 update guards, financial-fact immutability and transfer/read/delete checks; do not replace local
 settlement with global waits or split the three-row atomic operation. Verify accepted roles/grants,
 forged-fact atomic rollback, provider orphan rejection and manual orphan/update boundaries explicitly.
+Linking already-accepted provider endpoints has a separate cycle: both marker updates require the
+new transfer, while its insert previously required both new markers. Transfer insertion now accepts
+complete matching endpoint facts with either both markers pointing to that transfer or both markers
+clear. The latter anchors authorization in accepted unlinked rows and also admits the already-supported
+pending-unlink state. Both-account write access and marker-update guards remain mandatory; mismatched
+facts and endpoints claimed by another transfer are rejected. New links write all six side-specific
+account/amount/currency facts. Synced-provider browser fixtures must confirm global acceptance before
+linking; link fixtures also confirm global acceptance so optimistic UI cannot conceal rollback.
 See `docs/transfer-creation-permission-investigation.md` for the exact decision and reproduction.
 
 Before relying on a new policy shape, validate it against the installed Jazz version and its actual

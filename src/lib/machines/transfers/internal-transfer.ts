@@ -222,8 +222,10 @@ const stage = fromPromise(
 				incomeTransactionId: assessment.income.id,
 				expenseAccountId: assessment.expense.accountId,
 				incomeAccountId: assessment.income.accountId,
-				amountMinor: assessment.expense.amountMinor,
-				currency: assessment.expense.currency
+				expenseAmountMinor: assessment.expense.amountMinor,
+				expenseCurrency: assessment.expense.currency,
+				incomeAmountMinor: assessment.income.amountMinor,
+				incomeCurrency: assessment.income.currency
 			},
 			{ id: transferId }
 		)
