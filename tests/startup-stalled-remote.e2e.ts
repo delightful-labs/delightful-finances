@@ -321,7 +321,7 @@ for (const offline of [false, true]) {
 					serviceWorkers: 'allow'
 				})
 				const warm = current.pages()[0] ?? (await current.newPage())
-				const { target } = await prepareSavedExpense(warm)
+				const { target, workspace } = await prepareSavedExpense(warm)
 				const cdp = await current.newCDPSession(warm)
 				await cdp.send('Network.enable')
 				await cdp.send('Network.clearBrowserCache')
@@ -368,6 +368,32 @@ for (const offline of [false, true]) {
 				await expect(
 					cold.getByRole('main').getByRole('cell', { name: 'Cold local cash', exact: true })
 				).toBeVisible()
+				// Explicit private creation must also settle from the cold local replica,
+				// without a network answer or changing the active workspace implicitly.
+				await navigateSidebar(cold, 'Workspaces')
+				const workspaceDialog = await openCreationModal(cold, 'Create Workspace')
+				await workspaceDialog
+					.getByLabel('Workspace name', { exact: true })
+					.fill('Cold local workspace')
+				await workspaceDialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+				const created = cold.getByRole('link', {
+					name: 'Open Workspace: Cold local workspace',
+					exact: true
+				})
+				await expect(created).toBeVisible()
+				const href = await created.getAttribute('href')
+				if (!href) throw new Error('Expected locally saved workspace link')
+				const createdId = new URL(href, baseURL).searchParams.get('workspace')
+				if (!createdId) throw new Error('Expected stable created workspace identity')
+				await expect(cold.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspace)
+				await closeCreationModal(cold)
+				await cold.reload()
+				await expect(
+					cold
+						.getByLabel('Select Workspace', { exact: true })
+						.locator(`option[value="${createdId}"]`)
+				).toHaveText('Cold local workspace')
+				await expect(cold.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspace)
 				expect(errors).toEqual([])
 			} finally {
 				await current?.close()

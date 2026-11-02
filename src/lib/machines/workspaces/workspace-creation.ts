@@ -2,7 +2,7 @@ import type { FormPresentation } from '../../contracts/form-contract.js'
 import { assign, raise, sendTo, setup, stateIn } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import {
-	workspaceCreationOperation,
+	createWorkspaceCreationOperation,
 	type CreationBinding,
 	type CreationRequest,
 	type CreationResult
@@ -42,10 +42,11 @@ export type WorkspaceCreationView = {
 export function createWorkspaceCreationMachine(
 	db: Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction'>
 ) {
+	const operation = createWorkspaceCreationOperation(db)
 	return setup<
 		Context,
 		Event,
-		{ operation: typeof workspaceCreationOperation },
+		{ operation: typeof operation },
 		{},
 		{},
 		{ changed: undefined; replacing: undefined; closing: undefined },
@@ -53,7 +54,7 @@ export function createWorkspaceCreationMachine(
 		string,
 		{ binding: CreationBinding | undefined }
 	>({
-		actors: { operation: workspaceCreationOperation },
+		actors: { operation },
 		guards: {
 			changed: ({ context }) =>
 				context.binding?.key !== context.operation?.key ||
@@ -141,7 +142,7 @@ export function createWorkspaceCreationMachine(
 					src: 'operation',
 					input: ({ context }) => {
 						if (!context.operation) throw new Error('Missing creation binding')
-						return { db, binding: context.operation, request: context.request }
+						return { binding: context.operation, request: context.request }
 					},
 					onDone: [
 						{ guard: 'closing', target: 'closed' },

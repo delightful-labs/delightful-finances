@@ -2,8 +2,9 @@ import { afterEach, vi } from 'vitest'
 import { createActor } from 'xstate'
 import { Transaction } from 'jazz-tools'
 import { workspaceCreationTransaction } from './workspace-creation-transaction.js'
+import { createAdditionalWorkspaceTransaction } from './workspace-additional-creation-transaction.js'
 import { workspaceInitialization } from './workspace-initialization.js'
-import { persistWorkspaceCreation } from './workspace-creation-persistence.js'
+import { createWorkspacePersistence } from './workspace-creation-persistence.js'
 import type { WorkspaceCreationAttempt } from '../../domain/workspace-creation.js'
 import { type Organization } from '../../schema.js'
 
@@ -72,8 +73,14 @@ export function creationFixture() {
 		actor.start()
 		return actor
 	}
+	function additionalTransaction() {
+		const actor = createActor(createAdditionalWorkspaceTransaction(db), { input: { attempt } })
+		cleanups.push(() => actor.stop())
+		actor.start()
+		return actor
+	}
 	function persistence(input = attempt) {
-		const actor = createActor(persistWorkspaceCreation, { input: { db, attempt: input } })
+		const actor = createActor(createWorkspacePersistence(db), { input: { attempt: input } })
 		cleanups.push(() => actor.stop())
 		actor.start()
 		return actor
@@ -105,6 +112,7 @@ export function creationFixture() {
 		hydrate,
 		db,
 		transaction,
+		additionalTransaction,
 		persistence
 	}
 }
