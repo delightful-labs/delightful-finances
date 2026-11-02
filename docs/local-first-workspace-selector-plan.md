@@ -63,3 +63,48 @@ isolated frozen installation fetched it without updating dependency versions.
 No Finance runtime tests, commits, pushes or deployments were performed for this adoption review.
 The next approved coverage should qualify the real installed DUI/Finance composition, not infer
 that the library's synthetic selector tests establish every host navigation/recovery behavior.
+
+## Approved Finance coverage
+
+The user approved implementation and authorized its commit and continuation. Implementation commits
+are Finance e0c77d6 and library 78bb8f6. Five new Finance adapter SSR cases pass; the complete focused
+adapter/query/navigation run passes 43 cases. The SSR loader now inlines the foundation's Svelte
+exports alongside DUI so the adapter is exercised against the real packaged view.
+
+All 22 workspace/recovery browser scenarios pass, including a new sole-workspace explicit chooser
+case, synchronized drawer/settings values, duplicate labels, unavailable scopes, history, offline
+creation/journal recovery, identity recovery and pending creation across selection. Both strengthened
+production cold-start scenarios pass: after every browser/client exits, records remain readable and
+writable, a workspace can be created and explicitly selected, and the selected ID survives reload
+fully offline and with an unanswered server connection.
+
+The disposable development test app used port 5192 and shut down before the isolated production
+preview ran on port 4185. Verification-only Vite runners in the isolated checkout preserve runtime
+plugins while omitting Paraglide's compilation/watch writer hooks; existing generated localization
+was reused. Normal application/localization configs were not edited. SHA-256 comparison confirms
+the generated localization tree remained byte-for-byte unchanged. No cached-user data, production
+service, or user's 5173/5174 environment was touched.
+
+Source/browser-test types and focused formatting/diff checks pass. Full serial unit qualification
+is recorded below once complete; this section does not claim that a CI run was performed.
+
+## Completed qualification
+
+The complete Finance unit suite passes serially: 124 files, 1,737 tests. Source/Svelte and browser-test
+type checks pass, as do focused formatting and diff checks. The 22 development browser scenarios and
+both strengthened production cold cases pass. No application code, assertion, or deadline needed
+changing during this host qualification.
+
+The generated localization tree hash is unchanged before/after verification. The temporary compiler
+hook filter, preview configs and script override exist only in the isolated checkout; they are not
+application changes or committed test configuration. The committed Vitest loader adjustment is only
+the standard Svelte-package SSR inlining, with the full unit run covering its import graph.
+
+The older agent server at port 5184 was left untouched and still uses the older dependency installed
+in the working checkout. Review this branch using the isolated in-memory agent server at
+http://127.0.0.1:5192. Normal frozen dependency installation is needed before running this branch in
+another checkout. Neither the user's development environment nor browser/Jazz data was reset.
+
+Implementation is committed at the IDs above. Coverage and qualification documentation remain
+uncommitted for review; no branches were pushed, no PRs opened, and no deployments performed in
+this continuation. Creation-dialog composition remains the subsequent implementation scope.

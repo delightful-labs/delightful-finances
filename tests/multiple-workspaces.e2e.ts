@@ -43,6 +43,34 @@ async function create(page: Page, name: string) {
 }
 
 test(
+	'a sole workspace can be selected explicitly from the unscoped chooser',
+	{ tag: ['@workspaces'] },
+	async ({ page }) => {
+		await start(page)
+		await prepareSidebar(page)
+		const manager = page.getByLabel('Select Workspace', { exact: true })
+		const drawer = page.getByLabel('Current Workspace', { exact: true })
+		await expect(manager.locator('option:not([disabled])')).toHaveCount(1)
+		await expect(manager).toHaveValue('')
+		await expect(drawer).toHaveValue('')
+		await expect(manager).toBeEnabled()
+		await expect(drawer).toBeEnabled()
+		const id = await manager.locator('option:not([disabled])').getAttribute('value')
+		if (!id) throw new Error('Expected sole local workspace')
+		await manager.selectOption(id)
+		await expect(page).toHaveURL(`/settings/workspace?workspace=${id}`)
+		await expect(manager).toHaveValue(id)
+		await expect(drawer).toHaveValue(id)
+		await expect(manager).toBeDisabled()
+		await expect(drawer).toBeDisabled()
+		await page.reload()
+		await prepareSidebar(page)
+		await expect(manager).toHaveValue(id)
+		await expect(drawer).toHaveValue(id)
+	}
+)
+
+test(
 	'workspace creation uses the shared modal and preserves a cancelled draft without writing',
 	{ tag: ['@workspaces'] },
 	async ({ page }) => {
