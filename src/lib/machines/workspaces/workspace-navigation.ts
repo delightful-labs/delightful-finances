@@ -18,6 +18,7 @@ export type { WorkspaceNavigationFacts } from '../../contracts/workspace-orchest
 type Input = { facts: WorkspaceNavigationFacts; recipient: NavigationRecipient }
 type Context = Input & {
 	resolving: WorkspaceNavigationFacts | undefined
+	emptyEntry: WorkspaceNavigationFacts | undefined
 	destination: string | undefined
 	replace: boolean
 	transaction: { organizationId: string } | null
@@ -60,6 +61,7 @@ export function createWorkspaceNavigationMachine(
 		context: ({ input }) => ({
 			...input,
 			resolving: undefined,
+			emptyEntry: undefined,
 			destination: undefined,
 			replace: true,
 			transaction: null
@@ -70,6 +72,7 @@ export function createWorkspaceNavigationMachine(
 			SELECT: {
 				target: '.navigating',
 				actions: assign({
+					emptyEntry: undefined,
 					replace: false,
 					destination: ({ context, event }) =>
 						switchedWorkspaceHref(
@@ -81,7 +84,28 @@ export function createWorkspaceNavigationMachine(
 				})
 			},
 			OBSERVED: {
-				actions: [assign({ facts: ({ event }) => event.facts }), raise({ type: 'REEVALUATE' })]
+				actions: [
+					assign({
+						emptyEntry: ({ context, event }) => {
+							const origin = context.emptyEntry
+							const facts = event.facts
+							if (
+								!origin ||
+								!facts.ready ||
+								facts.userId !== origin.userId ||
+								facts.organizations.length > 1 ||
+								workspaceRoute(facts.search).scoped ||
+								(facts.pathname !== '/settings/workspace' &&
+									`${facts.pathname}${facts.search}${facts.hash}` !==
+										`${origin.pathname}${origin.search}${origin.hash}`)
+							)
+								return undefined
+							return origin
+						},
+						facts: ({ event }) => event.facts
+					}),
+					raise({ type: 'REEVALUATE' })
+				]
 			},
 			REEVALUATE: '.assessing',
 			RETRY: '.assessing'
@@ -93,6 +117,23 @@ export function createWorkspaceNavigationMachine(
 					{
 						guard: ({ context }) => !context.facts.ready,
 						target: 'waiting'
+					},
+					{
+						guard: ({ context }) =>
+							context.emptyEntry !== undefined &&
+							context.facts.pathname === '/settings/workspace' &&
+							!context.facts.loading &&
+							context.facts.error == null &&
+							context.facts.organizations.length === 1,
+						target: 'navigating',
+						actions: assign({
+							destination: ({ context }) =>
+								workspaceHref(
+									context.facts.organizations[0]?.id ?? null,
+									`${context.emptyEntry?.pathname}${context.emptyEntry?.search}${context.emptyEntry?.hash}`
+								),
+							emptyEntry: undefined
+						})
 					},
 					{
 						guard: ({ context }) => context.facts.pathname === '/settings/workspace',
@@ -124,7 +165,14 @@ export function createWorkspaceNavigationMachine(
 								)
 						})
 					},
-					{ target: 'navigating', actions: assign({ destination: '/settings/workspace' }) }
+					{
+						target: 'navigating',
+						actions: assign({
+							emptyEntry: ({ context }) =>
+								context.facts.organizations.length === 0 ? context.facts : undefined,
+							destination: '/settings/workspace'
+						})
+					}
 				]
 			},
 			checkingScope: {

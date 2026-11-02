@@ -369,3 +369,14 @@ failure separate from successful identity restoration; retrying navigation must 
 Remove forwarding/status protocols only after finding their actual production consumer. Startup
 acquisition does not also need unused SDK-status commands, and a parent with no snapshot consumer
 does not need syncSnapshot merely to preserve its child's lifetime or render a subscribed integration.
+
+## Late workspace catalogs after recovery
+
+A recovered identity can finish profile initialization before its workspace catalog arrives. A first
+empty local catalog is not a final absence result. If unscoped entry automatically opens the chooser
+for an empty catalog, preserve that entry's route intent so a later sole workspace can canonicalize
+it. Keep the intent only for the same ready identity and original route/automatic chooser; discard it
+on explicit selection, unrelated navigation, session loss, or an observed ambiguous catalog. Explicit
+chooser visits remain independent of ledger selection. Guard the resolution against catalog loading
+and errors. Test arrival both during and after navigation; do not hide the race with longer waits or
+force ordinary local navigation to wait for remote freshness.
