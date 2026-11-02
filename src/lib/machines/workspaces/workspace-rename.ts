@@ -13,6 +13,10 @@ import type {
 } from '#lib/contracts/workspace-rename-contract.js'
 import { workspaceSettingsFormSchema } from '#lib/validation/identity.js'
 import { createSingleWriteFormOptions } from '../forms/scoped-form-policy.js'
+import {
+	createWorkspaceNamingPersistence,
+	type WorkspaceNamingPersistence
+} from './workspace-naming-persistence.js'
 
 type Values = { name: string; defaultCurrency: AccountCurrency }
 
@@ -137,19 +141,22 @@ export function selectWorkspaceRenameAvailability(
 	}
 }
 
-export function createWorkspaceRenameFormOptions(dependencies: {
-	binding: object
-	observe: () => WorkspaceRenameObservation
-	rename: (organizationId: string, values: Values) => Promise<unknown>
-}) {
+export function createWorkspaceRenameFormOptions<Write>(
+	dependencies: {
+		binding: object
+		observe: () => WorkspaceRenameObservation
+	} & WorkspaceNamingPersistence<Write>
+) {
 	const availability = createWorkspaceRenameAvailability(dependencies.binding)
+	const persistence = createWorkspaceNamingPersistence(dependencies)
 	return createSingleWriteFormOptions<
 		Values,
 		void,
 		WorkspaceRenameReason,
 		WorkspaceRenameScope,
 		WorkspaceRenameObservation,
-		SnapshotFrom<typeof availability>
+		SnapshotFrom<typeof availability>,
+		SnapshotFrom<typeof persistence>
 	>({
 		schema: workspaceSettingsFormSchema,
 		mode: 'edit',
@@ -173,11 +180,6 @@ export function createWorkspaceRenameFormOptions(dependencies: {
 		observe: dependencies.observe,
 		classifyBlocked: (reason) => (reason === 'readOnly' ? 'denied' : 'unavailable'),
 		successContent: 'retain',
-		write: async ({ request }) => {
-			// Defensive type invariant; eligibility is decided by the shared policy chart.
-			const id = request.scope.organizationId
-			if (id === null) throw new Error('Missing authorized workspace')
-			await dependencies.rename(id, request.values)
-		}
+		persistence
 	})
 }

@@ -400,6 +400,45 @@ for (const offline of [false, true]) {
 				await expect(cold.getByLabel('Current Workspace', { exact: true })).toHaveValue(createdId)
 				await cold.reload()
 				await expect(cold.getByLabel('Select Workspace', { exact: true })).toHaveValue(createdId)
+				// The same cold local replica must support an atomic name/currency settings save.
+				await cold
+					.getByRole('textbox', { name: 'Workspace name', exact: true })
+					.fill('Cold renamed workspace')
+				const settingsForm = cold.locator('form').filter({
+					has: cold.getByRole('textbox', { name: 'Workspace name', exact: true })
+				})
+				await settingsForm.getByLabel('Currency', { exact: true }).selectOption('TZS')
+				await cold.getByRole('button', { name: 'Save', exact: true }).click()
+				await expect(
+					cold
+						.getByRole('main')
+						.getByRole('status')
+						.filter({ hasText: 'Workspace settings saved.' })
+				).toHaveText('Workspace settings saved.')
+				// Exit every client again: the acknowledged settings must survive a second cold start.
+				await current.close()
+				current = undefined
+				current = await playwright.chromium.launchPersistentContext(profile, {
+					baseURL,
+					offline,
+					serviceWorkers: 'allow'
+				})
+				const retained = current.pages()[0] ?? (await current.newPage())
+				retained.on('pageerror', (error) => errors.push(error.message))
+				const settingsResponse = await retained.goto(`/settings/workspace?workspace=${createdId}`)
+				expect(settingsResponse?.fromServiceWorker()).toBe(true)
+				await expect(
+					retained.getByRole('main').getByRole('textbox', { name: 'Workspace name', exact: true })
+				).toHaveValue('Cold renamed workspace')
+				await expect(
+					retained
+						.locator('form')
+						.filter({ has: retained.getByRole('textbox', { name: 'Workspace name', exact: true }) })
+						.getByLabel('Currency', { exact: true })
+				).toHaveValue('TZS')
+				await expect(retained.getByLabel('Select Workspace', { exact: true })).toHaveValue(
+					createdId
+				)
 				expect(errors).toEqual([])
 			} finally {
 				await current?.close()

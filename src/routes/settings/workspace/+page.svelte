@@ -3,7 +3,7 @@
 	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import { createWorkspaceRenameFormOptions } from '#lib/machines/workspaces/workspace-rename.js'
 	import type { WorkspaceRenameObservation } from '#lib/contracts/workspace-rename-contract.js'
-	import { renameWorkspace } from '#lib/data.js'
+	import { workspaceNamingWrites } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
@@ -54,7 +54,7 @@
 	const options = createWorkspaceRenameFormOptions({
 		binding: db,
 		observe,
-		rename: (id, values) => renameWorkspace(db, id, values)
+		...workspaceNamingWrites(db)
 	})
 	const form = createScopedFormController(options)
 </script>

@@ -43,7 +43,7 @@ describe('shared single-write operation', () => {
 			reason: 'loading',
 			settlement: 'notStarted'
 		})
-		expect(f.rename).not.toHaveBeenCalled()
+		expect(f.issueRename).not.toHaveBeenCalled()
 	})
 
 	it('refreshes scope before writing and clears terminal request facts', async () => {
@@ -59,7 +59,7 @@ describe('shared single-write operation', () => {
 				observation: undefined,
 				capability: undefined
 			})
-			expect(f.rename).not.toHaveBeenCalled()
+			expect(f.issueRename).not.toHaveBeenCalled()
 		} finally {
 			actor.stop()
 		}
@@ -76,7 +76,7 @@ describe('shared single-write operation', () => {
 					type === 'CANCEL' ? 'cancelled' : type === 'INVALIDATE' ? 'scopeChanged' : 'closed',
 				settlement: 'notStarted'
 			})
-			expect(f.rename).not.toHaveBeenCalled()
+			expect(f.issueRename).not.toHaveBeenCalled()
 		}
 	)
 	it('supervises observation read failures before writing', async () => {
@@ -90,7 +90,7 @@ describe('shared single-write operation', () => {
 			code: 'operationFailed',
 			settlement: 'notStarted'
 		})
-		expect(f.rename).not.toHaveBeenCalled()
+		expect(f.issueRename).not.toHaveBeenCalled()
 	})
 	it('preserves unavailable readiness separately from denial', async () => {
 		const f = renameFixture()
@@ -102,7 +102,7 @@ describe('shared single-write operation', () => {
 			reason: 'loading',
 			settlement: 'notStarted'
 		})
-		expect(f.rename).not.toHaveBeenCalled()
+		expect(f.issueRename).not.toHaveBeenCalled()
 	})
 	it.each([
 		{ command: 'CANCEL', outcome: 'cancelled' },
@@ -113,10 +113,10 @@ describe('shared single-write operation', () => {
 		async ({ command, outcome }) => {
 			const f = renameFixture()
 			const actor = f.operation()
-			await waitFor(actor, (s) => s.matches({ writing: 'pending' }))
+			await vi.waitFor(() => expect(f.persistLocal).toHaveBeenCalledTimes(1))
 			actor.send({ type: command })
 			expect(actor.getSnapshot().status).toBe('active')
-			expect(f.rename).toHaveBeenCalledTimes(1)
+			expect(f.issueRename).toHaveBeenCalledTimes(1)
 			f.saved.resolve(undefined)
 			const done = await waitFor(actor, (s) => s.status === 'done')
 			expect(done.output).toEqual({ outcome, settlement: 'locallyPersisted' })
@@ -128,7 +128,7 @@ describe('shared single-write operation', () => {
 		async (phase) => {
 			const f = renameFixture()
 			const actor = f.operation()
-			await waitFor(actor, (s) => s.matches({ writing: 'pending' }))
+			await vi.waitFor(() => expect(f.persistLocal).toHaveBeenCalledTimes(1))
 			if (phase === 'cancelled') actor.send({ type: 'CANCEL' })
 			if (phase === 'invalidated') actor.send({ type: 'INVALIDATE' })
 			if (phase === 'closed') actor.send({ type: 'SHUTDOWN' })
@@ -144,7 +144,7 @@ describe('shared single-write operation', () => {
 	it('keeps shutdown above queued cancellation, invalidation, scope updates and successful completion', async () => {
 		const f = renameFixture()
 		const actor = f.operation()
-		await waitFor(actor, (s) => s.matches({ writing: 'pending' }))
+		await vi.waitFor(() => expect(f.persistLocal).toHaveBeenCalledTimes(1))
 		actor.send({ type: 'CANCEL' })
 		actor.send({ type: 'INVALIDATE' })
 		actor.send({ type: 'SHUTDOWN' })
@@ -161,7 +161,7 @@ describe('shared single-write operation', () => {
 	it('invalidates scope replacements during an issued write without starting another one', async () => {
 		const f = renameFixture()
 		const actor = f.operation()
-		await waitFor(actor, (s) => s.matches({ writing: 'pending' }))
+		await vi.waitFor(() => expect(f.persistLocal).toHaveBeenCalledTimes(1))
 		actor.send({
 			type: 'OBSERVE',
 			observation: { revision: 1, facts: f.setFacts({ binding: {} }) }
@@ -170,6 +170,6 @@ describe('shared single-write operation', () => {
 		f.saved.resolve(undefined)
 		const done = await waitFor(actor, (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'scopeChanged', settlement: 'locallyPersisted' })
-		expect(f.rename).toHaveBeenCalledTimes(1)
+		expect(f.issueRename).toHaveBeenCalledTimes(1)
 	})
 })

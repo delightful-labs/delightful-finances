@@ -66,7 +66,7 @@ describe('workspace rename policy', () => {
 				owner.actor.send({ type: 'SUBMIT', values: settings('Office') })
 				expect(owner.view().readiness).toEqual({ kind: 'blocked', reason })
 				expect(owner.actor.getSnapshot().context.sequence).toBe(0)
-				expect(f.rename).not.toHaveBeenCalled()
+				expect(f.issueRename).not.toHaveBeenCalled()
 			} finally {
 				actor.stop()
 			}
@@ -86,8 +86,8 @@ describe('shared edit mode through workspace rename', () => {
 		actor.send({ type: 'CHANGE', values: settings('Home', 'TZS') })
 		expect(view().canSubmit).toBe(true)
 		actor.send({ type: 'SUBMIT', values: settings('Home', 'TZS') })
-		await vi.waitFor(() => expect(f.rename).toHaveBeenCalledOnce())
-		expect(f.rename).toHaveBeenCalledExactlyOnceWith('workspace', settings('Home', 'TZS'))
+		await vi.waitFor(() => expect(f.issueRename).toHaveBeenCalledOnce())
+		expect(f.issueRename).toHaveBeenCalledExactlyOnceWith('workspace', settings('Home', 'TZS'))
 		f.setFacts({ workspace: { id: 'workspace', name: 'Home', defaultCurrency: 'TZS' } })
 		actor.send({ type: 'OBSERVE', observation: f.facts() })
 		f.saved.resolve(undefined)
@@ -101,7 +101,7 @@ describe('shared edit mode through workspace rename', () => {
 		expect(view()).toMatchObject({ canSubmit: false, fieldsEditable: true })
 		actor.send({ type: 'SUBMIT', values: settings(' Home ') })
 		expect(actor.getSnapshot().context.sequence).toBe(0)
-		expect(f.rename).not.toHaveBeenCalled()
+		expect(f.issueRename).not.toHaveBeenCalled()
 		actor.send({ type: 'CHANGE', values: settings('Office') })
 		expect(view().canSubmit).toBe(true)
 		actor.send({ type: 'CHANGE', values: settings('Home') })
@@ -135,8 +135,8 @@ describe('shared edit mode through workspace rename', () => {
 		await waitFor(actor, (s) => s.context.result?.outcome === 'invalid')
 		expect(view().feedback).toMatchObject({ kind: 'result', result: { outcome: 'invalid' } })
 		actor.send({ type: 'SUBMIT', values: settings(' Office ') })
-		await vi.waitFor(() => expect(f.rename).toHaveBeenCalledTimes(1))
-		expect(f.rename).toHaveBeenCalledExactlyOnceWith('workspace', settings('Office'))
+		await vi.waitFor(() => expect(f.issueRename).toHaveBeenCalledTimes(1))
+		expect(f.issueRename).toHaveBeenCalledExactlyOnceWith('workspace', settings('Office'))
 		actor.send({ type: 'CHANGE', values: settings('Ignored') })
 		actor.send({ type: 'RESET' })
 		expect(actor.getSnapshot().context.draft).toEqual({
@@ -174,9 +174,9 @@ describe('shared edit mode through workspace rename', () => {
 		const { actor, view } = f.owner('create')
 		expect(view().canSubmit).toBe(true)
 		actor.send({ type: 'SUBMIT', values: settings('Home') })
-		await vi.waitFor(() => expect(f.rename).toHaveBeenCalledTimes(1))
+		await vi.waitFor(() => expect(f.issueRename).toHaveBeenCalledTimes(1))
 		expect(actor.getSnapshot().context.draft).toBeUndefined()
-		expect(f.rename).toHaveBeenCalledExactlyOnceWith('workspace', settings('Home'))
+		expect(f.issueRename).toHaveBeenCalledExactlyOnceWith('workspace', settings('Home'))
 		f.saved.resolve(undefined)
 	})
 	it('rechecks fresh permission even before reactive observations arrive', async () => {
@@ -185,7 +185,7 @@ describe('shared edit mode through workspace rename', () => {
 		f.setFacts({ membership: undefined })
 		actor.send({ type: 'SUBMIT', values: settings('Office') })
 		await waitFor(actor, (s) => s.context.result?.outcome === 'denied')
-		expect(f.rename).not.toHaveBeenCalled()
+		expect(f.issueRename).not.toHaveBeenCalled()
 		expect(actor.getSnapshot().context.result).toEqual({
 			outcome: 'denied',
 			reason: 'readOnly',
@@ -196,13 +196,13 @@ describe('shared edit mode through workspace rename', () => {
 		const f = renameFixture()
 		const { actor, view } = f.owner()
 		actor.send({ type: 'SUBMIT', values: settings('Office') })
-		await vi.waitFor(() => expect(f.rename).toHaveBeenCalledTimes(1))
+		await vi.waitFor(() => expect(f.issueRename).toHaveBeenCalledTimes(1))
 		actor.send({ type: 'OBSERVE', observation: f.setFacts({ membership: undefined }) })
 		expect(view().activity).toEqual({ kind: 'settling', reason: 'scopeChanged' })
 		actor.send({ type: 'SUBMIT', values: settings('Another') })
 		f.saved.resolve(undefined)
 		await waitFor(actor, (s) => s.context.result?.outcome === 'scopeChanged')
-		expect(f.rename).toHaveBeenCalledTimes(1)
+		expect(f.issueRename).toHaveBeenCalledTimes(1)
 		expect(actor.getSnapshot().context.result).toEqual({
 			outcome: 'scopeChanged',
 			settlement: 'locallyPersisted'
