@@ -3,6 +3,9 @@ import { openSidebarSection } from './helpers/ui.js'
 
 async function seed(page: Page, count = 0, acrossDates = false) {
 	await page.goto('/accounts')
+	await expect(page).toHaveURL(
+		(url) => url.pathname === '/accounts' && Boolean(url.searchParams.get('workspace'))
+	)
 	await expect(
 		page.getByRole('main').getByRole('heading', { name: 'Accounts', exact: true })
 	).toBeVisible()
