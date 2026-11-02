@@ -1,3 +1,4 @@
+import { issueLocalWrite, persistLocal } from 'delightful-local-first/backend/jazz/data'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization, type Tag } from './schema.js'
 import { ACCOUNT_CURRENCY, type AccountCurrency } from './domain/account-currency.js'
@@ -45,12 +46,11 @@ export function workspaceNamingWrites(db: Pick<Db, 'update'>) {
 		values: { name: Organization['name']; defaultCurrency: AccountCurrency }
 	) {
 		const settings = workspaceSettingsFormSchema.parse(values)
-		return { write: db.update(app.organizations, workspaceId, settings) }
+		return issueLocalWrite(() => db.update(app.organizations, workspaceId, settings))
 	}
 	return {
 		issueRename,
-		persistLocal: (write: ReturnType<typeof issueRename>['write']) =>
-			write.wait({ tier: 'local' }).then(() => undefined)
+		persistLocal: (write: ReturnType<typeof issueRename>['write']) => persistLocal(write)
 	}
 }
 

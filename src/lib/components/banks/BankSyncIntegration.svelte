@@ -13,7 +13,7 @@
 	import { workspaceBankActor, selectWorkspaceView } from '#lib/machines/runtime/readiness.js'
 	import { beforeNavigate } from '$app/navigation'
 	import { page } from '$app/state'
-	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { app } from '#lib/schema.js'
 	import BankSyncLog from './BankSyncLog.svelte'
 	import { selectBankLogPresentation } from '#lib/machines/bank-sync/history.js'

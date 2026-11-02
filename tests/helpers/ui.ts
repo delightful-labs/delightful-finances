@@ -70,4 +70,6 @@ export async function selectWorkspace(selector: Locator, id: string) {
 	await closeCreationModal(page)
 	await openSidebarSection(page, 'Settings')
 	await selector.selectOption(id)
+	await expect(page).toHaveURL((url) => url.searchParams.get('workspace') === id)
+	await expect(selector).toHaveValue(id)
 }

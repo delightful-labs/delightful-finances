@@ -8,7 +8,7 @@
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
 	import { withQueryParams } from '#lib/domain/query-params.js'
 	import { app } from '#lib/schema.js'
-	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { getContext, untrack } from 'svelte'
 	import { page } from '$app/state'
 	import { replaceState } from '$app/navigation'

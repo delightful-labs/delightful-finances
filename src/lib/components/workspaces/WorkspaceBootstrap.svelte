@@ -2,7 +2,7 @@
 	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
-	import { QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { goto } from '$app/navigation'

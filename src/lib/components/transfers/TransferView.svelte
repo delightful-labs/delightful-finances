@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext, untrack, type Snippet } from 'svelte'
-	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { app } from '#lib/schema.js'

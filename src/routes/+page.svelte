@@ -3,7 +3,7 @@
 	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import { getContext, onMount } from 'svelte'
-	import { QuerySubscription } from 'jazz-tools/svelte'
+	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'

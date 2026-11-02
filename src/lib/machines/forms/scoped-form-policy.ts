@@ -8,7 +8,8 @@ import type {
 	FormOperationResult,
 	FormOperationInput
 } from '#lib/contracts/form-contract.js'
-import { createScopedFormWriteMachine, type FormPersistence } from './scoped-form-write.js'
+import type { FormPersistence } from './scoped-form-write.js'
+import { createSingleWriteFormOptions as createSharedOptions } from 'delightful-local-first/forms/policy'
 import type { ScopedFormOptions } from './scoped-form.js'
 
 /** Composition only: policy states and effects are supplied by the domain. */
@@ -41,23 +42,14 @@ export function createSingleWriteFormOptions<
 	} & FormMode<Values, Observation> &
 		FormPersistence<Values, Result, Reason, Scope, Observation, PersistenceSnapshot>
 ) {
-	const operation = createScopedFormWriteMachine<
+	return createSharedOptions<
 		Values,
 		Result,
 		Reason,
 		Scope,
 		Observation,
 		AvailabilitySnapshot,
-		PersistenceSnapshot
-	>({ ...options, settlement: 'locallyPersisted' })
-	const { write, persistence, ...formOptions } = options
-	return { ...formOptions, operation } satisfies ScopedFormOptions<
-		Values,
-		Result,
-		Reason,
-		Scope,
-		Observation,
-		AvailabilitySnapshot,
-		SnapshotFrom<typeof operation>
-	> & { observe: () => Observation }
+		PersistenceSnapshot,
+		z.ZodType<Values>
+	>(options)
 }

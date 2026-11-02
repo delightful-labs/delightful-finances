@@ -1,54 +1,15 @@
 <script lang="ts" module>
-	export type AvatarImage = {
-		avatarData?: Uint8Array | null | undefined
-		avatarMimeType?: string | null | undefined
-	}
+	export type { AvatarImage } from 'delightful-local-first/profile/avatar-view'
 </script>
 
 <script lang="ts">
-	import type { Snippet } from 'svelte'
+	import Shared from 'delightful-local-first/profile/avatar-view'
+	import type { ComponentProps } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
-
 	let {
-		avatarData,
-		avatarMimeType,
-		size = 32,
 		alt = m['images.avatar_alt'](),
-		error
-	}: AvatarImage & {
-		size?: number
-		alt?: string
-		error?: Snippet
-	} = $props()
-
-	let imageUrl = $state('')
-	let imageFailed = $state(false)
-	$effect(() => {
-		imageFailed = false
-		if (!avatarData || !avatarMimeType) {
-			imageUrl = ''
-			return
-		}
-		const url = URL.createObjectURL(
-			new Blob([Uint8Array.from(avatarData)], { type: avatarMimeType })
-		)
-		imageUrl = url
-		return () => URL.revokeObjectURL(url)
-	})
+		...props
+	}: Omit<ComponentProps<typeof Shared>, 'alt'> & { alt?: string } = $props()
 </script>
 
-{#if imageUrl && !imageFailed}
-	<img src={imageUrl} {alt} width={size} height={size} onerror={() => (imageFailed = true)} />
-{:else if imageFailed && error}
-	{@render error()}
-{/if}
-
-<style>
-	img {
-		aspect-ratio: 1 / 1;
-		object-fit: cover;
-		border-radius: 50%;
-		vertical-align: middle;
-		flex-shrink: 0;
-	}
-</style>
+<Shared {...props} {alt} />

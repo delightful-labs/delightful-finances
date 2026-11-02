@@ -18,7 +18,8 @@
 	import { formReasonText } from '#lib/forms/form-messages.js'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
-	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession } from 'jazz-tools/svelte'
+	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
 	import { getContext } from 'svelte'
 	import {
 		financeFiltersKey,

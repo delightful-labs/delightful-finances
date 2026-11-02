@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { observeRow } from '#lib/runtime/observations.js'
 	import { fromStore } from 'svelte/store'
-	import { getDb, getJazzSession, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession } from 'jazz-tools/svelte'
+	import { QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
 	import { m } from '#lib/paraglide/messages.js'
 	import { app } from '#lib/schema.js'
 	import { saveProfileName, saveProfileAvatar } from '#lib/data.js'

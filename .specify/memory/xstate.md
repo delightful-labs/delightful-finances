@@ -380,3 +380,12 @@ on explicit selection, unrelated navigation, session loss, or an observed ambigu
 chooser visits remain independent of ledger selection. Guard the resolution against catalog loading
 and errors. Test arrival both during and after navigation; do not hide the race with longer waits or
 force ordinary local navigation to wait for remote freshness.
+
+## Shared foundation adoption
+
+Finance's generic scoped form/readiness/submission/write/controller lifecycle, profile workflow,
+workspace initialization/startup, explicit-creation ownership/journal/recovery and restoration
+coordination now come from Delightful Local First. Keep Finance files as typed dependency/policy
+adapters. Update generic behavior in the library instead of copying machines back into this app.
+Native finance schema transactions, financial resource drains, routing and legacy attribution
+repair remain app-owned. See `docs/finance-foundation-extraction.md` for the exact boundary.
