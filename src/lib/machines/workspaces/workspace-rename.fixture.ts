@@ -33,10 +33,17 @@ export function renameFixture() {
 	}
 	const saved = Promise.withResolvers<unknown>()
 	const observe = vi.fn(() => facts)
-	const rename = vi.fn<
-		(id: string, values: { name: string; defaultCurrency: 'USD' | 'TZS' }) => Promise<unknown>
-	>(() => saved.promise)
-	const options = createWorkspaceRenameFormOptions({ binding, observe, rename })
+	const receipt = { local: saved.promise }
+	const issueRename = vi.fn<
+		(
+			id: string,
+			values: { name: string; defaultCurrency: 'USD' | 'TZS' }
+		) => { write: typeof receipt }
+	>(() => ({ write: receipt }))
+	const persistLocal = vi.fn(async (write: typeof receipt) => {
+		await write.local
+	})
+	const options = createWorkspaceRenameFormOptions({ binding, observe, issueRename, persistLocal })
 	function owner(mode: 'create' | 'edit' = 'edit') {
 		const createMode: { mode: 'create' } = { mode: 'create' }
 		const config = mode === 'edit' ? options : { ...options, ...createMode }
@@ -84,7 +91,9 @@ export function renameFixture() {
 	return {
 		binding,
 		observe,
-		rename,
+		issueRename,
+		persistLocal,
+		receipt,
 		saved,
 		options,
 		owner,

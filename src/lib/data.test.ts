@@ -7,7 +7,7 @@ import {
 	createTag,
 	createCategory,
 	createAccount,
-	renameWorkspace,
+	workspaceNamingWrites,
 	saveProfileName,
 	saveProfileAvatar
 } from './data.js'
@@ -85,16 +85,30 @@ describe('createAccount', () => {
 	})
 })
 
-describe('renameWorkspace', () => {
+describe('workspaceNamingWrites', () => {
 	it('updates the workspace name and default currency together at local durability', async () => {
 		const wait = vi.fn().mockResolvedValue(organization)
 		const db = { update: vi.fn().mockReturnValue({ wait }) } satisfies Pick<Db, 'update'>
-		await renameWorkspace(db, organization.id, { name: 'Home', defaultCurrency: 'TZS' })
+		const adapter = workspaceNamingWrites(db)
+		const { write } = adapter.issueRename(organization.id, {
+			name: ' Home ',
+			defaultCurrency: 'TZS'
+		})
+		expect(wait).not.toHaveBeenCalled()
+		await adapter.persistLocal(write)
 		expect(db.update).toHaveBeenCalledExactlyOnceWith(app.organizations, organization.id, {
 			name: 'Home',
 			defaultCurrency: 'TZS'
 		})
 		expect(wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+	})
+
+	it('rejects invalid settings before issuing any update', () => {
+		const db = { update: vi.fn() } satisfies Pick<Db, 'update'>
+		expect(() =>
+			workspaceNamingWrites(db).issueRename(organization.id, { name: ' ', defaultCurrency: 'USD' })
+		).toThrow()
+		expect(db.update).not.toHaveBeenCalled()
 	})
 })
 

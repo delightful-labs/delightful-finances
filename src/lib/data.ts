@@ -38,13 +38,20 @@ export function saveProfileAvatar(
 	return db.update(app.profiles, profileId, avatar).wait({ tier: 'local' })
 }
 
-export function renameWorkspace(
-	db: Pick<Db, 'update'>,
-	workspaceId: Organization['id'],
-	values: { name: Organization['name']; defaultCurrency: AccountCurrency }
-) {
-	const settings = workspaceSettingsFormSchema.parse(values)
-	return db.update(app.organizations, workspaceId, settings).wait({ tier: 'local' })
+/** Leaf adapter: one atomic update; the opaque receipt is not implicitly awaited. */
+export function workspaceNamingWrites(db: Pick<Db, 'update'>) {
+	function issueRename(
+		workspaceId: Organization['id'],
+		values: { name: Organization['name']; defaultCurrency: AccountCurrency }
+	) {
+		const settings = workspaceSettingsFormSchema.parse(values)
+		return { write: db.update(app.organizations, workspaceId, settings) }
+	}
+	return {
+		issueRename,
+		persistLocal: (write: ReturnType<typeof issueRename>['write']) =>
+			write.wait({ tier: 'local' }).then(() => undefined)
+	}
 }
 
 export function createAccount(
