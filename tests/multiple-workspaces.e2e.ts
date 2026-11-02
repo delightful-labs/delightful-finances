@@ -722,11 +722,14 @@ test(
 		await page.goto('/settings/workspace')
 		const dialog = await openCreationModal(page, 'Create Workspace')
 		await expect(
-			dialog.locator('p[aria-hidden="true"]').filter({
+			dialog.locator('p').filter({
 				hasText:
 					'Workspace creation could not finish. Check local storage and retry the same attempt.'
 			})
 		).toBeVisible()
+		await expect(dialog.getByRole('alert')).toHaveText(
+			'Workspace creation could not finish. Check local storage and retry the same attempt.'
+		)
 		await harness(page)
 		expect(
 			await page.evaluate(async () => {
@@ -919,5 +922,26 @@ test(
 			})
 		).toBe(1)
 		expect(errors).toEqual([])
+	}
+)
+
+test(
+	'workspace creation preserves a rejected draft and resets only for an explicit new creation',
+	{ tag: ['@workspaces'] },
+	async ({ page }) => {
+		await start(page)
+		const dialog = await openCreationModal(page, 'Create Workspace')
+		const name = dialog.getByLabel('Workspace name', { exact: true })
+		await name.fill('   ')
+		await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+		await expect(dialog.getByRole('alert')).not.toHaveText('')
+		await expect(name).toHaveValue('   ')
+		await expect(name).toBeEnabled()
+		await create(page, 'Corrected workspace')
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await openCreationModal(page, 'Create Workspace')
+		await expect(name).toHaveValue('')
+		await expect(name).toBeFocused()
+		await expect(dialog.getByRole('alert')).toHaveText('')
 	}
 )

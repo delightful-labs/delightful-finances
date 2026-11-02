@@ -7,7 +7,9 @@ import type {
 } from './workspace-creation-operation.js'
 import {
 	createWorkspaceCreationMachine,
-	selectWorkspaceCreationView
+	selectWorkspaceCreationView,
+	workspaceCreationDialogPresentation,
+	unavailableWorkspaceCreationView
 } from './workspace-creation.js'
 import {
 	attempt,
@@ -124,5 +126,53 @@ describe('workspace creation owner', () => {
 		expect(started).toHaveBeenCalledTimes(1)
 		actor.send({ type: 'NEW' })
 		expect(started.mock.lastCall?.[0].request).toEqual({ mode: 'clear', record })
+	})
+})
+
+describe('workspace creation dialog projection', () => {
+	it.each([
+		['unavailable', 'status', true],
+		['working', 'status', false],
+		['editing', 'status', true],
+		['invalid', 'alert', true],
+		['recovered', 'status', true],
+		['complete', 'status', true],
+		['conflict', 'alert', true],
+		['failed', 'alert', true],
+		['unresolved', 'alert', true]
+	] satisfies [typeof unavailableWorkspaceCreationView.mode, 'status' | 'alert', boolean][])(
+		'classifies %s feedback at the owning boundary',
+		(mode, priority, visible) => {
+			const view = workspaceCreationDialogPresentation({
+				...unavailableWorkspaceCreationView,
+				mode
+			})
+			expect(view.feedback).toEqual({ kind: mode, priority, visible })
+			expect(view.canOpen).toBe(mode !== 'unavailable')
+			expect(view.content).toBe(mode === 'complete' ? 'complete' : 'fields')
+		}
+	)
+	it('preserves draft identity across invalid results and retries until a genuinely new entry', () => {
+		const actor = start()
+		finish(actor, { outcome: 'editing', record: undefined, settlement: 'notStarted' })
+		const revision = selectWorkspaceCreationView(actor.getSnapshot()).draftRevision
+		expect(revision).toBe(1)
+		actor.send({ type: 'SUBMIT', name: '  ' })
+		finish(actor, { outcome: 'invalid', record: undefined, settlement: 'notStarted' })
+		expect(selectWorkspaceCreationView(actor.getSnapshot()).draftRevision).toBe(revision)
+		actor.send({ type: 'SUBMIT', name: 'Personal' })
+		finish(actor, {
+			outcome: 'failed',
+			record,
+			settlement: 'notStarted',
+			error: new Error('storage')
+		})
+		actor.send({ type: 'RETRY' })
+		expect(started.mock.lastCall?.[0].request).toEqual({ mode: 'retry', record })
+		expect(selectWorkspaceCreationView(actor.getSnapshot()).draftRevision).toBe(revision)
+		finish(actor, { outcome: 'complete', record, workspace, settlement: 'locallyPersisted' })
+		actor.send({ type: 'NEW' })
+		finish(actor, { outcome: 'editing', record: undefined, settlement: 'notStarted' })
+		expect(selectWorkspaceCreationView(actor.getSnapshot()).draftRevision).toBe(revision + 1)
 	})
 })

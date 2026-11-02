@@ -1,4 +1,4 @@
-import type { FormPresentation } from '../../contracts/form-contract.js'
+import type { WorkspaceCreationDialogView } from 'delightful-local-first/workspace'
 import { assign, raise, sendTo, setup, stateIn } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import {
@@ -10,6 +10,7 @@ import {
 import type { WorkspaceJournalRecord } from './workspace-creation-journal.js'
 import type { Organization } from '../../schema.js'
 type Context = {
+	draftRevision: number
 	binding: CreationBinding | undefined
 	operation: CreationBinding | undefined
 	request: CreationRequest
@@ -23,6 +24,7 @@ type Event =
 	| { type: 'SUBMIT'; name: string }
 	| { type: 'REEVALUATE' | 'RETRY' | 'NEW' | 'CANCEL' | 'SHUTDOWN' }
 export type WorkspaceCreationView = {
+	draftRevision: number
 	mode:
 		| 'unavailable'
 		| 'working'
@@ -67,6 +69,7 @@ export function createWorkspaceCreationMachine(
 		initial: 'checking',
 		context: ({ input }) => ({
 			...input,
+			draftRevision: 0,
 			operation: undefined,
 			request: { mode: 'load' },
 			record: undefined,
@@ -102,6 +105,7 @@ export function createWorkspaceCreationMachine(
 			},
 			unavailable: { entry: assign({ operation: undefined }) },
 			editing: {
+				entry: assign({ draftRevision: ({ context }) => context.draftRevision + 1 }),
 				on: {
 					SUBMIT: {
 						target: 'operating',
@@ -223,6 +227,7 @@ export function selectWorkspaceCreationView(
 	const replacing =
 		snapshot.matches({ operating: 'replacing' }) || snapshot.matches({ operating: 'closing' })
 	return {
+		draftRevision: snapshot.context.draftRevision,
 		mode,
 		name: replacing ? '' : (snapshot.context.record?.attempt.workspace.name ?? ''),
 		workspace:
@@ -236,6 +241,7 @@ export function selectWorkspaceCreationView(
 }
 
 export const unavailableWorkspaceCreationView: WorkspaceCreationView = {
+	draftRevision: 0,
 	mode: 'unavailable',
 	name: '',
 	workspace: undefined,
@@ -251,16 +257,29 @@ export function selectWorkspaceCreationReport(
 	return { binding: snapshot.context.binding, view: selectWorkspaceCreationView(snapshot) }
 }
 
-/** Adapt the public creation result to the shared modal's presentation contract. */
-export function workspaceCreationFormView(view: WorkspaceCreationView): FormPresentation {
+/** The owner classifies feedback; consumers only translate the supplied descriptor. */
+export function workspaceCreationDialogPresentation(view: WorkspaceCreationView): Omit<
+	WorkspaceCreationDialogView,
+	'feedback'
+> & {
+	feedback: { kind: WorkspaceCreationView['mode']; priority: 'status' | 'alert'; visible: boolean }
+} {
 	return {
-		activity: { kind: view.mode === 'working' ? 'operating' : 'idle' },
-		content:
-			view.mode === 'complete' ? { kind: 'success', value: view.workspace } : { kind: 'fields' },
+		activity: view.mode === 'working' ? 'working' : 'idle',
+		content: view.mode === 'complete' ? 'complete' : 'fields',
 		canSubmit: view.canSubmit,
-		canReset: view.canSubmit,
 		canOpen: view.mode !== 'unavailable',
+		canRetry: view.canRetry,
+		canCreateAnother: view.canCreateAnother,
 		fieldsEditable: view.canSubmit,
-		draftRevision: 0
+		draftRevision: view.draftRevision,
+		attemptName: view.name,
+		feedback: {
+			kind: view.mode,
+			visible: view.mode !== 'working',
+			priority: ['invalid', 'conflict', 'failed', 'unresolved'].includes(view.mode)
+				? 'alert'
+				: 'status'
+		}
 	}
 }

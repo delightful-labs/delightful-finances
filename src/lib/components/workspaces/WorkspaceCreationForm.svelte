@@ -1,11 +1,10 @@
 <script lang="ts">
 	import AppLink from '#lib/components/navigation/AppLink.svelte'
-	import { Button, InputText, ScreenReaderText } from 'delightful-ui'
+	import { WorkspaceCreationDialog } from 'delightful-local-first/workspace'
 	import {
-		workspaceCreationFormView,
+		workspaceCreationDialogPresentation,
 		type WorkspaceCreationView
 	} from '#lib/machines/workspaces/workspace-creation.js'
-	import FormModal from '../forms/FormModal.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 	let {
 		scope,
@@ -20,12 +19,7 @@
 		onRetry: () => void
 		onNew: () => void
 	} = $props()
-	const formView = $derived(workspaceCreationFormView(view))
-	let name = $state('')
-	const editing = $derived(view.mode === 'editing')
-	$effect(() => {
-		if (editing) name = ''
-	})
+	const presentation = $derived(workspaceCreationDialogPresentation(view))
 	const descriptions = {
 		unavailable: () => m['workspace.create_unavailable'](),
 		working: () => m['workspace.create_working'](),
@@ -40,53 +34,37 @@
 		failed: () => m['workspace.create_failed'](),
 		unresolved: () => m['workspace.create_unresolved']()
 	}
-	const message = $derived(descriptions[view.mode]())
-	const urgent = $derived(['invalid', 'conflict', 'failed', 'unresolved'].includes(view.mode))
+	const message = $derived(descriptions[presentation.feedback.kind]())
+	const dialogView = $derived({
+		...presentation,
+		feedback: {
+			text: message,
+			priority: presentation.feedback.priority,
+			visible: presentation.feedback.visible
+		}
+	})
+	const messages = $derived({
+		heading: m['actions.create_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
+		nameLabel: m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) }),
+		submit: m['actions.create_subject']({ subject: m['nouns.workspace']({ count: 1 }) }),
+		cancel: m['actions.cancel'](),
+		close: m['actions.close'](),
+		retry: m['actions.retry'](),
+		createAnother: m['actions.create_another_subject']({
+			subject: m['nouns.workspace']({ count: 1 })
+		})
+	})
 </script>
 
-<FormModal
-	{scope}
-	label={m['actions.create_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}
-	view={formView}
-	onopen={() => {
-		if (view.canCreateAnother) onNew()
-	}}
-	onsubmit={(event) => {
-		event.preventDefault()
-		onSubmit(name)
-	}}
-	onreset={(event) => event.preventDefault()}
->
-	{#snippet fields(form)}
-		<InputText
-			id="create-workspace-name"
-			label={m['labels.subject_name']({ subject: m['nouns.workspace']({ count: 1 }) })}
-			name="name"
-			bind:value={name}
-			required
-			disabled={!form.fieldsEditable}
-		/>
-	{/snippet}
-	{#snippet announcements()}
-		<ScreenReaderText role="status">{urgent ? '' : message}</ScreenReaderText>
-		<ScreenReaderText role="alert">{urgent ? message : ''}</ScreenReaderText>
-	{/snippet}
-	{#snippet feedback()}
-		{#if message && view.mode !== 'working'}<p aria-hidden="true">{message}</p>{/if}
-		{#if view.name && view.mode !== 'complete'}<p>{view.name}</p>{/if}
-		{#if view.canRetry}<Button type="button" onclick={onRetry}>{m['actions.retry']()}</Button>{/if}
-		{#if view.canCreateAnother}
-			{#if view.workspace}<p>
-					<AppLink href="/" query={{ workspace: view.workspace.id }}
-						>{m['actions.open_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}: {view
-							.workspace.name}</AppLink
-					>
-				</p>{/if}
-			<Button type="button" onclick={onNew}
-				>{m['actions.create_another_subject']({
-					subject: m['nouns.workspace']({ count: 1 })
-				})}</Button
-			>
+<WorkspaceCreationDialog {scope} view={dialogView} {messages} {onSubmit} {onRetry} {onNew}>
+	{#snippet completion()}
+		{#if view.workspace}
+			<p>
+				<AppLink href="/" query={{ workspace: view.workspace.id }}
+					>{m['actions.open_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}: {view
+						.workspace.name}</AppLink
+				>
+			</p>
 		{/if}
 	{/snippet}
-</FormModal>
+</WorkspaceCreationDialog>
