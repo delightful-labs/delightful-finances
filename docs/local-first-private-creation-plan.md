@@ -84,9 +84,9 @@ qualification. The superseded selection archive is removed, and both manifest an
 to the new archive. No application dependency versions are changed otherwise.
 
 Production-only Svelte/TypeScript checking passes with zero errors and warnings in the isolated
-checkout; the production app/service-worker build also passes. Existing unit fixtures still import the retired static operation/persistence exports;
-the normal combined source/test check is not qualified until those fixtures and mocks are migrated
-after implementation review. No Finance adoption tests have been added or run for this change yet.
+checkout; the production app/service-worker build also passes. After implementation approval, unit fixtures and mocks were migrated to the database-bound
+factories. Full source/service-worker and browser-test type checks now pass. The focused Finance
+adoption coverage and remaining limits are recorded below.
 
 The recursive audit finds no hidden async decisions: related local reads are one leaf; staging is
 unconditional after pure eligibility; commit, local durability, and rollback remain individual
@@ -94,3 +94,55 @@ operations under the shared statechart. The wrapper only forwards interruption t
 child and translates its terminal result. A closing/cancelled invocation retains the transaction
 until rollback or issued commit/local persistence finishes. Unknown results retain the existing
 journal/reconciliation path rather than issuing a new attempt.
+
+## Approved Finance adoption qualification
+
+Implementation commits: library `00d558b`, Finance `f57169d`. The user then authorized continuation
+with implementation coverage. No startup availability claim depends on a remote response.
+
+- 52 focused unit cases pass across creation, operation, reconciliation, persistence, and both the
+  native and shared transaction-owner paths. The shared path explicitly asserts LocalFirst reads
+  and local waits; interruption, rollback, and uncertain-write assertions remain intact.
+- Three tests using the complete Finance policy pass: globally accepted atomic workspace/owner/
+  starter-category creation with private visibility; server rejection of forged ownership despite
+  a readable shared profile, retaining no partial rows; and missing-profile refusal without commit.
+  Global/remote waits in these tests qualify authority behavior, not application completion.
+- All 19 workspace browser cases pass, including warm offline creation, original-ID journal recovery
+  without replay, cancellation, failed journal storage, separate workspaces, and an issued creation
+  surviving a workspace switch.
+- Both production cold-start cases pass with strengthened assertions: after every browser/client
+  exits, retained finance data remains readable/writable, and explicit private workspace creation
+  completes and survives reload fully offline and with a connection that never answers. Creation
+  does not implicitly select the new workspace. The tests use disposable persistent browser profiles,
+  a real silent proxy, and the production service worker; no user data is reset.
+- Full source/service-worker types report zero errors/warnings; browser-test types, focused formatting,
+  and diff checks pass. The cold-start harness also rebuilds the production application successfully.
+
+Browser qualification used test-owned in-memory development services at port 5190, followed by a
+separate test-owned production preview at port 4185 after that development service shut down. All
+preparation and verification used the isolated checkout's own modules/generated files. The user's
+5173/5174 environment was not modified. The new archive was installed in the isolated checkout;
+normal dependency installation is required before using this branch in another checkout.
+
+These are focused adoption results, not a full CI run or a startup performance diagnosis. No claim
+is made that the reported startup latency has been explained or improved. Coverage changes remain
+for review before their commit/publication; invitation/access administration and automatic bootstrap
+extraction are separate work.
+
+## Repository qualification follow-up
+
+The complete Finance unit suite passes in one clean serial run: 123 files, 1,732 tests. An earlier
+run overlapped library verification/build/browser work and hit two existing five-second provider-link
+permission deadlines (1,730 passed). The unchanged 122-case permission suite passed in isolation;
+the subsequent uncontended full run passed without changing code, deadlines or assertions. E2E
+scope checks also pass. This is local verification, not a GitHub CI result.
+
+The library's complete pnpm verify passes, including all 241 unit tests, static checks, package
+validation, NodeNext/runtime/Vite consumers and Storybook build. All 16 Storybook browser checks
+pass on a separate test-owned preview at port 6012. Public contract/status documentation now names
+private-creation transaction ownership as implemented while keeping host forms/journals, naming,
+automatic bootstrap provenance and remaining MVP capabilities explicit.
+
+The reviewed implementation remains committed at the IDs above. Coverage/documentation follow-up
+is reviewed and verified locally but not committed or published yet. Paired PR descriptions have
+been prepared locally; no branches were pushed and no PRs or deployments were created.

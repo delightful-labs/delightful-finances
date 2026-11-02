@@ -1,15 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { waitFor } from 'xstate'
 import { app } from '../../schema.js'
 import { creationFixture, attempt, workspace } from './workspace-creation.fixture.js'
 
-describe('workspace transaction ownership', () => {
+describe.each(['native', 'shared'])('%s workspace transaction ownership', (owner) => {
+	const transaction = (f: ReturnType<typeof creationFixture>) =>
+		owner === 'native' ? f.transaction() : f.additionalTransaction()
 	it('stages one complete workspace and reports success only after local persistence', async () => {
 		const f = creationFixture()
 		const pending = Promise.withResolvers<void>()
 		f.wait.mockReturnValue(pending.promise)
-		const actor = f.transaction()
-		await waitFor(actor, (s) => s.matches({ running: { work: 'settling' } }))
+		const actor = transaction(f)
+		await vi.waitFor(() => expect(f.wait).toHaveBeenCalledTimes(1))
 		expect(actor.getSnapshot().status).toBe('active')
 		expect(f.beginTransaction).toHaveBeenCalledTimes(1)
 		expect(f.insert).toHaveBeenCalledTimes(4)
@@ -29,6 +31,10 @@ describe('workspace transaction ownership', () => {
 			{ id: attempt.membershipId }
 		)
 		expect(f.wait).toHaveBeenCalledExactlyOnceWith({ tier: 'local' })
+		if (owner === 'shared') {
+			expect(f.one.mock.calls.every((call) => call[1]?.tier === 'local-first')).toBe(true)
+			expect(f.all.mock.calls.every((call) => call[1]?.tier === 'local-first')).toBe(true)
+		}
 		pending.resolve()
 		const done = await waitFor(actor, (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'succeeded', settlement: 'locallyPersisted', workspace })
@@ -37,7 +43,7 @@ describe('workspace transaction ownership', () => {
 	it('rolls back a missing profile before staging records', async () => {
 		const f = creationFixture()
 		f.one.mockReset().mockResolvedValue(null)
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
+		const done = await waitFor(transaction(f), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'profileUnavailable', settlement: 'notStarted' })
 		expect(f.rollback).toHaveBeenCalledTimes(1)
 		expect(f.insert).not.toHaveBeenCalled()
@@ -52,7 +58,7 @@ describe('workspace transaction ownership', () => {
 				f.one.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: attempt.membershipId })
 			if (occupied === 'categories')
 				f.all.mockResolvedValueOnce([{ id: attempt.categories[0]?.id }])
-			const done = await waitFor(f.transaction(), (s) => s.status === 'done')
+			const done = await waitFor(transaction(f), (s) => s.status === 'done')
 			expect(done.output).toEqual({ outcome: 'conflict', settlement: 'notStarted' })
 			expect(f.rollback).toHaveBeenCalledTimes(1)
 			expect(f.insert).not.toHaveBeenCalled()
@@ -60,7 +66,7 @@ describe('workspace transaction ownership', () => {
 	)
 	it('owns a newly acquired transaction when shutdown races opening', async () => {
 		const f = creationFixture()
-		const actor = f.transaction()
+		const actor = transaction(f)
 		actor.send({ type: 'SHUTDOWN' })
 		actor.send({ type: 'CANCEL' })
 		const done = await waitFor(actor, (s) => s.status === 'done')
@@ -73,8 +79,8 @@ describe('workspace transaction ownership', () => {
 		const f = creationFixture()
 		const read = Promise.withResolvers<null>()
 		f.one.mockReset().mockReturnValue(read.promise)
-		const actor = f.transaction()
-		await waitFor(actor, (s) => s.matches({ running: { work: 'reading' } }))
+		const actor = transaction(f)
+		await vi.waitFor(() => expect(f.one).toHaveBeenCalled())
 		actor.send({ type: 'CANCEL' })
 		expect(actor.getSnapshot().status).toBe('active')
 		read.resolve(null)
@@ -91,14 +97,14 @@ describe('workspace transaction ownership', () => {
 			.mockImplementationOnce(() => {
 				throw error
 			})
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
+		const done = await waitFor(transaction(f), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'failed', settlement: 'notStarted', error })
 		expect(f.rollback).toHaveBeenCalledTimes(1)
 		expect(f.commit).not.toHaveBeenCalled()
 	})
 	it('rolls back staged data when cancellation arrives before commit', async () => {
 		const f = creationFixture()
-		const actor = f.transaction()
+		const actor = transaction(f)
 		f.insert.mockImplementationOnce(() => {
 			actor.send({ type: 'CANCEL' })
 			return workspace
@@ -114,7 +120,7 @@ describe('workspace transaction ownership', () => {
 		f.beginTransaction.mockImplementation(() => {
 			throw error
 		})
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
+		const done = await waitFor(transaction(f), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'failed', settlement: 'notStarted', error })
 		expect(f.rollback).not.toHaveBeenCalled()
 		expect(f.insert).not.toHaveBeenCalled()
@@ -123,8 +129,8 @@ describe('workspace transaction ownership', () => {
 		const f = creationFixture()
 		const pending = Promise.withResolvers<void>()
 		f.wait.mockReturnValue(pending.promise)
-		const actor = f.transaction()
-		await waitFor(actor, (s) => s.matches({ running: { work: 'settling' } }))
+		const actor = transaction(f)
+		await vi.waitFor(() => expect(f.wait).toHaveBeenCalledTimes(1))
 		actor.send({ type: 'CANCEL' })
 		actor.send({ type: 'SHUTDOWN' })
 		actor.send({ type: 'CANCEL' })
@@ -139,7 +145,7 @@ describe('workspace transaction ownership', () => {
 		const f = creationFixture()
 		f.one.mockReset().mockResolvedValue(null)
 		f.rollback.mockResolvedValue(false)
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
+		const done = await waitFor(transaction(f), (s) => s.status === 'done')
 		expect(done.output).toMatchObject({ outcome: 'failed', settlement: 'unresolved' })
 		expect(f.commit).not.toHaveBeenCalled()
 	})
@@ -147,7 +153,7 @@ describe('workspace transaction ownership', () => {
 		const f = creationFixture()
 		const error = new Error('local persistence failed')
 		f.wait.mockRejectedValue(error)
-		const done = await waitFor(f.transaction(), (s) => s.status === 'done')
+		const done = await waitFor(transaction(f), (s) => s.status === 'done')
 		expect(done.output).toEqual({ outcome: 'failed', settlement: 'unresolved', error })
 		expect(f.rollback).toHaveBeenCalledTimes(1)
 	})

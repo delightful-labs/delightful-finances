@@ -18,41 +18,42 @@ import {
 } from './workspace-creation.fixture.js'
 const { started, interrupted } = vi.hoisted(() => ({ started: vi.fn(), interrupted: vi.fn() }))
 vi.mock('./workspace-creation-operation.js', () => ({
-	workspaceCreationOperation: setup<
-		{ result: CreationResult },
-		{ type: 'FINISH'; result: CreationResult } | { type: 'SHUTDOWN' | 'CANCEL' },
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		{ binding: CreationBinding; request: CreationRequest },
-		CreationResult
-	>({}).createMachine({
-		initial: 'waiting',
-		context: ({ input }) => {
-			started(input)
-			return {
-				result: {
-					outcome: 'editing',
-					record: undefined,
-					settlement: 'notStarted'
-				} satisfies CreationResult
-			}
-		},
-		output: ({ context }) => context.result,
-		states: {
-			waiting: {
-				on: {
-					SHUTDOWN: { actions: interrupted },
-					CANCEL: { actions: interrupted },
-					FINISH: { target: 'done', actions: assign({ result: ({ event }) => event.result }) }
+	createWorkspaceCreationOperation: () =>
+		setup<
+			{ result: CreationResult },
+			{ type: 'FINISH'; result: CreationResult } | { type: 'SHUTDOWN' | 'CANCEL' },
+			{},
+			{},
+			{},
+			{},
+			never,
+			string,
+			{ binding: CreationBinding; request: CreationRequest },
+			CreationResult
+		>({}).createMachine({
+			initial: 'waiting',
+			context: ({ input }) => {
+				started(input)
+				return {
+					result: {
+						outcome: 'editing',
+						record: undefined,
+						settlement: 'notStarted'
+					} satisfies CreationResult
 				}
 			},
-			done: { type: 'final' }
-		}
-	})
+			output: ({ context }) => context.result,
+			states: {
+				waiting: {
+					on: {
+						SHUTDOWN: { actions: interrupted },
+						CANCEL: { actions: interrupted },
+						FINISH: { target: 'done', actions: assign({ result: ({ event }) => event.result }) }
+					}
+				},
+				done: { type: 'final' }
+			}
+		})
 }))
 const actors: { stop: () => void }[] = []
 afterEach(() => {

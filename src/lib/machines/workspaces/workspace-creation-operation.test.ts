@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createActor, waitFor, type InputFrom } from 'xstate'
-import { workspaceCreationOperation } from './workspace-creation-operation.js'
+import { createWorkspaceCreationOperation } from './workspace-creation-operation.js'
 import type { JournalResult, workspaceCreationJournal } from './workspace-creation-journal.js'
 import {
 	attempt,
@@ -31,11 +31,14 @@ const binding = { key: 'environment/user', userId, profileId }
 const record = { key: binding.key, attempt }
 function start(
 	f: ReturnType<typeof creationFixture>,
-	request: InputFrom<typeof workspaceCreationOperation>['request'] = { mode: 'retry', record }
+	request: InputFrom<ReturnType<typeof createWorkspaceCreationOperation>>['request'] = {
+		mode: 'retry',
+		record
+	}
 ) {
 	journal.mockReturnValue({ outcome: 'succeeded', record })
-	const actor = createActor(workspaceCreationOperation, {
-		input: { db: f.db, binding, request }
+	const actor = createActor(createWorkspaceCreationOperation(f.db), {
+		input: { binding, request }
 	}).start()
 	actors.push(actor)
 	return actor
