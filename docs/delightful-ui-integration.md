@@ -149,3 +149,37 @@ across light/dark themes, default sizes/alignment, public and inline overrides,
 nested alignment, and Button normal/hover/active states including native,
 ARIA and fieldset disabling. No differences were observed. Those temporary
 fixtures were removed; no new permanent appearance tests remain.
+
+## Shared sidebar adoption — implementation review
+
+The `feat/shared-sidebar-navigation` branch adopts DUI's merged sidebar primitives. The archive is
+`vendor/delightful-ui-e7de8c0-sidebar.tgz`; its packaged library source matches DUI main at `e7de8c0`
+(PR #9). It replaces the previous component-properties archive without publishing a release.
+
+`AppNavigationLink` delegates icon/label layout and selected presentation to `NavigationLink`, while
+Finance retains pathname matching, query-preserving URL resolution, and navigation callbacks.
+`AppDrawerContentSection` delegates spacing to `DrawerSection`. Accounts and Settings use
+`NavigationGroup`, retaining their Finance controls, labels, data bindings, and nested navigation.
+The Accounts filter region uses the existing translated account noun as its accessible label rather
+than referencing a consumer-owned disclosure-summary ID. No catalog entries or generated localization
+files change.
+
+Validation after implementation approval: DUI packaging/publint passes; Finance application and
+service-worker checks report zero errors/warnings, test TypeScript checks pass, and the production
+build passes using `FINANCE_PREVIEW=true` with an unreachable test Jazz URL. All 36 focused account
+balance and workspace navigation unit tests pass. The 11 focused browser scenarios across
+`tests/navigation.e2e.ts`, `tests/features/navigation.e2e.ts`, and `tests/sidebar-balances.e2e.ts`
+pass against the disposable in-memory Jazz agent server at `http://127.0.0.1:5186` (10 on the initial
+run, with the remaining scenario passing after correcting its new keyboard expectation and waiting for visible disclosure content under reduced motion). The fresh
+single-workspace selector is intentionally disabled, so Tab skips it and focuses Workspaces.
+Coverage retains exact current-page semantics, query/workspace preservation, disclosure keyboard
+operation, mobile dismissal/focus, account selection, balance updates/reload, and workspace switching.
+Changed-file formatting and whitespace checks pass. The lockfile changes only the DUI archive and
+the DLF peer reference to it. Existing localization files were generated with user approval; no
+catalogs or localization configuration changed.
+
+CI follow-up: the full navigation scope exposed two legacy selectors outside the initial focused
+files: the Accounts summary icon is now a sibling of its label, and section layout uses DUI's
+`drawer-section` class. Update those selectors in creation-modal and UI-integration coverage while
+retaining the alignment, padding, and footer bounds assertions. All 14 canonical `@navigation`
+browser scenarios pass on the disposable agent server; test TypeScript and whitespace checks pass.
