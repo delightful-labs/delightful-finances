@@ -1,30 +1,11 @@
 import { PUBLIC_DEBUG } from '$app/env/public'
+import { createLogger as createSharedLogger } from 'delightful-local-first/diagnostics/logger'
+
+export type { DebugValue } from 'delightful-local-first/diagnostics/logger'
 
 export const debugEnabled = PUBLIC_DEBUG === 'true'
 
-export type DebugValue =
-	| string
-	| number
-	| boolean
-	| null
-	| undefined
-	| readonly DebugValue[]
-	| { readonly [key: string]: DebugValue }
-
-// Callers select non-sensitive diagnostics. Never pass records, tokens,
-// credentials, provider payloads, unfiltered URLs, or raw errors/messages/stacks.
-type LogDetails = Readonly<Record<string, DebugValue>>
-
+// Finance owns environment policy; DLF owns scoped output. Callers still select non-sensitive fields.
 export function createLogger(scope: string) {
-	return {
-		info(message: string, details: LogDetails = {}) {
-			if (debugEnabled) console.info(`[${scope}] ${message}`, details)
-		},
-		warn(message: string, details: LogDetails = {}) {
-			if (debugEnabled) console.warn(`[${scope}] ${message}`, details)
-		},
-		error(message: string, details: LogDetails = {}) {
-			if (debugEnabled) console.error(`[${scope}] ${message}`, details)
-		}
-	}
+	return createSharedLogger(scope, { enabled: debugEnabled })
 }
