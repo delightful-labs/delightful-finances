@@ -321,11 +321,12 @@ test(
 		await expect.poll(() => page.evaluate(() => window.polishTransitions.calls)).toBe(1)
 		await page.locator('aside').getByRole('link', { name: 'Expenses', exact: true }).click()
 		await expect.poll(() => page.evaluate(() => window.polishTransitions.calls)).toBe(2)
-		await page
+		const transactionLink = page
 			.getByRole('main')
 			.getByRole('link', { name: /Transaction details:.*Polish expense/ })
 			.first()
-			.click()
+		await transactionLink.focus()
+		await transactionLink.press('Enter')
 		await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
 		await expect.poll(() => page.evaluate(() => window.polishTransitions.calls)).toBe(3)
 		await page.goBack()

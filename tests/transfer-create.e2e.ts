@@ -317,7 +317,12 @@ for (const desktop of [true, false]) {
 			await expect(content.locator('.entries > li')).toContainText('$42.17')
 			await expect(content.locator('.entries > li')).toContainText('65,000.00')
 			await expect(content.locator('[aria-label^="Daily total:"]')).toHaveCount(0)
-			await content.locator('.entries a').click()
+			const transferLink = content.getByRole('link', {
+				name: /^Transfer details: Transfer checking → Transfer TZS account/
+			})
+			await transferLink
+				.getByText('Transfer checking → Transfer TZS account', { exact: true })
+				.click()
 			await expect(page).toHaveURL((url) => url.pathname === `/transfers/${pair.id}`)
 			const source = content.getByLabel('Source Account', { exact: true })
 			await expect(source).toHaveValue(fixture.accounts.checkingId)

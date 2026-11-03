@@ -210,3 +210,36 @@ browser checks use the disposable in-memory Jazz agent server at `http://127.0.0
 
 The Finance adoption PR depends on DUI PR #10 and remains a draft until that library change is accepted. No registry release is required. Existing
 localization generation was authorized; no catalogs or localization configuration changed.
+
+## Shared linked list row adoption
+
+The `refactor/shared-linked-list-row` branch replaces TransactionRowLayout's local presentation
+with DUI LinkedListRow. Finance retains its existing `href`, translated destination label, content,
+and amount snippet. AppLink resolves query-preserving URLs before passing them to DUI. Transaction
+and transfer consumers remain unchanged, including their domain formatting and labels.
+
+DUI renders a native list item with one anchor covering the row, main content, optional trailing
+metadata, and a decorative chevron. The whole-row native anchor replaces the local stretched-link
+pseudo-element and hidden label. Children and trailing snippets must be non-interactive; the current
+Finance consumers supply only text/formatting. The `transaction-link` class remains on the anchor
+for existing Finance integration coverage. No domain or workflow state changes.
+
+The archive is `vendor/delightful-ui-0.0.25-linked-list-row.tgz`, packed from DUI commit
+`da5f6af` on `feat/linked-list-row`. It replaces the loading-content archive and retains its shared loading
+and sidebar components. The lockfile changes only this DUI archive and DLF's resolved DUI peer.
+
+Validation after implementation approval passes: DUI Svelte checks (zero errors/warnings),
+package/publint, ESLint/formatting, Storybook build, three rendering tests, and four Chromium
+scenarios. The browser checks cover one tab stop per row, whole-row activation, native middle-click,
+and narrow long-content layout.
+
+Finance Svelte/application/service-worker checks (zero errors/warnings), production build, test
+TypeScript checks, E2E scope audit, and formatting/whitespace checks pass. Eight focused rendering
+checks cover the Finance adapter/query inheritance and expense overview. Five browser scenarios pass
+against the refreshed disposable in-memory Jazz agent at `http://127.0.0.1:5186`: transaction pagination,
+transaction Enter activation/history, desktop and mobile transfer text activation, and transfer
+pagination/filter selection. Existing financial formatting and scope assertions remain intact.
+The new archive's library files match DUI's packaged output; no registry release is involved.
+
+The Finance adoption PR depends on [DUI PR #11](https://github.com/delightful-labs/delightful-ui/pull/11)
+and remains a draft until that change is accepted. No localization catalogs or configuration changed.
