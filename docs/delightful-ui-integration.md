@@ -177,3 +177,9 @@ operation, mobile dismissal/focus, account selection, balance updates/reload, an
 Changed-file formatting and whitespace checks pass. The lockfile changes only the DUI archive and
 the DLF peer reference to it. Existing localization files were generated with user approval; no
 catalogs or localization configuration changed.
+
+CI follow-up: the full navigation scope exposed two legacy selectors outside the initial focused
+files: the Accounts summary icon is now a sibling of its label, and section layout uses DUI's
+`drawer-section` class. Update those selectors in creation-modal and UI-integration coverage while
+retaining the alignment, padding, and footer bounds assertions. All 14 canonical `@navigation`
+browser scenarios pass on the disposable agent server; test TypeScript and whitespace checks pass.

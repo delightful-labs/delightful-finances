@@ -191,10 +191,8 @@ test(
 			.filter({ has: page.locator('summary', { hasText: 'Accounts' }) })
 		await accounts.locator('summary').click()
 		const topIcon = sidebar.getByRole('link', { name: 'Expenses', exact: true }).locator('svg')
-		const summaryIcon = accounts
-			.locator('summary')
-			.getByText('Accounts', { exact: true })
-			.locator('svg')
+		// The shared disclosure renders its caret first and its decorative item icon last.
+		const summaryIcon = accounts.locator('summary').locator('svg').last()
 		const nestedIcon = accounts
 			.getByRole('link', { name: 'Manage Accounts', exact: true })
 			.locator('svg')
@@ -206,7 +204,7 @@ test(
 		expect(await accounts.evaluate((node) => getComputedStyle(node).borderWidth)).toBe('0px')
 		expect(
 			await accounts
-				.locator('.details-content-section')
+				.locator('.drawer-section')
 				.evaluate((node) => getComputedStyle(node).paddingLeft)
 		).toBe('16px')
 		expect(

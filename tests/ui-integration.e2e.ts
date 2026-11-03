@@ -80,7 +80,7 @@ test(
 		await expect(status.locator('[aria-hidden="true"]')).toHaveCount(1)
 		const body = await bounds(sidebar.locator('.drawer-body'))
 		const indicator = await bounds(status)
-		const footer = await bounds(sidebar.locator('.details-content-section').last())
+		const footer = await bounds(sidebar.locator('.drawer-section').last())
 		expect(indicator.y).toBeGreaterThanOrEqual(footer.y)
 		expect(indicator.y + indicator.height).toBeLessThanOrEqual(footer.y + footer.height)
 		expect(Math.abs(body.y + body.height - footer.y - footer.height)).toBeLessThan(2)
