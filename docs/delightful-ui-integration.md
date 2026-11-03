@@ -183,3 +183,30 @@ files: the Accounts summary icon is now a sibling of its label, and section layo
 `drawer-section` class. Update those selectors in creation-modal and UI-integration coverage while
 retaining the alignment, padding, and footer bounds assertions. All 14 canonical `@navigation`
 browser scenarios pass on the disposable agent server; test TypeScript and whitespace checks pass.
+
+## Shared loading content adoption
+
+The `refactor/shared-loading-content` branch replaces Finance's LoadingContent implementation with
+an adapter to DUI's public LoadingContent export. QueryContent and JazzStartup keep their existing
+props and ownership: Finance interprets query/startup state and supplies translated text; DUI owns
+the retained content, inert/accessibility state, and overlay presentation. Standalone startup/error
+usage still renders LoadingScreen, including its caller-provided sizing style. With children,
+loading=false removes the overlay and exposes the same mounted controls. The component does not
+move focus; starting work from a focused descendant remains a caller focus-management decision.
+
+The archive is `vendor/delightful-ui-0.0.25-loading-content.tgz`, packed from DUI commit
+`d98dce6` ([DUI PR #10](https://github.com/delightful-labs/delightful-ui/pull/10)). It replaces the sidebar archive and retains its shared
+navigation components. Only the DUI archive and DLF's resolved DUI peer reference change in the
+lockfile; no registry release is involved.
+
+Validation after implementation approval passes: DUI Svelte checking, packaging/publint,
+changed-file ESLint, and Storybook build; Finance Svelte/application/service-worker checking,
+test TypeScript checks, and production build. DUI has 15 passing focused rendering tests and
+three passing Chromium scenarios covering keyboard exclusion/release, repeated draft/DOM retention,
+content geometry, and standalone loading/error semantics. Finance has five passing LoadingContent/
+QueryContent rendering tests and four passing browser scenarios covering retained loading content,
+category controls/creation, startup storage-failure retry, and workspace loading feedback. Finance
+browser checks use the disposable in-memory Jazz agent server at `http://127.0.0.1:5186`.
+
+The Finance adoption PR depends on DUI PR #10 and remains a draft until that library change is accepted. No registry release is required. Existing
+localization generation was authorized; no catalogs or localization configuration changed.
