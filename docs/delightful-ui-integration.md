@@ -243,3 +243,36 @@ The new archive's library files match DUI's packaged output; no registry release
 
 The Finance adoption PR depends on [DUI PR #11](https://github.com/delightful-labs/delightful-ui/pull/11)
 and remains a draft until that change is accepted. No localization catalogs or configuration changed.
+
+## Shared floating action adoption
+
+The `refactor/shared-floating-action` branch replaces Finance's FloatingActionLink styling and
+placement with DUI FloatingAction. Finance retains its existing href/label interface, Add icon,
+translated labels, and AppLink URL/query resolution. Transaction and transfer view callers stay
+unchanged. The existing floating-action-link hook remains on the native anchor.
+
+DUI renders a bottom-sticky, inline-end-aligned circular control. With href it is a native anchor;
+without href it is a native button defaulting to type=button. The button variant supports native
+disabled and explicit form submission. Consumers provide the icon and accessible label, which also
+serves as the default title; native control attributes, class/style, and callbacks pass through.
+The component adds no application state, navigation policy, or async orchestration.
+
+The archive is `vendor/delightful-ui-0.0.25-floating-action.tgz`, packed from DUI commit `bb70b81`
+([DUI PR #12](https://github.com/delightful-labs/delightful-ui/pull/12)). It replaces the linked-list-row
+archive and retains its existing exports. The library feature branch is based on merged DUI PR #11;
+the Finance baseline is merged PR #49. No registry release is involved.
+
+Validation after approval passes: DUI Svelte checks (zero errors/warnings), ESLint/formatting,
+package/publint, Storybook build, five typed rendering tests, and six Chromium scenarios. The browser
+checks cover accessible icon-only controls, native keyboard/new-tab behavior, disabled focus/click
+prevention, native form validation/submission, and contained sticky placement at 320px width.
+
+Finance application/service-worker checks (zero errors/warnings), production build, test TypeScript,
+E2E scope audit, formatting/whitespace checks, and four add-link rendering/query-inheritance tests pass.
+Eight browser scenarios pass on the refreshed disposable agent at `http://127.0.0.1:5186`: empty
+expense/income links and keyboard activation; desktop/mobile expense/income creation; desktop/mobile
+transfer navigation; and transfer pagination/filter behavior with scoped add-link URL assertions.
+The final archive's library output matches the snapshot used for validation.
+
+The Finance adoption PR depends on DUI PR #12 and remains a draft until that feature is accepted.
+No localization catalogs or configuration changed; existing generation was previously authorized.

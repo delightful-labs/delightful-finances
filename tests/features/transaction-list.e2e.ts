@@ -21,6 +21,11 @@ test(
 			'href',
 			/^\/income\/new\?workspace=[\da-f-]+$/i
 		)
+		const addIncome = main.getByRole('link', { name: 'Add Income', exact: true })
+		await addIncome.focus()
+		await addIncome.press('Enter')
+		await expect(page).toHaveURL(/\/income\/new\?workspace=[\da-f-]+$/i)
+		await expect(main.getByRole('heading', { name: 'Add Income', exact: true })).toBeVisible()
 	}
 )
 
