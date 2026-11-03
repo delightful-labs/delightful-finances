@@ -18,7 +18,8 @@
 		writableTransactionAccounts
 	} from '#lib/machines/transactions/transaction-entry.js'
 	import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
-	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession } from 'jazz-tools/svelte'
+	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import {

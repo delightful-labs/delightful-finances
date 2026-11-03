@@ -9,7 +9,8 @@
 	import { createActor } from 'xstate'
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
-	import { getDb, getJazzSession, QuerySubscription, QuerySubscriptionOne } from 'jazz-tools/svelte'
+	import { getDb, getJazzSession } from 'jazz-tools/svelte'
+	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { getContext, onMount } from 'svelte'
 	import {

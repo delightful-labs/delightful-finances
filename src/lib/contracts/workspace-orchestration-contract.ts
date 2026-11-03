@@ -1,29 +1,15 @@
 import type { ActorRef, Snapshot } from 'xstate'
 import type { Organization } from '../schema.js'
 
-export type WorkspaceSessionFacts = {
-	userId: string | undefined
-	status: 'ready' | 'signed-out' | 'transitioning' | 'error' | 'closed'
-}
-export type InitializationRequest = WorkspaceSessionFacts & { generation: number }
-export type InitializationStatus =
-	{ kind: 'waiting' | 'checking' | 'failed' | 'closed' } | { kind: 'ready'; profileId: string }
-export type InitializationReport = { request: InitializationRequest; status: InitializationStatus }
-export type InitializationStatusEvent = {
-	type: 'INITIALIZATION_STATUS'
-	report: InitializationReport
-}
-export type InitializationRecipient = ActorRef<Snapshot<unknown>, InitializationStatusEvent>
-export function sameInitializationRequest(
-	currentRequest: InitializationRequest,
-	incomingRequest: InitializationRequest
-) {
-	return (
-		currentRequest.generation === incomingRequest.generation &&
-		currentRequest.userId === incomingRequest.userId &&
-		currentRequest.status === incomingRequest.status
-	)
-}
+export { sameInitializationRequest } from 'delightful-local-first/workspace/startup-contracts'
+export type {
+	WorkspaceSessionFacts,
+	InitializationRequest,
+	InitializationStatus,
+	InitializationReport,
+	InitializationStatusEvent,
+	InitializationRecipient
+} from 'delightful-local-first/workspace/startup-contracts'
 export type WorkspaceRoute = { pathname: string; search: string; hash: string }
 export type NavigationAccess = 'waiting' | 'ready' | 'denied' | 'failed'
 export type WorkspaceNavigationFacts = WorkspaceRoute & {
