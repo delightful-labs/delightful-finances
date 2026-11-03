@@ -395,10 +395,11 @@ test(
 		await expectWorkspaceUrl(page, '/expenses', workspaceId, '2')
 		await expect(drawer.locator('.entries > li')).toHaveCount(1)
 		const item = drawer.locator('.entries > li').first()
-		await expect(item.getByRole('link')).toHaveCount(1)
+		const rowLink = item.getByRole('link')
+		await expect(rowLink).toHaveCount(1)
 		await expect(item).not.toContainText('Workspace ledger')
-		await item.hover()
-		const colors = await item.evaluate((element) => ({
+		await rowLink.hover()
+		const colors = await rowLink.evaluate((element) => ({
 			background: getComputedStyle(element).backgroundColor,
 			text: getComputedStyle(element.querySelector('.classification span') ?? element).color,
 			chevron: getComputedStyle(element.querySelector('svg') ?? element).color
@@ -408,7 +409,7 @@ test(
 			text: 'rgb(38, 38, 38)',
 			chevron: 'rgb(38, 38, 38)'
 		})
-		await item.getByRole('link').click()
+		await rowLink.click()
 		await expect(page).toHaveURL(
 			(url) =>
 				/^\/expenses\/[^/]+$/.test(url.pathname) &&
