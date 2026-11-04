@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { FloatingAction } from 'delightful-ui'
+	import { FloatingActionLink as SharedFloatingActionLink, Icon } from 'delightful-ui'
 	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import AddIcon from 'tdesign-icons-svg/src/add.svg?component'
 
@@ -8,6 +8,13 @@
 
 <AppLink {href}>
 	{#snippet render(destination)}
-		<FloatingAction href={destination} {label} icon={AddIcon} class="floating-action-link" />
+		<SharedFloatingActionLink
+			href={destination}
+			aria-label={label}
+			title={label}
+			class="floating-action-link"
+		>
+			<Icon icon={AddIcon} />
+		</SharedFloatingActionLink>
 	{/snippet}
 </AppLink>
