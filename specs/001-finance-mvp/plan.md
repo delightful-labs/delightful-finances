@@ -616,3 +616,14 @@ and render content directly, retaining a local TransactionView grid and sticky
 creation action. Component rendering unit tests now live directly under src/lib.
 Update existing browser coverage for removed wrappers and footer padding before
 running navigation, UI integration, creation, overview and transaction workspace checks.
+
+### Finance presentation extraction — completed
+
+Adopt the merged DUI sidebar primitives, LoadingContent, LinkedListRow, and separate
+FloatingActionLink/FloatingActionButton through Finance-owned adapters and an explicit vendored
+snapshot. Finance keeps URL/query policy, translations, domain formatting and workflow ownership.
+All four library/adoption PR pairs are merged; see the completion table in spec.md and
+[the integration record](../../docs/delightful-ui-integration.md) for validation evidence.
+
+No further extraction is scheduled. Keep SplitRow, legends and image editing in Finance until
+another app demonstrates a concrete reuse need; preserve the previously skipped app-specific scope.

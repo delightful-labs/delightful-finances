@@ -557,3 +557,25 @@ workspace selection, and the navigation footer, preserving labeled-section seman
 for account filters. The footer groups sync controls and connection/update status.
 Route and dialog content render directly without the generic PageContent wrapper;
 TransactionView owns its content grid and a sticky trailing creation action.
+
+## Finance presentation extraction — complete (2026-11-03)
+
+The agreed extraction batch is merged in both repositories:
+
+| Shared presentation                            | DUI PR                                                          | Finance adoption PR                                                   |
+| ---------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------- |
+| NavigationLink, NavigationGroup, DrawerSection | [#9](https://github.com/delightful-labs/delightful-ui/pull/9)   | [#47](https://github.com/delightful-labs/delightful-finances/pull/47) |
+| LoadingContent                                 | [#10](https://github.com/delightful-labs/delightful-ui/pull/10) | [#48](https://github.com/delightful-labs/delightful-finances/pull/48) |
+| LinkedListRow                                  | [#11](https://github.com/delightful-labs/delightful-ui/pull/11) | [#49](https://github.com/delightful-labs/delightful-finances/pull/49) |
+| FloatingActionLink, FloatingActionButton       | [#12](https://github.com/delightful-labs/delightful-ui/pull/12) | [#50](https://github.com/delightful-labs/delightful-finances/pull/50) |
+
+DUI owns generic presentation and native control behavior. Finance retains routing/query
+resolution, selected-route policy, localization, financial formatting, data and workflow state.
+Floating actions are separate native link and button components with native attributes and
+children; their shared presentation frame is private. No combined Omit/never link/button API
+is part of the accepted interface.
+
+The user closed this extraction batch. SplitRow, selectable legends, and photo-cropper/image-editor
+extraction are not planned tasks. Keep them in Finance and reconsider only when another app has
+a concrete need. The earlier app-specific candidate the user chose to skip remains excluded.
+This completion does not close unrelated historical review or accessibility-verification work.
