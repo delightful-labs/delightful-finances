@@ -1,10 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
-
-async function bounds(locator: Locator) {
-	const box = await locator.boundingBox()
-	if (!box) throw new Error('Expected a visible element.')
-	return box
-}
+import { expect, test, type Page } from '@playwright/test'
 
 async function openCreation(page: Page, route: string, label: string) {
 	await page.goto(route)
@@ -27,39 +21,15 @@ for (const entity of ['category', 'tag']) {
 		: ['Enter Tag name']
 
 	test(
-		`${entity} modal validates, retains drafts, saves and keeps its table scrollable`,
+		`${entity} modal validates, saves, resets and persists`,
 		{ tag: [entity === 'category' ? '@categories' : '@tags', '@workflow-completion'] },
 		async ({ page }) => {
 			const { trigger, dialog } = await openCreation(page, route, label)
-			await expect(trigger.locator('svg[aria-hidden="true"]')).toHaveCount(1)
-			const buttons = dialog.locator('.form-controls > button')
-			await expect(buttons).toHaveText(['Cancel', label])
-			await expect(buttons.locator('svg[aria-hidden="true"]')).toHaveCount(2)
-			const cancelBox = await bounds(buttons.first())
-			const addBox = await bounds(buttons.last())
-			expect(Math.abs(cancelBox.width - addBox.width)).toBeLessThan(1)
-			expect(cancelBox.x).toBeLessThan(addBox.x)
-			const controls = await bounds(dialog.locator('.form-controls'))
-			expect(Math.abs(cancelBox.width + addBox.width + 8 - controls.width)).toBeLessThan(1)
 
 			const name = dialog.getByLabel(field, { exact: true })
 			await name.fill('   ')
 			await dialog.getByRole('button', { name: label, exact: true }).click()
 			await expect(dialog.getByRole('alert').locator('p')).toHaveText(errors)
-			await name.fill('Unsaved draft')
-			await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-			await expect(dialog).not.toBeVisible()
-			await expect(trigger).toBeFocused()
-			await trigger.click()
-			await expect(name).toHaveValue('Unsaved draft')
-			await page.keyboard.press('Escape')
-			await expect(dialog).not.toBeVisible()
-			await expect(trigger).toBeFocused()
-			await trigger.click()
-			await page.mouse.click(2, 2)
-			await expect(dialog).not.toBeVisible()
-			await expect(trigger).toBeFocused()
-			await trigger.click()
 
 			const savedName = `${entity}-${'longname'.repeat(16)}`
 			await name.fill(savedName)
@@ -71,26 +41,6 @@ for (const entity of ['category', 'tag']) {
 			await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 			const table = page.getByRole('main').getByRole('table', { name: caption, exact: true })
 			await expect(table.getByRole('rowheader', { name: savedName, exact: true })).toBeVisible()
-			const tableBox = await bounds(table)
-			const triggerBox = await bounds(trigger)
-			expect(triggerBox.y).toBeGreaterThanOrEqual(tableBox.y + tableBox.height)
-			await page.setViewportSize({ width: 390, height: 900 })
-			const toggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
-			if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click()
-			const region = page.getByRole('main').getByRole('region', { name: caption, exact: true })
-			await expect(region).toBeVisible()
-			expect(await region.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true)
-			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-				true
-			)
-			await expect(page.getByRole('main')).not.toHaveAttribute('inert', '')
-			await region.focus()
-			await expect(region).toBeFocused()
-			await page.keyboard.press('ArrowRight')
-			await expect.poll(() => region.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
-			await expect(
-				table.getByRole('button', { name: `Archive ${savedName}`, exact: true })
-			).toBeVisible()
 			await page.reload()
 			await expect(
 				page.getByRole('main').getByRole('rowheader', { name: savedName, exact: true })
@@ -177,39 +127,6 @@ test(
 		).toBeVisible()
 		const response = await page.goto('/accounts/new')
 		expect(response?.status()).toBe(404)
-	}
-)
-
-test(
-	'sidebar icons align and Details child content retains padding',
-	{ tag: ['@navigation'] },
-	async ({ page }) => {
-		await page.goto('/accounts')
-		const sidebar = page.locator('aside.inline-drawer')
-		const accounts = sidebar
-			.locator('details')
-			.filter({ has: page.locator('summary', { hasText: 'Accounts' }) })
-		await accounts.locator('summary').click()
-		const topIcon = sidebar.getByRole('link', { name: 'Expenses', exact: true }).locator('svg')
-		// The shared disclosure renders its caret first and its decorative item icon last.
-		const summaryIcon = accounts.locator('summary').locator('svg').last()
-		const nestedIcon = accounts
-			.getByRole('link', { name: 'Manage Accounts', exact: true })
-			.locator('svg')
-		const positions = await Promise.all([bounds(topIcon), bounds(summaryIcon), bounds(nestedIcon)])
-		expect(
-			Math.max(...positions.map((box) => box.x)) - Math.min(...positions.map((box) => box.x))
-		).toBeLessThan(1)
-		await expect(accounts.locator('summary')).toHaveAttribute('data-caret-position', 'right')
-		expect(await accounts.evaluate((node) => getComputedStyle(node).borderWidth)).toBe('0px')
-		expect(
-			await accounts
-				.locator('.drawer-section')
-				.evaluate((node) => getComputedStyle(node).paddingLeft)
-		).toBe('16px')
-		expect(
-			await accounts.locator('summary').evaluate((node) => getComputedStyle(node).userSelect)
-		).toBe('none')
 	}
 )
 

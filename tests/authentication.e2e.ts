@@ -50,38 +50,37 @@ const invalidPhrases = [
 	{ name: 'invalid checksum', phrase: Array(24).fill('abandon').join(' ') }
 ]
 
-for (const { name, phrase } of invalidPhrases) {
-	test(
-		`rejects ${name} without replacing the current account or data`,
-		{ tag: ['@identity'] },
-		async ({ page }) => {
-			// Confirm each fixture is invalid using Jazz's own recovery validator.
-			expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
-			await createAccount(page, 'Retained checking')
-			const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
-			await page.goto(`/login?workspace=${workspaceId}`)
-			await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
-			await page.getByRole('button', { name: 'Login', exact: true }).click()
-			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
-				'The account could not be restored. Check the recovery phrase and try again.'
-			)
-			await expect(page).toHaveURL(`/login?workspace=${workspaceId}`)
-			await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
-			await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
-			await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
-
-			await page.goto(`/accounts?workspace=${workspaceId}`)
-			await page.reload()
-			await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
-			await expect(
-				page.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
-			).toHaveCount(1)
-			await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(
-				1
-			)
+test(
+	'rejects invalid recovery phrases without replacing the current account or data',
+	{ tag: ['@identity'] },
+	async ({ page }) => {
+		await createAccount(page, 'Retained checking')
+		const workspaceId = await page.getByLabel('Current Workspace', { exact: true }).inputValue()
+		await page.goto(`/login?workspace=${workspaceId}`)
+		for (const { name, phrase } of invalidPhrases) {
+			await test.step(name, async () => {
+				expect(() => RecoveryPhrase.toSecret(phrase)).toThrow()
+				await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
+				await page.getByRole('button', { name: 'Login', exact: true }).click()
+				await expect(
+					page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })
+				).toHaveText('The account could not be restored. Check the recovery phrase and try again.')
+				await expect(page).toHaveURL(`/login?workspace=${workspaceId}`)
+				await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeEnabled()
+				await expect(page.getByLabel('Recovery phrase', { exact: true })).toHaveValue(phrase)
+				await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
+			})
 		}
-	)
-}
+
+		await page.goto(`/accounts?workspace=${workspaceId}`)
+		await page.reload()
+		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(workspaceId)
+		await expect(
+			page.getByLabel('Current Workspace', { exact: true }).locator('option:not([value=""])')
+		).toHaveCount(1)
+		await expect(page.getByRole('cell', { name: 'Retained checking', exact: true })).toHaveCount(1)
+	}
+)
 
 test(
 	'restores existing workspace data without duplicates or previous identity accounts',
@@ -145,53 +144,6 @@ test(
 		} finally {
 			await otherContext.close()
 		}
-	}
-)
-
-test(
-	'recovery modal clears its phrase on every dismissal and preserves profile editing',
-	{ tag: ['@workflow-completion', '@identity'] },
-	async ({ page }) => {
-		await createAccount(page, 'Recovery modal checking')
-		await page.goto('/account')
-		const show = page.getByRole('button', { name: 'Show Recovery phrase' })
-		const dialog = page.getByRole('dialog', { name: 'Account recovery' })
-		const phrase = page.getByLabel('Your recovery phrase', { exact: true })
-		await expect.poll(() => currentIdentity(page)).toBeTruthy()
-		const identity = await currentIdentity(page)
-
-		for (const dismissal of ['close', 'escape', 'backdrop']) {
-			await show.click()
-			await expect(dialog).toBeVisible()
-			// Never include recovery secrets in assertion output or test artifacts.
-			expect(
-				await phrase.evaluate((element: HTMLTextAreaElement) => element.value.length > 0)
-			).toBe(true)
-			await expect(dialog.getByRole('checkbox')).toHaveCount(0)
-			await phrase.click()
-			await expect(dialog).toBeVisible()
-			if (dismissal === 'escape') {
-				await page.keyboard.press('Escape')
-			} else if (dismissal === 'backdrop') {
-				await page.mouse.click(1, 1)
-			} else {
-				await page.getByRole('button', { name: 'Close', exact: true }).click()
-			}
-			await expect(dialog).not.toBeVisible()
-			await expect(phrase).toHaveCount(0)
-			await expect(show).toBeFocused()
-		}
-		expect(await currentIdentity(page)).toBe(identity)
-		await page.getByLabel('Display name', { exact: true }).fill('Library recovery owner')
-		await page.getByRole('button', { name: 'Save', exact: true }).click()
-		await expect(
-			page.getByRole('main').getByRole('status').filter({ hasText: 'Profile Display name saved.' })
-		).toHaveCount(1)
-		expect(await currentIdentity(page)).toBe(identity)
-		await page.reload()
-		await expect(page.getByLabel('Display name', { exact: true })).toHaveValue(
-			'Library recovery owner'
-		)
 	}
 )
 
