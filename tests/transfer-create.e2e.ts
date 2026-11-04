@@ -406,6 +406,16 @@ test(
 			(url) => /^\/transfers\/[^/]+$/.test(url.pathname) && url.searchParams.get('page') === '2'
 		)
 		await expect(content.getByLabel('Source Amount', { exact: true })).toHaveValue('42.17')
+		const addHref = await content
+			.getByRole('link', { name: 'Add Transfer', exact: true })
+			.getAttribute('href')
+		if (!addHref) throw new Error('Missing scoped Add Transfer destination')
+		const destination = new URL(addHref, page.url())
+		expect(destination.pathname).toBe('/transfers/new')
+		expect(destination.searchParams.get('page')).toBe('2')
+		expect(destination.searchParams.get('workspace')).toBe(
+			new URL(page.url()).searchParams.get('workspace')
+		)
 		await openSidebarSection(page, 'Accounts')
 		await page.getByRole('checkbox', { name: 'Transfer checking', exact: true }).uncheck()
 		await expect(page).toHaveURL((url) => url.searchParams.get('page') === null)

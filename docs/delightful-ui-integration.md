@@ -243,3 +243,33 @@ The new archive's library files match DUI's packaged output; no registry release
 
 The Finance adoption PR depends on [DUI PR #11](https://github.com/delightful-labs/delightful-ui/pull/11)
 and remains a draft until that change is accepted. No localization catalogs or configuration changed.
+
+## Shared floating action adoption
+
+Finance's FloatingActionLink delegates presentation to DUI FloatingActionLink and supplies an Icon
+child. Finance retains its href/label interface, translated labels, AppLink URL/query resolution,
+and floating-action-link hook. It passes its label as native aria-label and title attributes.
+Transaction and transfer callers remain unchanged.
+
+DUI exports separate FloatingActionLink and FloatingActionButton components using native
+HTMLAnchorAttributes and HTMLButtonAttributes directly. Children supply content; callers supply
+accessible names and titles. Buttons default to type=button and support native disabled and form
+attributes. A private FloatingActionFrame shares bottom-sticky circular styling. There is no
+combined link/button union or custom Omit/never prop manipulation.
+
+The archive is `vendor/delightful-ui-0.0.25-floating-action.tgz`, packed from DUI commit `5d66d8e`
+([DUI PR #12](https://github.com/delightful-labs/delightful-ui/pull/12)). It retains the existing
+shared components. DUI is based on merged PR #11; Finance is based on merged PR #49.
+No registry release is involved.
+
+Validation passes: DUI Svelte checks, ESLint/formatting, package/publint, Storybook build,
+six rendering tests, and six Chromium scenarios covering keyboard/new-tab behavior, disabled
+controls, form validation/submission, accessible names, and narrow scrolling layout.
+
+Finance application/service-worker checks, production build, test TypeScript checks, four adapter
+rendering tests, and eight focused browser scenarios pass. The browser scenarios cover empty
+expense/income links, keyboard activation, desktop/mobile expense/income creation, desktop/mobile
+transfer navigation, and transfer pagination/filter behavior against the disposable in-memory agent.
+
+The Finance adoption PR depends on DUI PR #12 and remains a draft until that feature is accepted.
+No localization catalogs or configuration changed.
