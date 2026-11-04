@@ -4,6 +4,28 @@ The Finance integration uses a packed local Delightful UI 0.0.24 archive in `ven
 
 The full global theme is imported once in the root layout. Its default light colors, typography, control styles and focus treatment are approved for this trial. The existing responsive shell remains the application layout. Shared forms use grid/flex gap for layout spacing: 0.5rem between fields and 1rem between field, action and feedback groups. Use gap rather than padding or margin for spacing between sibling controls; padding remains appropriate inside controls. Empty groups are hidden and feedback paragraph margins are reset so they do not add incidental spacing. Buttons use the library defaults and explicit native types.
 
+## Finance presentation extraction — complete (2026-11-03)
+
+The agreed extraction batch is merged in both repositories:
+
+| Shared presentation                            | DUI PR                                                          | Finance adoption PR                                                   |
+| ---------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------- |
+| NavigationLink, NavigationGroup, DrawerSection | [#9](https://github.com/delightful-labs/delightful-ui/pull/9)   | [#47](https://github.com/delightful-labs/delightful-finances/pull/47) |
+| LoadingContent                                 | [#10](https://github.com/delightful-labs/delightful-ui/pull/10) | [#48](https://github.com/delightful-labs/delightful-finances/pull/48) |
+| LinkedListRow                                  | [#11](https://github.com/delightful-labs/delightful-ui/pull/11) | [#49](https://github.com/delightful-labs/delightful-finances/pull/49) |
+| FloatingActionLink, FloatingActionButton       | [#12](https://github.com/delightful-labs/delightful-ui/pull/12) | [#50](https://github.com/delightful-labs/delightful-finances/pull/50) |
+
+DUI owns generic presentation and native control behavior. Finance retains routing/query
+resolution, selected-route policy, localization, financial formatting, data and workflow state.
+Floating actions are separate native link and button components with native attributes and
+children; their shared presentation frame is private. No combined Omit/never link/button API
+is part of the accepted interface.
+
+The user closed this extraction batch. SplitRow, selectable legends, and photo-cropper/image-editor
+extraction are not planned tasks. Keep them in Finance and reconsider only when another app has
+a concrete need. The earlier app-specific candidate the user chose to skip remains excluded.
+This completion does not close unrelated historical review or accessibility-verification work.
+
 ## Integrated controls
 
 Account, category, workspace and transaction forms use InputText, Select, InputDate, Textarea and Button where applicable. Login uses Textarea and Button. Account recovery now uses the packed Delightful Local First composition, backed by the same DUI controls and host Jazz session. Backdrop dismissal, Close, and Escape clear the phrase; there is no saved-phrase checkbox. See [recovery adoption](local-first-recovery-adoption.md). Sidebar workspace/account filters use Select and Checkbox; account archiving uses Button. Query loading and startup use LoadingSpinner with translated labels. Query loading keeps its visible message and one status announcement.
@@ -208,7 +230,7 @@ QueryContent rendering tests and four passing browser scenarios covering retaine
 category controls/creation, startup storage-failure retry, and workspace loading feedback. Finance
 browser checks use the disposable in-memory Jazz agent server at `http://127.0.0.1:5186`.
 
-The Finance adoption PR depends on DUI PR #10 and remains a draft until that library change is accepted. No registry release is required. Existing
+DUI PR #10 and Finance PR #48 are merged. No registry release is required. Existing
 localization generation was authorized; no catalogs or localization configuration changed.
 
 ## Shared linked list row adoption
@@ -241,8 +263,7 @@ transaction Enter activation/history, desktop and mobile transfer text activatio
 pagination/filter selection. Existing financial formatting and scope assertions remain intact.
 The new archive's library files match DUI's packaged output; no registry release is involved.
 
-The Finance adoption PR depends on [DUI PR #11](https://github.com/delightful-labs/delightful-ui/pull/11)
-and remains a draft until that change is accepted. No localization catalogs or configuration changed.
+DUI PR #11 and Finance PR #49 are merged. No localization catalogs or configuration changed.
 
 ## Shared floating action adoption
 
@@ -271,5 +292,5 @@ rendering tests, and eight focused browser scenarios pass. The browser scenarios
 expense/income links, keyboard activation, desktop/mobile expense/income creation, desktop/mobile
 transfer navigation, and transfer pagination/filter behavior against the disposable in-memory agent.
 
-The Finance adoption PR depends on DUI PR #12 and remains a draft until that feature is accepted.
+DUI PR #12 and Finance PR #50 are merged.
 No localization catalogs or configuration changed.

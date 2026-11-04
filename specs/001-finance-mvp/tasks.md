@@ -749,3 +749,15 @@ non-overlap assertion, both category/tag scenarios pass, completing all 42 scena
 Browser validation used a disposable in-memory Jazz server and isolated temporary
 environment settings on app port 5182. No standalone lint script is configured;
 Svelte and TypeScript checks supply the available static validation.
+
+### Finance presentation extraction — complete
+
+- [x] Extract/adopt NavigationLink, NavigationGroup and DrawerSection (DUI #9 / Finance #47 merged).
+- [x] Extract/adopt LoadingContent (DUI #10 / Finance #48 merged).
+- [x] Extract/adopt LinkedListRow (DUI #11 / Finance #49 merged).
+- [x] Extract separate native FloatingActionLink and FloatingActionButton; adopt the link in Finance (DUI #12 / Finance #50 merged).
+- [x] Complete focused checks and rendering/browser validation for each adoption; record evidence in docs/delightful-ui-integration.md.
+- [x] Close the extraction batch following user review; leave SplitRow, legends and image editing in Finance pending a concrete reuse need.
+
+These entries close this extraction batch only. Earlier unrelated unchecked review/verification
+tasks retain their existing status; the previously skipped app-specific candidate remains excluded.
