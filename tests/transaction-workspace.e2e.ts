@@ -82,6 +82,11 @@ for (const desktop of [true, false]) {
 				const initialList = pageContent(page)
 				await expect(initialList.locator('.entries > li')).toHaveCount(25)
 				await expect(
+					initialList.getByRole('radio', { name: 'Custom Dates', exact: true })
+				).toBeChecked()
+				await expect(initialList.getByLabel('Start Date', { exact: true })).toHaveValue('')
+				await expect(initialList.getByLabel('End Date', { exact: true })).toHaveValue('')
+				await expect(
 					initialList.getByRole('combobox', { name: 'Filter Currency', exact: true })
 				).toHaveCount(0)
 				const fixture = await page.evaluate(
@@ -190,11 +195,46 @@ for (const desktop of [true, false]) {
 				await main.getByRole('combobox', { name: 'Filter Currency', exact: true }).selectOption('')
 				await main.getByRole('combobox', { name: 'Filter Category', exact: true }).selectOption('')
 				await search.fill('')
-				await main.getByRole('button', { name: 'Last 7 Days', exact: true }).click()
-				await expect(main.getByLabel('Start Date', { exact: true })).toHaveValue(dates.week)
+				const datesGroup = main.getByRole('group', { name: 'Filter Dates', exact: true })
+				const week = datesGroup.getByRole('radio', { name: 'Last 7 Days', exact: true })
+				const month = datesGroup.getByRole('radio', { name: 'Last 30 Days', exact: true })
+				const custom = datesGroup.getByRole('radio', { name: 'Custom Dates', exact: true })
+				const start = main.getByLabel('Start Date', { exact: true })
+				const end = main.getByLabel('End Date', { exact: true })
+				await week.check()
+				await expect(week).toBeChecked()
+				await expect(start).toHaveCount(0)
+				await expect(end).toHaveCount(0)
+				await expect(page).toHaveURL(
+					(url) =>
+						url.searchParams.get('start') === dates.week &&
+						url.searchParams.get('end') === dates.today
+				)
 				await expect(rows).toHaveCount(1)
-				await main.getByRole('button', { name: 'Last 30 Days', exact: true }).click()
-				await expect(main.getByLabel('Start Date', { exact: true })).toHaveValue(dates.month)
+				await page.reload()
+				await expect(week).toBeChecked()
+				await expect(start).toHaveCount(0)
+				await week.focus()
+				await week.press('ArrowRight')
+				await expect(month).toBeChecked()
+				await expect(month).toBeFocused()
+				await expect(page).toHaveURL(
+					(url) =>
+						url.searchParams.get('start') === dates.month &&
+						url.searchParams.get('end') === dates.today
+				)
+				await expect(rows).toHaveCount(25)
+				await custom.check()
+				await expect(start).toHaveValue(dates.month)
+				await expect(end).toHaveValue(dates.today)
+				await expect(rows).toHaveCount(25)
+				await start.fill(dates.week)
+				await expect(custom).toBeChecked()
+				await expect(start).toBeFocused()
+				await expect(end).toBeVisible()
+				await expect(rows).toHaveCount(1)
+				await month.check()
+				await expect(start).toHaveCount(0)
 				await expect(rows).toHaveCount(25)
 				await expect(main.getByLabel('Daily total: $27.00', { exact: true })).toBeVisible()
 				await search.fill('Seed')
@@ -207,7 +247,9 @@ for (const desktop of [true, false]) {
 				await search.fill('no matching transaction')
 				await expect(rows).toHaveCount(0)
 				await expect(main.getByText('Your recent activity will appear here.')).toBeVisible()
-				await main.getByLabel('Start Date', { exact: true }).fill(dates.tomorrow)
+				await custom.check()
+				await expect(start).toHaveValue(dates.month)
+				await start.fill(dates.tomorrow)
 				await expect(
 					main.getByText('Enter a start date and an end date on or after the start date.')
 				).toBeVisible()

@@ -14,6 +14,13 @@ function filters(currencies: string[]) {
 }
 
 describe('transaction list filter controls', () => {
+	it('preserves unrestricted initial dates with the custom fields available', () => {
+		const html = filters(['USD'])
+		expect(html).toMatch(/<input\b[^>]*value="custom"[^>]*\bchecked(?:=""|\s|\/?>)/)
+		expect(html).toContain('Start Date')
+		expect(html).toContain('End Date')
+		expect([...html.matchAll(/type="date"/g)]).toHaveLength(2)
+	})
 	for (const currencies of [[], ['USD']]) {
 		it(`hides the currency filter with ${currencies.length} available currencies`, () => {
 			const html = filters(currencies)

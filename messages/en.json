@@ -212,6 +212,7 @@
 		"currency": "Currency",
 		"currency_code": "Currency: {code}",
 		"current_subject": "Current {subject}",
+		"custom_subject": "Custom {subject}",
 		"description": "Description",
 		"display_name": "Display name",
 		"end_subject": "End {subject}",
