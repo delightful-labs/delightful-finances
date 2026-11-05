@@ -294,3 +294,36 @@ transfer navigation, and transfer pagination/filter behavior against the disposa
 
 DUI PR #12 and Finance PR #50 are merged.
 No localization catalogs or configuration changed.
+
+## Composable radio date filter adoption — verified locally
+
+The isolated feat/radio-date-filter worktree uses
+`vendor/delightful-ui-0.0.25-radio-items.tgz`, packed from DUI source matching merged
+commit `dfa5380` (PR #14). It replaces the floating-action archive and retains all
+previously adopted controls. Package/lockfile updates are limited to this snapshot
+and the resolved DUI peer used by Delightful Local First.
+
+DateRangeFilter composes RadioGroup and RadioItem for the two existing
+relative presets plus a custom-range disclosure. Transaction lists and the
+overview retain their own filtering, date calculations, URL/session state and
+callbacks. See the focused requirements and review checklist in
+[transaction list filters](../specs/001-finance-mvp/transaction-list-filters.md#composable-radio-date-choices).
+
+The approved `labels.custom_subject` message renders Custom Dates with the shared
+plural date noun. Custom selection shows the existing date inputs and preserves
+the current bounds; presets hide the fields. The transaction-list all-date default
+and overview 30-day default remain intact. This is synchronous presentation state
+in one shared component. No actors, Jazz data, routing, or filter persistence
+contracts change. Implementation and focused coverage were approved.
+
+Paraglide generation, application/service-worker checks, production build,
+focused formatting and diff checks pass. Review preview: `http://127.0.0.1:5192`
+using the isolated worktree's disposable in-memory Jazz server.
+
+Validation passes: 20 focused unit tests and seven Chromium scenarios across the
+overview and desktop/mobile expense/income filters. The browser coverage includes
+keyboard presets, conditional custom fields, focus retention during URL updates,
+prefilled/current bounds, reload/navigation persistence, invalid and empty ranges,
+filter combinations and narrow layouts. Application/service-worker checks,
+production build, test TypeScript, E2E scope audit, focused formatting and diff
+checks pass. Implementation was developed in the isolated feat/radio-date-filter worktree.

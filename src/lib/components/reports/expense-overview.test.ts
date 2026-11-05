@@ -62,7 +62,8 @@ describe('expense overview presentation', () => {
 			row('excluded-old', '2026-09-23', 100),
 			row('excluded-future', '2026-10-24', 100)
 		])
-		expect(html).toContain('2026-09-24')
+		expect(html).toMatch(/<input\b[^>]*value="30"[^>]*\bchecked(?:=""|\s|\/?>)/)
+		expect(html).not.toContain('type="date"')
 		expect(html).toContain('included-start')
 		expect(html).toContain('included-end')
 		expect(html).not.toContain('excluded-old')
