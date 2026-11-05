@@ -65,3 +65,20 @@ navigation locator. These follow-up changes have been committed.
 - [x] Centralize pagination defaults/reset and reconcile completed feature documentation.
 - [ ] Review implementation, then verify stalled/late log writes, fallback crashes,
       cancellation/drain, pagination reset and existing browser history flows.
+
+## Resilience follow-up
+
+- [x] Review the supplied history summaries and distinguish observed facts from causes.
+- [x] Implement provider processing in a disposable worker with bounded lifetime.
+- [x] Preserve application-owned sync through navigation and financial-write draining.
+- [x] Add optional positive-only duplicate snapshots, bounded reads and traversal yielding.
+- [x] Repair invalid-mapping results, import error classification and existing-only status labels.
+- [x] Add/update scoped unit fixtures and native bundled-worker tests after user approval.
+- [x] Add Playwright navigation/repeat-sync/worker-failure regressions and update routing fixtures.
+- [x] Address review findings: batch MessageChannel scheduling, one-shot validated
+      replies, state-owned snapshot logging, empty-account fast path and shared relay HTTP.
+- [x] Verify focused review regressions, including native channels, port disposal,
+      malformed/late replies and transport contracts; 343 tests pass.
+- [ ] Execute full application browser regressions and real-browser latency measurement:
+      blocked by local-listener and browser-process sandbox restrictions. See
+      [resilience.md](resilience.md) for evidence, passing checks and the run command.

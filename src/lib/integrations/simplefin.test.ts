@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { bridgeUrl, claimToken, fetchAccounts, providerAccountIdentity } from './simplefin.js'
 import type { BankTrace } from './diagnostics.js'
+import { requestProviderWorker } from './simplefin-worker.js'
+
+vi.mock('./simplefin-worker.js', () => ({ requestProviderWorker: vi.fn() }))
 const trace: BankTrace = {
 	id: crypto.randomUUID(),
 	log: () => {},
@@ -8,7 +11,10 @@ const trace: BankTrace = {
 	step: async (_stage, work) => await work()
 }
 const access = 'https://user:secret@bridge.simplefin.org/simplefin'
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+	vi.unstubAllGlobals()
+	vi.resetAllMocks()
+})
 it.each(['bridge.simplefin.org', 'beta-bridge.simplefin.org'])(
 	'accepts official %s endpoints',
 	(host) => {
@@ -45,6 +51,7 @@ it('validates tokens before making requests and never retries failed claims', as
 	expect(fetch).toHaveBeenCalledTimes(1)
 })
 it('claims only, then separates explicit discovery and transaction requests', async () => {
+	vi.mocked(requestProviderWorker).mockResolvedValue({ errors: [], accounts: [] })
 	const fetch = vi
 		.fn()
 		.mockResolvedValueOnce(new Response(access))
@@ -65,17 +72,24 @@ it('claims only, then separates explicit discovery and transaction requests', as
 		JSON.stringify({
 			operation: 'claim',
 			url: 'https://bridge.simplefin.org/simplefin/claim/token'
-		}),
-		JSON.stringify({ operation: 'discover', url: access }),
-		JSON.stringify({ operation: 'sync', url: access })
+		})
 	])
+	expect(requestProviderWorker).toHaveBeenNthCalledWith(1, access, true, signal, trace)
+	expect(requestProviderWorker).toHaveBeenNthCalledWith(2, access, false, signal, trace)
 })
-it('rejects malformed provider responses', async () => {
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(async () => Response.json({ accounts: [{ id: 'missing-fields' }] }))
-	)
-	await expect(fetchAccounts(access, false, new AbortController().signal, trace)).rejects.toThrow()
+it('rejects unsafe credentials before starting a worker', async () => {
+	await expect(
+		fetchAccounts('https://evil.example/simplefin', false, new AbortController().signal, trace)
+	).rejects.toThrow('invalid-provider-url')
+	expect(requestProviderWorker).not.toHaveBeenCalled()
+})
+it('keeps an already-cancelled request promise-based and starts no worker', async () => {
+	const controller = new AbortController()
+	controller.abort()
+	await expect(fetchAccounts(access, false, controller.signal, trace)).rejects.toMatchObject({
+		name: 'AbortError'
+	})
+	expect(requestProviderWorker).not.toHaveBeenCalled()
 })
 it('separates account identities across institutions while ignoring renamed accounts', () => {
 	const account = {

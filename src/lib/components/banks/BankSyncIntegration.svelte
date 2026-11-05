@@ -215,7 +215,12 @@
 		}
 	}
 	setContext(bankSyncKey, controls)
-	beforeNavigate(() => dispatch({ type: 'CANCEL' }, bankBinding.current?.lease))
+	beforeNavigate((navigation) => {
+		const state = bankState.current
+		// Workspace ownership survives client navigation; its access/shutdown paths drain sync.
+		if (!navigation.willUnload && state?.context.command?.type === 'SYNC') return
+		dispatch({ type: 'CANCEL' }, bankBinding.current?.lease)
+	})
 </script>
 
 {#snippet bankView()}

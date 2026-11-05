@@ -170,7 +170,12 @@ export function selectBankLogPresentation(input: {
 		attempts: input.attempts.map((row) => ({
 			...row,
 			outcome: outcomeMessages[row.outcome],
-			importSettlement: settlementMessages[row.importSettlement],
+			// A successful repeat sync can have no new inserts to settle.
+			importSettlement:
+				row.importSettlement === 'notStarted' &&
+				(row.outcome === 'succeeded' || row.outcome === 'partial')
+					? outcomeMessages[row.outcome]
+					: settlementMessages[row.importSettlement],
 			failure: row.failureCode ? failureMessages[row.failureCode] : undefined
 		})),
 		accounts: input.accounts.map((row) => ({

@@ -465,7 +465,14 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						target: 'authorizingResponse',
 						actions: assign({ response: ({ event }) => event.output, accessUrl: undefined })
 					},
-					onError: { target: 'preparingFailure', actions: failWith('provider_failure') }
+					onError: {
+						target: 'preparingFailure',
+						actions: [
+							({ context, event }) =>
+								context.work?.trace.failed('provider.fetch.failed', event.error),
+							failWith('provider_failure')
+						]
+					}
 				}
 			},
 			authorizingResponse: {
