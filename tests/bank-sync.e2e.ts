@@ -74,6 +74,33 @@ async function installPasskey(page: Page) {
 	})
 }
 
+async function connectResilienceBank(page: Page) {
+	await installPasskey(page)
+	await page.goto('/settings/banks')
+	await page
+		.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+		.fill(btoa('https://bridge.simplefin.org/simplefin/claim/synthetic-token'))
+	for (const name of [
+		'Create Passkey',
+		'Test encryption with my passkey',
+		'Test unlocking with my passkey',
+		'Connect and save securely'
+	])
+		await page.getByRole('button', { name, exact: true }).click()
+	await expect(page.getByRole('button', { name: 'Discover Accounts', exact: true })).toBeEnabled()
+}
+
+function resilienceOperation(body: unknown) {
+	if (
+		!body ||
+		typeof body !== 'object' ||
+		!('operation' in body) ||
+		(body.operation !== 'claim' && body.operation !== 'discover' && body.operation !== 'sync')
+	)
+		throw new Error('Invalid provider operation')
+	return body.operation
+}
+
 test(
 	'relay rejects cross-origin requests and unsafe destinations',
 	{ tag: ['@bank-sync'] },
@@ -120,7 +147,7 @@ test(
 			'balance-date': 1792000000,
 			org
 		}
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			const body: unknown = route.request().postDataJSON()
 			if (
 				!body ||
@@ -574,7 +601,7 @@ test(
 				}
 			})
 		})
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			providerRequests.push(route.request().url())
 			await route.abort()
 		})
@@ -671,7 +698,7 @@ test(
 			await expect(dialog).toBeHidden()
 		}
 		const operations: string[] = []
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			const body: unknown = route.request().postDataJSON()
 			if (
 				!body ||
@@ -758,7 +785,7 @@ test(
 		const release = Promise.withResolvers<void>()
 		const completed = Promise.withResolvers<void>()
 		let syncs = 0
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			const body: unknown = route.request().postDataJSON()
 			if (
 				!body ||
@@ -867,7 +894,7 @@ for (const failure of ['start', 'result']) {
 		async ({ page }) => {
 			await installPasskey(page)
 			const operations: string[] = []
-			await page.route('**/api/simplefin', async (route) => {
+			await page.context().route('**/api/simplefin', async (route) => {
 				const body: unknown = route.request().postDataJSON()
 				if (
 					!body ||
@@ -1001,7 +1028,7 @@ test(
 	{ tag: ['@bank-sync'] },
 	async ({ page }) => {
 		const providerRequests: string[] = []
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			const body: unknown = route.request().postDataJSON()
 			if (
 				!body ||
@@ -1197,7 +1224,7 @@ test(
 	async ({ page }) => {
 		await installPasskey(page)
 		const operations: string[] = []
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			const body: unknown = route.request().postDataJSON()
 			if (
 				!body ||
@@ -1273,7 +1300,7 @@ test(
 		await expect(history.getByRole('combobox', { name: 'Bank sync', exact: true })).toBeEnabled()
 		await history.locator(':scope > details > summary').click()
 		await expect(history.getByText('Unavailable', { exact: true })).toBeVisible()
-		await expect(history.getByText('not completed', { exact: true })).toBeVisible()
+		await expect(history.getByText('Succeeded', { exact: true })).toBeVisible()
 		for (const name of ['Imported', 'Already present', 'Omitted'])
 			await expect(
 				history
@@ -1293,7 +1320,7 @@ for (const interruption of ['switch', 'recover'] satisfies ('switch' | 'recover'
 			const errors = machineErrors(page)
 			await installPasskey(page)
 			const operations: string[] = []
-			await page.route('**/api/simplefin', async (route) => {
+			await page.context().route('**/api/simplefin', async (route) => {
 				const body: unknown = route.request().postDataJSON()
 				if (
 					!body ||
@@ -1418,6 +1445,264 @@ for (const interruption of ['switch', 'recover'] satisfies ('switch' | 'recover'
 				await gate.evaluate((value) => value.restore())
 				await gate.dispose()
 			}
+		}
+	)
+}
+
+test(
+	'keeps the provider worker alive across navigation and avoids per-row reads on a 225-row repeat sync',
+	{ tag: ['@bank-sync'] },
+	async ({ page, context }) => {
+		const errors = machineErrors(page)
+		let workerCount = 0,
+			closedWorkers = 0
+		page.on('worker', (worker) => {
+			if (!worker.url().includes('simplefin.worker')) return
+			workerCount += 1
+			worker.on('close', () => {
+				closedWorkers += 1
+			})
+		})
+		const pending = Promise.withResolvers<void>(),
+			release = Promise.withResolvers<void>()
+		const operations: string[] = []
+		let syncCount = 0
+		const provider = {
+			id: 'resilient-checking',
+			name: 'Resilient Checking',
+			currency: 'USD',
+			org: { 'sfin-url': 'https://bank.example', domain: 'bank.example' }
+		}
+		const transactions = Array.from({ length: 226 }, (_, i) => ({
+			id: `resilience-${i}`,
+			amount: '-1.00',
+			posted: 1792000000,
+			description: `Resilient transaction ${i}`
+		}))
+		await context.route('**/api/simplefin', async (route) => {
+			const operation = resilienceOperation(route.request().postDataJSON())
+			operations.push(operation)
+			if (operation === 'claim') {
+				await route.fulfill({
+					contentType: 'text/plain',
+					body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+				})
+				return
+			}
+			if (operation === 'sync' && ++syncCount === 1) {
+				pending.resolve()
+				await release.promise
+			}
+			await route.fulfill({
+				json: {
+					errors: [],
+					accounts: [{ ...provider, transactions: operation === 'sync' ? transactions : [] }]
+				}
+			})
+		})
+		await connectResilienceBank(page)
+		await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+		await page
+			.getByRole('button', { name: 'Add Account “Resilient Checking”', exact: true })
+			.click()
+		await expect(page.getByText('Linked to Resilient Checking', { exact: true })).toBeVisible()
+		await page.evaluate(
+			async ({ provider, transactions }) => {
+				const schemaPath = '/src/lib/schema.ts',
+					sessionPath = '/src/lib/runtime/jazz-session.ts',
+					identityPath = '/src/lib/domain/stable-uuid.ts',
+					providerPath = '/src/lib/integrations/simplefin.ts'
+				const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+				const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+					await import(sessionPath)
+				const { stableUuid }: typeof import('../src/lib/domain/stable-uuid.js') = await import(
+					identityPath
+				)
+				const { providerAccountIdentity }: typeof import('../src/lib/integrations/simplefin.js') =
+					await import(providerPath)
+				const db = getCurrentJazzSession()?.getSnapshot().client?.db
+				if (!db) throw new Error('Missing database')
+				const [link] = await db.all(app.simplefinAccountLinks)
+				if (!link) throw new Error('Missing linked account')
+				const [category] = await db.all(
+					app.categories.where({
+						organizationId: link.organizationId,
+						isSystem: true,
+						kind: 'expense'
+					})
+				)
+				if (!category) throw new Error('Missing system expense category')
+				await Promise.all(
+					transactions.slice(0, 225).map(async (raw) => {
+						const externalId = JSON.stringify([providerAccountIdentity(provider), raw.id])
+						const id = await stableUuid(link.organizationId, `simplefin-transaction:${externalId}`)
+						await db
+							.insert(
+								app.transactions,
+								{
+									organizationId: link.organizationId,
+									accountId: link.accountId,
+									categoryId: category.id,
+									kind: 'expense',
+									bookedOn: '2026-10-14',
+									amountMinor: 100,
+									currency: 'USD',
+									description: raw.description,
+									source: 'simplefin',
+									externalId
+								},
+								{ id }
+							)
+							.wait({ tier: 'global' })
+					})
+				)
+			},
+			{ provider, transactions }
+		)
+		const sync = pageContent(page).getByRole('button', {
+			name: 'Sync now (last 90 days)',
+			exact: true
+		})
+		await sync.click()
+		await pending.promise
+		await expect.poll(() => closedWorkers).toBe(1)
+		await navigateSidebar(page, 'Accounts')
+		await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
+		await expect(
+			page.locator('aside').getByRole('button', { name: 'Sync now (last 90 days)', exact: true })
+		).toBeDisabled()
+		expect(workerCount).toBe(2)
+		expect(closedWorkers).toBe(1)
+		release.resolve()
+		await expect
+			.poll(async () => (await syncLog(page)).attempts)
+			.toMatchObject([{ outcome: 'succeeded', importedCount: 1, existingCount: 225 }])
+		await expect.poll(() => closedWorkers).toBe(2)
+		await openSidebarSection(page, 'Settings')
+		await navigateSidebar(page, 'Bank sync')
+		await expect(sync).toBeEnabled()
+		const metrics = await page.evaluateHandle(async () => {
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			const original = db.all,
+				descriptor = Object.getOwnPropertyDescriptor(db, 'all')
+			let queries = 0
+			Object.defineProperty(db, 'all', {
+				configurable: true,
+				writable: true,
+				value: function (this: object, ...args: unknown[]): unknown {
+					queries += 1
+					return Reflect.apply(original, this, args)
+				}
+			})
+			return {
+				get queries() {
+					return queries
+				},
+				restore() {
+					if (descriptor) Object.defineProperty(db, 'all', descriptor)
+					else Reflect.deleteProperty(db, 'all')
+				}
+			}
+		})
+		try {
+			const started = performance.now()
+			await sync.click()
+			await expect(
+				pageContent(page).getByText(/Imported: 0; already present: 226; omitted: 0/)
+			).toBeVisible()
+			const durationMs = Math.round(performance.now() - started)
+			const queries = await metrics.evaluate((value) => value.queries)
+			expect(queries).toBeLessThan(30)
+			await test.info().attach('repeat-sync-measurement', {
+				body: JSON.stringify({ durationMs, existing: 226, queries }),
+				contentType: 'application/json'
+			})
+			await expect.poll(() => closedWorkers).toBe(3)
+			const newest = page
+				.getByRole('region', { name: 'Sync history', exact: true })
+				.locator(':scope > details')
+				.first()
+			await expect(newest.locator(':scope > summary')).toContainText('Succeeded')
+			await newest.locator(':scope > summary').click()
+			await expect(newest.getByText('not completed', { exact: true })).toHaveCount(0)
+			await expect(newest.getByText('Succeeded', { exact: true })).toBeVisible()
+			expect(operations).toEqual(['claim', 'discover', 'sync', 'sync'])
+			expect(errors).toEqual([])
+		} finally {
+			await metrics.evaluate((value) => value.restore())
+			await metrics.dispose()
+		}
+	}
+)
+
+for (const failure of ['http', 'json', 'schema', 'bootstrap', 'reply'] satisfies (
+	'http' | 'json' | 'schema' | 'bootstrap' | 'reply'
+)[]) {
+	test(
+		`provider worker ${failure} failure ends cleanly and never retries automatically`,
+		{ tag: ['@bank-sync'] },
+		async ({ page, context }) => {
+			const operations: string[] = []
+			if (failure === 'reply')
+				await page.addInitScript(() => {
+					const NativeWorker = window.Worker
+					window.Worker = class extends NativeWorker {
+						private bankWorker: boolean
+						constructor(url: string | URL, options?: WorkerOptions) {
+							super(url, options)
+							this.bankWorker = String(url).includes('simplefin.worker')
+						}
+						postMessage(message: unknown, options?: Transferable[] | StructuredSerializeOptions) {
+							if (this.bankWorker)
+								queueMicrotask(() =>
+									this.dispatchEvent(new MessageEvent('message', { data: undefined }))
+								)
+							else if (Array.isArray(options)) super.postMessage(message, options)
+							else super.postMessage(message, options)
+						}
+					}
+				})
+			if (failure === 'bootstrap')
+				await context.route('**/*simplefin.worker*', (route) => route.abort())
+			await context.route('**/api/simplefin', async (route) => {
+				const operation = resilienceOperation(route.request().postDataJSON())
+				operations.push(operation)
+				if (operation === 'claim')
+					await route.fulfill({
+						contentType: 'text/plain',
+						body: 'https://test:synthetic@bridge.simplefin.org/simplefin'
+					})
+				else if (failure === 'http')
+					await route.fulfill({ status: 502, json: { error: 'provider-failure' } })
+				else if (failure === 'json')
+					await route.fulfill({ contentType: 'application/json', body: 'not JSON' })
+				else await route.fulfill({ json: { accounts: [{ id: 'missing-required-fields' }] } })
+			})
+			await connectResilienceBank(page)
+			const sync = pageContent(page).getByRole('button', {
+				name: 'Sync now (last 90 days)',
+				exact: true
+			})
+			await sync.click()
+			await expect(
+				pageContent(page)
+					.getByText(/SimpleFIN could not complete the request/)
+					.first()
+			).toBeVisible()
+			await expect(sync).toBeEnabled()
+			await expect
+				.poll(async () => (await syncLog(page)).attempts)
+				.toMatchObject([{ outcome: 'failed', importSettlement: 'notStarted' }])
+			const expected =
+				failure === 'bootstrap' || failure === 'reply' ? ['claim'] : ['claim', 'sync']
+			expect(operations).toEqual(expected)
+			await page.reload()
+			await expect(sync).toBeEnabled()
+			expect(operations).toEqual(expected)
 		}
 	)
 }

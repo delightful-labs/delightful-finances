@@ -102,7 +102,8 @@ function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }
 						: 'notStarted',
 			failureCode:
 				result.kind === 'failed'
-					? (failureCodes[bankErrorCode(result.error)] ?? 'unexpected')
+					? (failureCodes[bankErrorCode(result.error)] ??
+						(reports.some((report) => report.kind === 'failed') ? 'import' : 'unexpected'))
 					: null,
 			importedCount: countsKnown ? result.counts.imported : null,
 			existingCount: countsKnown ? result.counts.existing : null,

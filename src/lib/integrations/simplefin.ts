@@ -1,5 +1,7 @@
 import { PUBLIC_SIMPLEFIN_DEMO } from '$app/env/public'
 import type { BankTrace } from './diagnostics.js'
+import { requestProviderWorker } from './simplefin-worker.js'
+import { requestRelay, type RelayRequest } from './simplefin-relay.js'
 import { providerResponseSchema, type ProviderAccount } from '../validation/integrations.js'
 
 export const simplefinDemo = PUBLIC_SIMPLEFIN_DEMO === 'true'
@@ -98,18 +100,11 @@ export function validateSetupToken(token: string, trace: BankTrace) {
 	})
 }
 
-async function request(body: object, signal: AbortSignal, trace: BankTrace) {
+async function request(body: RelayRequest, signal: AbortSignal, trace: BankTrace) {
 	if (simplefinDemo) throw new Error('provider-failure')
 	signal.throwIfAborted()
 	const response = await trace.step('relay.http', () =>
-		fetch('/api/simplefin', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'X-Bank-Sync-Trace': trace.id },
-			body: JSON.stringify(body),
-			signal,
-			cache: 'no-store',
-			credentials: 'same-origin'
-		})
+		requestRelay('/api/simplefin', body, signal, trace.id)
 	)
 	trace.log('relay.response', { status: response.status })
 	if (!response.ok) throw new Error('provider-failure')
@@ -144,11 +139,5 @@ export async function fetchAccounts(
 		)
 	}
 	bridgeUrl(accessUrl, 'access', trace)
-	const response = await request(
-		{ operation: discovery ? 'discover' : 'sync', url: accessUrl },
-		signal,
-		trace
-	)
-	const payload: unknown = await trace.step('provider.decode-json', () => response.json())
-	return trace.step('provider.validate-response', () => providerResponseSchema.parse(payload))
+	return requestProviderWorker(accessUrl, discovery, signal, trace)
 }

@@ -23,6 +23,8 @@ type Input = {
 	provider: ProviderResponse['accounts'][number]
 	account: schema.RowOf<typeof app.accounts>
 	categories: Category[]
+	// Positive knowledge only; a miss always retains the normal lookup/write checks.
+	existingIds?: ReadonlySet<string>
 	raw: unknown
 }
 type Transaction = ReturnType<typeof providerTransactionSchema.parse>
@@ -98,13 +100,23 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 		{ type: 'PROCESS' } | { type: 'CANCEL' },
 		typeof actors,
 		{},
-		{},
+		{ readTimedOut: undefined },
 		{ isCancelling: undefined },
 		never,
 		string,
 		Input,
 		TransactionResult
-	>({ actors, guards: { isCancelling: stateIn({ persisting: 'cancelling' }) } }).createMachine({
+	>({
+		actors,
+		guards: { isCancelling: stateIn({ persisting: 'cancelling' }) },
+		delays: { readDeadline: 20000 },
+		actions: {
+			readTimedOut: assign(({ context }) => {
+				context.work.trace.log('import.transaction.read.timeout')
+				return { error: new Error('import-read-timeout') }
+			})
+		}
+	}).createMachine({
 		id: 'bank-import-transaction',
 		context: ({ input }) => ({
 			...input,
@@ -257,14 +269,22 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 						organizationId: context.work.scope.organizationId,
 						externalId: externalId(context)
 					}),
-					onDone: {
-						target: 'authorizingLookup',
-						actions: assign({ id: ({ event }) => event.output })
-					},
+					onDone: [
+						{
+							guard: ({ context, event }) => context.existingIds?.has(event.output) === true,
+							target: 'existing',
+							actions: assign({ id: ({ event }) => event.output })
+						},
+						{
+							target: 'authorizingLookup',
+							actions: assign({ id: ({ event }) => event.output })
+						}
+					],
 					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
 				}
 			},
 			authorizingLookup: {
+				after: { readDeadline: { target: 'failed', actions: 'readTimedOut' } },
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.work),
@@ -280,6 +300,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 				}
 			},
 			findingExisting: {
+				after: { readDeadline: { target: 'failed', actions: 'readTimedOut' } },
 				invoke: {
 					src: 'existing',
 					input: ({ context }) => required(context.id),
@@ -291,6 +312,7 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 				}
 			},
 			authorizingWrite: {
+				after: { readDeadline: { target: 'failed', actions: 'readTimedOut' } },
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.work),

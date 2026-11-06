@@ -1,4 +1,12 @@
-import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
+import {
+	assign,
+	fromCallback,
+	fromPromise,
+	sendParent,
+	enqueueActions,
+	setup,
+	stateIn
+} from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { providerAccountIdentity, providerBalanceSnapshot } from '#lib/integrations/simplefin.js'
@@ -26,6 +34,7 @@ type Input = {
 type Context = Input & {
 	matches: Link[]
 	account: schema.RowOf<typeof app.accounts> | undefined
+	existingIds: ReadonlySet<string>
 	index: number
 	counts: ImportCounts
 	error: unknown
@@ -55,6 +64,31 @@ function transactionReport(context: Context, result: TransactionResult) {
 
 export function createAccountImportMachine(dependencies: Dependencies) {
 	const actors = {
+		existing: fromPromise(({ input }: { input: { organizationId: string; accountId: string } }) =>
+			dependencies.db.all(
+				app.transactions
+					.where({
+						organizationId: input.organizationId,
+						accountId: input.accountId,
+						source: 'simplefin'
+					})
+					.orderBy('bookedOn', 'desc')
+					.orderBy('id', 'desc')
+					.select('id')
+					.limit(500),
+				{ tier: 'local-first' }
+			)
+		),
+		yieldControl: fromCallback<{ type: 'CONTINUE' }>(({ sendBack }) => {
+			const channel = new MessageChannel()
+			channel.port1.onmessage = () => sendBack({ type: 'CONTINUE' })
+			channel.port2.postMessage(undefined)
+			return () => {
+				channel.port1.onmessage = null
+				channel.port1.close()
+				channel.port2.close()
+			}
+		}),
 		account: fromPromise(({ input }: { input: { accountId: string; organizationId: string } }) =>
 			dependencies.db.all(
 				app.accounts.where({
@@ -81,7 +115,7 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 	}
 	return setup<
 		Context,
-		ProgressEvent | { type: 'CANCEL' },
+		ProgressEvent | { type: 'CANCEL' } | { type: 'CONTINUE' },
 		typeof actors,
 		{},
 		{},
@@ -92,7 +126,8 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 		AccountImportResult
 	>({
 		actors,
-		guards: { isCancelling: stateIn({ processingTransaction: 'cancelling' }) }
+		guards: { isCancelling: stateIn({ processingTransaction: 'cancelling' }) },
+		delays: { existingReadDeadline: 5000 }
 	}).createMachine({
 		id: 'bank-import-account',
 		context: ({ input }) => ({
@@ -101,6 +136,7 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 				(link) => link.simplefinAccountId === providerAccountIdentity(input.provider)
 			),
 			account: undefined,
+			existingIds: new Set(),
 			index: 0,
 			counts: emptyCounts(),
 			error: undefined,
@@ -159,8 +195,44 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 			checkingAccount: {
 				always: [
 					{ guard: ({ context }) => !context.account, target: 'invalidMapping' },
-					{ target: 'checkingBalanceSnapshot' }
+					{
+						guard: ({ context }) => !context.provider.transactions?.length,
+						target: 'checkingBalanceSnapshot'
+					},
+					{ target: 'loadingExisting' }
 				]
+			},
+			loadingExisting: {
+				// This snapshot is intentionally partial: only presence enables the fast path.
+				entry: ({ context }) => context.work.trace.log('import.existing-snapshot:start'),
+				after: {
+					existingReadDeadline: {
+						target: 'checkingBalanceSnapshot',
+						actions: ({ context }: { context: Context }) =>
+							context.work.trace.log('import.existing-snapshot.timeout')
+					}
+				},
+				invoke: {
+					src: 'existing',
+					input: ({ context }) => ({
+						organizationId: context.work.scope.organizationId,
+						accountId: required(context.account).id
+					}),
+					onDone: {
+						target: 'checkingBalanceSnapshot',
+						actions: [
+							({ context }) => context.work.trace.log('import.existing-snapshot:done'),
+							assign({
+								existingIds: ({ event }) => new Set(event.output.map((row) => row.id))
+							})
+						]
+					},
+					onError: {
+						target: 'checkingBalanceSnapshot',
+						actions: ({ context, event }) =>
+							context.work.trace.failed('import.existing-snapshot.failed', event.error)
+					}
+				}
 			},
 			checkingBalanceSnapshot: {
 				always: [
@@ -232,6 +304,7 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 						provider: context.provider,
 						account: required(context.account),
 						categories: context.categories,
+						existingIds: context.existingIds,
 						raw: context.provider.transactions?.[context.index]
 					}),
 					onDone: [
@@ -274,7 +347,22 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 					sendParent(({ context }) => ({ type: 'IMPORT_PROGRESS', counts: context.counts })),
 					assign({ index: ({ context }) => context.index + 1 })
 				],
-				always: 'nextTransaction'
+				always: [
+					{
+						guard: ({ context }) =>
+							context.index % 25 === 0 &&
+							context.index < (context.provider.transactions?.length ?? 0),
+						target: 'yielding'
+					},
+					{ target: 'nextTransaction' }
+				]
+			},
+			yielding: {
+				invoke: {
+					src: 'yieldControl',
+					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+				},
+				on: { CONTINUE: 'nextTransaction' }
 			},
 			complete: {
 				type: 'final',
@@ -298,17 +386,23 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 					})
 				})
 			},
-			invalidMapping: { type: 'final', entry: assign({ error: () => new Error('mapping') }) },
+			invalidMapping: {
+				entry: assign({ error: () => new Error('mapping') }),
+				always: 'failed'
+			},
 			failed: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'failed',
-						counts: context.counts,
-						error: context.error,
-						settlement: context.settlement
+				entry: [
+					({ context }) => context.work.trace.failed('import.account.failed', context.error),
+					assign({
+						result: ({ context }) => ({
+							kind: 'failed',
+							counts: context.counts,
+							error: context.error,
+							settlement: context.settlement
+						})
 					})
-				})
+				]
 			}
 		}
 	})

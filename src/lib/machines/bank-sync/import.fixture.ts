@@ -1,6 +1,12 @@
 import { publishBankSource } from './reports.fixture.js'
 import { afterEach, vi } from 'vitest'
-import { createActor, fromCallback, fromPromise, type InputFrom } from 'xstate'
+import {
+	createActor,
+	fromCallback,
+	fromPromise,
+	type InputFrom,
+	type CallbackActorLogic
+} from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app, type TransactionRow } from '#lib/schema.js'
 import { providerAccountIdentity } from '#lib/integrations/simplefin.js'
@@ -22,6 +28,7 @@ import type {
 import type { bankLock } from './lock.js'
 
 type TransactionMachine = ReturnType<typeof createTransactionImportMachine>
+type YieldLogic = CallbackActorLogic<{ type: 'CONTINUE' }>
 type PersistInput = InputFrom<
 	NonNullable<NonNullable<TransactionMachine['implementations']['actors']>['persist']>
 >
@@ -84,7 +91,9 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-export function importFixture() {
+export function importFixture(
+	options: { existingReadDeadline?: number; readDeadline?: number; yieldControl?: YieldLogic } = {}
+) {
 	const links: schema.RowOf<typeof app.simplefinAccountLinks>[] = response.accounts.map(
 		(provider, index) => {
 			const destination = accounts[index]
@@ -130,6 +139,7 @@ export function importFixture() {
 		}
 	)
 	const transaction = createTransactionImportMachine(deps).provide({
+		delays: { readDeadline: options.readDeadline ?? 20000 },
 		actors: {
 			authorize,
 			existing: fromPromise(({ input }) => lookup(input)),
@@ -142,8 +152,16 @@ export function importFixture() {
 	const saveBalanceSnapshot = vi.fn(
 		async (_input: { linkId: string; availableBalance: string; balanceDate: Date }) => {}
 	)
+	const existingIds = vi.fn(async ({ accountId }: { accountId: string }) =>
+		[...stored.values()].filter((row) => row.accountId === accountId).map(({ id }) => ({ id }))
+	)
 	const accountImport = createAccountImportMachine(deps).provide({
+		delays: {
+			existingReadDeadline: options.existingReadDeadline ?? 5000
+		},
 		actors: {
+			...(options.yieldControl ? { yieldControl: options.yieldControl } : {}),
+			existing: fromPromise(({ input }) => existingIds(input)),
 			transaction,
 			account: fromPromise(({ input }) => loadAccount(input)),
 			saveBalanceSnapshot: fromPromise(({ input }) => saveBalanceSnapshot(input))
@@ -193,11 +211,12 @@ export function importFixture() {
 		if (!child) throw new Error('Expected active operation')
 		return { bank: actor, operation: child }
 	}
-	function startTransaction(machine = transaction) {
+	function startTransaction(machine = transaction, knownIds?: ReadonlySet<string>) {
 		const provider = response.accounts[0]
 		if (!provider) throw new Error('Expected provider')
 		const actor = createActor(machine, {
 			input: {
+				...(knownIds ? { existingIds: knownIds } : {}),
 				work: {
 					command: { type: 'SYNC' },
 					current: connection,
@@ -234,6 +253,7 @@ export function importFixture() {
 		persist,
 		lookup,
 		stored,
+		existingIds,
 		loadAccount,
 		saveBalanceSnapshot,
 		mappings,

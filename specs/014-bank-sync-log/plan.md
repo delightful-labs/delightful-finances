@@ -246,3 +246,18 @@ protocol. Share operation inputs/crash results and log-failure output constructi
 remove unused fields, reuse Saved for confirmed history, and centralize pagination
 defaults. No schema change. After review, verify stalled/late logging, cancellation,
 fallback crashes, pagination resets and the existing history/import browser cases.
+
+## Resilience follow-up
+
+The user approved implementation and regression testing in one session. The
+current [resilience design and verification record](resilience.md) describes the
+worker resource boundary, persistent Jazz owner, positive-only duplicate snapshot,
+read deadlines, traversal yielding, corrected result classification and history
+labels. Browser execution is limited by the current session's sandbox; do not
+claim the browser scenarios passed from type checks or native-worker evidence.
+
+The approved review follow-up replaces timer-per-row traversal with cancellable
+25-row MessageChannel batches, makes reply settlement one-shot with canonical
+validation, moves snapshot diagnostics into state transitions, skips snapshots
+for empty accounts and reuses a shared relay HTTP leaf. See resilience.md for
+the actual regression results and remaining browser execution restriction.

@@ -45,6 +45,15 @@ export const providerResponseSchema = z.object({
 	errors: z.array(z.string()),
 	accounts: z.array(providerAccountSchema)
 })
+export const providerReplySchema = z.discriminatedUnion('ok', [
+	z.object({ ok: z.literal(true), response: providerResponseSchema }),
+	z.object({
+		ok: z.literal(false),
+		stage: z.enum(['request', 'http', 'decode', 'validation']),
+		status: z.number().int().min(0).max(599).optional()
+	})
+])
+export type ProviderReply = z.output<typeof providerReplySchema>
 export type ProviderAccount = z.output<typeof providerAccountSchema>
 export const providerTransactionSchema = z.object({
 	id: z.string().min(1).max(256),

@@ -26,7 +26,6 @@ export type BankSyncControls = {
 
 export type BankSyncContext = BankSyncControls & {
 	view: Snippet
-	cancel: () => void
 }
 
 export const bankSyncKey = Symbol('bank-sync')

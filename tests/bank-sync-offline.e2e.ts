@@ -62,7 +62,7 @@ test(
 			})
 		})
 		const operations: unknown[] = []
-		await page.route('**/api/simplefin', async (route) => {
+		await page.context().route('**/api/simplefin', async (route) => {
 			operations.push(route.request().postDataJSON())
 			await route.fulfill({
 				contentType: 'text/plain',

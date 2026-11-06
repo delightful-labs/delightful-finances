@@ -10,6 +10,13 @@
 per explicit sync attempt, account-level results, and retention of the latest
 100 completed attempts per bank connection. Keep unfinished attempts.
 
+**Resilience follow-up**: See [resilience.md](resilience.md) for the approved
+provider-worker, navigation, duplicate-read, deadline and error-handling changes.
+A succeeded/partial attempt with no new inserts must show its existing outcome
+label instead of "not completed" in its status detail. Keep persisted settlement
+facts unchanged; Saved still describes locally persisted imports even if a later
+part of the attempt failed. No new localized messages or automatic provider retries.
+
 ## User Scenarios & Testing
 
 ### User Story 1 — Understand a sync result (Priority: P1)

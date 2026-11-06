@@ -142,6 +142,31 @@ it('preserves a provider failure independently of the failed start log', async (
 	expect(f.release).toHaveBeenCalledOnce()
 	expect(f.results).toHaveLength(0)
 })
+it('records import failures with retained progress instead of an unexpected-error description', async () => {
+	const f = start()
+	f.persist.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Storage: failed'))
+	await expect(toPromise(f.actor)).resolves.toMatchObject({
+		kind: 'failed',
+		counts: { imported: 1 },
+		settlement: 'unresolved'
+	})
+	expect(f.results).toMatchObject([{ outcome: 'failed', importedCount: 1, failureCode: 'import' }])
+	expect(f.accounts).toMatchObject([
+		{ outcome: 'succeeded' },
+		{ outcome: 'failed', failureCode: 'import' }
+	])
+	expect(f.fetch).toHaveBeenCalledOnce()
+})
+it('preserves specific mapping failures at the attempt level', async () => {
+	const f = start()
+	f.loadAccount.mockResolvedValue([])
+	await expect(toPromise(f.actor)).resolves.toMatchObject({
+		kind: 'failed',
+		error: new Error('mapping')
+	})
+	expect(f.results).toMatchObject([{ outcome: 'failed', failureCode: 'mapping', importedCount: 0 }])
+	expect(f.persist).not.toHaveBeenCalled()
+})
 it('drains an issued import on cancellation after start logging failed', async () => {
 	const pending = Promise.withResolvers<void>()
 	const f = start({
