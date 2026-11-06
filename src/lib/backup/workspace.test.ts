@@ -423,6 +423,57 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 			await expect(h.request.release()).resolves.toBeUndefined()
 		}
 	)
+	it.each([0, 2])(
+		'captures a workspace with %i attachments without skipping files',
+		async (count) => {
+			const g = await seed(),
+				expected = new Map<string, Uint8Array>([
+					[g.file, new Uint8Array([0, 1, 127, 255, 9, 8, 7, 6])]
+				]),
+				tx = writer.beginTransaction()
+			if (count === 0) {
+				const links = await writer.all(app.transactionAttachments.where({ fileId: g.file })),
+					parts = await writer.all(app.fileParts.where({ fileId: g.file }))
+				for (const link of links) tx.delete(app.transactionAttachments, link.id)
+				for (const part of parts) tx.delete(app.fileParts, part.id)
+				tx.delete(app.files, g.file)
+				expected.clear()
+			} else {
+				const id = crypto.randomUUID(),
+					bytes = new Uint8Array([255, 0, 42, 17, 11, 10])
+				tx.insert(
+					app.files,
+					{
+						transactionId: g.expense,
+						fileName: 'second-receipt.bin',
+						mimeType: 'application/octet-stream',
+						sizeBytes: bytes.length
+					},
+					{ id }
+				)
+				tx.insert(app.transactionAttachments, { transactionId: g.expense, fileId: id })
+				for (let index = 0; index < 2; index++) {
+					const data = bytes.slice(index * 3, index * 3 + 3)
+					tx.insert(app.fileParts, { fileId: id, partIndex: index, sizeBytes: data.length, data })
+				}
+				expected.set(id, bytes)
+			}
+			await tx.commit().wait({ tier: 'global' })
+			const h = capture(g)
+			expect(await toPromise(h.actor)).toMatchObject({ outcome: 'exported' })
+			const file = h.files[0]
+			if (!file) throw new Error('Missing file')
+			const payload = await open(file)
+			expect(financeBackupProfile.validate(payload)).toBe(true)
+			expect(payload.attachments).toHaveLength(count)
+			for (const attachment of payload.attachments) {
+				expect(expected.has(attachment.id)).toBe(true)
+				expect(new Uint8Array(Buffer.from(attachment.data, 'base64'))).toEqual(
+					expected.get(attachment.id)
+				)
+			}
+		}
+	)
 	it.each([
 		'missingPart',
 		'wrongSize',

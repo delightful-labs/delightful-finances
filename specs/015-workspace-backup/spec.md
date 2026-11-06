@@ -40,6 +40,8 @@ bounds → allocate/read each bounded file part → hash → project/deposit cap
 Denial, invalid data, cancellation and unexpected failure have explicit terminal results. An owner
 must match both organization ownership and an owner membership; owner access does not depend on the
 member/viewer account-selection field. No writable database/transaction is exposed to this reader.
+File and part loops use guarded invocation completion rather than separate routing states. Continued
+part reads explicitly reenter the reading state to start the next actor.
 
 DLF hydrates the complete declared graph through ordinary remote reads before opening one native
 exclusive transaction. It captures the complete scope, prepares/validates the payload, commits with
@@ -54,6 +56,7 @@ for completion; a crashed child routes through retained-request release. Observa
 identity, workspace, membership, dependency attachment and generation, including A → B → A changes.
 The integration component owns subscriptions, binding, browser dispatch and graceful root teardown.
 The pure component holds editable form input and translates machine-selected feedback descriptors.
+The preparing state's entry creates the request before its guards inspect that result.
 
 Payloads, native handles and passwords stay outside actor snapshots. Native helpers contain one
 query group, one digest, or a pure projection/validation; promise callbacks retain results and
@@ -91,6 +94,10 @@ Eight pure encoding cases cover empty input, padding, all byte values, chunk bou
 They cover all 19 archived types, protected/plain independent opening, audit/byte/source preservation,
 secret exclusion, incomplete/unsupported source, budgets, ownership, native conflict/fresh attempt,
 profile rejection, password validation, cancellation, scope replacement and shutdown.
+
+The reader completion refactor passes application type checking, 26 focused Node 24 backup tests,
+and both browser download cases. Coverage includes attachment-free exports and multiple multipart
+files, with exact bytes checked after independent reopening.
 
 Two real browser downloads each contain 536 Finance-profile records (521 transactions) and an
 eight-byte original attachment. Files are 1,051,358 bytes protected and 1,051,267 bytes plain.

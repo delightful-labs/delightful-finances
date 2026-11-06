@@ -37,6 +37,25 @@ import {
 } from '../../backup/workspace.js'
 
 type ReaderContext = { read: JazzArchiveReaderInput; result: JazzArchiveReaderResult }
+const fileCompletion = [
+	{
+		guard: ({ context }: { context: ReaderContext }) => hasFinanceFile(context.read),
+		target: 'allocating'
+	},
+	{
+		guard: ({ context }: { context: ReaderContext }) => context.read.mode === 'capture',
+		target: 'depositing'
+	},
+	{ target: 'ready' }
+]
+const partCompletion = [
+	{
+		guard: ({ context }: { context: ReaderContext }) => hasFinancePart(context.read),
+		target: 'readingPart',
+		reenter: true
+	},
+	{ target: 'hashing' }
+]
 const leaf = (run: (input: JazzArchiveReaderInput) => void | Promise<void>) =>
 	fromPromise<void, JazzArchiveReaderInput>(({ input }) => Promise.resolve().then(() => run(input)))
 const readerActors = {
@@ -143,36 +162,23 @@ export const financeBackupReader = setup<
 			invoke: {
 				src: 'validate',
 				input: ({ context }) => context.read,
-				onDone: 'nextFile',
+				onDone: fileCompletion,
 				onError: { target: 'failed', actions: 'fail' }
 			}
-		},
-		nextFile: {
-			always: [
-				{ guard: ({ context }) => hasFinanceFile(context.read), target: 'allocating' },
-				{ guard: ({ context }) => context.read.mode === 'capture', target: 'depositing' },
-				{ target: 'ready' }
-			]
 		},
 		allocating: {
 			invoke: {
 				src: 'allocate',
 				input: ({ context }) => context.read,
-				onDone: 'nextPart',
+				onDone: partCompletion,
 				onError: { target: 'failed', actions: 'fail' }
 			}
-		},
-		nextPart: {
-			always: [
-				{ guard: ({ context }) => hasFinancePart(context.read), target: 'readingPart' },
-				{ target: 'hashing' }
-			]
 		},
 		readingPart: {
 			invoke: {
 				src: 'readPart',
 				input: ({ context }) => context.read,
-				onDone: 'nextPart',
+				onDone: partCompletion,
 				onError: { target: 'failed', actions: 'fail' }
 			}
 		},
@@ -180,7 +186,7 @@ export const financeBackupReader = setup<
 			invoke: {
 				src: 'hash',
 				input: ({ context }) => context.read,
-				onDone: 'nextFile',
+				onDone: fileCompletion,
 				onError: { target: 'failed', actions: 'fail' }
 			}
 		},
@@ -353,12 +359,13 @@ export function createWorkspaceBackupMachine(options: Options) {
 								(!event.password || new TextEncoder().encode(event.password).length > 1024),
 							target: '.invalidPassword'
 						},
-						{ target: 'preparing', actions: 'prepare' }
+						{ target: 'preparing' }
 					]
 				},
 				states: { ready: {}, invalidPassword: {}, downloaded: {}, failed: {}, cancelled: {} }
 			},
 			preparing: {
+				entry: 'prepare',
 				always: [
 					{ guard: ({ context }) => context.request !== undefined, target: 'exporting' },
 					{ target: 'editing.failed' }
