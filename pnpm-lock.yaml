@@ -22,10 +22,10 @@ importers:
         version: 5.0.0(svelte@5.57.2)(xstate@5.33.2)
       delightful-local-first:
         specifier: file:vendor/delightful-local-first-ad99117-backup.tgz
-        version: file:vendor/delightful-local-first-ad99117-backup.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2)
+        version: file:vendor/delightful-local-first-ad99117-backup.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-skip-link.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2)
       delightful-ui:
-        specifier: file:vendor/delightful-ui-0.0.25-radio-items.tgz
-        version: file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2)
+        specifier: file:vendor/delightful-ui-0.0.25-skip-link.tgz
+        version: file:vendor/delightful-ui-0.0.25-skip-link.tgz(svelte@5.57.2)
       jazz-tools:
         specifier: 2.0.0-alpha.59
         version: 2.0.0-alpha.59(svelte@5.57.2)
@@ -1170,8 +1170,8 @@ packages:
       xstate:
         optional: true
 
-  delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz:
-    resolution: {integrity: sha512-TRjJwpawmU0Mo+pW0VPT9f2CktGudqR3BhBNsR+2XY2z0V3vw6umx2PYjODLSgU64w9fpMfupEa2dDu6f/5fxQ==, tarball: file:vendor/delightful-ui-0.0.25-radio-items.tgz}
+  delightful-ui@file:vendor/delightful-ui-0.0.25-skip-link.tgz:
+    resolution: {integrity: sha512-SccYSGgr0jTaRPQnTaT7tmXycsuL1xNIpHmaHvfkku/CZHBgb/xqxQgbUqHok26rLLDYlC/bKGc7w6Ed/lwtLw==, tarball: file:vendor/delightful-ui-0.0.25-skip-link.tgz}
     version: 0.0.25
     engines: {node: ^22.17.0 || >=24.0.0}
     peerDependencies:
@@ -1830,6 +1830,9 @@ packages:
 
   xstate@5.33.2:
     resolution: {integrity: sha512-8tC7yXgeCvpT8gKEeEje6ikJJG1wpnoLiXe+HfECW8m10ubMd3QxKOwWA8KxPJVBcLwfdRoMKYxIBGYKmo37/A==}
+
+  xstate@5.33.3:
+    resolution: {integrity: sha512-AnDRjS/GyKHmbA1PyhVCYBqYsA7EGe3KGgeD0ht3NFsXzoz7leX/HQDFX9QlHFJ/ltLHPsgChJYwPzRvB/0b4g==}
 
   zimmerframe@1.1.5:
     resolution: {integrity: sha512-msJxIvYDYcoNL+PJsu+7qmpDWsYmAxTY+2TNYXXF0hzBzBk0BMecOqDOG/EckUoKCuKwObfbugIl8QpqHDXeFA==}
@@ -2720,19 +2723,20 @@ snapshots:
     dependencies:
       robust-predicates: 3.0.3
 
-  delightful-local-first@file:vendor/delightful-local-first-ad99117-backup.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2):
+  delightful-local-first@file:vendor/delightful-local-first-ad99117-backup.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-skip-link.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2):
     dependencies:
       svelte: 5.57.2
       zod: 4.1.11
     optionalDependencies:
-      delightful-ui: file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2)
+      delightful-ui: file:vendor/delightful-ui-0.0.25-skip-link.tgz(svelte@5.57.2)
       jazz-tools: 2.0.0-alpha.59(svelte@5.57.2)
       xstate: 5.33.2
 
-  delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2):
+  delightful-ui@file:vendor/delightful-ui-0.0.25-skip-link.tgz(svelte@5.57.2):
     dependencies:
       svelte: 5.57.2
       tdesign-icons-svg: 0.4.7
+      xstate: 5.33.3
 
   dequal@2.0.3: {}
 
@@ -3343,6 +3347,8 @@ snapshots:
   ws@8.22.0: {}
 
   xstate@5.33.2: {}
+
+  xstate@5.33.3: {}
 
   zimmerframe@1.1.5: {}
 
