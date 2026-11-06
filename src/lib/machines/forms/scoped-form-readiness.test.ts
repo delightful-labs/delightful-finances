@@ -365,7 +365,7 @@ describe('finite readiness with the real write owner', () => {
 		const source = () => {
 			const snapshot = review().getSnapshot()
 			if (!('children' in snapshot)) throw new Error('Expected readiness statechart')
-			const child = snapshot.children.source
+			const child = Object.values(snapshot.children).find((child) => child?.id === 'source')
 			if (!child) throw new Error('Expected domain source')
 			return child
 		}

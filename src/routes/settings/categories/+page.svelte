@@ -10,7 +10,10 @@
 	import { archiveCategory, createCategory } from '#lib/data.js'
 	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
@@ -25,23 +28,23 @@
 
 	const db = getDb()
 	const session = fromStore(getJazzSession())
-	const categories = new QuerySubscription(() =>
+	const categories = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories.where({ organizationId: filters.activeOrganizationId }).orderBy('name')
 			: undefined
 	)
 	// Count all readable history, regardless of sidebar account selection or tag archive state.
-	const transactions = new QuerySubscription(() =>
+	const transactions = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const tags = new QuerySubscription(() =>
+	const tags = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.tags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const membership = new QuerySubscriptionOne(() => {
+	const membership = createQuerySubscriptionOne(() => {
 		const organizationId = filters.activeOrganizationId
 		const userId = session.current.account?.id
 		return organizationMembershipQuery(organizationId, userId)

@@ -10,7 +10,10 @@
 	import { archiveTag, createTag } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
@@ -24,13 +27,13 @@
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 
 	const db = getDb()
-	const tags = new QuerySubscription(() =>
+	const tags = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.tags.where({ organizationId: filters.activeOrganizationId }).orderBy('name')
 			: undefined
 	)
 	// Archived categories retain their labels in tag history.
-	const categories = new QuerySubscription(() =>
+	const categories = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories.where({ organizationId: filters.activeOrganizationId })
 			: undefined
@@ -39,7 +42,7 @@
 		new Map((categories.current ?? []).map((category) => [category.id, category.name]))
 	)
 	const session = fromStore(getJazzSession())
-	const membership = new QuerySubscriptionOne(() => {
+	const membership = createQuerySubscriptionOne(() => {
 		const userId = session.current.account?.id
 		const organizationId = filters.activeOrganizationId
 		return organizationMembershipQuery(organizationId, userId)

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext, untrack, type Snippet } from 'svelte'
-	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
+	import { createQuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { app } from '#lib/schema.js'
@@ -18,17 +18,17 @@
 	import Message from '../shared/Message.svelte'
 	let { children }: { children: Snippet } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
-	const transactions = new QuerySubscription(() =>
+	const transactions = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const links = new QuerySubscription(() =>
+	const links = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const accounts = new QuerySubscription(() =>
+	const accounts = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts.where({ organizationId: filters.activeOrganizationId })
 			: undefined

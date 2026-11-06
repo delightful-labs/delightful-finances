@@ -8,7 +8,7 @@
 	import { groupTransactionsByDate } from '#lib/domain/transaction-groups.js'
 	import { withQueryParams } from '#lib/domain/query-params.js'
 	import { app } from '#lib/schema.js'
-	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
+	import { createQuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { getContext, untrack } from 'svelte'
 	import { page } from '$app/state'
 	import { replaceState } from '$app/navigation'
@@ -109,7 +109,7 @@
 		}
 	})
 
-	const transactions = new QuerySubscription(() =>
+	const transactions = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
 					.where({ organizationId: filters.activeOrganizationId, kind })
@@ -123,22 +123,22 @@
 				filters.selectedAccountIds.includes(transaction.accountId)
 		)
 	)
-	const accounts = new QuerySubscription(() =>
+	const accounts = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const categories = new QuerySubscription(() =>
+	const categories = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const tags = new QuerySubscription(() =>
+	const tags = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.tags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const links = new QuerySubscription(() =>
+	const links = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactionTags.where({ organizationId: filters.activeOrganizationId })
 			: undefined

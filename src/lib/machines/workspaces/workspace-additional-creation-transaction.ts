@@ -4,7 +4,8 @@ import type { getDb } from 'jazz-tools/svelte'
 import { createWorkspaceCreationTransaction } from 'delightful-local-first/workspace/creation/workflow'
 import type {
 	WorkspaceCreationAttempt as SharedAttempt,
-	WorkspaceCreationResult
+	WorkspaceCreationResult,
+	DetachedTransaction
 } from 'delightful-local-first/workspace/creation/contracts'
 import { ACCOUNT_ACCESS } from '../../domain/account-access.js'
 import { ORGANIZATION_ROLE } from '../../domain/organization-role.js'
@@ -19,6 +20,12 @@ import type {
 type Db = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<Db['beginTransaction']>
 type Attempt = SharedAttempt<WorkspaceCreationAttempt>
+// Keep uncertain native receipts with their database lifetime; never roll back an issued commit
+// or replay a detached write. The existing creation journal remains the recovery evidence.
+const detached = new WeakMap<
+	object,
+	Set<DetachedTransaction<Transaction, ReturnType<Transaction['commit']>>>
+>()
 
 /** One related snapshot from the same mergeable transaction, with no remote preflight. */
 async function readLocal(transaction: Transaction, { draft: attempt }: Attempt) {
@@ -90,6 +97,11 @@ export function createAdditionalWorkspaceTransaction(db: Db) {
 		Awaited<ReturnType<Transaction['commit']>>
 	>({
 		open: () => db.beginTransaction(),
+		retainDetached: (receipt) => {
+			const retained = detached.get(db) ?? new Set()
+			retained.add(receipt)
+			detached.set(db, retained)
+		},
 		readLocal,
 		assess: (records) => {
 			if (!records.profile) return { outcome: 'blocked', reason: 'profileUnavailable' }

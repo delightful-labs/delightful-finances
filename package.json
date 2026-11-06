@@ -59,7 +59,7 @@
 		"@opentelemetry/api": "^1.9.1",
 		"@statelyai/inspect": "^0.7.2",
 		"@xstate/svelte": "^5.0.0",
-		"delightful-local-first": "file:vendor/delightful-local-first-aaf718d-logger.tgz",
+		"delightful-local-first": "file:vendor/delightful-local-first-ad99117-backup.tgz",
 		"delightful-ui": "file:vendor/delightful-ui-0.0.25-radio-items.tgz",
 		"jazz-tools": "2.0.0-alpha.59",
 		"layerchart": "^2.9.0",

@@ -26,6 +26,7 @@ export function createProfileFormOptions(deps: {
 }) {
 	return createSharedProfile({
 		...deps,
+		saveSettlement: 'locallyPersisted',
 		nameSchema: profileNameFormSchema,
 		avatarSchema: profileAvatarFormSchema,
 		avatarValuesSchema: profileAvatarValuesSchema,

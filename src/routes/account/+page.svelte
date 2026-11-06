@@ -2,7 +2,7 @@
 	import { observeRow } from '#lib/runtime/observations.js'
 	import { fromStore } from 'svelte/store'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import { createQuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
 	import { m } from '#lib/paraglide/messages.js'
 	import { app } from '#lib/schema.js'
 	import { saveProfileName, saveProfileAvatar } from '#lib/data.js'
@@ -18,7 +18,7 @@
 	const currentSession = fromStore(session)
 	const db = getDb()
 	const userId = $derived(currentSession.current.account?.id ?? null)
-	const profileQuery = new QuerySubscriptionOne(() =>
+	const profileQuery = createQuerySubscriptionOne(() =>
 		userId ? app.profiles.where({ userId }) : undefined
 	)
 	const profile = $derived(profileQuery.current)

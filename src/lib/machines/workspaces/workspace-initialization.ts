@@ -18,14 +18,6 @@ type Db = Pick<
 	'all' | 'beginTransaction' | 'beginExclusiveTransaction' | 'getConfig'
 >
 type Input = { db: Db; userId: string }
-export type WorkspaceInitializationResult =
-	| { outcome: 'ready'; profileId: string; organizationId: string }
-	| {
-			outcome: 'unavailable'
-			reason:
-				'authorityUnavailable' | 'initializationMissing' | 'profileMissing' | 'duplicateProfiles'
-	  }
-	| WorkspacePersistenceResult
 
 type ReadInput = Input & { tier: typeof ReadTier.LocalFirst | typeof ReadTier.Remote }
 const discover = async (input: ReadInput) => {
@@ -34,7 +26,11 @@ const discover = async (input: ReadInput) => {
 		// Membership policies, not creator/kind, decide which workspaces are accessible.
 		input.db.all(app.organizations.orderBy('id'), { tier: input.tier })
 	])
-	return { profiles, organizations, serverConfigured: Boolean(input.db.getConfig().serverUrl) }
+	return {
+		identities: profiles,
+		workspaces: organizations,
+		serverConfigured: Boolean(input.db.getConfig().serverUrl)
+	}
 }
 const prepareInitial = async (input: Input) => {
 	const [organizationId, profileId, membershipId] = await Promise.all([
@@ -62,5 +58,9 @@ export const workspaceInitialization = createWorkspaceInitialization<
 	tiers: { local: ReadTier.LocalFirst, authority: ReadTier.Remote },
 	discover,
 	prepareInitial,
+	selectReady: (attempt) => ({
+		identityId: attempt.profileId,
+		workspaceId: attempt.organizationId
+	}),
 	transaction: workspaceCreationTransaction
 })

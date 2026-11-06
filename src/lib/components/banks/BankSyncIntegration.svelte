@@ -13,7 +13,7 @@
 	import { workspaceBankActor, selectWorkspaceView } from '#lib/machines/runtime/readiness.js'
 	import { beforeNavigate } from '$app/navigation'
 	import { page } from '$app/state'
-	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
+	import { createQuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { app } from '#lib/schema.js'
 	import BankSyncLog from './BankSyncLog.svelte'
 	import { selectBankLogPresentation } from '#lib/machines/bank-sync/history.js'
@@ -90,7 +90,7 @@
 			? bankState.current.context.access.organizationId
 			: undefined
 	)
-	const logConnections = new QuerySubscription(() =>
+	const logConnections = createQuerySubscription(() =>
 		historyOrganizationId
 			? app.simplefinConnections
 					.where({ organizationId: historyOrganizationId })
@@ -117,7 +117,7 @@
 	$effect(() => {
 		if (logPage.scope !== logScope) logPage = initialHistoryPage(logScope)
 	})
-	const logAttempts = new QuerySubscription(() =>
+	const logAttempts = createQuerySubscription(() =>
 		logConnectionId && organizationId
 			? app.simplefinSyncAttempts
 					.where({ organizationId, connectionId: logConnectionId })
@@ -136,12 +136,12 @@
 		)
 	)
 	const attemptIds = $derived(historyPage.attemptIds)
-	const logAccounts = new QuerySubscription(() =>
+	const logAccounts = createQuerySubscription(() =>
 		organizationId && attemptIds.length
 			? app.simplefinSyncAccountResults.where({ organizationId, attemptId: { in: attemptIds } })
 			: undefined
 	)
-	const logProfiles = new QuerySubscription(() =>
+	const logProfiles = createQuerySubscription(() =>
 		historyPage.initiatorIds.length
 			? app.profiles.where({ userId: { in: historyPage.initiatorIds } })
 			: undefined

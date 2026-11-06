@@ -19,7 +19,10 @@
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { getContext } from 'svelte'
 	import {
 		financeFiltersKey,
@@ -41,7 +44,7 @@
 	const accountOrder = getContext<AccountOrder>(accountOrderKey)
 
 	const db = getDb()
-	const tagQuery = new QuerySubscription(() =>
+	const tagQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.tags
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
@@ -49,14 +52,14 @@
 			: undefined
 	)
 	const tagSuggestions = $derived(applicableTransactionTags(observe()).map((tag) => tag.name))
-	const accountQuery = new QuerySubscription(() =>
+	const accountQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
 					.orderBy('name')
 			: undefined
 	)
-	const categoryQuery = new QuerySubscription(() =>
+	const categoryQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories
 					.where({
@@ -69,10 +72,10 @@
 	)
 
 	const session = fromStore(getJazzSession())
-	const membership = new QuerySubscriptionOne(() =>
+	const membership = createQuerySubscriptionOne(() =>
 		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 	)
-	const grantQuery = new QuerySubscription(() =>
+	const grantQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId && session.current.account?.id
 			? app.accountMemberships.where({
 					organizationId: filters.activeOrganizationId,
