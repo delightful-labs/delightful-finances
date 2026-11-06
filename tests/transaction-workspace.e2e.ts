@@ -418,12 +418,15 @@ test(
 		await page.goto('/expenses')
 		const main = pageContent(page)
 		const drawer = main.locator('aside[data-side="right"]')
+		const rows = drawer.getByRole('listitem').filter({
+			has: page.getByRole('link', { name: /^Transaction details:/ })
+		})
 		await expect(drawer).toHaveAttribute('data-open', 'true')
 		await drawer.getByRole('button', { name: 'Close Transactions', exact: true }).click()
 		await expect(drawer).toHaveAttribute('aria-hidden', 'true')
 		const reopen = main.getByRole('button', { name: 'Open Transactions', exact: true })
 		await reopen.click()
-		await drawer.locator('.entries a').first().focus()
+		await rows.first().getByRole('link').focus()
 		await page.keyboard.press('Escape')
 		await expect(drawer).toHaveAttribute('aria-hidden', 'true')
 		await expect(reopen).toBeFocused()
@@ -435,23 +438,16 @@ test(
 		await day.locator('summary').click()
 		await drawer.getByRole('link', { name: 'Page 2', exact: true }).click()
 		await expectWorkspaceUrl(page, '/expenses', workspaceId, '2')
-		await expect(drawer.locator('.entries > li')).toHaveCount(1)
-		const item = drawer.locator('.entries > li').first()
+		await expect(rows).toHaveCount(1)
+		const item = rows.first()
 		const rowLink = item.getByRole('link')
 		await expect(rowLink).toHaveCount(1)
 		await expect(item).not.toContainText('Workspace ledger')
-		await rowLink.hover()
-		const colors = await rowLink.evaluate((element) => ({
-			background: getComputedStyle(element).backgroundColor,
-			text: getComputedStyle(element.querySelector('.classification span') ?? element).color,
-			chevron: getComputedStyle(element.querySelector('svg') ?? element).color
-		}))
-		expect(colors).toEqual({
-			background: 'rgb(148, 255, 71)',
-			text: 'rgb(38, 38, 38)',
-			chevron: 'rgb(38, 38, 38)'
-		})
-		await rowLink.click()
+		await expect(rowLink).toHaveAccessibleName(/^Transaction details:.*\$1\.00$/)
+		await rowLink.focus()
+		await expect(rowLink).toBeFocused()
+		// The stretched native anchor includes the padding around the row content.
+		await item.click({ position: { x: 2, y: 2 } })
 		await expect(page).toHaveURL(
 			(url) =>
 				/^\/expenses\/[^/]+$/.test(url.pathname) &&
@@ -459,15 +455,15 @@ test(
 				url.searchParams.get('page') === '2'
 		)
 		await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
-		await expect(drawer.locator('.entries > li')).toHaveCount(1)
+		await expect(rows).toHaveCount(1)
 		await page.reload()
 		await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('1.00')
 		await expect(drawer).toHaveAttribute('data-open', 'true')
-		await expect(drawer.locator('.entries > li')).toHaveCount(1)
+		await expect(rows).toHaveCount(1)
 		await drawer.getByRole('link', { name: 'Add Expenses', exact: true }).click()
 		await expectWorkspaceUrl(page, '/expenses/new', workspaceId, '2')
 		await expect(main.getByLabel('Amount', { exact: true })).toHaveValue('')
-		await expect(drawer.locator('.entries > li')).toHaveCount(1)
+		await expect(rows).toHaveCount(1)
 	}
 )
 
