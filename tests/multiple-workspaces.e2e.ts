@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installWorkspaceSettingsTest as harness } from './helpers/workspace.js'
 import {
 	selectWorkspace,
 	prepareSidebar,
@@ -10,18 +11,6 @@ function workspaceId(href: string) {
 	const id = new URL(href, 'http://localhost').searchParams.get('workspace')
 	if (!id) throw new Error('Missing workspace query')
 	return id
-}
-async function harness(page: Page) {
-	await page.evaluate(async () => {
-		const schemaPath = '/src/lib/schema.ts'
-		const sessionPath = '/src/lib/runtime/jazz-session.ts'
-		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-			await import(sessionPath)
-		const snapshot = getCurrentJazzSession()?.getSnapshot()
-		if (!snapshot?.client || !snapshot.account) throw new Error('Missing test session')
-		window.workspaceSettingsTest = { db: snapshot.client.db, app, userId: snapshot.account.id }
-	})
 }
 async function start(page: Page) {
 	await page.goto('/settings/workspace')
@@ -407,7 +396,7 @@ test(
 )
 
 test(
-	'reload recovers a journaled attempt without replay, then retry uses the original IDs',
+	'reload retains an unresolved journaled attempt without replaying writes',
 	{ tag: ['@workspaces'] },
 	async ({ page }) => {
 		await start(page)
@@ -437,44 +426,58 @@ test(
 			const actor = createActor(workspaceCreationJournal, {
 				input: { key, mode: 'write', record: { key, attempt } }
 			}).start()
-			const result = await waitFor(actor, (s) => s.status === 'done')
+			const result = await waitFor(actor, (snapshot) => snapshot.status === 'done')
 			actor.stop()
 			if (result.output?.outcome !== 'succeeded') throw new Error('Journal write failed')
 			return attempt.organizationId
 		})
 		await page.reload()
 		await openCreationModal(page, 'Create Workspace')
+		const dialog = creationDialog(page, 'Create Workspace')
+		const unknownMessage =
+			'The save result is unknown. Retry to check the same workspace before issuing another write.'
+		await expect(dialog.getByRole('alert').filter({ hasText: unknownMessage })).toBeVisible()
+		await dialog.getByRole('button', { name: 'Try again', exact: true }).click()
+		await expect(dialog.getByRole('alert').filter({ hasText: unknownMessage })).toBeVisible()
 		await expect(
-			creationDialog(page, 'Create Workspace').getByRole('status').filter({
-				hasText: 'An unfinished creation attempt was found. Retry uses the same workspace identity.'
-			})
-		).toBeVisible()
+			dialog.getByRole('link', { name: 'Open Workspace: Recovered workspace', exact: true })
+		).toHaveCount(0)
 		await harness(page)
-		expect(
-			await page.evaluate(async () => {
-				const { db, app } = window.workspaceSettingsTest
-				return (await db.all(app.organizations)).length
-			})
-		).toBe(1)
-		await creationDialog(page, 'Create Workspace')
-			.getByRole('button', { name: 'Try again', exact: true })
-			.click()
-		await expect(
-			page.getByRole('link', { name: 'Open Workspace: Recovered workspace', exact: true })
-		).toHaveAttribute('href', `/?workspace=${organizationId}`)
+		const observed = await page.evaluate(async () => {
+			const { db, app, userId } = window.workspaceSettingsTest
+			const journalPath = '/src/lib/machines/workspaces/workspace-creation-journal.ts'
+			const {
+				workspaceCreationJournal
+			}: typeof import('../src/lib/machines/workspaces/workspace-creation-journal.js') =
+				await import(journalPath)
+			const xstatePath = '/node_modules/.vite/deps/xstate.js'
+			const { createActor, waitFor }: typeof import('xstate') = await import(xstatePath)
+			const config = db.getConfig(),
+				key = JSON.stringify([JSON.stringify([config.appId, config.serverUrl ?? '']), userId])
+			const reader = createActor(workspaceCreationJournal, {
+				input: { key, mode: 'read' }
+			}).start()
+			const read = await waitFor(reader, (snapshot) => snapshot.status === 'done')
+			reader.stop()
+			if (read.output?.outcome !== 'succeeded' || !read.output.record)
+				throw new Error('Original attempt was not retained')
+			return {
+				ids: (await db.all(app.organizations)).map((row) => row.id),
+				journaledId: read.output.record.attempt.organizationId
+			}
+		})
+		expect(observed.journaledId).toBe(organizationId)
+		expect(observed.ids).toHaveLength(1)
+		expect(observed.ids.includes(organizationId)).toBe(false)
 		await page.reload()
-		await expect(
-			page
-				.getByLabel('Select Workspace', { exact: true })
-				.locator(`option[value="${organizationId}"]`)
-		).toHaveText('Recovered workspace')
 		await harness(page)
-		expect(
-			await page.evaluate(async () => {
-				const { db, app } = window.workspaceSettingsTest
-				return (await db.all(app.organizations)).length
-			})
-		).toBe(2)
+		const ids = await page.evaluate(async () =>
+			(
+				await window.workspaceSettingsTest.db.all(window.workspaceSettingsTest.app.organizations)
+			).map((row) => row.id)
+		)
+		expect(ids).toHaveLength(1)
+		expect(ids.includes(organizationId)).toBe(false)
 	}
 )
 
