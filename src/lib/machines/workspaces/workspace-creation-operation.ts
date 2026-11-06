@@ -15,7 +15,8 @@ export type CreationBinding = { key: string; userId: string; profileId: string }
 export type CreationRequest =
 	| { mode: 'load' }
 	| { mode: 'create'; name: string }
-	| { mode: 'retry' | 'clear'; record: WorkspaceJournalRecord }
+	| { mode: 'clear'; record: WorkspaceJournalRecord }
+	| { mode: 'retry'; record: WorkspaceJournalRecord; settlement: 'notStarted' | 'unresolved' }
 export type CreationResult =
 	| { outcome: 'editing' | 'invalid'; record: undefined; settlement: 'notStarted' }
 	| { outcome: 'recovered'; record: WorkspaceJournalRecord; settlement: 'notStarted' }
@@ -53,7 +54,8 @@ export function createWorkspaceCreationOperation(db: Db) {
 		WorkspaceJournalRecord,
 		SnapshotFrom<typeof workspaceCreationJournal>,
 		SnapshotFrom<typeof workspaceCreationReconciliation>,
-		SnapshotFrom<typeof persist>
+		SnapshotFrom<typeof persist>,
+		CreationBinding
 	>({
 		db,
 		validate: (name) => Promise.resolve(workspaceNameFormSchema.parse({ name }).name),
@@ -68,6 +70,11 @@ export function createWorkspaceCreationOperation(db: Db) {
 		}),
 		journal: workspaceCreationJournal,
 		reconcile: workspaceCreationReconciliation,
-		persist
+		persist,
+		matchesBinding: (record, binding) =>
+			record.key === binding.key &&
+			record.attempt.profileId === binding.profileId &&
+			record.attempt.workspace.ownerId === binding.userId,
+		attemptId: (record) => record.attempt.organizationId
 	})
 }

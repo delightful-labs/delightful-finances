@@ -10,7 +10,10 @@
 	import { archiveAccount } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { getContext, onMount } from 'svelte'
 	import {
@@ -38,31 +41,31 @@
 	const db = getDb()
 	const session = fromStore(getJazzSession())
 	let accountActionsOpen = $state(false)
-	const accounts = new QuerySubscription(() =>
+	const accounts = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
 					.orderBy('name')
 			: undefined
 	)
-	const membership = new QuerySubscriptionOne(() => {
+	const membership = createQuerySubscriptionOne(() => {
 		const organizationId = filters.activeOrganizationId
 		const userId = session.current.account?.id
 		return organizationMembershipQuery(organizationId, userId)
 	})
-	const grants = new QuerySubscription(() => {
+	const grants = createQuerySubscription(() => {
 		const organizationId = filters.activeOrganizationId
 		const userId = session.current.account?.id
 		return organizationId && userId
 			? app.accountMemberships.where({ organizationId, userId })
 			: undefined
 	})
-	const organizationMembers = new QuerySubscription(() =>
+	const organizationMembers = createQuerySubscription(() =>
 		accountActionsOpen && filters.activeOrganizationId
 			? app.organizationMembers.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const allAccountGrants = new QuerySubscription(() =>
+	const allAccountGrants = createQuerySubscription(() =>
 		accountActionsOpen && filters.activeOrganizationId
 			? app.accountMemberships.where({ organizationId: filters.activeOrganizationId })
 			: undefined

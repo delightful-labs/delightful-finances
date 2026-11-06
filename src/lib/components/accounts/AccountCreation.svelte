@@ -3,7 +3,10 @@
 	import { getContext, type Snippet } from 'svelte'
 	import { fromStore } from 'svelte/store'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import type { AccountCreationObservation } from '#lib/contracts/account-creation-contract.js'
 	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import { createAccountCreationFormOptions } from '#lib/machines/accounts/account-creation-access.js'
@@ -21,15 +24,15 @@
 	const organizationId = $derived(filters.activeOrganizationId)
 	const binding = $derived(session.current.client?.db ?? null)
 	const scope = $derived({ identityId, organizationId, binding })
-	const membership = new QuerySubscriptionOne(() =>
+	const membership = createQuerySubscriptionOne(() =>
 		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 	)
-	const workspace = new QuerySubscriptionOne(() =>
+	const workspace = createQuerySubscriptionOne(() =>
 		filters.activeOrganizationId
 			? app.organizations.where({ id: filters.activeOrganizationId })
 			: undefined
 	)
-	const accounts = new QuerySubscription(() =>
+	const accounts = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })

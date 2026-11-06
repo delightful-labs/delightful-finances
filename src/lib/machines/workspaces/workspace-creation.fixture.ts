@@ -80,7 +80,9 @@ export function creationFixture() {
 		return actor
 	}
 	function persistence(input = attempt) {
-		const actor = createActor(createWorkspacePersistence(db), { input: { attempt: input } })
+		const actor = createActor(createWorkspacePersistence(db), {
+			input: { attempt: input, issuance: 'new' }
+		})
 		cleanups.push(() => actor.stop())
 		actor.start()
 		return actor

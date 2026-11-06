@@ -6,7 +6,10 @@
 	import type { TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscriptionOne, QuerySubscription } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscriptionOne,
+		createQuerySubscription
+	} from 'delightful-local-first/backend/jazz/data'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { createActor } from 'xstate'
@@ -32,24 +35,24 @@
 	let { kind }: { kind: TransactionKind } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const developerMenu = getContext<DeveloperMenuContent>(developerMenuKey)
-	const accounts = new QuerySubscription(() =>
+	const accounts = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const categories = new QuerySubscription(() =>
+	const categories = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories.where({ organizationId: filters.activeOrganizationId, kind })
 			: undefined
 	)
 	const db = getDb()
 	const session = fromStore(getJazzSession())
-	const membership = new QuerySubscriptionOne(() =>
+	const membership = createQuerySubscriptionOne(() =>
 		debugEnabled
 			? organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 			: undefined
 	)
-	const grants = new QuerySubscription(() =>
+	const grants = createQuerySubscription(() =>
 		debugEnabled && filters.activeOrganizationId && session.current.account?.id
 			? app.accountMemberships.where({
 					organizationId: filters.activeOrganizationId,

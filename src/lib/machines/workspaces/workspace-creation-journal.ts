@@ -11,5 +11,6 @@ export type JournalResult =
 	import('delightful-local-first/workspace/journal').WorkspaceJournalResult<WorkspaceJournalRecord>
 export const workspaceCreationJournal = createWorkspaceJournal({
 	databaseName: 'delightful-finances-workspace-attempts',
+	attemptId: (record) => record.attempt.organizationId,
 	schema: workspaceJournalRecordSchema
 })

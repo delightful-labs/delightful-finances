@@ -294,6 +294,7 @@ async function prepareSavedExpense(page: Page) {
 	await page.getByLabel('Date', { exact: true }).fill('2026-03-10')
 	await page.getByLabel('Description', { exact: true }).fill('Silent remote saved record')
 	await page.getByRole('button', { name: 'Save Transaction', exact: true }).click()
+	await expect(page).toHaveURL(`/expenses?workspace=${workspace}`)
 	const link = page
 		.getByRole('main')
 		.getByRole('link', { name: /Transaction details:.*Silent remote saved record/ })

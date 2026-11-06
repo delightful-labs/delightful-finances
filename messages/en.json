@@ -18,6 +18,7 @@
 		}
 	},
 	"actions": {
+		"download_subject": "Download {subject}",
 		"imported": "Imported",
 		"existing": "Already present",
 		"omitted": "Omitted",
@@ -162,6 +163,9 @@
 		"unavailable": "Unavailable"
 	},
 	"errors": {
+		"permission_denied": "You don’t have permission to do this.",
+		"data_changed": "The data changed. Please try again.",
+		"operation_failed": "Couldn’t complete the request. Please try again.",
 		"already_selected_subject_name": "{subject} {name} is already selected.",
 		"archive_subject": "Could not archive {subject}.",
 		"date_range_invalid": "Enter a start date and an end date on or after the start date.",
@@ -204,6 +208,9 @@
 		"transaction_upload_failed": "The transaction was saved, but some images could not be attached."
 	},
 	"labels": {
+		"password": "Password",
+		"with_password": "With a password",
+		"without_password": "Without a password",
 		"actions": "Actions",
 		"all_subjects": "All {subjects}",
 		"amount": "Amount",
@@ -257,6 +264,13 @@
 		"settings": "Settings"
 	},
 	"nouns": {
+		"backup": [
+			{
+				"declarations": ["input count", "local countPlural = count: plural"],
+				"selectors": ["countPlural"],
+				"match": { "countPlural=one": "Backup", "countPlural=*": "Backups" }
+			}
+		],
 		"account": [
 			{
 				"declarations": ["input count", "local countPlural = count: plural"],
@@ -489,6 +503,8 @@
 		"later": "Later"
 	},
 	"status": {
+		"preparing_subject": "Preparing {subject}…",
+		"download_started": "Download started.",
 		"archived_subject_name": "{subject} {name} archived.",
 		"archiving_subject": "Archiving {subject}…",
 		"cancelled": "The request was cancelled.",

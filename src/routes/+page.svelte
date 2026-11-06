@@ -3,7 +3,7 @@
 	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
 	import { getContext, onMount } from 'svelte'
-	import { QuerySubscription } from 'delightful-local-first/backend/jazz/data'
+	import { createQuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -27,29 +27,29 @@
 	$effect(() => {
 		if (browser) saveOverviewFilters(overviewFiltersKey, overviewFilters)
 	})
-	const transactions = new QuerySubscription(() =>
+	const transactions = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactions
 					.where({ organizationId: filters.activeOrganizationId })
 					.orderBy('bookedOn', 'desc')
 			: undefined
 	)
-	const categories = new QuerySubscription(() =>
+	const categories = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const tags = new QuerySubscription(() =>
+	const tags = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.tags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const links = new QuerySubscription(() =>
+	const links = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.transactionTags.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const transfers = new QuerySubscription(() =>
+	const transfers = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
 			: undefined

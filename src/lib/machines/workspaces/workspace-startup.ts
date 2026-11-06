@@ -18,7 +18,10 @@ export function createWorkspaceStartupMachine(db: Db) {
 		db,
 		initialize: workspaceInitialization,
 		seed: workspaceFakeData,
-		ready: (result) => (result?.outcome === 'ready' ? result : undefined),
+		ready: (result) =>
+			result?.outcome === 'ready'
+				? { profileId: result.identityId, organizationId: result.workspaceId }
+				: undefined,
 		initializationFailure: (error) => ({ outcome: 'failed', settlement: 'unresolved', error }),
 		seedFailure: (error) => ({ outcome: 'failed', settlement: 'unresolved', error })
 	})

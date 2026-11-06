@@ -19,7 +19,10 @@
 	} from '#lib/machines/transactions/transaction-entry.js'
 	import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { organizationMembershipQuery } from '#lib/domain/organization-membership-query.js'
 	import {
@@ -164,7 +167,7 @@
 			...safeBankError(error)
 		})
 	})
-	const transactionQuery = new QuerySubscriptionOne(() =>
+	const transactionQuery = createQuerySubscriptionOne(() =>
 		filters.activeOrganizationId
 			? transactionDetailQuery.where({
 					id: page.params.id ?? '',
@@ -172,12 +175,12 @@
 				})
 			: undefined
 	)
-	const transferLinksQuery = new QuerySubscription(() =>
+	const transferLinksQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId && transactionQuery.current
 			? app.internalTransfers.where({ organizationId: filters.activeOrganizationId })
 			: undefined
 	)
-	const counterpartQuery = new QuerySubscription(() => {
+	const counterpartQuery = createQuerySubscription(() => {
 		const current = transaction
 		const organizationId = filters.activeOrganizationId
 		const related = transferLinksQuery.current?.some(
@@ -193,7 +196,7 @@
 				})
 			: undefined
 	})
-	const transferAccountsQuery = new QuerySubscription(() =>
+	const transferAccountsQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId &&
 		(transferSearchEnabled ||
 			Boolean(transactionQuery.current?.internalTransferId) ||
@@ -201,10 +204,10 @@
 			? app.accounts.where({ organizationId: filters.activeOrganizationId }).orderBy('name')
 			: undefined
 	)
-	const membershipQuery = new QuerySubscriptionOne(() =>
+	const membershipQuery = createQuerySubscriptionOne(() =>
 		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 	)
-	const grantsQuery = new QuerySubscription(() =>
+	const grantsQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId && session.current.account?.id
 			? app.accountMemberships.where({
 					organizationId: filters.activeOrganizationId,
@@ -212,7 +215,7 @@
 				})
 			: undefined
 	)
-	const accountQuery = new QuerySubscription(() =>
+	const accountQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
@@ -232,7 +235,7 @@
 		attachmentImages = sources
 		return () => sources.forEach(({ source }) => URL.revokeObjectURL(source))
 	})
-	const categoryQuery = new QuerySubscription(() =>
+	const categoryQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId && transaction?.kind
 			? app.categories
 					.where({
@@ -243,7 +246,7 @@
 					.orderBy('name')
 			: undefined
 	)
-	const tagQuery = new QuerySubscription(() =>
+	const tagQuery = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.tags
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
@@ -485,10 +488,10 @@
 	) {
 		editActor.send({ type: 'DELETE_LINKED_TRANSFER', choice })
 	}
-	const creatorQuery = new QuerySubscriptionOne(() =>
+	const creatorQuery = createQuerySubscriptionOne(() =>
 		transaction ? app.profiles.where({ userId: transaction.$createdBy.account }) : undefined
 	)
-	const editorQuery = new QuerySubscriptionOne(() =>
+	const editorQuery = createQuerySubscriptionOne(() =>
 		transaction ? app.profiles.where({ userId: transaction.$updatedBy.account }) : undefined
 	)
 	const initialTransaction = $derived.by(() => {

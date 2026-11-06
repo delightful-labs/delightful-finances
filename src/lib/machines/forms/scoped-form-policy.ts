@@ -51,5 +51,5 @@ export function createSingleWriteFormOptions<
 		AvailabilitySnapshot,
 		PersistenceSnapshot,
 		z.ZodType<Values>
-	>(options)
+	>({ ...options, settlement: 'locallyPersisted' })
 }

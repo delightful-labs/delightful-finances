@@ -2,7 +2,10 @@
 	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import { app, transactionSummaryQuery } from '#lib/schema.js'
 	import { calculateAccountBalances } from '#lib/domain/account-balances.js'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { goto } from '$app/navigation'
@@ -106,17 +109,17 @@
 		}
 	})
 
-	const organizationQuery = new QuerySubscription(() =>
+	const organizationQuery = createQuerySubscription(() =>
 		ready ? app.organizations.orderBy('name') : undefined
 	)
-	const accountQuery = new QuerySubscription(() =>
+	const accountQuery = createQuerySubscription(() =>
 		ready && filters.activeOrganizationId
 			? app.accounts
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
 					.orderBy('name')
 			: undefined
 	)
-	const balanceTransactions = new QuerySubscription(() =>
+	const balanceTransactions = createQuerySubscription(() =>
 		ready && filters.activeOrganizationId
 			? transactionSummaryQuery.where({ organizationId: filters.activeOrganizationId })
 			: undefined
@@ -139,15 +142,15 @@
 	const activeAccounts = $derived(orderAccounts(accountQuery.current ?? [], preferredOrder))
 	const userId = $derived(session.current.account?.id)
 	const organizationId = $derived(filters.activeOrganizationId)
-	const membershipQuery = new QuerySubscriptionOne(() =>
+	const membershipQuery = createQuerySubscriptionOne(() =>
 		organizationMembershipQuery(organizationId, userId)
 	)
-	const connectionQuery = new QuerySubscription(() =>
+	const connectionQuery = createQuerySubscription(() =>
 		ready && organizationId && userId
 			? app.simplefinConnections.where({ organizationId, ownerId: userId })
 			: undefined
 	)
-	const linkQuery = new QuerySubscription(() =>
+	const linkQuery = createQuerySubscription(() =>
 		ready && organizationId ? app.simplefinAccountLinks.where({ organizationId }) : undefined
 	)
 	const scopedConnections = $derived(

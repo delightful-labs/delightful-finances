@@ -1,7 +1,10 @@
 import type { WorkspaceCreationDialogView } from 'delightful-local-first/workspace'
 import { createWorkspaceCreationOwner } from 'delightful-local-first/workspace/creation-owner'
 import type { getDb } from 'jazz-tools/svelte'
-import { createWorkspaceCreationOperation } from './workspace-creation-operation.js'
+import {
+	createWorkspaceCreationOperation,
+	type CreationBinding
+} from './workspace-creation-operation.js'
 import type { Organization } from '../../schema.js'
 export type WorkspaceCreationView = {
 	draftRevision: number
@@ -28,7 +31,8 @@ export function createWorkspaceCreationMachine(
 	return createWorkspaceCreationOwner<
 		import('./workspace-creation-journal.js').WorkspaceJournalRecord,
 		Organization,
-		import('xstate').SnapshotFrom<typeof operation>
+		import('xstate').SnapshotFrom<typeof operation>,
+		CreationBinding
 	>(operation)
 }
 

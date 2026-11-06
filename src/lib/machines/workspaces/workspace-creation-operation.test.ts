@@ -33,6 +33,7 @@ function start(
 	f: ReturnType<typeof creationFixture>,
 	request: InputFrom<ReturnType<typeof createWorkspaceCreationOperation>>['request'] = {
 		mode: 'retry',
+		settlement: 'notStarted',
 		record
 	}
 ) {
@@ -55,10 +56,15 @@ describe('workspace creation result payloads', () => {
 			settlement: 'locallyPersisted'
 		})
 	})
-	it('returns a recovered record on load without starting a write', async () => {
+	it('retains unresolved issuance when a loaded record has no durable write evidence', async () => {
 		const f = creationFixture()
 		const done = await waitFor(start(f, { mode: 'load' }), (snapshot) => snapshot.status === 'done')
-		expect(done.output).toEqual({ outcome: 'recovered', record, settlement: 'notStarted' })
+		expect(done.output).toEqual({
+			outcome: 'unresolved',
+			record,
+			settlement: 'unresolved',
+			error: expect.any(Error)
+		})
 		expect(f.beginTransaction).not.toHaveBeenCalled()
 	})
 	it('returns invalid input without a record, workspace, or fake error', async () => {

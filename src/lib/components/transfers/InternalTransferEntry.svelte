@@ -8,7 +8,10 @@
 	import type { InternalTransferEntryObservation } from '#lib/contracts/transfer-create-contract.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
 	import { getContext } from 'svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
@@ -21,14 +24,14 @@
 	const readiness = getContext<ReadinessContext>(readinessKey)
 	const db = getDb()
 	const session = fromStore(getJazzSession())
-	const accounts = new QuerySubscription(() =>
+	const accounts = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.accounts
 					.where({ organizationId: filters.activeOrganizationId, archivedAt: { isNull: true } })
 					.orderBy('name')
 			: undefined
 	)
-	const categories = new QuerySubscription(() =>
+	const categories = createQuerySubscription(() =>
 		filters.activeOrganizationId
 			? app.categories.where({
 					organizationId: filters.activeOrganizationId,
@@ -36,10 +39,10 @@
 				})
 			: undefined
 	)
-	const membership = new QuerySubscriptionOne(() =>
+	const membership = createQuerySubscriptionOne(() =>
 		organizationMembershipQuery(filters.activeOrganizationId, session.current.account?.id)
 	)
-	const grants = new QuerySubscription(() =>
+	const grants = createQuerySubscription(() =>
 		filters.activeOrganizationId && session.current.account?.id
 			? app.accountMemberships.where({
 					organizationId: filters.activeOrganizationId,

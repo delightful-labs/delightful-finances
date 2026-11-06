@@ -86,7 +86,11 @@ describe('workspace creation owner', () => {
 		expect(actor.getSnapshot().matches('recovered')).toBe(true)
 		expect(started).toHaveBeenCalledTimes(1)
 		actor.send({ type: 'RETRY' })
-		expect(started.mock.lastCall?.[0].request).toEqual({ mode: 'retry', record })
+		expect(started.mock.lastCall?.[0].request).toEqual({
+			mode: 'retry',
+			record,
+			settlement: 'notStarted'
+		})
 	})
 	it('waits for original resources before replacing identity and uses the latest observation', () => {
 		const actor = start()
@@ -168,7 +172,11 @@ describe('workspace creation dialog projection', () => {
 			error: new Error('storage')
 		})
 		actor.send({ type: 'RETRY' })
-		expect(started.mock.lastCall?.[0].request).toEqual({ mode: 'retry', record })
+		expect(started.mock.lastCall?.[0].request).toEqual({
+			mode: 'retry',
+			record,
+			settlement: 'notStarted'
+		})
 		expect(selectWorkspaceCreationView(actor.getSnapshot()).draftRevision).toBe(revision)
 		finish(actor, { outcome: 'complete', record, workspace, settlement: 'locallyPersisted' })
 		actor.send({ type: 'NEW' })

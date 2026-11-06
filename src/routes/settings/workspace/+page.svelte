@@ -6,9 +6,19 @@
 	import { workspaceNamingWrites } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
-	import { QuerySubscription, QuerySubscriptionOne } from 'delightful-local-first/backend/jazz/data'
+	import {
+		createQuerySubscription,
+		createQuerySubscriptionOne
+	} from 'delightful-local-first/backend/jazz/data'
 	import { fromStore } from 'svelte/store'
-	import { getContext } from 'svelte'
+	import { getContext, onDestroy } from 'svelte'
+	import { createActor, toPromise } from 'xstate'
+	import {
+		createWorkspaceBackupMachine,
+		selectWorkspaceBackup,
+		type BackupObservation
+	} from '#lib/machines/workspaces/workspace-backup.js'
+	import WorkspaceBackup from '#lib/components/workspaces/WorkspaceBackup.svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
@@ -24,15 +34,15 @@
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const coordinator = getWorkspace()
 
-	const organizations = new QuerySubscription(() => app.organizations.orderBy('name'))
+	const organizations = createQuerySubscription(() => app.organizations.orderBy('name'))
 	const db = getDb()
 	const session = fromStore(getJazzSession())
-	const workspaceQuery = new QuerySubscriptionOne(() =>
+	const workspaceQuery = createQuerySubscriptionOne(() =>
 		filters.activeOrganizationId
 			? app.organizations.where({ id: filters.activeOrganizationId })
 			: undefined
 	)
-	const membershipQuery = new QuerySubscriptionOne(() => {
+	const membershipQuery = createQuerySubscriptionOne(() => {
 		const userId = session.current.account?.id
 		const organizationId = filters.activeOrganizationId
 		return organizationMembershipQuery(organizationId, userId)
@@ -58,6 +68,66 @@
 		...workspaceNamingWrites(db)
 	})
 	const form = createScopedFormController(options)
+	function backupObservation(): BackupObservation {
+		return {
+			identityId: session.current.account?.id ?? null,
+			workspaceId: filters.activeOrganizationId,
+			membershipId: membershipQuery.current?.id ?? null,
+			memberUserId: membershipQuery.current?.userId ?? null,
+			ownerId: workspaceQuery.current?.ownerId ?? null,
+			role: membershipQuery.current?.role ?? null,
+			access: membershipQuery.current?.accountAccessMode ?? null,
+			sessionReady: session.current.status === 'ready',
+			attached: session.current.client?.db === db,
+			loading: workspaceQuery.isLoading || membershipQuery.isLoading,
+			failed: workspaceQuery.error != null || membershipQuery.error != null
+		}
+	}
+	const backupActor = createActor(
+		createWorkspaceBackupMachine({
+			db,
+			observe: backupObservation,
+			environment: typeof window === 'undefined' ? 'finance' : window.location.origin,
+			handoff: {
+				async dispatch(archive, _binding, signal) {
+					if (signal.aborted) return 'rejected'
+					const link = document.createElement('a'),
+						bytes = archive.copyBytes()
+					let url: string | undefined
+					try {
+						url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }))
+						link.href = url
+						link.download = 'finance-backup.dlf'
+						document.body.append(link)
+						link.click()
+						return 'dispatched'
+					} finally {
+						bytes.fill(0)
+						link.remove()
+						if (url) URL.revokeObjectURL(url)
+					}
+				}
+			}
+		}),
+		{ input: {} }
+	)
+	let backupView = $state(selectWorkspaceBackup(backupActor.getSnapshot()))
+	const backupSubscription = backupActor.subscribe((snapshot) => {
+		backupView = selectWorkspaceBackup(snapshot)
+	})
+	backupActor.start()
+	$effect(() => {
+		backupActor.send({ type: 'OBSERVE', facts: backupObservation() })
+	})
+	onDestroy(() => {
+		const completion = toPromise(backupActor)
+		backupActor.send({ type: 'SHUTDOWN' })
+		const finish = () => {
+			backupSubscription.unsubscribe()
+			backupActor.stop()
+		}
+		void completion.then(finish, finish)
+	})
 </script>
 
 <svelte:head><title>{m['nouns.workspace']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
@@ -88,6 +158,12 @@
 		onreset={form.reset}
 		oninput={form.input}
 		onRetryReadiness={form.retryReadiness}
+	/>
+	<WorkspaceBackup
+		view={backupView}
+		ondownload={(protection, password) =>
+			backupActor.send({ type: 'SUBMIT', protection, password })}
+		oncancel={() => backupActor.send({ type: 'CANCEL' })}
 	/>
 {/if}
 <WorkspaceCreation />

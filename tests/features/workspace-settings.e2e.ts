@@ -1,3 +1,10 @@
+import { readFile } from 'node:fs/promises'
+import { performance } from 'node:perf_hooks'
+import { createActor, toPromise } from 'xstate'
+import { prepareArchiveOpen } from 'delightful-local-first/backup/envelope'
+import { createArchiveEnvelopeMachine } from 'delightful-local-first/backup/envelope/workflow'
+import { financeBackupProfile } from '../../src/lib/backup/workspace.js'
+
 import { expect } from '@playwright/test'
 import { test, start, installWorkspaceSettingsTest } from '../helpers/workspace.js'
 import { openCreationModal, selectWorkspace } from '../helpers/ui.js'
@@ -112,6 +119,9 @@ for (const role of ['admin', 'member', 'viewer']) {
 				const currency = subject.locator('#workspace-default-currency')
 				const save = subject.getByRole('button', { name: 'Save', exact: true })
 				await expect(name).toHaveValue('Shared workspace')
+				await expect(
+					subject.getByRole('button', { name: 'Download Backup', exact: true })
+				).toBeDisabled()
 				await expect(currency).toHaveValue('USD')
 				if (role === 'admin') {
 					await expect(name).toBeEditable()
@@ -165,3 +175,163 @@ for (const role of ['admin', 'member', 'viewer']) {
 		}
 	)
 }
+
+test.describe('workspace backup downloads', () => {
+	// These measurements share one disposable server; seed and export one large scope at a time.
+	test.describe.configure({ mode: 'default' })
+	for (const protection of ['password', 'none']) {
+		test(
+			`downloads and independently reopens a Finance ${protection} backup without changing source`,
+			{ tag: ['@workspaces', '@backup'] },
+			async ({ page }, info) => {
+				await start(page)
+				const source = await page.evaluate(async () => {
+					const { db, app, userId } = window.workspaceSettingsTest
+					const root = (
+						await db.all(app.organizations.where({ ownerId: userId }), { tier: 'remote' })
+					)[0]
+					if (!root) throw new Error('Missing disposable workspace')
+					const organizationId = root.id,
+						accountId = crypto.randomUUID(),
+						categoryId = crypto.randomUUID(),
+						transactionId = crypto.randomUUID(),
+						fileId = crypto.randomUUID()
+					const tx = db.beginTransaction()
+					tx.insert(
+						app.accounts,
+						{ organizationId, name: 'Backup account', currency: 'USD', kind: 'cash' },
+						{ id: accountId }
+					)
+					tx.insert(
+						app.categories,
+						{ organizationId, name: 'Backup category', kind: 'expense', isSystem: false },
+						{ id: categoryId }
+					)
+					for (let index = 0; index < 521; index++)
+						tx.insert(
+							app.transactions,
+							{
+								organizationId,
+								accountId,
+								categoryId,
+								kind: 'expense',
+								currency: 'USD',
+								amountMinor: index + 1,
+								bookedOn: '2026-11-01',
+								description: 'Exact transaction ' + index,
+								source: 'manual'
+							},
+							{ id: index === 0 ? transactionId : crypto.randomUUID() }
+						)
+					await tx.commit().wait({ tier: 'global' })
+					const attachment = db.beginTransaction()
+					attachment.insert(
+						app.files,
+						{
+							transactionId,
+							fileName: 'exact-receipt.bin',
+							mimeType: 'application/octet-stream',
+							sizeBytes: 8
+						},
+						{ id: fileId }
+					)
+					attachment.insert(app.transactionAttachments, { transactionId, fileId })
+					attachment.insert(app.fileParts, {
+						fileId,
+						partIndex: 0,
+						sizeBytes: 8,
+						data: new Uint8Array([0, 1, 127, 255, 9, 8, 7, 6])
+					})
+					await attachment.commit().wait({ tier: 'global' })
+					const records = await db.all(
+						app.transactions
+							.where({ organizationId })
+							.select('*', '$createdAt', '$updatedAt', '$createdBy', '$updatedBy'),
+						{ tier: 'remote' }
+					)
+					return {
+						organizationId,
+						transactionId,
+						fileId,
+						records: JSON.stringify(records.toSorted((a, b) => a.id.localeCompare(b.id)))
+					}
+				})
+				await page.locator('#workspace-backup-protection').selectOption(protection)
+				if (protection === 'password')
+					await page.getByLabel('Password', { exact: true }).fill('independent-browser-password')
+				const responsiveness = await page.evaluateHandle(() => {
+					const stats = { longestTaskMs: 0 }
+					const observer = new PerformanceObserver((list) => {
+						for (const entry of list.getEntries())
+							stats.longestTaskMs = Math.max(stats.longestTaskMs, entry.duration)
+					})
+					observer.observe({ entryTypes: ['longtask'] })
+					return { stats, observer }
+				})
+				const started = performance.now(),
+					downloaded = page.waitForEvent('download')
+				await page.getByRole('button', { name: 'Download Backup', exact: true }).click()
+				const download = await downloaded,
+					path = await download.path()
+				expect(await download.failure()).toBeNull()
+				if (!path) throw new Error('Missing retained download')
+				await expect(
+					page.getByRole('status').filter({ hasText: 'Download started.' })
+				).toBeVisible()
+				const bytes = new Uint8Array(await readFile(path)),
+					request = prepareArchiveOpen(
+						bytes,
+						protection === 'password' ? 'independent-browser-password' : undefined
+					)
+				const actor = createActor(createArchiveEnvelopeMachine(), { input: { request } }).start(),
+					opened = await toPromise(actor)
+				expect(opened.outcome).toBe('integrityChecked')
+				if (opened.outcome !== 'integrityChecked') throw new Error('Independent reopening failed')
+				const payload = opened.archive.readPayload()
+				expect(financeBackupProfile.validate(payload)).toBe(true)
+				expect(payload.records.filter((row) => row.type === 'transactions')).toHaveLength(521)
+				expect(payload.source.workspaceId).toBe(source.organizationId)
+				expect(Buffer.from(payload.attachments[0]?.data ?? '', 'base64')).toEqual(
+					Buffer.from([0, 1, 127, 255, 9, 8, 7, 6])
+				)
+				expect(
+					payload.records.find((row) => row.id === source.transactionId)?.fields.description
+				).toEqual({ kind: 'text', value: 'Exact transaction 0' })
+				const after = await page.evaluate(async (organizationId) => {
+					const { db, app } = window.workspaceSettingsTest
+					const records = await db.all(
+						app.transactions
+							.where({ organizationId })
+							.select('*', '$createdAt', '$updatedAt', '$createdBy', '$updatedBy'),
+						{ tier: 'remote' }
+					)
+					return JSON.stringify(records.toSorted((a, b) => a.id.localeCompare(b.id)))
+				}, source.organizationId)
+				expect(after).toBe(source.records)
+				const measurement = {
+					protection,
+					records: payload.records.length + payload.references.length,
+					attachmentBytes: payload.attachments.reduce((sum, file) => sum + file.sizeBytes, 0),
+					fileBytes: bytes.length,
+					totalExportAndOpenMs: Math.round(performance.now() - started),
+					longestMainThreadTaskMs: Math.round(
+						await responsiveness.evaluate(({ stats, observer }) => {
+							observer.disconnect()
+							return stats.longestTaskMs
+						})
+					)
+				}
+				console.log('Finance backup measurement', measurement)
+				await info.attach('finance-backup-measurement', {
+					body: JSON.stringify(measurement),
+					contentType: 'application/json'
+				})
+				await responsiveness.dispose()
+				opened.archive.release()
+				request.release()
+				if (protection === 'password')
+					await expect(page.getByLabel('Password', { exact: true })).toHaveValue('')
+			}
+		)
+	}
+})
