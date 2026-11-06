@@ -59,7 +59,7 @@ afterAll(async () => {
 	for (const session of sessions) await session.close()
 	await server?.stop()
 })
-async function seed() {
+async function seed(scope: 'complete' | 'ownership' = 'complete') {
 	const g = {
 		organization: crypto.randomUUID(),
 		profile: crypto.randomUUID(),
@@ -110,6 +110,10 @@ async function seed() {
 		},
 		{ id: g.member }
 	)
+	if (scope === 'ownership') {
+		await tx.commit().wait({ tier: 'global' })
+		return g
+	}
 	for (const [id, name, archivedAt] of [
 		[g.expenseAccount, 'Cash', undefined],
 		[g.incomeAccount, 'Bank', undefined],
@@ -550,7 +554,7 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 		expect(h.files).toHaveLength(0)
 	})
 	it('discards an exclusive conflict and allows a fresh explicit attempt', async () => {
-		const g = await seed(),
+		const g = await seed('ownership'),
 			reached = Promise.withResolvers<void>(),
 			resume = Promise.withResolvers<void>()
 		const reader = financeBackupReader.provide({
@@ -574,7 +578,7 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 		await writer
 			.update(app.organizations, g.organization, { name: 'Changed remotely' })
 			.wait({ tier: 'global' })
-		await db.all(app.organizations.where({ id: g.organization }), { tier: 'remote' })
+		// The authority has accepted the conflicting write; let it validate the stale capture.
 		resume.resolve()
 		expect(await toPromise(h.actor)).toMatchObject({
 			outcome: 'failed',
@@ -583,6 +587,14 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 		})
 		const fresh = capture(g)
 		expect(await toPromise(fresh.actor)).toMatchObject({ outcome: 'exported' })
+		const file = fresh.files[0]
+		if (!file) throw new Error('Missing fresh backup')
+		expect(
+			(await open(file)).records.find((row) => row.id === g.organization)?.fields.name
+		).toEqual({
+			kind: 'text',
+			value: 'Changed remotely'
+		})
 	})
 	it('rejects profile tag substitution, unknown fields, broken references and unsafe money', async () => {
 		const g = await seed(),
