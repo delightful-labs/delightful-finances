@@ -209,7 +209,6 @@
 			return view.activity.kind === 'working'
 		},
 		sync: () => dispatch({ type: 'SYNC' }, bankBinding.current?.lease),
-		cancel: () => dispatch({ type: 'CANCEL' }, bankBinding.current?.lease),
 		get view() {
 			return bankView
 		}

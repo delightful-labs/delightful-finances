@@ -81,6 +81,13 @@ cancel when leaving their page; unloading the document still cancels. Existing
 workspace, identity, access, credential replacement and shutdown paths retain
 ownership of cancellation/draining.
 
+The bank page only renders the shared integration's view. It must not cancel the
+workspace-owned operation on destruction: client navigation destroys that page
+after the integration's `beforeNavigate` hook has preserved an active SYNC.
+CI's navigation regression exposed the redundant page-level `onDestroy` hook;
+removing it also removes the unused context-level cancel callback. Explicit
+cancellation remains bound to the current lease in the integration.
+
 ## Review and validation
 
 Implementation scope: twelve files (integration, account/transaction import, logging supervisor,
