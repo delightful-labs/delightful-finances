@@ -309,9 +309,9 @@ test(
 		for (const path of ['/expenses', '/']) {
 			await page.goto(path)
 			const row = page
-				.locator('li')
+				.getByRole('listitem')
 				.filter({ has: page.getByText('Tagged cleanup row', { exact: true }) })
-			await expect(row.locator('.classification')).toContainText('Historical')
+			await expect(row.getByText('Historical', { exact: true })).toBeVisible()
 		}
 		await page.evaluate(async (id) => {
 			const schemaPath = '/src/lib/schema.ts'
@@ -324,11 +324,11 @@ test(
 			await db.update(app.tags, id, { name: 'Renamed historical' }).wait({ tier: 'local' })
 		}, seed.tagId)
 		const row = page
-			.locator('li')
+			.getByRole('listitem')
 			.filter({ has: page.getByText('Tagged cleanup row', { exact: true }) })
-		await expect(row.locator('.classification')).toContainText('Renamed historical')
+		await expect(row.getByText('Renamed historical', { exact: true })).toBeVisible()
 		await page.goto('/expenses')
-		await expect(row.locator('.classification')).toContainText('Renamed historical')
+		await expect(row.getByText('Renamed historical', { exact: true })).toBeVisible()
 	}
 )
 

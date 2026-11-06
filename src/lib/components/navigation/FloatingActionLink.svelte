@@ -6,15 +6,12 @@
 	let { href, label }: { href: string; label: string } = $props()
 </script>
 
-<AppLink {href}>
-	{#snippet render(destination)}
-		<SharedFloatingActionLink
-			href={destination}
-			aria-label={label}
-			title={label}
-			class="floating-action-link"
-		>
-			<Icon icon={AddIcon} />
-		</SharedFloatingActionLink>
-	{/snippet}
+<AppLink
+	{href}
+	component={SharedFloatingActionLink}
+	aria-label={label}
+	title={label}
+	class="floating-action-link"
+>
+	<Icon icon={AddIcon} />
 </AppLink>

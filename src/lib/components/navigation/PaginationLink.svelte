@@ -5,10 +5,8 @@
 	let { href, children, ...attributes }: ComponentProps<typeof PaginationItem> = $props()
 </script>
 
-<AppLink href={href ?? ''}>
-	{#snippet render(destination)}
-		<PaginationItem {...attributes} href={href === undefined ? undefined : destination}>
-			{@render children?.()}
-		</PaginationItem>
-	{/snippet}
-</AppLink>
+{#if href == null || attributes.disabled || attributes.ellipsis}
+	<PaginationItem {...attributes} {href}>{@render children?.()}</PaginationItem>
+{:else}
+	<AppLink {...attributes} {href} component={PaginationItem}>{@render children?.()}</AppLink>
+{/if}
