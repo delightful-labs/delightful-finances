@@ -235,7 +235,7 @@ localization generation was authorized; no catalogs or localization configuratio
 
 ## Shared linked list row adoption
 
-The `refactor/shared-linked-list-row` branch replaces TransactionRowLayout's local presentation
+The `refactor/shared-linked-list-row` branch replaces the former transaction row adapter's local presentation
 with DUI LinkedListRow. Finance retains its existing `href`, translated destination label, content,
 and amount snippet. AppLink resolves query-preserving URLs before passing them to DUI. Transaction
 and transfer consumers remain unchanged, including their domain formatting and labels.
@@ -327,3 +327,22 @@ prefilled/current bounds, reload/navigation persistence, invalid and empty range
 filter combinations and narrow layouts. Application/service-worker checks,
 production build, test TypeScript, E2E scope audit, focused formatting and diff
 checks pass. Implementation was developed in the isolated feat/radio-date-filter worktree.
+
+## Component-based links and local transaction rows
+
+AppLink now accepts a `component` prop, defaulting to Anchor. It resolves the
+query-preserving destination before forwarding `href`, children, native anchor
+attributes, and component-specific props. Navigation and floating action links
+use that API. Pagination uses it only for navigable items; disabled and ellipsis
+items continue to render through PaginationItem without links.
+
+TransactionRowLayout and DUI LinkedListRow have been removed. Finance owns native
+list-item markup for transactions and transfers. Transaction rows use one stretched
+native link with a descriptive translated accessible name; transfer rows retain
+their own descriptions, posting dates, currencies, and query-preserving links.
+
+The vendored snapshot is `vendor/delightful-ui-0.0.25-without-linked-list-row.tgz`.
+It includes the LinkedListRow removal and Text word-wrapping change while retaining
+RadioGroup, RadioItem, SwipeActions, SkipLink, and SkipButton from DUI main. The superseded radio-items
+archive is removed; the package version remains 0.0.25 and no registry release is
+required.

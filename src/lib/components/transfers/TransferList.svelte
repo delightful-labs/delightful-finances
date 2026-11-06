@@ -6,7 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import { Text } from 'delightful-ui'
 	import TransactionList from '../transactions/TransactionList.svelte'
-	import TransactionRowLayout from '../transactions/TransactionRowLayout.svelte'
+	import AppLink from '../navigation/AppLink.svelte'
 	let {
 		pairs,
 		accountNames,
@@ -55,31 +55,42 @@
 			{@const destination =
 				accountNames.get(income.accountId) ??
 				m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
-			<TransactionRowLayout
-				href={transactionHref(expense.id)}
-				label={`${m['labels.subject_details']({ subject: m['nouns.transfer']({ count: 1 }) })}: ${source} → ${destination}, ${money(expense)} → ${money(income)}`}
-			>
-				<Text size="sm"><strong>{source} → {destination}</strong></Text>
-				<Text size="sm"
-					><time datetime={expense.bookedOn}
-						>{dateFormatter.format(new Date(`${expense.bookedOn}T00:00:00Z`))}</time
-					>
-					→
-					<time datetime={income.bookedOn}
-						>{dateFormatter.format(new Date(`${income.bookedOn}T00:00:00Z`))}</time
-					></Text
+			<li>
+				<AppLink
+					href={transactionHref(expense.id)}
+					class="transfer-link"
+					aria-label={`${m['labels.subject_details']({ subject: m['nouns.transfer']({ count: 1 }) })}: ${source} → ${destination}, ${money(expense)} → ${money(income)}`}
 				>
-				{#if expense.description}<Text size="sm"><em>{expense.description}</em></Text>{/if}
-				{#if income.description && income.description !== expense.description}<Text size="sm"
-						><em>{income.description}</em></Text
-					>{/if}
-				{#snippet amount()}<Text size="sm" as="span"
+					<Text size="sm"><strong>{source} → {destination}</strong></Text>
+					<Text size="sm"
+						><time datetime={expense.bookedOn}
+							>{dateFormatter.format(new Date(`${expense.bookedOn}T00:00:00Z`))}</time
+						>
+						→
+						<time datetime={income.bookedOn}
+							>{dateFormatter.format(new Date(`${income.bookedOn}T00:00:00Z`))}</time
+						></Text
+					>
+					{#if expense.description}<Text size="sm"><em>{expense.description}</em></Text>{/if}
+					{#if income.description && income.description !== expense.description}<Text size="sm"
+							><em>{income.description}</em></Text
+						>{/if}
+					<Text size="sm" as="span"
 						>{money(
 							expense
 						)}{#if expense.currency !== income.currency || expense.amountMinor !== income.amountMinor}
 							→ {money(income)}{/if}</Text
-					>{/snippet}
-			</TransactionRowLayout>
+					>
+				</AppLink>
+			</li>
 		{/if}
 	{/snippet}
 </TransactionList>
+
+<style>
+	li :global(.transfer-link) {
+		display: grid;
+		gap: var(--dui-spacing-xs);
+		padding: var(--dui-spacing-xs);
+	}
+</style>
