@@ -21,7 +21,7 @@ import {
 	selectWorkspaceBackup,
 	type BackupObservation
 } from '../machines/workspaces/workspace-backup.js'
-import { financeBackupProfile, readFinanceMetadata } from './workspace.js'
+import { encodeAttachmentBytes, financeBackupProfile, readFinanceMetadata } from './workspace.js'
 
 let server: LocalJazzServerHandle, db: Db, writer: Db, identityId: string
 const sessions: JazzSession<JazzClient>[] = []
@@ -363,6 +363,13 @@ function capture(
 	return { actor, request, ...input }
 }
 describe('Finance native backup', { timeout: 30_000 }, () => {
+	it.each([0, 1, 2, 3, 0x7fff, 0x8000, 0x8001, 8 * 1024 * 1024])(
+		'encodes %i attachment bytes exactly, including padding and chunk boundaries',
+		(length) => {
+			const bytes = Uint8Array.from({ length }, (_, index) => index % 256)
+			expect(encodeAttachmentBytes(bytes)).toBe(Buffer.from(bytes).toString('base64'))
+		}
+	)
 	it.each([undefined, 'private-backup-password'])(
 		'captures every released type and exact bytes with protection %s',
 		async (password) => {

@@ -82,9 +82,12 @@ backup labels and shared general feedback on 2026-11-05; reuse other existing lo
 - [x] Profile/actor qualification and real disposable Jazz/Chromium downloads.
 - [x] Record measured Finance-path behavior and remaining platform limits.
 
-Verification on 2026-11-05: application/test type checks, **1,871 unit/integration tests after rebasing onto Finance `fdf7d7a`**, browser
+Verification on 2026-11-05: application/test type checks, **1,879 unit/integration tests on Node 24.22.2 after rebasing onto Finance `fdf7d7a`**, browser
 scope discovery, production build without a live Jazz service, formatting, and **six Chromium cases** pass.
 Sixteen Finance integration cases use actual disposable Jazz with the full application policy.
+Eight pure encoding cases cover empty input, padding, all byte values, chunk boundaries and the
+8 MiB per-file limit. Attachment encoding uses bounded `btoa` conversion rather than the newer
+`Uint8Array.toBase64` API, which is unavailable in the CI Node 24 runtime.
 They cover all 19 archived types, protected/plain independent opening, audit/byte/source preservation,
 secret exclusion, incomplete/unsupported source, budgets, ownership, native conflict/fresh attempt,
 profile rejection, password validation, cancellation, scope replacement and shutdown.

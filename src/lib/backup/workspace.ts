@@ -749,6 +749,13 @@ export function readFinancePart(input: JazzArchiveReaderInput) {
 			target.partIndex += 1
 		})
 }
+/** Pure encoding through APIs available in Node 24 and browsers. Bound spread arguments per chunk. */
+export function encodeAttachmentBytes(bytes: Uint8Array): string {
+	const chunks: string[] = []
+	for (let offset = 0; offset < bytes.length; offset += 0x8000)
+		chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)))
+	return btoa(chunks.join(''))
+}
 export function hashFinanceFile(input: JazzArchiveReaderInput) {
 	const current = data(input),
 		metadata = file(input),
@@ -762,7 +769,7 @@ export function hashFinanceFile(input: JazzArchiveReaderInput) {
 			mediaType: z.string().parse(metadata.mimeType),
 			sizeBytes: bytes.length,
 			sha256,
-			data: bytes.toBase64()
+			data: encodeAttachmentBytes(bytes)
 		})
 		bytes.fill(0)
 		target.bytes = undefined
