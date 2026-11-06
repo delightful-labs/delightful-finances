@@ -97,7 +97,7 @@ No constitution violations are planned. The new relationship table, one persiste
 
 ## Transfer list review cycle
 
-Use `TransferView` as the Jazz integration boundary for workspace-scoped accounts, relationships, and transactions. Resolve effective reciprocal links with the existing domain helper and project readable pairs for presentation; this is a synchronous read projection without new actors, persistence, or workflows. `TransferList` composes the existing pure `TransactionList` through a row snippet, disabling daily totals. Extract `TransactionRowLayout` to share row spacing, link semantics, focus treatment, and amount placement with income/expense rows. Keep posting dates and currencies independent. Add `/transfers` and update navigation. This focused cycle spans seven implementation files plus feature artifacts; tests remain behind implementation approval.
+Use `TransferView` as the Jazz integration boundary for workspace-scoped accounts, relationships, and transactions. Resolve effective reciprocal links with the existing domain helper and project readable pairs for presentation; this is a synchronous read projection without new actors, persistence, or workflows. `TransferList` composes the existing pure `TransactionList` through a row snippet, disabling daily totals. Render transfer rows with native list items and AppLink for query-preserving link semantics, keeping their content and amounts in TransferList. Keep posting dates and currencies independent. Add `/transfers` and update navigation. This focused cycle spans seven implementation files plus feature artifacts; tests remain behind implementation approval.
 
 ### Sidebar and saved-transfer refinement
 

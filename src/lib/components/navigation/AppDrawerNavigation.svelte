@@ -12,6 +12,7 @@
 	import CategoriesIcon from 'tdesign-icons-svg/src/root-list.svg?component'
 	import TagsIcon from 'tdesign-icons-svg/src/tag.svg?component'
 	import LoginIcon from 'tdesign-icons-svg/src/login.svg?component'
+
 	let {
 		pathname,
 		onNavigate,

@@ -22,10 +22,10 @@ importers:
         version: 5.0.0(svelte@5.57.2)(xstate@5.33.2)
       delightful-local-first:
         specifier: file:vendor/delightful-local-first-aaf718d-logger.tgz
-        version: file:vendor/delightful-local-first-aaf718d-logger.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2)
+        version: file:vendor/delightful-local-first-aaf718d-logger.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2)
       delightful-ui:
-        specifier: file:vendor/delightful-ui-0.0.25-radio-items.tgz
-        version: file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2)
+        specifier: file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz
+        version: file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz(svelte@5.57.2)
       jazz-tools:
         specifier: 2.0.0-alpha.59
         version: 2.0.0-alpha.59(svelte@5.57.2)
@@ -1170,8 +1170,8 @@ packages:
       xstate:
         optional: true
 
-  delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz:
-    resolution: {integrity: sha512-TRjJwpawmU0Mo+pW0VPT9f2CktGudqR3BhBNsR+2XY2z0V3vw6umx2PYjODLSgU64w9fpMfupEa2dDu6f/5fxQ==, tarball: file:vendor/delightful-ui-0.0.25-radio-items.tgz}
+  delightful-ui@file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz:
+    resolution: {integrity: sha512-1XkmdcV4Cm/NWOYKOm48//I1e2mXF8z9k9n0F1de1Jpv+EBRASeBSfoH9RsxjIM0SXl+/ORjpTdnwBrn1adreg==, tarball: file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz}
     version: 0.0.25
     engines: {node: ^22.17.0 || >=24.0.0}
     peerDependencies:
@@ -2720,15 +2720,15 @@ snapshots:
     dependencies:
       robust-predicates: 3.0.3
 
-  delightful-local-first@file:vendor/delightful-local-first-aaf718d-logger.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2):
+  delightful-local-first@file:vendor/delightful-local-first-aaf718d-logger.tgz(delightful-ui@file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.59(svelte@5.57.2))(svelte@5.57.2)(xstate@5.33.2):
     dependencies:
       svelte: 5.57.2
     optionalDependencies:
-      delightful-ui: file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2)
+      delightful-ui: file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz(svelte@5.57.2)
       jazz-tools: 2.0.0-alpha.59(svelte@5.57.2)
       xstate: 5.33.2
 
-  delightful-ui@file:vendor/delightful-ui-0.0.25-radio-items.tgz(svelte@5.57.2):
+  delightful-ui@file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz(svelte@5.57.2):
     dependencies:
       svelte: 5.57.2
       tdesign-icons-svg: 0.4.7

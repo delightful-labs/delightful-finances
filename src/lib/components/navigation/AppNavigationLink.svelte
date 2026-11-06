@@ -1,20 +1,18 @@
 <script lang="ts">
-	import AppLink from '#lib/components/navigation/AppLink.svelte'
 	import type { ComponentProps } from 'svelte'
+	import AppLink from '#lib/components/navigation/AppLink.svelte'
+
 	import { NavigationLink } from 'delightful-ui'
 
 	let {
 		href,
 		pathname,
-		icon,
 		label,
-		onclick
-	}: {
-		href: string
-		pathname: string
-		icon: ComponentProps<typeof NavigationLink>['icon']
+		...attributes
+	}: Omit<ComponentProps<typeof NavigationLink>, 'href' | 'children'> & {
 		label: string
-		onclick: () => void
+		pathname: string
+		href: string
 	} = $props()
 
 	const current = $derived(
@@ -22,10 +20,4 @@
 	)
 </script>
 
-<AppLink {href}>
-	{#snippet render(destination)}
-		<NavigationLink href={destination} aria-current={current} {icon} {onclick}>
-			{label}
-		</NavigationLink>
-	{/snippet}
-</AppLink>
+<AppLink {...attributes} {href} component={NavigationLink} aria-current={current}>{label}</AppLink>
