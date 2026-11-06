@@ -1171,7 +1171,7 @@ packages:
         optional: true
 
   delightful-ui@file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz:
-    resolution: {integrity: sha512-1XkmdcV4Cm/NWOYKOm48//I1e2mXF8z9k9n0F1de1Jpv+EBRASeBSfoH9RsxjIM0SXl+/ORjpTdnwBrn1adreg==, tarball: file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz}
+    resolution: {integrity: sha512-wHx2riqU1Yv1HcPWkiMn1nvb99e2X3P60xJg9IAtEGLpH0o4HoyXImq177MgmQFxCFFSJq7XFrwfiPza53UH5A==, tarball: file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz}
     version: 0.0.25
     engines: {node: ^22.17.0 || >=24.0.0}
     peerDependencies:
@@ -1830,6 +1830,9 @@ packages:
 
   xstate@5.33.2:
     resolution: {integrity: sha512-8tC7yXgeCvpT8gKEeEje6ikJJG1wpnoLiXe+HfECW8m10ubMd3QxKOwWA8KxPJVBcLwfdRoMKYxIBGYKmo37/A==}
+
+  xstate@5.33.3:
+    resolution: {integrity: sha512-AnDRjS/GyKHmbA1PyhVCYBqYsA7EGe3KGgeD0ht3NFsXzoz7leX/HQDFX9QlHFJ/ltLHPsgChJYwPzRvB/0b4g==}
 
   zimmerframe@1.1.5:
     resolution: {integrity: sha512-msJxIvYDYcoNL+PJsu+7qmpDWsYmAxTY+2TNYXXF0hzBzBk0BMecOqDOG/EckUoKCuKwObfbugIl8QpqHDXeFA==}
@@ -2732,6 +2735,7 @@ snapshots:
     dependencies:
       svelte: 5.57.2
       tdesign-icons-svg: 0.4.7
+      xstate: 5.33.3
 
   dequal@2.0.3: {}
 
@@ -3342,6 +3346,8 @@ snapshots:
   ws@8.22.0: {}
 
   xstate@5.33.2: {}
+
+  xstate@5.33.3: {}
 
   zimmerframe@1.1.5: {}
 

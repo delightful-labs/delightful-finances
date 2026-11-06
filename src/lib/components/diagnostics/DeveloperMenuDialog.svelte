@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Dialog } from 'delightful-ui'
+	import { Button, Dialog, SkipButton } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
 
@@ -22,15 +22,9 @@
 	const dialogId = $props.id()
 </script>
 
-<button
-	class="developer-trigger"
-	type="button"
-	aria-haspopup="dialog"
-	aria-controls={dialogId}
-	onclick={() => (open = true)}
->
+<SkipButton aria-haspopup="dialog" aria-controls={dialogId} onclick={() => (open = true)}>
 	{m['developer.menu']()}
-</button>
+</SkipButton>
 
 <Dialog id={dialogId} heading={m['developer.menu']()} bind:open closedby="any">
 	<dl>
@@ -52,23 +46,3 @@
 	{@render children()}
 	<Button type="button" onclick={() => (open = false)}>{m['actions.close']()}</Button>
 </Dialog>
-
-<style>
-	.developer-trigger {
-		position: fixed;
-		inset-block-start: var(--dui-spacing-xs);
-		inset-inline-start: var(--dui-spacing-xs);
-		z-index: 100;
-	}
-
-	.developer-trigger:not(:focus) {
-		inline-size: 1px;
-		block-size: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-		border: 0;
-	}
-</style>
