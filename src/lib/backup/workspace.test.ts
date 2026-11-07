@@ -389,6 +389,8 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 			const file = h.files[0]
 			if (!file) throw new Error('Missing file')
 			const payload = await open(file, password)
+			expect(payload.profile).toEqual({ id: 'delightful.finance.workspace', version: 2 })
+			expect(payload.coverage.recordTypes).toContain('sourceDocuments')
 			expect(financeBackupProfile.validate(payload)).toBe(true)
 			expect(new Set([...payload.records, ...payload.references].map((row) => row.type)).size).toBe(
 				19
@@ -675,4 +677,117 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 		await toPromise(actor)
 		expect(actor.getSnapshot().status).toBe('done')
 	})
+	it.each(['normal', 'crash', 'closing', 'changing'])(
+		'retains export custody after failed release during %s',
+		async (mode) => {
+			const g = await seed(),
+				entered = Promise.withResolvers<void>(),
+				proceed = Promise.withResolvers<void>(),
+				releasing = Promise.withResolvers<void>(),
+				releaseGate = Promise.withResolvers<void>()
+			const facts: BackupObservation = {
+				identityId,
+				workspaceId: g.organization,
+				membershipId: g.member,
+				memberUserId: identityId,
+				ownerId: identityId,
+				role: 'owner',
+				access: 'all',
+				sessionReady: true,
+				attached: true,
+				loading: false,
+				failed: false
+			}
+			const begin = db.beginExclusiveTransaction.bind(db)
+			let rollback: (() => Promise<boolean>) | undefined
+			const rollbackAttempt = vi.fn(async () => false)
+			vi.spyOn(db, 'beginExclusiveTransaction').mockImplementation(() => {
+				const transaction = begin()
+				const nativeRollback = transaction.rollback.bind(transaction)
+				rollback = () => Promise.resolve(nativeRollback())
+				vi.spyOn(transaction, 'rollback').mockImplementation(rollbackAttempt)
+				return transaction
+			})
+			const exporter = createJazzArchiveExportMachine(financeBackupReader).provide({
+				actors: {
+					preparePayload: fromPromise<
+						void,
+						{
+							request: import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest
+						}
+					>(async () => {
+						entered.resolve()
+						await proceed.promise
+						throw new Error('Injected payload preparation failure')
+					})
+				},
+				actions:
+					mode === 'normal'
+						? {}
+						: {
+								fail: () => {
+									throw new Error('Injected export crash')
+								}
+							}
+			})
+			const actor = createActor(
+				createWorkspaceBackupMachine({
+					db,
+					environment: 'test',
+					observe: () => facts,
+					handoff: { dispatch: async () => 'rejected' }
+				}).provide({
+					actors: {
+						export: exporter,
+						release: fromPromise<
+							void,
+							{
+								request:
+									| import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest
+									| undefined
+							}
+						>(async ({ input }) => {
+							releasing.resolve()
+							await releaseGate.promise
+							await input.request?.release()
+						})
+					}
+				}),
+				{ input: {} }
+			).start()
+			try {
+				actor.send({ type: 'SUBMIT', protection: 'none', password: '' })
+				await entered.promise
+				const request = actor.getSnapshot().context.request
+				proceed.resolve()
+				if (mode !== 'normal') {
+					await releasing.promise
+					if (mode === 'closing') actor.send({ type: 'SHUTDOWN' })
+					if (mode === 'changing')
+						actor.send({ type: 'OBSERVE', facts: { ...facts, workspaceId: crypto.randomUUID() } })
+					releaseGate.resolve()
+				}
+				await waitFor(actor, (state) => selectWorkspaceBackup(state).canReload)
+				expect(selectWorkspaceBackup(actor.getSnapshot())).toMatchObject({
+					editable: false,
+					canDownload: false,
+					canCancel: false,
+					canReload: true,
+					message: 'failed',
+					alert: true
+				})
+				expect(actor.getSnapshot().context.request).toBe(request)
+				actor.send({ type: 'OBSERVE', facts })
+				actor.send({ type: 'SUBMIT', protection: 'none', password: '' })
+				actor.send({ type: 'SHUTDOWN' })
+				expect(actor.getSnapshot().status).toBe('active')
+				expect(actor.getSnapshot().context.request).toBe(request)
+				expect(rollbackAttempt).toHaveBeenCalledOnce()
+			} finally {
+				// Native test cleanup does not acknowledge success to the application owner.
+				await rollback?.()
+				actor.stop()
+			}
+		}
+	)
 })

@@ -24,6 +24,7 @@ import {
 	financeOwner,
 	readFinanceMetadata,
 	readFinanceRelations,
+	readFinanceSources,
 	readFinanceFiles,
 	readFinanceParts,
 	prepareFinanceFiles,
@@ -70,7 +71,9 @@ const readerActors = {
 	}),
 	authority: leaf(readFinanceAuthority),
 	metadata: leaf(readFinanceMetadata),
-	relations: leaf(readFinanceRelations),
+	relations: leaf((input) =>
+		Promise.all([readFinanceRelations(input), readFinanceSources(input)]).then(() => {})
+	),
 	files: leaf(readFinanceFiles),
 	parts: leaf(readFinanceParts),
 	validate: leaf(prepareFinanceFiles),
@@ -382,6 +385,11 @@ export function createWorkspaceBackupMachine(options: Options) {
 					},
 					onDone: [
 						{
+							guard: ({ event }) =>
+								event.output.outcome === 'failed' && event.output.code === 'cleanupFailed',
+							target: 'releaseBlocked'
+						},
+						{
 							guard: 'closing',
 							target: 'closed',
 							actions: assign({ request: undefined, result: undefined })
@@ -407,9 +415,9 @@ export function createWorkspaceBackupMachine(options: Options) {
 						}
 					],
 					onError: [
-						{ guard: 'closing', target: 'closingAfterCrash' },
-						{ guard: 'invalidating', target: 'replacingAfterCrash' },
-						{ target: 'recovering' }
+						{ guard: 'closing', target: 'releasing.closing' },
+						{ guard: 'invalidating', target: 'releasing.changing' },
+						{ target: 'releasing.working' }
 					]
 				},
 				on: {
@@ -428,38 +436,43 @@ export function createWorkspaceBackupMachine(options: Options) {
 					closing: { on: { OBSERVE: { actions: 'observe' }, CANCEL: {}, SHUTDOWN: {} } }
 				}
 			},
-			recovering: {
+			releasing: {
+				initial: 'working',
 				invoke: {
 					src: 'release',
 					input: ({ context }) => ({ request: context.request }),
 					onDone: [
-						{ guard: ({ context }) => eligible(context.facts), target: 'editing.failed' },
-						{ target: 'checking' }
+						{
+							guard: stateIn({ releasing: 'closing' }),
+							target: 'closed',
+							actions: assign({ request: undefined, result: undefined })
+						},
+						{
+							guard: stateIn({ releasing: 'changing' }),
+							target: 'checking',
+							actions: assign({ request: undefined, result: undefined })
+						},
+						{
+							guard: ({ context }) => eligible(context.facts),
+							target: 'editing.failed',
+							actions: assign({ request: undefined })
+						},
+						{ target: 'checking', actions: assign({ request: undefined }) }
 					],
-					onError: [
-						{ guard: ({ context }) => eligible(context.facts), target: 'editing.failed' },
-						{ target: 'checking' }
-					]
+					onError: 'releaseBlocked'
 				},
-				on: { OBSERVE: { actions: 'observe' }, SHUTDOWN: 'closingAfterCrash' }
+				on: {
+					OBSERVE: { guard: 'changed', target: '.changing', actions: 'observe' },
+					SHUTDOWN: '.closing'
+				},
+				states: {
+					working: {},
+					changing: {},
+					closing: { on: { OBSERVE: { actions: 'observe' }, SHUTDOWN: {} } }
+				}
 			},
-			replacingAfterCrash: {
-				invoke: {
-					src: 'release',
-					input: ({ context }) => ({ request: context.request }),
-					onDone: 'checking',
-					onError: 'checking'
-				},
-				on: { OBSERVE: { actions: 'observe' }, SHUTDOWN: 'closingAfterCrash' }
-			},
-			closingAfterCrash: {
-				invoke: {
-					src: 'release',
-					input: ({ context }) => ({ request: context.request }),
-					onDone: 'closed',
-					onError: 'closed'
-				},
-				on: { OBSERVE: {}, SHUTDOWN: {} }
+			releaseBlocked: {
+				on: { OBSERVE: { actions: 'observe' }, SHUTDOWN: {} }
 			},
 			closed: { type: 'final', entry: assign({ request: undefined, result: undefined }) }
 		}
@@ -479,33 +492,37 @@ export function selectWorkspaceBackup(snapshot: WorkspaceBackupSnapshot): {
 	editable: boolean
 	canDownload: boolean
 	canCancel: boolean
+	canReload: boolean
 	message: BackupMessage
 	alert: boolean
 } {
-	const busy = snapshot.matches('exporting') || snapshot.matches('recovering'),
+	const busy = snapshot.matches('exporting') || snapshot.matches('releasing'),
 		editing = snapshot.matches('editing'),
 		result = snapshot.context.result
-	const message: BackupMessage = busy
-		? 'preparing'
-		: snapshot.matches({ editing: 'downloaded' })
-			? 'downloaded'
-			: snapshot.matches({ editing: 'cancelled' })
-				? 'cancelled'
-				: snapshot.matches({ editing: 'invalidPassword' })
-					? 'password'
-					: snapshot.matches({ editing: 'failed' })
-						? result?.outcome === 'failed' && result.code === 'permissionDenied'
-							? 'permissionDenied'
-							: result?.outcome === 'failed' && result.code === 'sourceChanged'
-								? 'dataChanged'
-								: 'failed'
-						: snapshot.matches('unavailable') && !snapshot.context.facts.loading
-							? 'permissionDenied'
-							: undefined
+	const message: BackupMessage = snapshot.matches('releaseBlocked')
+		? 'failed'
+		: busy
+			? 'preparing'
+			: snapshot.matches({ editing: 'downloaded' })
+				? 'downloaded'
+				: snapshot.matches({ editing: 'cancelled' })
+					? 'cancelled'
+					: snapshot.matches({ editing: 'invalidPassword' })
+						? 'password'
+						: snapshot.matches({ editing: 'failed' })
+							? result?.outcome === 'failed' && result.code === 'permissionDenied'
+								? 'permissionDenied'
+								: result?.outcome === 'failed' && result.code === 'sourceChanged'
+									? 'dataChanged'
+									: 'failed'
+							: snapshot.matches('unavailable') && !snapshot.context.facts.loading
+								? 'permissionDenied'
+								: undefined
 	return {
 		editable: editing,
 		canDownload: editing,
 		canCancel: snapshot.matches({ exporting: 'working' }),
+		canReload: snapshot.matches('releaseBlocked'),
 		message,
 		alert:
 			message === 'failed' ||

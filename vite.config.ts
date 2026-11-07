@@ -13,7 +13,10 @@ export default defineConfig({
 	// A different page origin has different browser storage. Never silently change ports.
 	server: { port: 5173, strictPort: true },
 	// Vendored DUI updates must be loaded from the current package, not a cached bundle.
-	optimizeDeps: { exclude: ['delightful-ui'] },
+	optimizeDeps: {
+		exclude: ['delightful-ui'],
+		include: ['delightful-local-first/backup/archive']
+	},
 	plugins: [
 		workerAssetsManifest(),
 		{

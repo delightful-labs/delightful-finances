@@ -7,7 +7,7 @@ import { financeBackupProfile } from '../../src/lib/backup/workspace.js'
 
 import { expect } from '@playwright/test'
 import { test, start, installWorkspaceSettingsTest } from '../helpers/workspace.js'
-import { openCreationModal, selectWorkspace } from '../helpers/ui.js'
+import { openCreationModal, selectWorkspace, navigateSidebar } from '../helpers/ui.js'
 
 test(
 	'owner can rename, reject whitespace, retry, and retain the name after reload',
@@ -179,11 +179,59 @@ for (const role of ['admin', 'member', 'viewer']) {
 test.describe('workspace backup downloads', () => {
 	// These measurements share one disposable server; seed and export one large scope at a time.
 	test.describe.configure({ mode: 'default' })
+	test(
+		'failed backup release remains recoverable after leaving settings',
+		{ tag: ['@workspaces', '@backup'] },
+		async ({ page }) => {
+			await start(page)
+			const identity = await page.evaluate(() => {
+				const { db, userId } = window.workspaceSettingsTest
+				const begin = db.beginExclusiveTransaction.bind(db)
+				db.beginExclusiveTransaction = () => {
+					const transaction = begin()
+					transaction.commit = () => {
+						sessionStorage.setItem('backup-test-commit-attempt', '1')
+						throw new Error('Injected export failure before native commit')
+					}
+					transaction.rollback = async () => false
+					return transaction
+				}
+				return userId
+			})
+			await page.locator('#workspace-backup-protection').selectOption('none')
+			await page.getByRole('button', { name: 'Download Backup', exact: true }).click()
+			await expect(
+				page.getByRole('alert').filter({ hasText: 'Couldn’t complete the request.' })
+			).toBeVisible()
+			await expect(
+				page.getByRole('button', { name: 'Download Backup', exact: true })
+			).toBeDisabled()
+			await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible()
+			expect(await page.evaluate(() => sessionStorage.getItem('backup-test-commit-attempt'))).toBe(
+				'1'
+			)
+			await navigateSidebar(page, 'Overview')
+			const retry = page.getByRole('main').getByRole('button', { name: 'Try again', exact: true })
+			await expect(retry).toBeVisible()
+			await Promise.all([
+				page.waitForEvent('framenavigated', { predicate: (frame) => frame === page.mainFrame() }),
+				retry.click()
+			])
+			await expect(page.getByLabel('Current Workspace', { exact: true })).not.toHaveValue('')
+			await installWorkspaceSettingsTest(page)
+			expect(await page.evaluate(() => window.workspaceSettingsTest.userId)).toBe(identity)
+			expect(await page.evaluate(() => sessionStorage.getItem('backup-test-commit-attempt'))).toBe(
+				'1'
+			)
+		}
+	)
 	for (const protection of ['password', 'none']) {
 		test(
 			`downloads and independently reopens a Finance ${protection} backup without changing source`,
 			{ tag: ['@workspaces', '@backup'] },
 			async ({ page }, info) => {
+				// This flow seeds, exports, restores and independently verifies 521 transactions.
+				test.setTimeout(180_000)
 				await start(page)
 				const source = await page.evaluate(async () => {
 					const { db, app, userId } = window.workspaceSettingsTest
@@ -258,7 +306,7 @@ test.describe('workspace backup downloads', () => {
 				})
 				await page.locator('#workspace-backup-protection').selectOption(protection)
 				if (protection === 'password')
-					await page.getByLabel('Password', { exact: true }).fill('independent-browser-password')
+					await page.locator('#workspace-backup-password').fill('independent-browser-password')
 				const responsiveness = await page.evaluateHandle(() => {
 					const stats = { longestTaskMs: 0 }
 					const observer = new PerformanceObserver((list) => {
@@ -326,11 +374,214 @@ test.describe('workspace backup downloads', () => {
 					body: JSON.stringify(measurement),
 					contentType: 'application/json'
 				})
+
+				// Restore from the actual downloaded file through the root-owned UI.
+				const restoreRegion = page.getByRole('region', { name: 'Restore Workspace', exact: true })
+				const beforeIds = await page.evaluate(async () =>
+					(
+						await window.workspaceSettingsTest.db.all(
+							window.workspaceSettingsTest.app.organizations,
+							{ tier: 'remote' }
+						)
+					).map((row) => row.id)
+				)
+				if (protection === 'none') {
+					await restoreRegion.getByLabel('Backup', { exact: true }).setInputFiles({
+						name: 'invalid.dlf',
+						mimeType: 'application/octet-stream',
+						buffer: Buffer.from('invalid backup')
+					})
+					await restoreRegion
+						.getByRole('button', { name: 'Restore Workspace', exact: true })
+						.click()
+					await expect(restoreRegion.getByRole('alert')).toContainText(
+						'Couldn’t complete the request.'
+					)
+				}
+				if (protection === 'password') {
+					await restoreRegion.getByLabel('Backup', { exact: true }).setInputFiles(path)
+					await restoreRegion.getByLabel('Password', { exact: true }).fill('wrong-password')
+					await restoreRegion
+						.getByRole('button', { name: 'Restore Workspace', exact: true })
+						.click()
+					await expect(restoreRegion.getByRole('alert')).toContainText(
+						'Couldn’t complete the request.'
+					)
+					expect(
+						await page.evaluate(async () =>
+							(
+								await window.workspaceSettingsTest.db.all(
+									window.workspaceSettingsTest.app.organizations,
+									{ tier: 'remote' }
+								)
+							).map((row) => row.id)
+						)
+					).toEqual(beforeIds)
+				}
+				await restoreRegion.getByLabel('Backup', { exact: true }).setInputFiles(path)
+				if (protection === 'password')
+					await restoreRegion
+						.getByLabel('Password', { exact: true })
+						.fill('independent-browser-password')
+				await restoreRegion.getByRole('button', { name: 'Restore Workspace', exact: true }).click()
+				await expect(
+					restoreRegion.getByRole('button', { name: 'Create Workspace', exact: true })
+				).toBeVisible()
+				expect(
+					await page.evaluate(async () =>
+						(
+							await window.workspaceSettingsTest.db.all(
+								window.workspaceSettingsTest.app.organizations,
+								{ tier: 'remote' }
+							)
+						).map((row) => row.id)
+					)
+				).toEqual(beforeIds)
+				if (protection === 'none') {
+					await navigateSidebar(page, 'Overview')
+					await expect(
+						restoreRegion.getByRole('button', { name: 'Create Workspace', exact: true })
+					).toBeVisible()
+					await restoreRegion.getByRole('button', { name: 'Cancel', exact: true }).click()
+					await expect(restoreRegion.getByRole('status')).toHaveText('The request was cancelled.')
+					await navigateSidebar(page, 'Workspaces')
+					await installWorkspaceSettingsTest(page)
+					await restoreRegion.getByLabel('Backup', { exact: true }).setInputFiles(path)
+					await restoreRegion
+						.getByRole('button', { name: 'Restore Workspace', exact: true })
+						.click()
+					await expect(
+						restoreRegion.getByRole('button', { name: 'Create Workspace', exact: true })
+					).toBeVisible()
+				}
+				const restoreStarted = performance.now()
+				await restoreRegion.getByRole('button', { name: 'Create Workspace', exact: true }).click()
+				if (protection === 'none') await navigateSidebar(page, 'Overview')
+				// Native acceptance of this graph can exceed 30s; the overall test deadline still applies.
+				await expect(restoreRegion.getByRole('status')).toHaveText('Done', {
+					timeout: info.timeout
+				})
+				const restoreMeasurement = {
+					protection,
+					transactions: 521,
+					totalRestoreMs: Math.round(performance.now() - restoreStarted)
+				}
+				console.log('Finance restore measurement', restoreMeasurement)
+				await info.attach('finance-restore-measurement', {
+					body: JSON.stringify(restoreMeasurement),
+					contentType: 'application/json'
+				})
+				const restored = await page.evaluate(async (beforeIds) => {
+					const { db, app } = window.workspaceSettingsTest
+					const roots = await db.all(app.organizations, { tier: 'remote' }),
+						root = roots.find((row) => !beforeIds.includes(row.id))
+					if (!root) throw new Error('Missing restored workspace')
+					const transactions = await db.all(app.transactions.where({ organizationId: root.id }), {
+							tier: 'remote'
+						}),
+						members = await db.all(app.organizationMembers.where({ organizationId: root.id }), {
+							tier: 'remote'
+						}),
+						operations = await db.all(app.restoreOperations.where({ workspaceId: root.id }), {
+							tier: 'remote'
+						})
+					const first = transactions.find((row) => row.description === 'Exact transaction 0')
+					if (!first) throw new Error('Missing restored attachment transaction')
+					const files = await db.all(app.files.where({ transactionId: first.id }), {
+						tier: 'remote'
+					})
+					const parts = await db.all(
+						app.fileParts
+							.where({ fileId: { in: files.map((row) => row.id) } })
+							.orderBy('partIndex'),
+						{ tier: 'remote' }
+					)
+					return {
+						id: root.id,
+						roots: roots.length,
+						transactions: transactions.length,
+						descriptions: transactions.map((row) => row.description).sort(),
+						facts: transactions
+							.map((row) => ({
+								description: row.description,
+								amountMinor: row.amountMinor,
+								currency: row.currency,
+								bookedOn: row.bookedOn,
+								kind: row.kind,
+								source: row.source
+							}))
+							.toSorted((a, b) => a.amountMinor - b.amountMinor),
+						attachment: parts.flatMap((part) => [...(part.data ?? [])]),
+						members: members.map((row) => ({ role: row.role, userId: row.userId })),
+						operationCount: operations.length
+					}
+				}, beforeIds)
+				expect(restored).toMatchObject({
+					roots: beforeIds.length + 1,
+					transactions: 521,
+					operationCount: 1
+				})
+				expect(restored.descriptions).toEqual(
+					Array.from({ length: 521 }, (_, index) => 'Exact transaction ' + index).sort()
+				)
+				expect(restored.facts).toEqual(
+					Array.from({ length: 521 }, (_, index) => ({
+						description: 'Exact transaction ' + index,
+						amountMinor: index + 1,
+						currency: 'USD',
+						bookedOn: '2026-11-01',
+						kind: 'expense',
+						source: 'manual'
+					}))
+				)
+				expect(restored.attachment).toEqual([0, 1, 127, 255, 9, 8, 7, 6])
+				expect(restored.members).toHaveLength(1)
+				expect(restored.members[0]?.role).toBe('owner')
+				expect(
+					await page.evaluate(
+						async (source) =>
+							JSON.stringify(
+								(
+									await window.workspaceSettingsTest.db.all(
+										window.workspaceSettingsTest.app.transactions
+											.where({ organizationId: source.organizationId })
+											.select('*', '$createdAt', '$updatedAt', '$createdBy', '$updatedBy'),
+										{ tier: 'remote' }
+									)
+								).toSorted((a, b) => a.id.localeCompare(b.id))
+							),
+						source
+					)
+				).toBe(source.records)
+				await restoreRegion.getByRole('button', { name: 'Open Workspace', exact: true }).click()
+				await expect(page).toHaveURL((url) => url.searchParams.get('workspace') === restored.id)
+				await installWorkspaceSettingsTest(page)
+				await restoreRegion.getByLabel('Backup', { exact: true }).setInputFiles(path)
+				if (protection === 'password')
+					await restoreRegion
+						.getByLabel('Password', { exact: true })
+						.fill('independent-browser-password')
+				await restoreRegion.getByRole('button', { name: 'Restore Workspace', exact: true }).click()
+				await expect(restoreRegion.getByRole('status')).toHaveText('Done', {
+					timeout: info.timeout
+				})
+				expect(
+					await page.evaluate(
+						async () =>
+							(
+								await window.workspaceSettingsTest.db.all(
+									window.workspaceSettingsTest.app.organizations,
+									{ tier: 'remote' }
+								)
+							).length
+					)
+				).toBe(beforeIds.length + 1)
+
 				await responsiveness.dispose()
 				opened.archive.release()
 				request.release()
 				if (protection === 'password')
-					await expect(page.getByLabel('Password', { exact: true })).toHaveValue('')
+					await expect(page.locator('#workspace-backup-password')).toHaveValue('')
 			}
 		)
 	}

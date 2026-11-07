@@ -10,14 +10,19 @@
 	} from '$app/env/public'
 	import { onDestroy, onMount, setContext, type Snippet } from 'svelte'
 	import { createActor } from 'xstate'
+	import { prepareWorkspaceRestoreFile } from '#lib/machines/workspaces/workspace-restore.js'
 	import { fromStore, readable } from 'svelte/store'
-	import { createApplicationReadinessMachine } from '#lib/machines/runtime/application-readiness.js'
+	import {
+		createApplicationReadinessMachine,
+		selectApplicationWorkspaceRestore
+	} from '#lib/machines/runtime/application-readiness.js'
 	import { readinessKey, type ReadinessContext } from '#lib/runtime/bank-sync.js'
 	import { JazzSessionProvider, type JazzSessionConfig } from 'jazz-tools/svelte'
 	import DeveloperMenu from '#lib/components/diagnostics/DeveloperMenu.svelte'
 	import DemoViewport from '#lib/components/diagnostics/DemoViewport.svelte'
 	import JazzStartup from '#lib/components/startup/JazzStartup.svelte'
 	import SessionStartup from '#lib/components/startup/SessionStartup.svelte'
+	import WorkspaceBackup from '#lib/components/workspaces/WorkspaceBackup.svelte'
 	import WorkspaceBootstrap from '#lib/components/workspaces/WorkspaceBootstrap.svelte'
 	import MutationRejectionNotice from '#lib/components/shared/MutationRejectionNotice.svelte'
 	import { page } from '$app/state'
@@ -71,10 +76,16 @@
 		createApplicationReadinessMachine(
 			{
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
-				navigate: (destination) => goto(destination)
+				navigate: (destination) => goto(destination),
+				reload: () => window.location.reload()
 			},
 			(session) => createJazzRestorationAdapter(session, getCurrentJazzSession),
-			createJazzSessionReadinessAdapter
+			createJazzSessionReadinessAdapter,
+			{
+				appId: jazzConfig.appId,
+				serverUrl: jazzConfig.serverUrl,
+				environment: browser ? window.location.origin : 'finance'
+			}
 		),
 		{ inspect: inspectActor }
 	).start()
@@ -86,6 +97,7 @@
 	setContext(readinessKey, readiness)
 	const startupState = fromStore(snapshot)
 	const jazzSession = $derived(startupState.current.context.session)
+	const restoreView = $derived(selectApplicationWorkspaceRestore(startupState.current))
 	onMount(() => actor.send({ type: 'START', startup: getJazzStartupBinding(jazzConfig) }))
 	// The machine completes only after its workspace/bank children finish cleanup.
 	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
@@ -104,6 +116,18 @@
 	<SessionStartup />
 {/snippet}
 
+{#if restoreView.visibleOutsideSettings && (page.url.pathname !== '/settings/workspace' || !startupState.current.matches( { running: 'ready' } ))}
+	<WorkspaceBackup
+		kind="restore"
+		view={{ ...restoreView, editable: false }}
+		onrestore={(file, password) =>
+			actor.send({
+				type: 'WORKSPACE_RESTORE',
+				request: prepareWorkspaceRestoreFile(file, password)
+			})}
+		oncommand={(type) => actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type } })}
+	/>
+{/if}
 <main>
 	{#if startupState.current.hasTag('startup-error')}
 		<SessionStartup />
