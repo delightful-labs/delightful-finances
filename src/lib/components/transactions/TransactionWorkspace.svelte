@@ -6,6 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js'
 	import Icon from '../navigation/AppIcon.svelte'
 	import ListIcon from 'tdesign-icons-svg/src/view-list.svg?component'
+	import CloseIcon from 'tdesign-icons-svg/src/close.svg?component'
 
 	let {
 		children,
@@ -15,7 +16,7 @@
 		listHref
 	}: {
 		children: Snippet
-		list: Snippet<[boolean]>
+		list: Snippet<[boolean, Snippet?]>
 		index: boolean
 		heading: string
 		listHref?: string | undefined
@@ -29,6 +30,22 @@
 </script>
 
 <svelte:window onresize={() => (desktop = !isMobile())} />
+
+{#snippet closeList()}
+	<Button
+		type="button"
+		appearance="flat"
+		class="transaction-list-close"
+		onclick={() => (drawerOpen = false)}
+	>
+		<Icon icon={CloseIcon} />
+		<ScreenReaderText
+			>{m['actions.close_subject']({
+				subject: m['nouns.transaction']({ count: 2 })
+			})}</ScreenReaderText
+		>
+	</Button>
+{/snippet}
 
 <div class="transaction-workspace" data-desktop={desktop}>
 	<div class="transaction-content" hidden={!desktop && index}>
@@ -61,12 +78,13 @@
 			side="right"
 			{heading}
 			headingHidden
+			showCloseButton={false}
 			closeLabel={m['actions.close_subject']({
 				subject: m['nouns.transaction']({ count: 2 })
 			})}
 			bind:open={drawerOpen}
 		>
-			{@render list(false)}
+			{@render list(false, closeList)}
 		</Drawer>
 	{:else if index}
 		<div class="transaction-mobile-list">
@@ -100,6 +118,15 @@
 
 	.transaction-mobile-list {
 		view-transition-name: transaction-content;
+	}
+
+	.transaction-workspace :global(.transaction-list-close) {
+		--dui-button-padding: 0;
+		--dui-button-border-width: 0;
+		inline-size: 2.75rem;
+		block-size: 2.75rem;
+		font-size: var(--dui-font-size-xxl, 1.5rem);
+		flex-shrink: 0;
 	}
 
 	.drawer-toggle {

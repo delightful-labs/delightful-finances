@@ -3,7 +3,7 @@
 	import { Button, Popover, ScreenReaderText } from 'delightful-ui'
 	import Icon from '../navigation/AppIcon.svelte'
 	import SearchIcon from 'tdesign-icons-svg/src/search.svg?component'
-	import FilterIcon from 'tdesign-icons-svg/src/control-platform.svg?component'
+	import FilterIcon from 'tdesign-icons-svg/src/filter.svg?component'
 	import { m } from '#lib/paraglide/messages.js'
 
 	let { search, filters }: { search: Snippet; filters: Snippet } = $props()

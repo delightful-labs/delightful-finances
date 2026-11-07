@@ -34,8 +34,8 @@
 </script>
 
 <TransactionWorkspace {children} {index} {heading} {listHref}>
-	{#snippet list(showHeading)}
-		<TransactionView {kind} {heading} listPath={config.path} {showHeading} />
+	{#snippet list(showHeading, closeControl)}
+		<TransactionView {kind} {heading} listPath={config.path} {showHeading} {closeControl} />
 	{/snippet}
 </TransactionWorkspace>
 

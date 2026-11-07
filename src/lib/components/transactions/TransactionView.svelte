@@ -9,7 +9,7 @@
 	import { withQueryParams } from '#lib/domain/query-params.js'
 	import { app } from '#lib/schema.js'
 	import { createQuerySubscription } from 'delightful-local-first/backend/jazz/data'
-	import { getContext, untrack } from 'svelte'
+	import { getContext, untrack, type Snippet } from 'svelte'
 	import { page } from '$app/state'
 	import { replaceState } from '$app/navigation'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
@@ -29,11 +29,13 @@
 		kind,
 		heading,
 		listPath,
+		closeControl,
 		showHeading = true
 	}: {
 		kind: TransactionKind
 		heading: string
 		listPath: string
+		closeControl?: Snippet | undefined
 		showHeading?: boolean
 	} = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
@@ -183,6 +185,17 @@
 </script>
 
 <div class="wrapper">
+	{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
+		<TransactionListFilters
+			{closeControl}
+			title={heading}
+			headingLevel={showHeading ? 'h1' : 'h2'}
+			value={listFilters}
+			categories={filterCategories}
+			{currencies}
+			onchange={changeListFilters}
+		/>
+	{/key}
 	<QueryContent
 		queries={[transactions, accounts, categories, tags, links]}
 		loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
@@ -193,14 +206,6 @@
 			<AccountCreation />
 		{/if}
 		{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
-			<TransactionListFilters
-				title={heading}
-				headingLevel={showHeading ? 'h1' : 'h2'}
-				value={listFilters}
-				categories={filterCategories}
-				{currencies}
-				onchange={changeListFilters}
-			/>
 			{#if !validRange}
 				<Message message={m['errors.date_range_invalid']()} />
 			{:else}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
 	import { todayDateOnly } from '#lib/domain/date-only.js'
 	import type { TransactionListFilters } from '#lib/filters/transaction-list-filters.js'
@@ -7,6 +8,7 @@
 	import FilterPopovers from './FilterPopovers.svelte'
 	let {
 		title,
+		closeControl,
 		headingLevel = 'h1',
 		value,
 		categories,
@@ -14,6 +16,7 @@
 		onchange
 	}: {
 		title?: string
+		closeControl?: Snippet | undefined
 		headingLevel?: 'h1' | 'h2'
 		value: TransactionListFilters
 		categories: ReadonlyMap<string, string>
@@ -66,6 +69,7 @@
 			{/if}
 		{/snippet}
 	</FilterPopovers>
+	{@render closeControl?.()}
 </div>
 
 <style>
