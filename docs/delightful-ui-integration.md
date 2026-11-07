@@ -309,8 +309,9 @@ overview retain their own filtering, date calculations, URL/session state and
 callbacks. See the focused requirements and review checklist in
 [transaction list filters](../specs/001-finance-mvp/transaction-list-filters.md#composable-radio-date-choices).
 
-The approved `labels.custom_subject` message renders Custom Dates with the shared
-plural date noun. Custom selection shows the existing date inputs and preserves
+Date choices use `labels.last_week`, `labels.last_month`, and `labels.custom`
+for Last week, Last month, and Custom. The superseded messages and unused day noun
+have been removed. Custom selection shows the existing date inputs and preserves
 the current bounds; presets hide the fields. The transaction-list all-date default
 and overview 30-day default remain intact. This is synchronous presentation state
 in one shared component. No actors, Jazz data, routing, or filter persistence

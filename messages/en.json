@@ -219,14 +219,12 @@
 		"currency": "Currency",
 		"currency_code": "Currency: {code}",
 		"current_subject": "Current {subject}",
-		"custom_subject": "Custom {subject}",
 		"custom": "Custom",
 		"last_week": "Last week",
 		"last_month": "Last month",
 		"description": "Description",
 		"display_name": "Display name",
 		"end_subject": "End {subject}",
-		"last_count_subjects": "Last {count} {subjects}",
 		"linked_name": "Linked to {name}",
 		"memo": "Memo (additional notes)",
 		"more_subjects": "More {subjects}",
@@ -331,16 +329,6 @@
 				"match": {
 					"countPlural=one": "Date",
 					"countPlural=*": "Dates"
-				}
-			}
-		],
-		"day": [
-			{
-				"declarations": ["input count", "local countPlural = count: plural"],
-				"selectors": ["countPlural"],
-				"match": {
-					"countPlural=one": "Day",
-					"countPlural=*": "Days"
 				}
 			}
 		],

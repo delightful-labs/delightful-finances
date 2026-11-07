@@ -78,8 +78,9 @@ The overview reuses plural nouns and generic labels from the localization memory
 “All categories” uses `labels.all_subjects` with `nouns.category`; the heading uses
 `labels.subjects_by_subject` with expense/category nouns. The currency control reuses
 `labels.currency`. Date bounds use `labels.start_subject` / `labels.end_subject` with
-`nouns.date`; both presets share `labels.last_count_subjects` with the real count and
-the corresponding plural of `nouns.day`. The total uses `labels.total_subject_amount`,
+`nouns.date`. Date choices use `labels.last_week`, `labels.last_month`, and
+`labels.custom`, retaining the inclusive 7- and 30-day preset ranges. The total uses
+`labels.total_subject_amount`,
 including the formatted amount inside the message rather than appending punctuation
 and money in the template. Period headings and empty-state copy also interpolate the
 expense noun. The chart explanation retains its context-specific message, and date
