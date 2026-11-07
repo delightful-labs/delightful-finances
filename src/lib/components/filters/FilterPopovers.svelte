@@ -50,6 +50,13 @@
 		margin-inline-start: auto;
 		flex-shrink: 0;
 	}
+	.filter-actions > :global(button) {
+		--dui-button-padding: var(--dui-spacing-xs, 0.5rem);
+		inline-size: var(--dui-button-min-height, 44px);
+		block-size: var(--dui-button-min-height, 44px);
+		display: grid;
+		place-items: center;
+	}
 	.fields {
 		display: grid;
 		gap: var(--dui-spacing-md);
