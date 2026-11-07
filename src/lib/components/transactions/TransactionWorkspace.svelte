@@ -13,12 +13,14 @@
 		list,
 		index,
 		heading,
+		drawerHeading = heading,
 		listHref
 	}: {
 		children: Snippet
 		list: Snippet<[boolean, Snippet?]>
 		index: boolean
 		heading: string
+		drawerHeading?: string
 		listHref?: string | undefined
 	} = $props()
 	let desktop = $state(false)
@@ -76,7 +78,7 @@
 		<Drawer
 			id={drawerId}
 			side="right"
-			{heading}
+			heading={drawerHeading}
 			headingHidden
 			showCloseButton={false}
 			closeLabel={m['actions.close_subject']({

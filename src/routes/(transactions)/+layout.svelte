@@ -33,7 +33,13 @@
 	})
 </script>
 
-<TransactionWorkspace {children} {index} {heading} {listHref}>
+<TransactionWorkspace
+	{children}
+	{index}
+	{heading}
+	drawerHeading={m['nouns.transaction']({ count: 2 })}
+	{listHref}
+>
 	{#snippet list(showHeading, closeControl)}
 		<TransactionView {kind} {heading} listPath={config.path} {showHeading} {closeControl} />
 	{/snippet}
