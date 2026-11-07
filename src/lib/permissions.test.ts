@@ -760,13 +760,27 @@ describe('transaction attachment permissions', () => {
 			images: [{ id: link.id, fileId: file.id }],
 			blockedIds: []
 		}
-		const actor = createActor(savedTransactionImageEditorMachine, {
-			input: {
-				db: selectedMemberDb,
-				transaction: { id: expenseId, accountId, organizationId },
-				observation
+		const settle = vi.fn((write: import('jazz-tools').WriteHandle) => write.wait({ tier: 'local' }))
+		const actor = createActor(
+			savedTransactionImageEditorMachine.provide({
+				actors: {
+					persist: transactionAttachmentReplacementMachine.provide({
+						actors: {
+							settle: fromPromise(({ input }: { input: import('jazz-tools').WriteHandle }) =>
+								settle(input)
+							)
+						}
+					})
+				}
+			}),
+			{
+				input: {
+					db: selectedMemberDb,
+					transaction: { id: expenseId, accountId, organizationId },
+					observation
+				}
 			}
-		}).start()
+		).start()
 		try {
 			actor.send({ type: 'EDIT', attachmentId: link.id })
 			await waitFor(actor, (snapshot) => snapshot.matches({ editing: 'open' }), { timeout: 5000 })
@@ -781,6 +795,9 @@ describe('transaction attachment permissions', () => {
 			editor.send({ type: 'APPLY' })
 			await waitFor(actor, (snapshot) => snapshot.matches('idle'), { timeout: 5000 })
 			expect(actor.getSnapshot().context.problem).toBeNull()
+			const write = settle.mock.calls[0]?.[0]
+			if (!write) throw new Error('Missing saved-image write receipt')
+			await write.wait({ tier: 'global' })
 			const current = await selectedMemberDb.one(
 				app.transactionAttachments.where({ id: link.id }),
 				{ tier: 'local' }
