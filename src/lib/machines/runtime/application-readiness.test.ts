@@ -6,6 +6,7 @@ import {
 	sendParent,
 	waitFor,
 	fromCallback,
+	fromPromise,
 	type ActorRefFrom,
 	type InspectionEvent
 } from 'xstate'
@@ -1598,4 +1599,117 @@ it('does not forward saved resource output to an immediately completed drain joi
 	})
 	expect(actor.getSnapshot().context.selectionLease?.request.workspaceId).toBe(scope.profileId)
 	expect(late).toEqual([])
+})
+
+describe('application-owned workspace restore drain', () => {
+	async function fixture() {
+		const current = session(),
+			snapshot = accountSnapshot(crypto.randomUUID())
+		Object.defineProperty(snapshot, 'client', {
+			value: { db: { onMutationError: () => () => {} } }
+		})
+		current.getSnapshot.mockReturnValue(snapshot)
+		const gate = Promise.withResolvers<void>(),
+			entered = Promise.withResolvers<void>(),
+			pending = Promise.withResolvers<void>()
+		const restore = vi.spyOn(current.value, 'restoreLocalFirst').mockReturnValue(pending.promise)
+		const retry = vi.spyOn(current.value, 'retry').mockReturnValue(pending.promise)
+		const { createWorkspaceRestoreController, prepareWorkspaceRestoreFile } =
+			await import('../workspaces/workspace-restore.js')
+		const controller = createWorkspaceRestoreController().provide({
+			actors: {
+				readFile: fromPromise<
+					void,
+					import('../workspaces/workspace-restore.js').WorkspaceRestoreFile
+				>(() => {
+					entered.resolve()
+					return gate.promise
+				})
+			}
+		})
+		const actor = createActor(
+			createApplicationReadinessMachine(
+				undefined,
+				(value) => createJazzRestorationAdapter(value, () => current.value),
+				createJazzSessionReadinessAdapter,
+				{ appId: crypto.randomUUID(), serverUrl: 'http://disposable.invalid', environment: 'test' }
+			).provide({ actors: { workspaceRestore: controller } })
+		).start()
+		actors.push(actor)
+		const startup = startupOwner(async () => current.value, current.value)
+		startupBindings.set(actor, startup)
+		beginStartup(actor)
+		await waitFor(actor, (state) => state.matches({ running: 'ready' }))
+		const workspace = attach(actor)
+		actor.send({
+			type: 'WORKSPACE_RESTORE',
+			request: prepareWorkspaceRestoreFile(new File(['x'], 'backup.dlf'), 'secret-backup-password')
+		})
+		await entered.promise
+		expect(actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
+		expect(JSON.stringify(actor.getSnapshot())).not.toContain('secret-backup-password')
+		return { actor, current, gate, pending, workspace, restore, retry, startup }
+	}
+	for (const command of ['shutdown', 'retry', 'recovery', 'startup-failure', 'observer-failure']) {
+		it(`retains restore resources before ${command}`, async () => {
+			const f = await fixture()
+			if (command === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
+			else if (command === 'retry') f.actor.send({ type: 'RETRY' })
+			else if (command === 'recovery')
+				f.actor.send({
+					type: 'RECOVER',
+					phrase: RecoveryPhrase.fromSecret(generateAuthSecret()),
+					origin: '/login',
+					destination: '/'
+				})
+			else if (command === 'startup-failure')
+				f.actor.send({
+					type: 'xstate.error.actor.startup',
+					actorId: 'startup',
+					error: new Error('Controlled failure')
+				})
+			else failObservation(f.actor)
+			await waitFor(f.workspace, (state) => state.matches('closing'))
+			control(f.workspace).close()
+			await Promise.resolve()
+			expect(f.actor.getSnapshot().status).toBe('active')
+			expect(f.actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
+			expect(f.restore).not.toHaveBeenCalled()
+			expect(f.retry).not.toHaveBeenCalled()
+			expect(f.startup.owner.getSnapshot().status).toBe('active')
+			expect(f.startup.owner.getSnapshot().context.released.has(f.startup.scope.attachment)).toBe(
+				false
+			)
+			f.gate.resolve()
+			await waitFor(f.actor, (state) => !state.context.workspaceRestoreView.busy)
+			if (command === 'shutdown') await waitFor(f.actor, (state) => state.status === 'done')
+			if (command === 'retry') {
+				await vi.waitFor(() => expect(f.retry).toHaveBeenCalledOnce())
+				f.pending.resolve()
+			}
+			if (command === 'recovery') {
+				await vi.waitFor(() => expect(f.restore).toHaveBeenCalledOnce())
+				f.pending.resolve()
+			}
+			if (command === 'startup-failure')
+				await waitFor(f.startup.owner, (state) =>
+					state.context.released.has(f.startup.scope.attachment)
+				)
+		})
+	}
+	it('allows unrelated workspace replacement while restore remains active', async () => {
+		const f = await fixture(),
+			previous = f.actor.getSnapshot().context.attachment
+		if (!previous) throw new Error('Missing attachment')
+		const next = { ...previous }
+		f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: next })
+		control(f.workspace).close()
+		await waitFor(f.actor, (state) => state.context.attachment === next)
+		expect(f.actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
+		f.actor.send({ type: 'SHUTDOWN' })
+		const workspace = f.actor.getSnapshot().context.workspace
+		if (workspace) control(workspace).close()
+		f.gate.resolve()
+		await waitFor(f.actor, (state) => state.status === 'done')
+	})
 })

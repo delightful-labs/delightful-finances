@@ -24,9 +24,36 @@ const schema = {
 	...batchesSchema
 }
 
-export const app = s.defineApp(schema)
+export const previousApp = s.defineApp(schema)
 
-export type Organization = s.RowOf<typeof app.organizations>
+const restoreDefinition = {
+	...schema,
+	organizations: s.table(
+		{ ...identitySchema.organizations.columns, restoreOperationId: s.uuid().optional() },
+		{
+			...identitySchema.organizations.relations,
+			restoreOperation: s.rel('restoreOperations', 'restoreOperationId')
+		}
+	),
+	restoreOperations: s.table(
+		{
+			workspaceId: s.uuid(),
+			sourceFileId: s.uuid(),
+			ownerId: s.uuid(),
+			status: s.enum('incomplete', 'active'),
+			payloadSha256: s.string(),
+			graphSha256: s.string(),
+			workspaceName: s.string(),
+			workspaceKind: s.enum('personal', 'business'),
+			workspaceCurrency: s.string()
+		},
+		{ workspace: s.rel('organizations', 'workspaceId'), sourceFile: s.rel('files', 'sourceFileId') }
+	)
+}
+export const app = s.defineApp(restoreDefinition)
+
+// Workspace business data excludes operational restore metadata.
+export type Organization = s.RowOf<typeof previousApp.organizations>
 export type OrganizationMember = s.RowOf<typeof app.organizationMembers>
 export type AccountMembership = s.RowOf<typeof app.accountMemberships>
 export type Account = s.RowOf<typeof app.accounts>

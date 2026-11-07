@@ -6,6 +6,7 @@ import { schema as s } from 'jazz-tools'
 import { type RowContext, type RowRefValue } from 'jazz-tools/permissions'
 import {
 	app,
+	previousApp,
 	type InternalTransfer,
 	type OrganizationMember,
 	type SyncAttempt,
@@ -47,12 +48,17 @@ type InternalTransferContext = Pick<
 	| 'currency'
 >
 
-export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowedTo }) => {
+const normal = s.definePermissions(previousApp, (bindings) => {
+	const { policy, session, anyOf, allOf, allowedTo } = bindings
 	const isMember = (organizationId: IdExpression) =>
 		policy.organizationMembers.exists.where({ organizationId, userId: session.user.account })
 
 	const hasRole = (organizationId: IdExpression, role: Role) =>
-		policy.organizationMembers.exists.where({ organizationId, userId: session.user.account, role })
+		policy.organizationMembers.exists.where({
+			organizationId,
+			userId: session.user.account,
+			role
+		})
 
 	const isAdmin = (organizationId: IdExpression) =>
 		anyOf([
@@ -711,7 +717,10 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 				initiatedBy: session.user.account,
 				outcome: 'unfinished'
 			}),
-			policy.accounts.exists.where({ id: result.accountId, organizationId: result.organizationId })
+			policy.accounts.exists.where({
+				id: result.accountId,
+				organizationId: result.organizationId
+			})
 		])
 	policy.simplefinSyncAccountResults.allowRead.where(allowedTo.read('attempt'))
 	policy.simplefinSyncAccountResults.allowInsert.where((result) => ownsAccountResult(result))
@@ -819,3 +828,380 @@ export default s.definePermissions(app, ({ policy, session, anyOf, allOf, allowe
 		.whereNew((template) => canWriteAllAccounts(template.organizationId))
 	policy.batchTemplates.allowDelete.where((template) => isAdmin(template.organizationId))
 })
+
+export const previousPermissions = normal
+
+function originalRule(
+	table: string,
+	operation: 'select' | 'insert' | 'update',
+	phase: 'using' | 'with_check'
+) {
+	const rule = previousPermissions[table]?.[operation]?.[phase]
+	if (!rule) throw new Error('Missing Finance policy: ' + table + '.' + operation + '.' + phase)
+	return rule
+}
+const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw, allowedTo }) => {
+	const recovery = (workspaceId: RowRefValue) =>
+		policy.restoreOperations.exists.where({
+			workspaceId,
+			ownerId: session.user.account,
+			status: 'incomplete'
+		})
+	policy.restoreOperations.allowRead.where((row) =>
+		anyOf([
+			{ ownerId: session.user.account, status: 'incomplete' },
+			allOf([
+				{ status: 'active' },
+				policy.organizationMembers.exists.where({
+					organizationId: row.workspaceId,
+					userId: session.user.account,
+					role: { in: ['owner', 'admin'] }
+				})
+			])
+		])
+	)
+	policy.restoreOperations.allowInsert.where((row) =>
+		allOf([
+			{ ownerId: session.user.account, status: 'incomplete' },
+			policy.organizations.exists.where({
+				id: row.workspaceId,
+				ownerId: session.user.account,
+				restoreOperationId: row.id,
+				name: row.workspaceName,
+				kind: row.workspaceKind,
+				defaultCurrency: row.workspaceCurrency
+			})
+		])
+	)
+	policy.restoreOperations.allowUpdate
+		.whereOld({ ownerId: session.user.account, status: 'incomplete' })
+		.whereNew((row) =>
+			allOf([
+				{ ownerId: session.user.account, status: 'active' },
+				policy.restoreOperations.exists.where({
+					id: row.id,
+					workspaceId: row.workspaceId,
+					sourceFileId: row.sourceFileId,
+					ownerId: row.ownerId,
+					payloadSha256: row.payloadSha256,
+					graphSha256: row.graphSha256,
+					workspaceName: row.workspaceName,
+					workspaceKind: row.workspaceKind,
+					workspaceCurrency: row.workspaceCurrency,
+					status: 'incomplete'
+				})
+			])
+		)
+	policy.restoreOperations.allowDelete.never()
+
+	// Owner membership is the publication boundary. The root remains hidden before it exists.
+	policy.organizationMembers.allowInsert.where((row) =>
+		allOf([
+			raw(originalRule('organizationMembers', 'insert', 'with_check')),
+			anyOf([
+				policy.organizations.exists.where({
+					id: row.organizationId,
+					restoreOperationId: { isNull: true }
+				}),
+				policy.restoreOperations.exists.where({
+					workspaceId: row.organizationId,
+					status: 'active'
+				})
+			])
+		])
+	)
+	policy.organizations.allowUpdate
+		.whereOld(raw(originalRule('organizations', 'update', 'using')))
+		.whereNew((row) =>
+			allOf([
+				raw(originalRule('organizations', 'update', 'with_check')),
+				// Old-schema edits map the unknown reference to null. A sealed operation
+				// keeps reconstruction closed after that loss; new bindings stay forbidden.
+				anyOf([
+					allOf([
+						{ restoreOperationId: { isNull: true } },
+						anyOf([
+							policy.organizations.exists.where({
+								id: row.id,
+								restoreOperationId: { isNull: true }
+							}),
+							policy.restoreOperations.exists.where({ workspaceId: row.id, status: 'active' })
+						])
+					]),
+					policy.organizations.exists.where({
+						id: row.id,
+						restoreOperationId: row.restoreOperationId
+					})
+				])
+			])
+		)
+	policy.accounts.allowRead.where((row) =>
+		anyOf([raw(originalRule('accounts', 'select', 'using')), recovery(row.organizationId)])
+	)
+	policy.accounts.allowInsert.where((row) =>
+		anyOf([raw(originalRule('accounts', 'insert', 'with_check')), recovery(row.organizationId)])
+	)
+	policy.categories.allowRead.where((row) =>
+		anyOf([raw(originalRule('categories', 'select', 'using')), recovery(row.organizationId)])
+	)
+	policy.categories.allowInsert.where((row) =>
+		anyOf([raw(originalRule('categories', 'insert', 'with_check')), recovery(row.organizationId)])
+	)
+	policy.transactions.allowRead.where((row) =>
+		anyOf([raw(originalRule('transactions', 'select', 'using')), recovery(row.organizationId)])
+	)
+	policy.tags.allowRead.where((row) =>
+		anyOf([raw(originalRule('tags', 'select', 'using')), recovery(row.organizationId)])
+	)
+	policy.tags.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('tags', 'insert', 'with_check')),
+			allOf([
+				recovery(row.organizationId),
+				anyOf([
+					{ categoryId: { isNull: true } },
+					policy.categories.exists.where({
+						id: row.categoryId,
+						organizationId: row.organizationId,
+						kind: row.kind
+					})
+				])
+			])
+		])
+	)
+	policy.checks.allowRead.where((row) =>
+		anyOf([raw(originalRule('checks', 'select', 'using')), recovery(row.organizationId)])
+	)
+	policy.checks.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('checks', 'insert', 'with_check')),
+			allOf([
+				recovery(row.organizationId),
+				policy.accounts.exists.where({ id: row.accountId, organizationId: row.organizationId })
+			])
+		])
+	)
+	policy.transactionBatches.allowRead.where((row) =>
+		anyOf([
+			raw(originalRule('transactionBatches', 'select', 'using')),
+			recovery(row.organizationId)
+		])
+	)
+	policy.transactionBatches.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('transactionBatches', 'insert', 'with_check')),
+			recovery(row.organizationId)
+		])
+	)
+	policy.batchTemplates.allowRead.where((row) =>
+		anyOf([raw(originalRule('batchTemplates', 'select', 'using')), recovery(row.organizationId)])
+	)
+	policy.batchTemplates.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('batchTemplates', 'insert', 'with_check')),
+			recovery(row.organizationId)
+		])
+	)
+	policy.transactionTags.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('transactionTags', 'insert', 'with_check')),
+			allOf([
+				recovery(row.organizationId),
+				policy.transactions.exists.where({
+					id: row.transactionId,
+					organizationId: row.organizationId
+				}),
+				policy.tags.exists.where({ id: row.tagId, organizationId: row.organizationId })
+			])
+		])
+	)
+	policy.transactions.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('transactions', 'insert', 'with_check')),
+			allOf([
+				recovery(row.organizationId),
+				{ checkDetailsId: { isNull: true } },
+				policy.accounts.exists.where({
+					id: row.accountId,
+					organizationId: row.organizationId,
+					currency: row.currency
+				}),
+				policy.categories.exists.where({
+					id: row.categoryId,
+					organizationId: row.organizationId,
+					kind: row.kind
+				}),
+				checkReferenceCondition({
+					transaction: row,
+					checkExists: (where) => policy.checks.exists.where(where)
+				})
+			])
+		])
+	)
+	policy.internalTransfers.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('internalTransfers', 'insert', 'with_check')),
+			allOf([
+				recovery(row.organizationId),
+				policy.transactions.exists.where({
+					id: row.expenseTransactionId,
+					organizationId: row.organizationId,
+					accountId: row.expenseAccountId,
+					kind: 'expense',
+					amountMinor: row.expenseAmountMinor,
+					currency: row.expenseCurrency,
+					internalTransferId: row.id
+				}),
+				policy.transactions.exists.where({
+					id: row.incomeTransactionId,
+					organizationId: row.organizationId,
+					accountId: row.incomeAccountId,
+					kind: 'income',
+					amountMinor: row.incomeAmountMinor,
+					currency: row.incomeCurrency,
+					internalTransferId: row.id
+				})
+			])
+		])
+	)
+	policy.files.allowRead.where((row) =>
+		anyOf([
+			raw(originalRule('files', 'select', 'using')),
+			allOf([
+				{ transactionId: { isNull: true }, accountId: { isNull: true } },
+				policy.restoreOperations.exists.where({
+					sourceFileId: row.id,
+					workspaceId: row.organizationId,
+					ownerId: session.user.account,
+					status: 'incomplete'
+				})
+			]),
+			allOf([
+				{ transactionId: { isNull: true }, accountId: { isNull: true } },
+				policy.exists(
+					policy.restoreOperations
+						.where({ sourceFileId: row.id, workspaceId: row.organizationId, status: 'active' })
+						.join(policy.organizationMembers, { left: 'workspaceId', right: 'organizationId' })
+						.where({ userId: session.user.account, role: { in: ['owner', 'admin'] } })
+				)
+			])
+		])
+	)
+
+	policy.files.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('files', 'insert', 'with_check')),
+			allOf([
+				{ transactionId: { isNull: true }, accountId: { isNull: true } },
+				policy.restoreOperations.exists.where({
+					sourceFileId: row.id,
+					workspaceId: row.organizationId,
+					ownerId: session.user.account,
+					status: 'incomplete'
+				})
+			]),
+			allOf([
+				policy.exists(
+					policy.transactions
+						.where({ id: row.transactionId })
+						.join(policy.restoreOperations, { left: 'organizationId', right: 'workspaceId' })
+						.where({ ownerId: session.user.account, status: 'incomplete' })
+				),
+				anyOf([
+					{ organizationId: { isNull: true } },
+					policy.transactions.exists.where({
+						id: row.transactionId,
+						organizationId: row.organizationId
+					})
+				]),
+				anyOf([
+					{ accountId: { isNull: true } },
+					policy.transactions.exists.where({ id: row.transactionId, accountId: row.accountId })
+				])
+			])
+		])
+	)
+	policy.transactionAttachments.allowInsert.where((row) =>
+		anyOf([
+			raw(originalRule('transactionAttachments', 'insert', 'with_check')),
+			allOf([
+				allowedTo.insert('file'),
+				policy.files.exists.where({ id: row.fileId, transactionId: row.transactionId })
+			])
+		])
+	)
+})
+
+function overridden(table: string, operation: 'select' | 'insert' | 'update') {
+	const rule = overrides[table]?.[operation]
+	if (!rule) throw new Error('Missing restore policy: ' + table + '.' + operation)
+	return rule
+}
+const operationRules = overrides.restoreOperations
+if (!operationRules) throw new Error('Missing restore operation policy')
+const permissions = {
+	...previousPermissions,
+	organizations: {
+		...previousPermissions.organizations,
+		update: overridden('organizations', 'update')
+	},
+	organizationMembers: {
+		...previousPermissions.organizationMembers,
+		insert: overridden('organizationMembers', 'insert')
+	},
+	accounts: {
+		...previousPermissions.accounts,
+		select: overridden('accounts', 'select'),
+		insert: overridden('accounts', 'insert')
+	},
+	categories: {
+		...previousPermissions.categories,
+		select: overridden('categories', 'select'),
+		insert: overridden('categories', 'insert')
+	},
+	transactions: {
+		...previousPermissions.transactions,
+		select: overridden('transactions', 'select'),
+		insert: overridden('transactions', 'insert')
+	},
+	tags: {
+		...previousPermissions.tags,
+		select: overridden('tags', 'select'),
+		insert: overridden('tags', 'insert')
+	},
+	checks: {
+		...previousPermissions.checks,
+		select: overridden('checks', 'select'),
+		insert: overridden('checks', 'insert')
+	},
+	transactionTags: {
+		...previousPermissions.transactionTags,
+		insert: overridden('transactionTags', 'insert')
+	},
+	transactionBatches: {
+		...previousPermissions.transactionBatches,
+		select: overridden('transactionBatches', 'select'),
+		insert: overridden('transactionBatches', 'insert')
+	},
+	batchTemplates: {
+		...previousPermissions.batchTemplates,
+		select: overridden('batchTemplates', 'select'),
+		insert: overridden('batchTemplates', 'insert')
+	},
+	internalTransfers: {
+		...previousPermissions.internalTransfers,
+		insert: overridden('internalTransfers', 'insert')
+	},
+	files: {
+		...previousPermissions.files,
+		select: overridden('files', 'select'),
+		insert: overridden('files', 'insert')
+	},
+	transactionAttachments: {
+		...previousPermissions.transactionAttachments,
+		insert: overridden('transactionAttachments', 'insert')
+	},
+	restoreOperations: operationRules
+}
+
+export default permissions

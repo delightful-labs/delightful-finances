@@ -9,6 +9,7 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 	const sockets = new Set<Duplex>()
 	const upstreamSockets = new Set<Duplex>()
 	let mode: 'forward' | 'silent' = 'forward'
+	let holdReplies = false
 	const observed = { opened: 0, clientBytes: 0, heldHttp: 0 }
 	const server = createServer((incoming, outgoing) => {
 		if (mode === 'silent') {
@@ -64,6 +65,7 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 			if (head.length) remote.write(head)
 			socket.pipe(remote)
 			remote.pipe(socket)
+			if (holdReplies) remote.pause()
 		})
 		upstreamSockets.add(remote)
 		remote.on('close', () => upstreamSockets.delete(remote))
@@ -72,15 +74,24 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 	})
 	return {
 		observed,
+		get url() {
+			const address = server.address()
+			if (!address || typeof address === 'string') throw new Error('Proxy is not listening')
+			return `http://127.0.0.1:${address.port}`
+		},
+		pauseServerReplies: () => {
+			holdReplies = true
+			for (const socket of upstreamSockets) socket.pause()
+		},
 		pauseEstablished: () => {
 			mode = 'silent'
 			for (const socket of sockets) socket.pause()
 			for (const socket of upstreamSockets) socket.pause()
 		},
-		listen: () =>
+		listen: (port = 6193) =>
 			new Promise<void>((resolve, reject) => {
 				server.once('error', reject)
-				server.listen(6193, '127.0.0.1', () => {
+				server.listen(port, '127.0.0.1', () => {
 					server.off('error', reject)
 					resolve()
 				})
@@ -91,6 +102,7 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 		},
 		resume: () => {
 			mode = 'forward'
+			holdReplies = false
 			for (const socket of sockets) socket.destroy()
 		},
 		close: () =>

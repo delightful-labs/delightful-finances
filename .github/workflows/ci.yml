@@ -86,6 +86,24 @@ jobs:
           path: test-results/
           retention-days: 3
 
+  restore:
+    name: Workspace restore recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Verify native isolation and browser recovery against disposable Jazz servers
+        run: pnpm exec vitest run --mode restore-experiment --reporter=verbose
+
   debugging:
     name: Feature flags (${{ matrix.suite }}, debug=${{ matrix.debug }}, seed=${{ matrix.seed }})
     runs-on: ubuntu-latest

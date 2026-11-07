@@ -18,6 +18,9 @@
 		selectWorkspaceBackup,
 		type BackupObservation
 	} from '#lib/machines/workspaces/workspace-backup.js'
+	import { getReadiness } from '#lib/runtime/bank-sync.js'
+	import { selectApplicationWorkspaceRestore } from '#lib/machines/runtime/application-readiness.js'
+	import { prepareWorkspaceRestoreFile } from '#lib/machines/workspaces/workspace-restore.js'
 	import WorkspaceBackup from '#lib/components/workspaces/WorkspaceBackup.svelte'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
@@ -33,6 +36,9 @@
 
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const coordinator = getWorkspace()
+	const readiness = getReadiness()
+	const root = fromStore(readiness.snapshot)
+	const restoreView = $derived(selectApplicationWorkspaceRestore(root.current))
 
 	const organizations = createQuerySubscription(() => app.organizations.orderBy('name'))
 	const db = getDb()
@@ -160,10 +166,22 @@
 		onRetryReadiness={form.retryReadiness}
 	/>
 	<WorkspaceBackup
+		kind="download"
 		view={backupView}
 		ondownload={(protection, password) =>
 			backupActor.send({ type: 'SUBMIT', protection, password })}
 		oncancel={() => backupActor.send({ type: 'CANCEL' })}
 	/>
 {/if}
+<WorkspaceBackup
+	kind="restore"
+	view={restoreView}
+	onrestore={(file, password) =>
+		readiness.actor.send({
+			type: 'WORKSPACE_RESTORE',
+			request: prepareWorkspaceRestoreFile(file, password)
+		})}
+	oncommand={(type) =>
+		readiness.actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type } })}
+/>
 <WorkspaceCreation />

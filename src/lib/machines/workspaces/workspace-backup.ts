@@ -24,6 +24,7 @@ import {
 	financeOwner,
 	readFinanceMetadata,
 	readFinanceRelations,
+	readFinanceSources,
 	readFinanceFiles,
 	readFinanceParts,
 	prepareFinanceFiles,
@@ -70,7 +71,9 @@ const readerActors = {
 	}),
 	authority: leaf(readFinanceAuthority),
 	metadata: leaf(readFinanceMetadata),
-	relations: leaf(readFinanceRelations),
+	relations: leaf((input) =>
+		Promise.all([readFinanceRelations(input), readFinanceSources(input)]).then(() => {})
+	),
 	files: leaf(readFinanceFiles),
 	parts: leaf(readFinanceParts),
 	validate: leaf(prepareFinanceFiles),

@@ -389,6 +389,8 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 			const file = h.files[0]
 			if (!file) throw new Error('Missing file')
 			const payload = await open(file, password)
+			expect(payload.profile).toEqual({ id: 'delightful.finance.workspace', version: 2 })
+			expect(payload.coverage.recordTypes).toContain('sourceDocuments')
 			expect(financeBackupProfile.validate(payload)).toBe(true)
 			expect(new Set([...payload.records, ...payload.references].map((row) => row.type)).size).toBe(
 				19

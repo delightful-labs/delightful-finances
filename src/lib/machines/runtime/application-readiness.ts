@@ -75,6 +75,19 @@ import {
 	type RecoveryRestorationBinding
 } from '../identity/session-recovery.js'
 
+import {
+	createWorkspaceRestoreController,
+	selectWorkspaceRestoreReport,
+	emptyWorkspaceRestoreView,
+	bindWorkspaceRestoreFile,
+	workspaceRestoreSessionReady,
+	workspaceRestoreFileAvailable,
+	type WorkspaceRestoreConfiguration,
+	type WorkspaceRestoreFile,
+	type WorkspaceRestoreCommand,
+	type WorkspaceRestoreView
+} from '../workspaces/workspace-restore.js'
+
 type Session = JazzSession<JazzClient>
 type Workspace = ActorRefFrom<ReturnType<typeof createWorkspaceReadinessMachine>>
 type Status = SessionStatus
@@ -87,6 +100,10 @@ export type MutationNotice =
 			transferId: string
 	  }
 type Context = {
+	workspaceRestoreView: WorkspaceRestoreView
+	workspaceRestoreRequest: WorkspaceRestoreFile | undefined
+	restoreConfiguration: WorkspaceRestoreConfiguration | undefined
+	startupRetirement: JazzStartupBinding | undefined
 	selectionBinding: WorkspaceSelectionBinding | undefined
 	selectionRevision: number
 	selectionLease: WorkspaceLease | undefined
@@ -124,6 +141,8 @@ type Context = {
 	transferMutationOwnerClosed: boolean
 }
 type Event =
+	| { type: 'WORKSPACE_RESTORE'; request: WorkspaceRestoreFile }
+	| { type: 'WORKSPACE_RESTORE_COMMAND'; command: WorkspaceRestoreCommand }
 	| WorkspaceSelectionAttachmentReport
 	| DoneActorEvent<WorkspaceSelectionDrainOutput | { selectedResources: WorkspaceResourceRelease }>
 	| {
@@ -169,6 +188,10 @@ function workspaceReleased(context: Context) {
 		context.cleanupRelease.outcome !== 'unresolved'
 	)
 }
+function applicationResourcesReleased(context: Context) {
+	return workspaceReleased(context) && !context.workspaceRestoreView.busy
+}
+
 function currentSelectionScope(context: Context, scope: WorkspaceLease['scope']) {
 	return (
 		context.selectionBinding?.scope.binding === scope.binding &&
@@ -185,9 +208,11 @@ export function createApplicationReadinessMachine(
 		}
 	},
 	bindRestoration?: (session: Session) => RecoveryRestorationBinding,
-	bindReadiness?: (session: Session) => SessionReadinessBinding
+	bindReadiness?: (session: Session) => SessionReadinessBinding,
+	restoreConfiguration?: WorkspaceRestoreConfiguration
 ) {
 	const actors = {
+		workspaceRestore: createWorkspaceRestoreController(navigation.navigate),
 		recovery: sessionRecoveryMachine,
 		selectionAttachment: createWorkspaceSelectionAttachmentMachine(),
 		transferMutationOwner: createInternalTransferMutationOwner(),
@@ -212,7 +237,12 @@ export function createApplicationReadinessMachine(
 		Event,
 		typeof actors,
 		{},
-		{ refreshAttachment: undefined; retireStartup: undefined; shutDownReadiness: undefined },
+		{
+			refreshAttachment: undefined
+			retireStartup: undefined
+			shutDownReadiness: undefined
+			drainRestore: undefined
+		},
 		{
 			startupOwnerFailed: undefined
 			currentStartup: undefined
@@ -236,6 +266,11 @@ export function createApplicationReadinessMachine(
 	>({
 		actors,
 		actions: {
+			drainRestore: enqueueActions(({ context, self, enqueue }) => {
+				const child = self.getSnapshot().children.workspaceRestore
+				if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'DRAIN' })
+				else if (context.workspaceRestoreView.busy) enqueue.raise({ type: 'CLEANUP_FAILED' })
+			}),
 			shutDownReadiness: enqueueActions(({ self, enqueue }) => {
 				const child = self.getSnapshot().children.sessionReadiness
 				if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
@@ -243,6 +278,11 @@ export function createApplicationReadinessMachine(
 			}),
 			retireStartup: enqueueActions(({ context, self, enqueue }) => {
 				const child = self.getSnapshot().children.startup
+				if (context.workspaceRestoreView.busy && context.startupBinding) {
+					enqueue.assign({ startupRetirement: context.startupBinding })
+					enqueue.sendTo('workspaceRestore', { type: 'DRAIN' })
+					return
+				}
 				if (context.startupBinding && child) {
 					enqueue.sendTo(context.startupBinding.owner, {
 						type: 'RELEASE',
@@ -355,6 +395,7 @@ export function createApplicationReadinessMachine(
 		}
 	})
 	const shutDownWorkspace = workflow.enqueueActions(({ context, enqueue }) => {
+		enqueue('drainRestore')
 		enqueue.assign({ pending: undefined })
 		enqueue(detachSelection)
 		if (context.workspace?.getSnapshot().status === 'active')
@@ -417,6 +458,10 @@ export function createApplicationReadinessMachine(
 		id: 'application-readiness',
 		initial: 'waitingForStartup',
 		context: () => ({
+			workspaceRestoreView: { ...emptyWorkspaceRestoreView },
+			workspaceRestoreRequest: undefined,
+			restoreConfiguration,
+			startupRetirement: undefined,
 			selectionBinding: undefined,
 			selectionRevision: -1,
 			selectionLease: undefined,
@@ -453,6 +498,42 @@ export function createApplicationReadinessMachine(
 			transferMutationOwnerClosed: false
 		}),
 		invoke: [
+			{
+				id: 'workspaceRestore',
+				src: 'workspaceRestore',
+				onSnapshot: {
+					actions: enqueueActions(({ context, event, self, enqueue }) => {
+						const report = selectWorkspaceRestoreReport(event.snapshot)
+						if (report.request !== context.workspaceRestoreRequest) return
+						enqueue.assign({ workspaceRestoreView: report.view })
+						if (!report.view.busy && context.startupRetirement) {
+							const child = self.getSnapshot().children.startup
+							if (child)
+								enqueue.sendTo(context.startupRetirement.owner, {
+									type: 'RELEASE',
+									scope: context.startupRetirement.scope,
+									replyTo: child
+								})
+							enqueue.assign({ startupRetirement: undefined })
+						}
+					})
+				},
+				onError: {
+					target: '.cleanupFailed',
+					actions: assign({
+						workspaceRestoreView: ({ context }) => ({
+							...context.workspaceRestoreView,
+							busy: true,
+							editable: false,
+							canCancel: false,
+							canRetryRelease: false,
+							alert: true,
+							message: 'failed',
+							visibleOutsideSettings: true
+						})
+					})
+				}
+			},
 			{
 				id: 'startup',
 				src: 'startup',
@@ -518,6 +599,60 @@ export function createApplicationReadinessMachine(
 			}
 		],
 		on: {
+			WORKSPACE_RESTORE: [
+				{
+					guard: and([
+						stateIn({ running: 'ready' }),
+						({ context, event }) =>
+							context.restoreConfiguration !== undefined &&
+							!context.workspaceRestoreView.busy &&
+							workspaceRestoreSessionReady(context.session) &&
+							workspaceRestoreFileAvailable(event.request)
+					]),
+					actions: [
+						({ context, event }) =>
+							bindWorkspaceRestoreFile(
+								event.request,
+								required(context.session),
+								required(context.restoreConfiguration)
+							),
+						assign({
+							workspaceRestoreRequest: ({ event }) => event.request,
+							workspaceRestoreView: {
+								...emptyWorkspaceRestoreView,
+								busy: true,
+								editable: false,
+								canCancel: true,
+								message: 'preparing',
+								visibleOutsideSettings: true
+							}
+						}),
+						sendTo('workspaceRestore', ({ event }) => ({ type: 'SUBMIT', request: event.request }))
+					]
+				},
+				{
+					actions: ({ context, event }) => {
+						if (context.workspaceRestoreRequest !== event.request) event.request.release()
+					}
+				}
+			],
+			WORKSPACE_RESTORE_COMMAND: [
+				{
+					guard: and([
+						stateIn({ running: 'ready' }),
+						({ context, event }) =>
+							(event.command.type === 'CONFIRM' || event.command.type === 'OPEN') &&
+							context.workspaceRestoreView.identityId ===
+								context.session?.getSnapshot().account?.id &&
+							workspaceRestoreSessionReady(context.session)
+					]),
+					actions: sendTo('workspaceRestore', ({ event }) => event.command)
+				},
+				{
+					guard: ({ event }) => event.command.type !== 'CONFIRM' && event.command.type !== 'OPEN',
+					actions: sendTo('workspaceRestore', ({ event }) => event.command)
+				}
+			],
 			'xstate.error.actor.*': [
 				{
 					guard: ({ context, event }) => context.drainActor?.id === event.actorId,
@@ -1058,7 +1193,10 @@ export function createApplicationReadinessMachine(
 		states: {
 			settlingResourceFailure: {
 				entry: shutDownWorkspace,
-				always: { guard: ({ context }) => workspaceReleased(context), target: 'resourceFailed' },
+				always: {
+					guard: ({ context }) => applicationResourcesReleased(context),
+					target: 'resourceFailed'
+				},
 				on: {
 					ATTACH_WORKSPACE: {},
 					ATTACH_PENDING: {},
@@ -1187,7 +1325,7 @@ export function createApplicationReadinessMachine(
 					releasingReadiness: { on: { READINESS_RELEASED: 'workspace' } },
 					workspace: {
 						always: {
-							guard: ({ context }) => workspaceReleased(context),
+							guard: ({ context }) => applicationResourcesReleased(context),
 							target: '#application-readiness.startupActorFailed'
 						}
 					}
@@ -1225,7 +1363,10 @@ export function createApplicationReadinessMachine(
 			},
 			settlingReadinessCrash: {
 				entry: shutDownWorkspace,
-				always: { guard: ({ context }) => workspaceReleased(context), target: 'readinessCrashed' },
+				always: {
+					guard: ({ context }) => applicationResourcesReleased(context),
+					target: 'readinessCrashed'
+				},
 				on: {
 					ATTACH_WORKSPACE: {},
 					ATTACH_PENDING: {},
@@ -1250,7 +1391,10 @@ export function createApplicationReadinessMachine(
 			},
 			settlingObserverFailure: {
 				entry: shutDownWorkspace,
-				always: { guard: ({ context }) => workspaceReleased(context), target: 'observerFailed' },
+				always: {
+					guard: ({ context }) => applicationResourcesReleased(context),
+					target: 'observerFailed'
+				},
 				on: { ATTACH_WORKSPACE: {}, ATTACH_PENDING: {}, RETRY: {}, START: {} }
 			},
 			observerFailed: {
@@ -1400,7 +1544,8 @@ export function createApplicationReadinessMachine(
 						entry: shutDownWorkspace,
 						always: {
 							guard: ({ context }) =>
-								workspaceReleased(context) && context.retryAttempt < Number.MAX_SAFE_INTEGER,
+								applicationResourcesReleased(context) &&
+								context.retryAttempt < Number.MAX_SAFE_INTEGER,
 							target: 'retrying'
 						},
 						on: {
@@ -1668,7 +1813,7 @@ export function createApplicationReadinessMachine(
 							draining: {
 								entry: shutDownWorkspace,
 								always: {
-									guard: ({ context }) => workspaceReleased(context),
+									guard: ({ context }) => applicationResourcesReleased(context),
 									target: 'operating',
 									actions: sendTo('recovery', { type: 'WORKSPACE_DRAINED' })
 								}
@@ -1737,7 +1882,7 @@ export function createApplicationReadinessMachine(
 								guard: ({ context }) => context.cleanupRelease.outcome === 'unresolved',
 								target: '#application-readiness.cleanupFailed'
 							},
-							{ guard: ({ context }) => workspaceReleased(context), target: 'transfers' }
+							{ guard: ({ context }) => applicationResourcesReleased(context), target: 'transfers' }
 						]
 					},
 					transfers: {
@@ -1753,6 +1898,7 @@ export function createApplicationReadinessMachine(
 					}
 				},
 				entry: [
+					'drainRestore',
 					'shutDownReadiness',
 					workflow.enqueueActions(({ context, enqueue }) => {
 						enqueue(detachSelection)
@@ -1885,4 +2031,21 @@ export function captureTransferMutationScope(
 	return snapshot.matches({ running: 'ready' })
 		? contextTransferScope(snapshot.context, request)
 		: undefined
+}
+
+export function selectApplicationWorkspaceRestore(
+	snapshot: SnapshotFrom<ReturnType<typeof createApplicationReadinessMachine>>
+) {
+	const view = snapshot.context.workspaceRestoreView
+	const ready =
+		snapshot.matches({ running: 'ready' }) &&
+		snapshot.context.restoreConfiguration !== undefined &&
+		workspaceRestoreSessionReady(snapshot.context.session)
+	const current = ready && view.identityId === snapshot.context.session?.getSnapshot().account?.id
+	return {
+		...view,
+		editable: view.editable && ready,
+		canConfirm: view.canConfirm && current,
+		canOpen: view.canOpen && current
+	}
 }

@@ -10,7 +10,8 @@ import type {
 	ArchiveValue,
 	ArchiveAttachment
 } from 'delightful-local-first/backup/archive'
-import { app } from '../schema.js'
+import { parseArchivePayload, payloadLimits } from 'delightful-local-first/backup/archive'
+import { app, previousApp } from '../schema.js'
 import { currencyText, dateOnlyText } from '../validation/transactions.js'
 import { syncOutcome, syncSettlement, syncFailureCode } from '../validation/bank-sync-log.js'
 
@@ -46,6 +47,14 @@ const check = {
 }
 /** Explicit released-field allowlist. Secret columns, avatars and operational jobs never enter it. */
 const rows = {
+	sourceDocuments: z.object({
+		id,
+		organizationId: id,
+		payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+		fileName: text,
+		mimeType: z.literal('application/json'),
+		sizeBytes: integer.min(1)
+	}),
 	organizations: row({
 		name: text.min(1),
 		kind: z.enum(['personal', 'business']),
@@ -174,6 +183,7 @@ const rows = {
 type RowType = keyof typeof rows
 type PlainRow = Record<string, unknown> & { id: string }
 const inert = new Set<string>([
+	'sourceDocuments',
 	'organizationMembers',
 	'accountMemberships',
 	'profiles',
@@ -260,22 +270,26 @@ function project(type: RowType, parsed: PlainRow): ArchiveRecord {
 			.filter(([name]) => name !== 'id')
 			.map(([name, value]) => [name, scalar(name, value)])
 	)
-	if (type === 'files') fields.originalBytes = { kind: 'attachment', id: parsed.id }
+	if (type === 'files' || type === 'sourceDocuments')
+		fields.originalBytes = { kind: 'attachment', id: parsed.id }
 	return { type, id: parsed.id, fields }
 }
 /** Pure profile validation, also used after independently opening a retained file. */
-export function validateFinanceBackup(payload: ArchivePayload): boolean {
+function validateFinanceGraph(payload: ArchivePayload): boolean {
 	try {
 		if (
 			payload.profile.id !== 'delightful.finance.workspace' ||
-			payload.profile.version !== 1 ||
+			![1, 2].includes(payload.profile.version) ||
 			payload.source.applicationId !== 'delightful-finances' ||
 			payload.coverage.consistency !== 'jazz-exclusive-transaction'
 		)
 			return false
+		const types = Object.keys(rows).filter(
+			(type) => payload.profile.version === 2 || type !== 'sourceDocuments'
+		)
 		if (
-			payload.coverage.recordTypes.length !== Object.keys(rows).length ||
-			!Object.keys(rows).every((type) => payload.coverage.recordTypes.includes(type))
+			payload.coverage.recordTypes.length !== types.length ||
+			!types.every((type) => payload.coverage.recordTypes.includes(type))
 		)
 			return false
 		const groups = new Map<string, Map<string, PlainRow>>()
@@ -291,6 +305,7 @@ export function validateFinanceBackup(payload: ArchivePayload): boolean {
 			)
 		for (const record of [...payload.records, ...payload.references]) {
 			const type = typeOf(record.type)
+			if (!types.includes(type)) return false
 			if (inert.has(type) !== referenceRecords.has(record)) return false
 			const decoded = plain(record),
 				parsed = rows[type].strict().parse(decoded),
@@ -387,6 +402,19 @@ export function validateFinanceBackup(payload: ArchivePayload): boolean {
 					)
 						return false
 				}
+				if (type === 'sourceDocuments') {
+					const file = attachments.get(value.id)
+					if (
+						value.organizationId !== root.id ||
+						!file ||
+						file.fileName !== value.fileName ||
+						file.mediaType !== value.mimeType ||
+						file.sizeBytes !== value.sizeBytes ||
+						file.sha256 !== value.payloadSha256 ||
+						get('files', value.id)
+					)
+						return false
+				}
 				if (type === 'internalTransfers') {
 					const expense = get('transactions', value.expenseTransactionId),
 						income = get('transactions', value.incomeTransactionId)
@@ -420,8 +448,10 @@ export function validateFinanceBackup(payload: ArchivePayload): boolean {
 					return false
 			}
 		if (
-			payload.attachments.length !== (groups.get('files')?.size ?? 0) ||
-			payload.attachments.some((file) => !get('files', file.id))
+			(groups.get('sourceDocuments')?.size ?? 0) > 1 ||
+			payload.attachments.length !==
+				(groups.get('files')?.size ?? 0) + (groups.get('sourceDocuments')?.size ?? 0) ||
+			payload.attachments.some((file) => !get('files', file.id) && !get('sourceDocuments', file.id))
 		)
 			return false
 		return true
@@ -429,12 +459,65 @@ export function validateFinanceBackup(payload: ArchivePayload): boolean {
 		return false
 	}
 }
+/** Embedded history stays inert, but must still satisfy the released field/secret allowlist. */
+export function validateFinanceBackup(payload: ArchivePayload): boolean {
+	try {
+		let current = payload,
+			remaining = payloadLimits.payloadBytes
+		for (;;) {
+			if (!validateFinanceGraph(current)) return false
+			const document = current.references.find((row) => row.type === 'sourceDocuments')
+			if (!document) return true
+			const file = current.attachments.find((file) => file.id === document.id)
+			if (!file || file.sizeBytes > remaining) return false
+			remaining -= file.sizeBytes
+			const bytes = Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0))
+			try {
+				current = parseArchivePayload(bytes)
+			} finally {
+				bytes.fill(0)
+			}
+		}
+	} catch {
+		return false
+	}
+}
 export const financeBackupProfile = {
 	id: 'delightful.finance.workspace',
-	version: 1,
-	validate: validateFinanceBackup
+	version: 2,
+	validate: (payload: ArchivePayload) =>
+		payload.profile.version === 2 && validateFinanceBackup(payload)
+}
+/** Decode only after the shared released-field and relationship validation succeeds. */
+export function decodeFinanceBackup(payload: ArchivePayload) {
+	if (!validateFinanceBackup(payload)) return invalid()
+	const groups = new Map<string, ArchiveRecord[]>()
+	for (const record of payload.records) {
+		const group = groups.get(record.type) ?? []
+		group.push(record)
+		groups.set(record.type, group)
+	}
+	const decode = <Row>(type: RowType, schema: z.ZodType<Row>): Row[] =>
+		(groups.get(type) ?? []).map((record) => schema.parse(plain(record)))
+	return {
+		organizations: decode('organizations', rows.organizations),
+		accounts: decode('accounts', rows.accounts),
+		categories: decode('categories', rows.categories),
+		tags: decode('tags', rows.tags),
+		transactions: decode('transactions', rows.transactions),
+		transactionTags: decode('transactionTags', rows.transactionTags),
+		checks: decode('checks', rows.checks),
+		internalTransfers: decode('internalTransfers', rows.internalTransfers),
+		transactionBatches: decode('transactionBatches', rows.transactionBatches),
+		batchTemplates: decode('batchTemplates', rows.batchTemplates),
+		transactionAttachments: decode('transactionAttachments', rows.transactionAttachments),
+		files: decode('files', rows.files)
+	}
 }
 type PrivateRead = {
+	tables: typeof previousApp
+	version: 1 | 2
+	sources: { sourceFileId: string; payloadSha256: string }[]
 	rows: Map<RowType, PlainRow[]>
 	parts: Map<string, { id: string; fileId: string; partIndex: number; sizeBytes: number }[]>
 	attachments: ArchiveAttachment[]
@@ -451,6 +534,9 @@ function data(input: JazzArchiveReaderInput) {
 }
 export function beginFinanceRead(input: JazzArchiveReaderInput) {
 	reads.set(input, {
+		tables: app,
+		version: 1,
+		sources: [],
 		rows: new Map(),
 		parts: new Map(),
 		attachments: [],
@@ -497,18 +583,22 @@ function retain<Row extends { id: string }>(
 		)
 	})
 }
-export function readFinanceAuthority(input: JazzArchiveReaderInput) {
+export function readFinanceAuthority(
+	input: JazzArchiveReaderInput,
+	tables: typeof previousApp = app
+) {
+	data(input).tables = tables
 	const organizationId = input.binding.workspaceId
 	return Promise.all([
 		retain(
 			input,
 			'organizations',
-			app.organizations.where({ id: organizationId }).select('*', ...auditColumns)
+			tables.organizations.where({ id: organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'organizationMembers',
-			app.organizationMembers.where({ organizationId }).select('*', ...auditColumns)
+			tables.organizationMembers.where({ organizationId }).select('*', ...auditColumns)
 		)
 	]).then(() => {})
 }
@@ -524,50 +614,55 @@ export function financeOwner(input: JazzArchiveReaderInput): boolean {
 	)
 }
 export function readFinanceMetadata(input: JazzArchiveReaderInput) {
+	const tables = data(input).tables
 	const organizationId = input.binding.workspaceId
 	return Promise.all([
-		retain(input, 'accounts', app.accounts.where({ organizationId }).select('*', ...auditColumns)),
+		retain(
+			input,
+			'accounts',
+			tables.accounts.where({ organizationId }).select('*', ...auditColumns)
+		),
 		retain(
 			input,
 			'accountMemberships',
-			app.accountMemberships.where({ organizationId }).select('*', ...auditColumns)
+			tables.accountMemberships.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'categories',
-			app.categories.where({ organizationId }).select('*', ...auditColumns)
+			tables.categories.where({ organizationId }).select('*', ...auditColumns)
 		),
-		retain(input, 'tags', app.tags.where({ organizationId }).select('*', ...auditColumns)),
+		retain(input, 'tags', tables.tags.where({ organizationId }).select('*', ...auditColumns)),
 		retain(
 			input,
 			'transactions',
-			app.transactions.where({ organizationId }).select('*', ...auditColumns)
+			tables.transactions.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'transactionTags',
-			app.transactionTags.where({ organizationId }).select('*', ...auditColumns)
+			tables.transactionTags.where({ organizationId }).select('*', ...auditColumns)
 		),
-		retain(input, 'checks', app.checks.where({ organizationId }).select('*', ...auditColumns)),
+		retain(input, 'checks', tables.checks.where({ organizationId }).select('*', ...auditColumns)),
 		retain(
 			input,
 			'internalTransfers',
-			app.internalTransfers.where({ organizationId }).select('*', ...auditColumns)
+			tables.internalTransfers.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'transactionBatches',
-			app.transactionBatches.where({ organizationId }).select('*', ...auditColumns)
+			tables.transactionBatches.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'batchTemplates',
-			app.batchTemplates.where({ organizationId }).select('*', ...auditColumns)
+			tables.batchTemplates.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'simplefinConnections',
-			app.simplefinConnections
+			tables.simplefinConnections
 				.where({ organizationId })
 				.select(
 					'id',
@@ -586,21 +681,22 @@ export function readFinanceMetadata(input: JazzArchiveReaderInput) {
 		retain(
 			input,
 			'simplefinAccountLinks',
-			app.simplefinAccountLinks.where({ organizationId }).select('*', ...auditColumns)
+			tables.simplefinAccountLinks.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'simplefinSyncAttempts',
-			app.simplefinSyncAttempts.where({ organizationId }).select('*', ...auditColumns)
+			tables.simplefinSyncAttempts.where({ organizationId }).select('*', ...auditColumns)
 		),
 		retain(
 			input,
 			'simplefinSyncAccountResults',
-			app.simplefinSyncAccountResults.where({ organizationId }).select('*', ...auditColumns)
+			tables.simplefinSyncAccountResults.where({ organizationId }).select('*', ...auditColumns)
 		)
 	]).then(() => {})
 }
 export function readFinanceRelations(input: JazzArchiveReaderInput) {
+	const tables = data(input).tables
 	const current = data(input),
 		transactionIds = (current.rows.get('transactions') ?? []).map((row) => row.id),
 		profileIds = (current.rows.get('organizationMembers') ?? []).flatMap((row) =>
@@ -611,7 +707,7 @@ export function readFinanceRelations(input: JazzArchiveReaderInput) {
 			? retain(
 					input,
 					'transactionAttachments',
-					app.transactionAttachments
+					tables.transactionAttachments
 						.where({ transactionId: { in: transactionIds } })
 						.select('*', ...auditColumns)
 				)
@@ -620,7 +716,7 @@ export function readFinanceRelations(input: JazzArchiveReaderInput) {
 			? retain(
 					input,
 					'profiles',
-					app.profiles
+					tables.profiles
 						.where({ id: { in: profileIds } })
 						.select('id', 'userId', 'displayName', ...auditColumns)
 				)
@@ -628,19 +724,82 @@ export function readFinanceRelations(input: JazzArchiveReaderInput) {
 	]).then(() => {})
 }
 export function readFinanceFiles(input: JazzArchiveReaderInput) {
-	const ids = (data(input).rows.get('transactionAttachments') ?? []).map((row) =>
-		z.string().parse(row.fileId)
+	const tables = data(input).tables
+	const current = data(input),
+		ids = (current.rows.get('transactionAttachments') ?? []).map((row) =>
+			z.string().parse(row.fileId)
+		)
+	return Promise.all([
+		ids.length
+			? retain(input, 'files', tables.files.where({ id: { in: ids } }).select('*', ...auditColumns))
+			: Promise.resolve(current.rows.set('files', [])),
+		current.sources.length
+			? input
+					.all(
+						tables.files
+							.where({ id: { in: current.sources.map((row) => row.sourceFileId) } })
+							.limit(2)
+					)
+					.then((files) => {
+						const target = data(input)
+						if (files.length !== target.sources.length) return invalid()
+						target.rows.set(
+							'sourceDocuments',
+							files.map((file) => {
+								const binding = target.sources.find((row) => row.sourceFileId === file.id)
+								if (
+									!binding ||
+									file.organizationId !== input.binding.workspaceId ||
+									file.transactionId !== null ||
+									file.accountId !== null
+								)
+									return invalid()
+								return rows.sourceDocuments.parse({ ...file, payloadSha256: binding.payloadSha256 })
+							})
+						)
+					})
+			: Promise.resolve()
+	]).then(() => {})
+}
+/** Pure projection of the sealed source binding captured with the related workspace records. */
+function retainFinanceSourceBindings(
+	input: JazzArchiveReaderInput,
+	values: { workspaceId: string; sourceFileId: string; payloadSha256: string; status: string }[]
+) {
+	if (
+		values.length > 1 ||
+		values.some((row) => row.workspaceId !== input.binding.workspaceId || row.status !== 'active')
 	)
-	return ids.length
-		? retain(input, 'files', app.files.where({ id: { in: ids } }).select('*', ...auditColumns))
-		: Promise.resolve(data(input).rows.set('files', [])).then(() => {})
+		return invalid()
+	const current = data(input)
+	current.version = 2
+	current.sources = values.map((row) => ({
+		sourceFileId: id.parse(row.sourceFileId),
+		payloadSha256: rows.sourceDocuments.shape.payloadSha256.parse(row.payloadSha256)
+	}))
+}
+export function readFinanceSources(input: JazzArchiveReaderInput) {
+	return input
+		.all(
+			app.restoreOperations
+				.where({ workspaceId: input.binding.workspaceId, status: 'active' })
+				.limit(2)
+		)
+		.then((rows) => retainFinanceSourceBindings(input, rows))
+}
+function financeFiles(input: JazzArchiveReaderInput) {
+	const current = data(input),
+		files = current.rows.get('files') ?? [],
+		sources = current.rows.get('sourceDocuments') ?? []
+	return sources.length ? [...files, ...sources] : files
 }
 export function readFinanceParts(input: JazzArchiveReaderInput) {
-	const ids = (data(input).rows.get('files') ?? []).map((row) => row.id)
+	const tables = data(input).tables
+	const ids = financeFiles(input).map((row) => row.id)
 	if (!ids.length) return Promise.resolve()
 	return input
 		.all(
-			app.fileParts
+			tables.fileParts
 				.where({ fileId: { in: ids } })
 				.select('id', 'fileId', 'partIndex', 'sizeBytes')
 				.limit(input.limits.records + 1)
@@ -659,7 +818,9 @@ export function readFinanceParts(input: JazzArchiveReaderInput) {
 /** Checks declarations before allocating any file body. */
 export function prepareFinanceFiles(input: JazzArchiveReaderInput) {
 	const current = data(input),
-		files = current.rows.get('files') ?? []
+		files = financeFiles(input)
+	if ([...current.rows.values()].reduce((sum, rows) => sum + rows.length, 0) > input.limits.records)
+		return invalid()
 	const identities = new Map<string, Set<string>>(
 		[...current.rows].map(([type, values]) => [type, new Set(values.map((value) => value.id))])
 	)
@@ -702,11 +863,11 @@ export function prepareFinanceFiles(input: JazzArchiveReaderInput) {
 	}
 }
 export function hasFinanceFile(input: JazzArchiveReaderInput) {
-	return data(input).fileIndex < (data(input).rows.get('files')?.length ?? 0)
+	return data(input).fileIndex < financeFiles(input).length
 }
 function file(input: JazzArchiveReaderInput) {
 	const current = data(input),
-		file = current.rows.get('files')?.[current.fileIndex]
+		file = financeFiles(input)[current.fileIndex]
 	if (!file) return invalid()
 	return file
 }
@@ -721,12 +882,13 @@ export function hasFinancePart(input: JazzArchiveReaderInput) {
 	return current.partIndex < (current.parts.get(file(input).id)?.length ?? 0)
 }
 export function readFinancePart(input: JazzArchiveReaderInput) {
+	const tables = data(input).tables
 	const current = data(input),
 		metadata = current.parts.get(file(input).id)?.[current.partIndex]
 	if (!metadata) return invalid()
 	return input
 		.all(
-			app.fileParts
+			tables.fileParts
 				.where({ id: metadata.id, fileId: metadata.fileId })
 				.select('id', 'data', 'sizeBytes', 'partIndex')
 				.limit(2)
@@ -763,6 +925,7 @@ export function hashFinanceFile(input: JazzArchiveReaderInput) {
 	if (!bytes || current.offset !== bytes.length) return invalid()
 	return input.sha256(bytes).then((sha256) => {
 		const target = data(input)
+		if (metadata.payloadSha256 !== undefined && sha256 !== metadata.payloadSha256) return invalid()
 		target.attachments.push({
 			id: metadata.id,
 			fileName: z.string().parse(metadata.fileName),
@@ -784,12 +947,14 @@ export function depositFinanceBackup(input: JazzArchiveReaderInput) {
 		for (const value of values) (inert.has(type) ? references : records).push(project(type, value))
 	const payload: ArchivePayload = {
 		archiveId: crypto.randomUUID(),
-		profile: { id: financeBackupProfile.id, version: 1 },
+		profile: { id: financeBackupProfile.id, version: current.version },
 		source: { applicationId: input.binding.applicationId, workspaceId: input.binding.workspaceId },
 		capturedAt: new Date().toISOString(),
 		coverage: {
 			mode: 'complete-supported-graph',
-			recordTypes: Object.keys(rows),
+			recordTypes: Object.keys(rows).filter(
+				(type) => current.version === 2 || type !== 'sourceDocuments'
+			),
 			history: 'current-data',
 			deletedRecords: 'excluded',
 			consistency: 'jazz-exclusive-transaction'
