@@ -88,26 +88,42 @@ export const financeGraphRows = (graph: FinanceRestoreGraph) => [
 ]
 type Decoded = ReturnType<typeof decodeFinanceBackup>
 type PlanDraft = Omit<RestoreJournalIntent['plan'], 'sha256'>
-type PrivatePlan = {
+type PrivateValue<Value> = { read(): Value; toJSON(): { kind: string }; release(): void }
+type PlanRequestData = {
 	archive: IntegrityCheckedArchive
 	binding: BackupBinding
 	previous: RestoreJournalIntent | undefined
-	payload?: ArchivePayload
-	sourceSize?: number
-	decoded?: Decoded
-	mappings?: RestoreJournalIntent['plan']['mappings']
-	ids?: Map<string, string>
-	graph?: FinanceRestoreGraph
-	graphHash?: string
-	draft?: PlanDraft
-	planHash?: string
+	artifacts: Set<{ release(): void }>
 	plan?: FinanceRestorePlan
 }
-const plans = new WeakMap<FinanceRestorePlanRequest, PrivatePlan>()
+const plans = new WeakMap<FinanceRestorePlanRequest, PlanRequestData>()
 function data(request: FinanceRestorePlanRequest) {
 	const value = plans.get(request)
 	if (!value) throw new Error('Released restore plan')
 	return value
+}
+const required = <Value>(value: Value | undefined): Value => {
+	if (value === undefined) throw new Error('Missing planning input')
+	return value
+}
+// Byte custody only. The chart owns every intermediate value and admission decision.
+function privateValue<Value>(
+	request: FinanceRestorePlanRequest,
+	kind: string,
+	value: Value,
+	dispose?: (value: Value) => void
+): PrivateValue<Value> {
+	let retained: Value | undefined = value
+	const handle = {
+		read: () => required(retained),
+		toJSON: () => ({ kind }),
+		release() {
+			if (retained !== undefined) dispose?.(retained)
+			retained = undefined
+		}
+	}
+	data(request).artifacts.add(handle)
+	return handle
 }
 export function prepareFinanceRestorePlan(
 	archive: IntegrityCheckedArchive,
@@ -122,12 +138,11 @@ export function prepareFinanceRestorePlan(
 			return plan
 		},
 		release: () => {
-			const graph = plans.get(request)?.graph
-			for (const part of graph?.parts ?? []) part.data.fill(0)
+			for (const value of plans.get(request)?.artifacts ?? []) value.release()
 			plans.delete(request)
 		}
 	}
-	plans.set(request, { archive, binding: { ...binding }, previous })
+	plans.set(request, { archive, binding: { ...binding }, previous, artifacts: new Set() })
 	return request
 }
 const key = (kind: string, type: string, id: string) => JSON.stringify([kind, type, id])
@@ -135,98 +150,95 @@ const partKey = (id: string, index: number) => key('part', id, String(index))
 export const restorePartBytes = 256 * 1024
 const partBytes = restorePartBytes
 const sourceIdentity = (archiveId: string) => 'payload/' + archiveId
-function decode(request: FinanceRestorePlanRequest) {
-	const value = data(request),
-		payload = value.archive.readPayload(),
-		{ binding, previous } = value
-	z.uuid().parse(binding.identityId)
-	z.uuid().parse(binding.operationId)
-	if (binding.workspaceId !== payload.source.workspaceId) throw new Error('Restore source mismatch')
-	if (
-		previous &&
-		(previous.operation.applicationId !== binding.applicationId ||
-			previous.operation.environment !== binding.environment ||
-			previous.operation.identityId !== binding.identityId ||
-			previous.operation.operationId !== binding.operationId ||
-			previous.archive.payloadSha256 !== value.archive.payloadDigest() ||
-			previous.archive.archiveId !== payload.archiveId ||
-			canonicalRecovery(previous.archive.profile) !== canonicalRecovery(payload.profile) ||
-			canonicalRecovery(previous.archive.source) !== canonicalRecovery(payload.source))
+type Source = { payload: ArchivePayload; sourceSize: number; payloadSha256: string }
+type IdentitySource = { kind: 'record' | 'attachment'; type: string; sourceId: string }
+type IdentityIndex = { sources: IdentitySource[]; physicalNames: string[] }
+function sourceScopeMatches(binding: BackupBinding, source: Source) {
+	return (
+		z.uuid().safeParse(binding.identityId).success &&
+		z.uuid().safeParse(binding.operationId).success &&
+		binding.workspaceId === source.payload.source.workspaceId
 	)
-		throw new Error('Restore intent mismatch')
-	value.decoded = decodeFinanceBackup(payload)
-	value.payload = payload
-	const bytes = value.archive.copyPayloadBytes()
-	value.sourceSize = bytes.byteLength
-	bytes.fill(0)
 }
-async function derive(request: FinanceRestorePlanRequest) {
-	const value = data(request),
-		{ payload, binding, previous, sourceSize } = value
-	if (!payload || sourceSize === undefined) throw new Error('Missing restore payload')
-	const attachments = financialAttachments(value)
-	const sources = [
-		...payload.records.map((row) => ({ kind: 'record', type: row.type, sourceId: row.id })),
-		...attachments.map((file) => ({ kind: 'attachment', type: '', sourceId: file.id }))
-	].sort((a, b) => compare(key(a.kind, a.type, a.sourceId), key(b.kind, b.type, b.sourceId)))
+function savedIntentMatches(
+	binding: BackupBinding,
+	previous: RestoreJournalIntent | undefined,
+	source: Source
+) {
+	const { payload, payloadSha256 } = source
+	return (
+		previous === undefined ||
+		(previous.operation.applicationId === binding.applicationId &&
+			previous.operation.environment === binding.environment &&
+			previous.operation.identityId === binding.identityId &&
+			previous.operation.operationId === binding.operationId &&
+			previous.archive.payloadSha256 === payloadSha256 &&
+			previous.archive.archiveId === payload.archiveId &&
+			canonicalRecovery(previous.archive.profile) === canonicalRecovery(payload.profile) &&
+			canonicalRecovery(previous.archive.source) === canonicalRecovery(payload.source))
+	)
+}
+function indexIdentities({ payload, sourceSize }: Source, decoded: Decoded): IdentityIndex {
+	const attachments = financialAttachments(payload, decoded)
+	return {
+		sources: [
+			...payload.records.map((row): IdentitySource => ({
+				kind: 'record',
+				type: row.type,
+				sourceId: row.id
+			})),
+			...attachments.map((file): IdentitySource => ({
+				kind: 'attachment',
+				type: '',
+				sourceId: file.id
+			}))
+		].sort((a, b) => compare(key(a.kind, a.type, a.sourceId), key(b.kind, b.type, b.sourceId))),
+		physicalNames: [
+			'owner-membership',
+			'source-payload',
+			...Array.from({ length: Math.ceil(sourceSize / partBytes) }, (_, index) =>
+				partKey(sourceIdentity(payload.archiveId), index)
+			),
+			...attachments.flatMap((file) =>
+				Array.from({ length: Math.ceil(file.sizeBytes / partBytes) }, (_, index) =>
+					partKey(file.id, index)
+				)
+			)
+		]
+	}
+}
+function savedMappingsMatch(
+	previous: RestoreJournalIntent | undefined,
+	{ sources }: IdentityIndex
+) {
 	const saved = previous?.plan.mappings
-	if (
-		saved &&
-		(saved.length !== sources.length ||
-			sources.some((source, index) => {
+	return (
+		saved === undefined ||
+		(saved.length === sources.length &&
+			sources.every((source, index) => {
 				const old = saved[index]
 				return (
-					!old ||
-					old.kind !== source.kind ||
-					old.sourceId !== source.sourceId ||
-					(old.kind !== 'attachment' && old.type !== source.type)
+					old !== undefined &&
+					old.kind === source.kind &&
+					old.sourceId === source.sourceId &&
+					(old.kind === 'attachment' || old.type === source.type) &&
+					z.uuid().safeParse(old.destinationId).success
 				)
 			}))
 	)
-		throw new Error('Restore mapping set mismatch')
-	const names = [
-		...sources.map((source) => key(source.kind, source.type, source.sourceId)),
-		'owner-membership',
-		'source-payload',
-		...Array.from({ length: Math.ceil(sourceSize / partBytes) }, (_, index) =>
-			partKey(sourceIdentity(payload.archiveId), index)
-		),
-		...attachments.flatMap((file) =>
-			Array.from({ length: Math.ceil(file.sizeBytes / partBytes) }, (_, index) =>
-				partKey(file.id, index)
-			)
-		)
-	]
-	const entries = await Promise.all(
-		names.map(
-			async (name) => [name, await stableUuid(binding.operationId, name)] satisfies [string, string]
-		)
-	)
-	const ids = new Map(entries)
-	const mappings = sources.map((source, index) => {
-		const destinationId =
-			saved?.[index]?.destinationId ?? ids.get(key(source.kind, source.type, source.sourceId))
-		if (!destinationId) throw new Error('Missing restore mapping')
-		z.uuid().parse(destinationId)
-		ids.set(key(source.kind, source.type, source.sourceId), destinationId)
-		if (source.kind === 'attachment')
-			return {
-				kind: 'attachment',
-				sourceId: source.sourceId,
-				destinationId
-			} satisfies RestoreJournalIntent['plan']['mappings'][number]
-		return {
-			kind: 'record',
-			type: source.type,
-			sourceId: source.sourceId,
-			destinationId
-		} satisfies RestoreJournalIntent['plan']['mappings'][number]
+}
+const mappingKey = (mapping: RestoreJournalIntent['plan']['mappings'][number]) =>
+	key(mapping.kind, mapping.kind === 'attachment' ? '' : mapping.type, mapping.sourceId)
+function newMappings(
+	index: IdentityIndex,
+	ids: Map<string, string>
+): RestoreJournalIntent['plan']['mappings'] {
+	return index.sources.map((source) => {
+		const destinationId = required(ids.get(key(source.kind, source.type, source.sourceId)))
+		return source.kind === 'attachment'
+			? { kind: 'attachment', sourceId: source.sourceId, destinationId }
+			: { kind: 'record', type: source.type, sourceId: source.sourceId, destinationId }
 	})
-	// Late crypto cannot republish a released plan.
-	if (plans.has(request)) {
-		value.mappings = mappings
-		value.ids = ids
-	}
 }
 type SourceAudit = Pick<
 	Decoded['organizations'][number],
@@ -255,16 +267,16 @@ function business<Row extends SourceAudit>(row: Row) {
 }
 const ordered = <Row extends { id: string }>(rows: Row[]) =>
 	rows.sort((a, b) => compare(a.id, b.id))
-function financialAttachments(value: PrivatePlan) {
-	if (!value.payload || !value.decoded) throw new Error('Missing decoded restore rows')
-	const ids = new Set(value.decoded.files.map((file) => file.id))
-	return value.payload.attachments.filter((file) => ids.has(file.id))
+function financialAttachments(payload: ArchivePayload, decoded: Decoded) {
+	const ids = new Set(decoded.files.map((file) => file.id))
+	return payload.attachments.filter((file) => ids.has(file.id))
 }
-function project(request: FinanceRestorePlanRequest) {
-	const value = data(request),
-		{ decoded: rows, ids, payload, binding } = value
-	if (!rows || !ids || !payload || !value.sourceSize)
-		throw new Error('Missing decoded restore rows')
+function project(
+	{ payload, sourceSize }: Source,
+	rows: Decoded,
+	ids: Map<string, string>,
+	binding: BackupBinding
+): FinanceRestoreGraph {
 	const mapped = (type: string, id: string) => {
 		const result = ids.get(key('record', type, id))
 		if (!result) throw new Error('Unmapped restore reference')
@@ -276,12 +288,10 @@ function project(request: FinanceRestorePlanRequest) {
 		if (!id) throw new Error('Missing physical restore ID')
 		return id
 	}
-	const root = rows.organizations[0]
-	if (!root) throw new Error('Missing restore workspace')
+	const root = required(rows.organizations[0])
 	const workspaceId = mapped('organizations', root.id)
 	const sourceId = sourceIdentity(payload.archiveId),
-		sourceFileId = physical('source-payload'),
-		sourceSize = value.sourceSize
+		sourceFileId = physical('source-payload')
 	const graph: FinanceRestoreGraph = {
 		source: {
 			file: {
@@ -397,7 +407,7 @@ function project(request: FinanceRestorePlanRequest) {
 				fileId: mapped('files', row.fileId)
 			}))
 		),
-		parts: financialAttachments(value)
+		parts: financialAttachments(payload, rows)
 			.flatMap((file) => {
 				const raw = Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0))
 				return Array.from({ length: Math.ceil(raw.length / partBytes) }, (_, index) => ({
@@ -418,35 +428,39 @@ function project(request: FinanceRestorePlanRequest) {
 			accountAccessMode: 'all'
 		}
 	}
-	// Physical rows must not collide with mapped rows or any archived source ID.
+	return graph
+}
+function identitiesAreUnique(
+	payload: ArchivePayload,
+	mappings: RestoreJournalIntent['plan']['mappings'],
+	graph: FinanceRestoreGraph
+) {
 	const sources = new Set(
 		[...payload.records, ...payload.references, ...payload.attachments].map((row) => row.id)
 	)
 	const destinations = [
-		...(value.mappings ?? []).map((row) => row.destinationId),
+		...mappings.map((row) => row.destinationId),
 		graph.member.id,
 		graph.source.file.id,
 		...graph.parts.map((row) => row.id),
 		...graph.source.parts.map((row) => row.id)
 	]
-	if (
-		new Set(destinations).size !== destinations.length ||
-		destinations.some((id) => sources.has(id))
+	return (
+		new Set(destinations).size === destinations.length &&
+		!destinations.some((id) => sources.has(id))
 	)
-		throw new Error('Restore identity collision')
-	value.graph = graph
 }
-function draft(request: FinanceRestorePlanRequest, hashes: string[]) {
-	const value = data(request),
-		{ mappings, graphHash, graph, binding } = value
-	const [preparation, financial, activation] = hashes
-	if (!mappings || !graph || !graphHash || !preparation || !financial || !activation)
-		throw new Error('Incomplete restore hashes')
+function draft(
+	binding: BackupBinding,
+	mappings: RestoreJournalIntent['plan']['mappings'],
+	graphHash: string,
+	[preparation, financial, activation]: [string, string, string]
+): PlanDraft {
 	const indexes = mappings.map((row, index) => ({ row, index }))
 	const financialIndexes = indexes
 		.filter(({ row }) => !(row.kind === 'record' && row.type === 'organizations'))
 		.map(({ index }) => index)
-	value.draft = {
+	return {
 		id: binding.operationId,
 		version: 1,
 		expectedGraphSha256: graphHash,
@@ -471,123 +485,306 @@ function draft(request: FinanceRestorePlanRequest, hashes: string[]) {
 		requirements: { local: 'notRequired', remote: 'required' }
 	}
 }
-function finish(request: FinanceRestorePlanRequest) {
-	const value = data(request),
-		{ graph, payload, binding, planHash, draft, previous } = value
-	if (!graph || !payload || !planHash || !draft) throw new Error('Incomplete restore plan')
-	const intent: RestoreJournalIntent = {
-		operation: {
-			applicationId: binding.applicationId,
-			environment: binding.environment,
-			identityId: binding.identityId,
-			operationId: binding.operationId,
-			destinationWorkspaceId: graph.workspace.id
-		},
-		archive: {
-			archiveId: payload.archiveId,
-			payloadSha256: value.archive.payloadDigest(),
-			profile: payload.profile,
-			source: payload.source
-		},
-		plan: { ...draft, sha256: planHash }
-	}
-	createRestoreJournalRecord(intent)
-	if (previous && canonicalRecovery(previous) !== canonicalRecovery(intent))
-		throw new Error('Rebuilt restore plan mismatch')
-	value.plan = { graph, intent }
-}
 type PlanningInput = { request: FinanceRestorePlanRequest }
 type PlanningResult =
 	{ outcome: 'planned'; plan: FinanceRestorePlanRequest } | { outcome: 'failed' | 'cancelled' }
+type PlanningContext = PlanningInput & {
+	binding: BackupBinding
+	previous: RestoreJournalIntent | undefined
+	source: PrivateValue<Source> | undefined
+	decoded: PrivateValue<Decoded> | undefined
+	index: IdentityIndex | undefined
+	ids: Map<string, string> | undefined
+	mappings: RestoreJournalIntent['plan']['mappings'] | undefined
+	graph: PrivateValue<FinanceRestoreGraph> | undefined
+	graphHash: string | undefined
+	draft: PlanDraft | undefined
+	planHash: string | undefined
+	intent: RestoreJournalIntent | undefined
+	result: PlanningResult
+}
+function buildIntent(input: {
+	binding: BackupBinding
+	source: PrivateValue<Source>
+	graph: PrivateValue<FinanceRestoreGraph>
+	draft: PlanDraft
+	planHash: string
+}) {
+	const { payload, payloadSha256 } = input.source.read()
+	const intent: RestoreJournalIntent = {
+		operation: {
+			applicationId: input.binding.applicationId,
+			environment: input.binding.environment,
+			identityId: input.binding.identityId,
+			operationId: input.binding.operationId,
+			destinationWorkspaceId: input.graph.read().workspace.id
+		},
+		archive: {
+			archiveId: payload.archiveId,
+			payloadSha256,
+			profile: payload.profile,
+			source: payload.source
+		},
+		plan: { ...input.draft, sha256: input.planHash }
+	}
+	createRestoreJournalRecord(intent)
+	return intent
+}
 const actors = {
-	decode: fromPromise<void, PlanningInput>(({ input }) =>
-		Promise.resolve().then(() => decode(input.request))
+	readSource: fromPromise<PrivateValue<Source>, PlanningInput>(({ input }) =>
+		Promise.resolve().then(() => {
+			const { archive } = data(input.request)
+			const bytes = archive.copyPayloadBytes()
+			try {
+				return privateValue(input.request, 'financeRestoreSource', {
+					payload: archive.readPayload(),
+					sourceSize: bytes.byteLength,
+					payloadSha256: archive.payloadDigest()
+				})
+			} finally {
+				bytes.fill(0)
+			}
+		})
 	),
-	derive: fromPromise<void, PlanningInput>(({ input }) => derive(input.request)),
-	project: fromPromise<void, PlanningInput>(({ input }) =>
-		Promise.resolve().then(() => project(input.request))
+	decode: fromPromise<PrivateValue<Decoded>, PlanningInput & { source: PrivateValue<Source> }>(
+		({ input }) =>
+			Promise.resolve().then(() =>
+				privateValue(
+					input.request,
+					'financeRestoreRows',
+					decodeFinanceBackup(input.source.read().payload)
+				)
+			)
 	),
-	hashGraph: fromPromise<string, PlanningInput>(({ input }) =>
-		digestRecovery(data(input.request).graph)
+	index: fromPromise<
+		IdentityIndex,
+		{ source: PrivateValue<Source>; decoded: PrivateValue<Decoded> }
+	>(({ input }) =>
+		Promise.resolve().then(() => indexIdentities(input.source.read(), input.decoded.read()))
 	),
-	hashWrites: fromPromise<string[], PlanningInput>(({ input }) => {
-		const graph = data(input.request).graph
-		if (!graph) throw new Error('Missing restore graph')
+	derive: fromPromise<Map<string, string>, { operationId: string; names: string[] }>(({ input }) =>
+		Promise.all(
+			input.names.map(
+				async (name) => [name, await stableUuid(input.operationId, name)] satisfies [string, string]
+			)
+		).then((entries) => new Map(entries))
+	),
+	project: fromPromise<
+		PrivateValue<FinanceRestoreGraph>,
+		PlanningInput & {
+			source: PrivateValue<Source>
+			decoded: PrivateValue<Decoded>
+			ids: Map<string, string>
+			binding: BackupBinding
+		}
+	>(({ input }) =>
+		Promise.resolve().then(() =>
+			privateValue(
+				input.request,
+				'financeRestoreGraph',
+				project(input.source.read(), input.decoded.read(), input.ids, input.binding),
+				(graph) => {
+					for (const part of graph.parts) part.data.fill(0)
+				}
+			)
+		)
+	),
+	hashGraph: fromPromise<string, PrivateValue<FinanceRestoreGraph>>(({ input }) =>
+		digestRecovery(input.read())
+	),
+	hashWrites: fromPromise<
+		[string, string, string],
+		{ graph: PrivateValue<FinanceRestoreGraph>; payloadSha256: string }
+	>(({ input }) => {
+		const graph = input.graph.read()
 		return Promise.all([
-			digestRecovery([graph.workspace, graph.source, data(input.request).archive.payloadDigest()]),
-			digestRecovery([
-				financeGraphRows(graph),
-				graph.source,
-				data(input.request).archive.payloadDigest()
-			]),
+			digestRecovery([graph.workspace, graph.source, input.payloadSha256]),
+			digestRecovery([financeGraphRows(graph), graph.source, input.payloadSha256]),
 			digestRecovery(graph.member)
 		])
 	}),
-	hashPlan: fromPromise<string, PlanningInput>(({ input }) =>
-		digestRecovery(data(input.request).draft)
-	),
-	finish: fromPromise<void, PlanningInput>(({ input }) =>
-		Promise.resolve().then(() => finish(input.request))
+	hashPlan: fromPromise<string, PlanDraft>(({ input }) => digestRecovery(input)),
+	finish: fromPromise<RestoreJournalIntent, Parameters<typeof buildIntent>[0]>(({ input }) =>
+		Promise.resolve().then(() => buildIntent(input))
 	)
 }
 export const financeRestorePlanningMachine = setup<
-	PlanningInput & { result: PlanningResult },
+	PlanningContext,
 	{ type: 'CANCEL' | 'SHUTDOWN' } | { type: 'INVALIDATE'; binding: BackupBinding },
 	typeof actors,
 	{},
 	{},
-	{},
+	{
+		sourceScopeMismatch: PrivateValue<Source>
+		savedIntentMismatch: PrivateValue<Source>
+		savedMappingsMismatch: IdentityIndex
+		hasSavedMappings: undefined
+		identitiesCollide: PrivateValue<FinanceRestoreGraph>
+		rebuiltIntentMismatch: RestoreJournalIntent
+	},
 	never,
 	string,
 	PlanningInput,
 	PlanningResult
->({ actors }).createMachine({
-	context: ({ input }) => ({ ...input, result: { outcome: 'failed' } }),
-	initial: 'decoding',
+>({
+	actors,
+	guards: {
+		sourceScopeMismatch: ({ context }, source) =>
+			!sourceScopeMatches(context.binding, source.read()),
+		savedIntentMismatch: ({ context }, source) =>
+			!savedIntentMatches(context.binding, context.previous, source.read()),
+		savedMappingsMismatch: ({ context }, index) => !savedMappingsMatch(context.previous, index),
+		hasSavedMappings: ({ context }) => context.previous !== undefined,
+		identitiesCollide: ({ context }, graph) =>
+			!identitiesAreUnique(
+				required(context.source).read().payload,
+				required(context.mappings),
+				graph.read()
+			),
+		rebuiltIntentMismatch: ({ context }, intent) =>
+			context.previous !== undefined &&
+			canonicalRecovery(context.previous) !== canonicalRecovery(intent)
+	}
+}).createMachine({
+	context: ({ input }) => ({
+		...input,
+		binding: data(input.request).binding,
+		previous: data(input.request).previous,
+		source: undefined,
+		decoded: undefined,
+		index: undefined,
+		ids: undefined,
+		mappings: undefined,
+		graph: undefined,
+		graphHash: undefined,
+		draft: undefined,
+		planHash: undefined,
+		intent: undefined,
+		result: { outcome: 'failed' }
+	}),
+	initial: 'readingSource',
 	output: ({ context }) => context.result,
 	on: {
 		CANCEL: { target: '.cancelled' },
 		SHUTDOWN: { target: '.cancelled' },
 		INVALIDATE: {
-			guard: ({ context, event }) =>
-				sameBackupBinding(data(context.request).binding, event.binding),
+			guard: ({ context, event }) => sameBackupBinding(context.binding, event.binding),
 			target: '.cancelled'
 		}
 	},
 	states: {
+		readingSource: {
+			invoke: {
+				src: 'readSource',
+				input: ({ context }) => ({ request: context.request }),
+				onDone: [
+					{
+						guard: { type: 'sourceScopeMismatch', params: ({ event }) => event.output },
+						target: 'failed'
+					},
+					{
+						guard: { type: 'savedIntentMismatch', params: ({ event }) => event.output },
+						target: 'failed'
+					},
+					{ target: 'decoding', actions: assign({ source: ({ event }) => event.output }) }
+				],
+				onError: 'failed'
+			}
+		},
 		decoding: {
 			invoke: {
 				src: 'decode',
-				input: ({ context }) => context,
-				onDone: 'derivingIds',
+				input: ({ context }) => ({ request: context.request, source: required(context.source) }),
+				onDone: { target: 'indexing', actions: assign({ decoded: ({ event }) => event.output }) },
+				onError: 'failed'
+			}
+		},
+		indexing: {
+			invoke: {
+				src: 'index',
+				input: ({ context }) => ({
+					source: required(context.source),
+					decoded: required(context.decoded)
+				}),
+				onDone: [
+					{
+						guard: { type: 'savedMappingsMismatch', params: ({ event }) => event.output },
+						target: 'failed'
+					},
+					{ target: 'derivingIds', actions: assign({ index: ({ event }) => event.output }) }
+				],
 				onError: 'failed'
 			}
 		},
 		derivingIds: {
 			invoke: {
 				src: 'derive',
-				input: ({ context }) => context,
-				onDone: 'projecting',
+				input: ({ context }) => {
+					const index = required(context.index)
+					return {
+						operationId: context.binding.operationId,
+						names: [
+							...index.physicalNames,
+							...(context.previous
+								? []
+								: index.sources.map((row) => key(row.kind, row.type, row.sourceId)))
+						]
+					}
+				},
+				onDone: [
+					{
+						guard: 'hasSavedMappings',
+						target: 'projecting',
+						actions: assign({
+							ids: ({ context, event }) =>
+								new Map([
+									...event.output,
+									...required(context.previous).plan.mappings.map((row): [string, string] => [
+										mappingKey(row),
+										row.destinationId
+									])
+								]),
+							mappings: ({ context }) => required(context.previous).plan.mappings
+						})
+					},
+					{
+						target: 'projecting',
+						actions: assign({
+							ids: ({ event }) => event.output,
+							mappings: ({ context, event }) => newMappings(required(context.index), event.output)
+						})
+					}
+				],
 				onError: 'failed'
 			}
 		},
 		projecting: {
 			invoke: {
 				src: 'project',
-				input: ({ context }) => context,
-				onDone: 'fingerprintingGraph',
+				input: ({ context }) => ({
+					request: context.request,
+					source: required(context.source),
+					decoded: required(context.decoded),
+					ids: required(context.ids),
+					binding: context.binding
+				}),
+				onDone: [
+					{
+						guard: { type: 'identitiesCollide', params: ({ event }) => event.output },
+						target: 'failed'
+					},
+					{ target: 'fingerprintingGraph', actions: assign({ graph: ({ event }) => event.output }) }
+				],
 				onError: 'failed'
 			}
 		},
 		fingerprintingGraph: {
 			invoke: {
 				src: 'hashGraph',
-				input: ({ context }) => context,
+				input: ({ context }) => required(context.graph),
 				onDone: {
 					target: 'fingerprintingWrites',
-					actions: ({ context, event }) => {
-						data(context.request).graphHash = event.output
-					}
+					actions: assign({ graphHash: ({ event }) => event.output })
 				},
 				onError: 'failed'
 			}
@@ -595,10 +792,21 @@ export const financeRestorePlanningMachine = setup<
 		fingerprintingWrites: {
 			invoke: {
 				src: 'hashWrites',
-				input: ({ context }) => context,
+				input: ({ context }) => ({
+					graph: required(context.graph),
+					payloadSha256: required(context.source).read().payloadSha256
+				}),
 				onDone: {
 					target: 'fingerprintingPlan',
-					actions: ({ context, event }) => draft(context.request, event.output)
+					actions: assign({
+						draft: ({ context, event }) =>
+							draft(
+								context.binding,
+								required(context.mappings),
+								required(context.graphHash),
+								event.output
+							)
+					})
 				},
 				onError: 'failed'
 			}
@@ -606,12 +814,10 @@ export const financeRestorePlanningMachine = setup<
 		fingerprintingPlan: {
 			invoke: {
 				src: 'hashPlan',
-				input: ({ context }) => context,
+				input: ({ context }) => required(context.draft),
 				onDone: {
 					target: 'validatingIntent',
-					actions: ({ context, event }) => {
-						data(context.request).planHash = event.output
-					}
+					actions: assign({ planHash: ({ event }) => event.output })
 				},
 				onError: 'failed'
 			}
@@ -619,14 +825,34 @@ export const financeRestorePlanningMachine = setup<
 		validatingIntent: {
 			invoke: {
 				src: 'finish',
-				input: ({ context }) => context,
-				onDone: 'planned',
+				input: ({ context }) => ({
+					binding: context.binding,
+					source: required(context.source),
+					graph: required(context.graph),
+					draft: required(context.draft),
+					planHash: required(context.planHash)
+				}),
+				onDone: [
+					{
+						guard: { type: 'rebuiltIntentMismatch', params: ({ event }) => event.output },
+						target: 'failed'
+					},
+					{ target: 'planned', actions: assign({ intent: ({ event }) => event.output }) }
+				],
 				onError: 'failed'
 			}
 		},
 		planned: {
 			type: 'final',
-			entry: assign({ result: ({ context }) => ({ outcome: 'planned', plan: context.request }) })
+			entry: [
+				({ context }) => {
+					data(context.request).plan = {
+						graph: required(context.graph).read(),
+						intent: required(context.intent)
+					}
+				},
+				assign({ result: ({ context }) => ({ outcome: 'planned', plan: context.request }) })
+			]
 		},
 		failed: { type: 'final', entry: ({ context }) => context.request.release() },
 		cancelled: {

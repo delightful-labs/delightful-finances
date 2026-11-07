@@ -1708,38 +1708,7 @@ describe('browser replica separation', () => {
 			expect(ids).toHaveLength(2)
 			expect(new Set(ids.map((row) => row.destinationId)).size).toBe(2)
 		})
-		it.each(['archive', 'mapping', 'fingerprint', 'identity'])(
-			'rejects substituted %s before exposing a plan',
-			async (field) => {
-				const appId = crypto.randomUUID(),
-					identity = crypto.randomUUID()
-				const sample = await recoverySample(retainedFile, appId, identity)
-				const previous = {
-					...sample.intent,
-					archive:
-						field === 'archive'
-							? { ...sample.intent.archive, payloadSha256: '0'.repeat(64) }
-							: sample.intent.archive,
-					plan:
-						field === 'mapping'
-							? { ...sample.intent.plan, mappings: sample.intent.plan.mappings.slice(1) }
-							: field === 'fingerprint'
-								? { ...sample.intent.plan, sha256: '0'.repeat(64) }
-								: sample.intent.plan
-				}
-				await expect(
-					recoverySample(
-						retainedFile,
-						appId,
-						field === 'identity' ? crypto.randomUUID() : identity,
-						previous
-					)
-				).rejects.toThrow('Finance restore planning failed')
-			}
-		)
-		it.each(['derivingIds', 'fingerprintingGraph', 'fingerprintingPlan'] satisfies (
-			'derivingIds' | 'fingerprintingGraph' | 'fingerprintingPlan'
-		)[])('cancels during %s without publishing late results', async (state) => {
+		it('rejects invalid source scope before decoding rows or deriving IDs', async () => {
 			const opened = prepareArchiveOpen(new Uint8Array(retainedFile))
 			const checked = await toPromise(
 				createActor(createArchiveEnvelopeMachine(), { input: { request: opened } }).start()
@@ -1753,29 +1722,150 @@ describe('browser replica separation', () => {
 				workspaceId: payload.source.workspaceId,
 				generation: 1
 			}
-			const request = prepareFinanceRestorePlan(checked.archive, binding)
-			const actor = createActor(financeRestorePlanningMachine, { input: { request } })
-			const subscription = actor.subscribe((snapshot) => {
-				if (snapshot.matches(state)) {
-					subscription.unsubscribe()
-					actor.send({ type: 'INVALIDATE', binding: { ...binding, generation: 2 } })
-					expect(actor.getSnapshot().status).toBe('active')
-					actor.send({ type: 'INVALIDATE', binding })
-				}
-			})
 			try {
-				expect(await toPromise(actor.start())).toEqual({ outcome: 'cancelled' })
-				await new Promise((resolve) => setTimeout(resolve, 0))
-				expect(() => request.read()).toThrow('Released restore plan')
-				expect(JSON.stringify(actor.getSnapshot())).not.toContain('Exact restore')
+				for (const invalid of [
+					{ ...binding, identityId: 'invalid' },
+					{ ...binding, operationId: 'invalid' },
+					{ ...binding, workspaceId: crypto.randomUUID() }
+				]) {
+					const request = prepareFinanceRestorePlan(checked.archive, invalid)
+					const states: string[] = []
+					const actor = createActor(financeRestorePlanningMachine, { input: { request } })
+					actor.subscribe((snapshot) => states.push(snapshot.value))
+					expect(await toPromise(actor.start())).toEqual({ outcome: 'failed' })
+					expect(states).toEqual(['readingSource', 'failed'])
+					expect(() => request.read()).toThrow('Released restore plan')
+				}
 				expect(checked.archive.readPayload()).toEqual(payload)
 			} finally {
-				subscription.unsubscribe()
-				request.release()
 				checked.archive.release()
 				opened.release()
 			}
 		})
+		it.each([
+			'archive',
+			'mapping',
+			'fingerprint',
+			'identity',
+			'mapping UUID',
+			'collision',
+			'destination'
+		])('rejects substituted %s before exposing a plan', async (field) => {
+			const appId = crypto.randomUUID(),
+				identity = crypto.randomUUID()
+			const sample = await recoverySample(retainedFile, appId, identity)
+			const collisionId = sample.intent.plan.mappings[1]?.destinationId
+			if (!collisionId) throw new Error('Missing mapping for collision test')
+			const previous = {
+				...sample.intent,
+				operation:
+					field === 'destination'
+						? { ...sample.intent.operation, destinationWorkspaceId: crypto.randomUUID() }
+						: sample.intent.operation,
+				archive:
+					field === 'archive'
+						? { ...sample.intent.archive, payloadSha256: '0'.repeat(64) }
+						: sample.intent.archive,
+				plan:
+					field === 'mapping'
+						? { ...sample.intent.plan, mappings: sample.intent.plan.mappings.slice(1) }
+						: field === 'mapping UUID' || field === 'collision'
+							? {
+									...sample.intent.plan,
+									mappings: sample.intent.plan.mappings.map((row, index) =>
+										index === 0
+											? {
+													...row,
+													destinationId: field === 'mapping UUID' ? 'invalid' : collisionId
+												}
+											: row
+									)
+								}
+							: field === 'fingerprint'
+								? { ...sample.intent.plan, sha256: '0'.repeat(64) }
+								: sample.intent.plan
+			}
+			const states: string[] = []
+			await expect(
+				recoverySample(
+					retainedFile,
+					appId,
+					field === 'identity' ? crypto.randomUUID() : identity,
+					previous,
+					(state) => states.push(state)
+				)
+			).rejects.toThrow('Finance restore planning failed')
+			const rejectedAfter: Record<string, string> = {
+				archive: 'readingSource',
+				identity: 'readingSource',
+				mapping: 'indexing',
+				'mapping UUID': 'indexing',
+				collision: 'projecting',
+				fingerprint: 'validatingIntent',
+				destination: 'validatingIntent'
+			}
+			expect(states.at(-2)).toBe(rejectedAfter[field])
+			expect(states.at(-1)).toBe('failed')
+		})
+		it.each([
+			'readingSource',
+			'decoding',
+			'indexing',
+			'derivingIds',
+			'projecting',
+			'fingerprintingGraph',
+			'fingerprintingWrites',
+			'fingerprintingPlan',
+			'validatingIntent'
+		] satisfies import('xstate').SnapshotFrom<typeof financeRestorePlanningMachine>['value'][])(
+			'cancels during %s without publishing late results',
+			async (state) => {
+				const opened = prepareArchiveOpen(new Uint8Array(retainedFile))
+				const checked = await toPromise(
+					createActor(createArchiveEnvelopeMachine(), { input: { request: opened } }).start()
+				)
+				if (checked.outcome !== 'integrityChecked') throw new Error('Missing checked file')
+				const binding = {
+					applicationId: crypto.randomUUID(),
+					environment: 'test',
+					identityId: crypto.randomUUID(),
+					operationId: crypto.randomUUID(),
+					workspaceId: payload.source.workspaceId,
+					generation: 1
+				}
+				const request = prepareFinanceRestorePlan(checked.archive, binding)
+				const actor = createActor(financeRestorePlanningMachine, { input: { request } })
+				let retained: { read(): unknown }[] = []
+				const subscription = actor.subscribe((snapshot) => {
+					expect(JSON.stringify(snapshot)).not.toContain('Exact restore')
+					expect(JSON.stringify(snapshot)).not.toContain('Keep this memo')
+					if (snapshot.matches(state)) {
+						retained = [
+							snapshot.context.source,
+							snapshot.context.decoded,
+							snapshot.context.graph
+						].filter((value) => value !== undefined)
+						subscription.unsubscribe()
+						actor.send({ type: 'INVALIDATE', binding: { ...binding, generation: 2 } })
+						expect(actor.getSnapshot().status).toBe('active')
+						actor.send({ type: 'INVALIDATE', binding })
+					}
+				})
+				try {
+					expect(await toPromise(actor.start())).toEqual({ outcome: 'cancelled' })
+					await new Promise((resolve) => setTimeout(resolve, 0))
+					expect(() => request.read()).toThrow('Released restore plan')
+					for (const value of retained) expect(() => value.read()).toThrow('Missing planning input')
+					expect(JSON.stringify(actor.getSnapshot())).not.toContain('Exact restore')
+					expect(checked.archive.readPayload()).toEqual(payload)
+				} finally {
+					subscription.unsubscribe()
+					request.release()
+					checked.archive.release()
+					opened.release()
+				}
+			}
+		)
 
 		async function openOwner(page: Page, appId: string, serverUrl: string, fresh: boolean) {
 			await page.goto(url)
@@ -4005,7 +4095,8 @@ async function recoverySample(
 	file: number[],
 	applicationId: string,
 	identityId: string,
-	previous?: RestoreJournalIntent
+	previous?: RestoreJournalIntent,
+	observe?: (state: string) => void
 ): Promise<RecoverySample> {
 	const opened = prepareArchiveOpen(new Uint8Array(file))
 	const result = await toPromise(
@@ -4022,8 +4113,9 @@ async function recoverySample(
 	}
 	const request = prepareFinanceRestorePlan(result.archive, binding, previous)
 	try {
-		const actor = createActor(financeRestorePlanningMachine, { input: { request } }).start()
-		const planned = await toPromise(actor)
+		const actor = createActor(financeRestorePlanningMachine, { input: { request } })
+		actor.subscribe((snapshot) => observe?.(snapshot.value))
+		const planned = await toPromise(actor.start())
 		if (planned.outcome !== 'planned') throw new Error('Finance restore planning failed')
 		const plan = structuredClone(planned.plan.read())
 		expect(JSON.stringify(actor.getSnapshot())).not.toContain('Exact restore')

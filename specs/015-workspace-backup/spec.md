@@ -115,8 +115,13 @@ Completion means Download started, since the browser does not confirm the user's
 
 ## Typed plan and destination
 
-The planner uses the released Finance field schemas: decode -> derive IDs -> project -> fingerprint
-graph/writes/plan -> validate full intent. IDs use deterministic `(kind,type,sourceId)` keys, independent
+The planner uses the released Finance field schemas: read source -> scope/saved-intent guards ->
+decode -> index records -> saved-mapping guard -> derive IDs -> project -> collision guard -> fingerprint
+graph/writes/plan -> rebuilt-intent guard -> publish. Each leaf returns a value assigned by the chart;
+there is no mutable private object carrying hidden workflow progress. Opaque values hold only private
+payloads/rows/graphs, with request-owned byte cleanup. Scope, mapping and final-intent decisions are
+named guards on invocation completion. Resume derives physical IDs and reuses admitted saved mappings.
+IDs use deterministic `(kind,type,sourceId)` keys, independent
 of locale and source storage layout. Physical attachment/source-part IDs and fresh owner membership
 use the immutable operation ID. Resume rejects altered archive, scope, mapping or fingerprint data.
 
@@ -250,8 +255,17 @@ Node 24.22.2 verification on 2026-11-06:
   They independently check all 521 transaction facts, exact attachment bytes and unchanged source audit.
 - Application diagnostics: zero errors and warnings. Test/service-worker type checks, e2e scope
   validation, production build without a live Jazz service, changed-file formatting and diff checks passed.
-- The existing CI workflow now runs the 86-case restore suite in a dedicated job with all three
+- The existing CI workflow runs the restore suite in a dedicated job with all three
   browser engines. The workspace browser job already includes both complete restore UI cases.
+
+Planner-refactor verification on 2026-11-07: 20 focused admission/cancellation cases and all 1,895
+unit/integration tests passed. The expanded restore suite has 96 cases: the full run passed 95 and
+timed out in one Firefox financial-write restart case. That isolated case passed in 22.6 seconds;
+all three Firefox restart phases then passed together without logging or timeout changes. The
+saved-image policy test now retains its actual local write receipt and awaits global acceptance
+before querying it, matching the adjacent native policy test; application saves still settle locally.
+Both protected/plain 521-transaction UI restore flows passed with the refactored planner in 43.8 and
+47.8 seconds, including exact transaction facts, attachment bytes, unchanged source and history lookup.
 
 Commands use the repository's pinned dependencies:
 
