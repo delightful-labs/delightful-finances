@@ -22,9 +22,9 @@ describe('date range filter controls', () => {
 		it(`selects the inclusive ${choice}-day preset and hides custom inputs`, () => {
 			const html = filter(start, '2026-11-05')
 			expect(html).toContain('Filter Dates')
-			expect(html).toContain('Last 7 Days')
-			expect(html).toContain('Last 30 Days')
-			expect(html).toContain('Custom Dates')
+			expect(html).toContain('Last week')
+			expect(html).toContain('Last month')
+			expect(html).toContain('Custom')
 			const radios = [...html.matchAll(/<input\b[^>]*type="radio"[^>]*>/g)]
 			const checked = radios.filter(([input]) => /\bchecked(?:=""|\s|\/?>)/.test(input))
 			expect(radios).toHaveLength(3)

@@ -18,7 +18,6 @@
 	import Message from '#lib/components/shared/Message.svelte'
 	import TransactionList from '#lib/components/transactions/TransactionList.svelte'
 	import QueryContent from '#lib/components/shared/QueryContent.svelte'
-	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import FloatingActionLink from '../navigation/FloatingActionLink.svelte'
 	import TransactionListFilters from '../filters/TransactionListFilters.svelte'
 	import {
@@ -184,8 +183,6 @@
 </script>
 
 <div class="wrapper">
-	{#if showHeading}<PageHeader title={heading} />{/if}
-
 	<QueryContent
 		queries={[transactions, accounts, categories, tags, links]}
 		loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
@@ -197,6 +194,8 @@
 		{/if}
 		{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
 			<TransactionListFilters
+				title={heading}
+				headingLevel={showHeading ? 'h1' : 'h2'}
 				value={listFilters}
 				categories={filterCategories}
 				{currencies}

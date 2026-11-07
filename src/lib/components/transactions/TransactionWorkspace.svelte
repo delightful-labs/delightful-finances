@@ -60,6 +60,7 @@
 			id={drawerId}
 			side="right"
 			{heading}
+			headingHidden
 			closeLabel={m['actions.close_subject']({
 				subject: m['nouns.transaction']({ count: 2 })
 			})}

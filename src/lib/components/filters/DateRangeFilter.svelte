@@ -57,17 +57,9 @@
 			}
 		}}
 	>
-		{#each [7, 30] as days (days)}
-			<RadioItem value={String(days)}
-				>{m['labels.last_count_subjects']({
-					count: days,
-					subjects: m['nouns.day']({ count: days })
-				})}</RadioItem
-			>
-		{/each}
-		<RadioItem value="custom"
-			>{m['labels.custom_subject']({ subject: m['nouns.date']({ count: 2 }) })}</RadioItem
-		>
+		<RadioItem value="7">{m['labels.last_week']()}</RadioItem>
+		<RadioItem value="30">{m['labels.last_month']()}</RadioItem>
+		<RadioItem value="custom">{m['labels.custom']()}</RadioItem>
 	</RadioGroup>
 	{#if selected === 'custom'}
 		<InputDate
@@ -87,6 +79,7 @@
 
 <style>
 	.date-range-filter {
+		--dui-input-font-size: 0.875rem;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: end;
