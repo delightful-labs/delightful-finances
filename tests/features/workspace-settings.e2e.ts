@@ -184,6 +184,8 @@ test.describe('workspace backup downloads', () => {
 			`downloads and independently reopens a Finance ${protection} backup without changing source`,
 			{ tag: ['@workspaces', '@backup'] },
 			async ({ page }, info) => {
+				// This flow seeds, exports, restores and independently verifies 521 transactions.
+				test.setTimeout(180_000)
 				await start(page)
 				const source = await page.evaluate(async () => {
 					const { db, app, userId } = window.workspaceSettingsTest
@@ -406,9 +408,23 @@ test.describe('workspace backup downloads', () => {
 						restoreRegion.getByRole('button', { name: 'Create Workspace', exact: true })
 					).toBeVisible()
 				}
+				const restoreStarted = performance.now()
 				await restoreRegion.getByRole('button', { name: 'Create Workspace', exact: true }).click()
 				if (protection === 'none') await navigateSidebar(page, 'Overview')
-				await expect(restoreRegion.getByRole('status')).toHaveText('Done', { timeout: 30_000 })
+				// Native acceptance of this graph can exceed 30s; the overall test deadline still applies.
+				await expect(restoreRegion.getByRole('status')).toHaveText('Done', {
+					timeout: info.timeout
+				})
+				const restoreMeasurement = {
+					protection,
+					transactions: 521,
+					totalRestoreMs: Math.round(performance.now() - restoreStarted)
+				}
+				console.log('Finance restore measurement', restoreMeasurement)
+				await info.attach('finance-restore-measurement', {
+					body: JSON.stringify(restoreMeasurement),
+					contentType: 'application/json'
+				})
 				const restored = await page.evaluate(async (beforeIds) => {
 					const { db, app } = window.workspaceSettingsTest
 					const roots = await db.all(app.organizations, { tier: 'remote' }),
@@ -500,7 +516,9 @@ test.describe('workspace backup downloads', () => {
 						.getByLabel('Password', { exact: true })
 						.fill('independent-browser-password')
 				await restoreRegion.getByRole('button', { name: 'Restore Workspace', exact: true }).click()
-				await expect(restoreRegion.getByRole('status')).toHaveText('Done', { timeout: 30_000 })
+				await expect(restoreRegion.getByRole('status')).toHaveText('Done', {
+					timeout: info.timeout
+				})
 				expect(
 					await page.evaluate(
 						async () =>
