@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { EXPENSES_PATH } from '#lib/domain/transaction-kind.js'
 	import ExpensePieChart from './ExpensePieChart.svelte'
-	import { Heading, Text } from 'delightful-ui'
+	import { Heading, Text, InputText, Select } from 'delightful-ui'
+	import FilterPopovers from '../filters/FilterPopovers.svelte'
+	import { filterTransactions } from '#lib/filters/transaction-list-filters.js'
 	import DateRangeFilter from '../filters/DateRangeFilter.svelte'
 	import CategoryLegend from './CategoryLegend.svelte'
 	import TransactionItems from '../transactions/TransactionItems.svelte'
@@ -36,6 +38,7 @@
 		date.setDate(date.getDate() - (days - 1))
 		return todayDateOnly(date)
 	}
+	let query = $state('')
 	let start = $state(daysAgo(30))
 	let end = $state(todayDateOnly())
 	let selectedCategory = $state<string | null>(null)
@@ -52,7 +55,14 @@
 	)
 	const validRange = $derived(Boolean(start && end && start <= end))
 	const unlinkedTransactions = $derived(
-		transactions.filter((row) => !internalTransferResolution.suppressedTransactionIds.has(row.id))
+		filterTransactions(
+			transactions.filter(
+				(row) => !internalTransferResolution.suppressedTransactionIds.has(row.id)
+			),
+			{ query, start: '', end: '', categoryId: '', currency: '' },
+			categoryNames,
+			tagNamesByTransaction
+		)
 	)
 	const period = $derived(
 		validRange
@@ -107,6 +117,48 @@
 	const id = $props.id()
 </script>
 
+<div class="overview-header">
+	<Heading level="h1">{m['navigation.overview']()}</Heading>
+	<FilterPopovers>
+		{#snippet search()}
+			<InputText
+				label={m['actions.search_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
+				type="search"
+				bind:value={query}
+			/>
+		{/snippet}
+		{#snippet filters()}
+			<DateRangeFilter
+				{start}
+				{end}
+				onchange={(nextStart, nextEnd) => {
+					start = nextStart
+					end = nextEnd
+					selectedCategory = null
+				}}
+				onpreset={preset}
+			/>
+
+			{#if currencies.length > 1}<label
+					>{m['labels.currency']()}
+					<select bind:value={selectedCurrency} onchange={() => (selectedCategory = null)}
+						>{#each currencies as code (code)}<option value={code}>{code}</option>{/each}</select
+					></label
+				>{/if}
+			<Select
+				label={m['actions.filter_subject']({ subject: m['nouns.category']({ count: 1 }) })}
+				value={selectedCategory ?? ''}
+				onchange={(event) => (selectedCategory = event.currentTarget.value || null)}
+			>
+				<option value=""
+					>{m['labels.all_subjects']({ subjects: m['nouns.category']({ count: 2 }) })}</option
+				>
+				{#each [...categoryNames] as [key, name] (key)}<option value={key}>{name}</option>{/each}
+			</Select>
+		{/snippet}
+	</FilterPopovers>
+</div>
+
 <section class="expense-overview" aria-labelledby={`${id}-title`}>
 	<Heading level="h2" id={`${id}-title`}
 		>{m['labels.subjects_by_subject']({
@@ -114,25 +166,6 @@
 			subject: m['nouns.category']({ count: 1 })
 		})}</Heading
 	>
-	<div class="filters">
-		<DateRangeFilter
-			{start}
-			{end}
-			onchange={(nextStart, nextEnd) => {
-				start = nextStart
-				end = nextEnd
-				selectedCategory = null
-			}}
-			onpreset={preset}
-		/>
-
-		{#if currencies.length > 1}<label
-				>{m['labels.currency']()}
-				<select bind:value={selectedCurrency} onchange={() => (selectedCategory = null)}
-					>{#each currencies as code (code)}<option value={code}>{code}</option>{/each}</select
-				></label
-			>{/if}
-	</div>
 	{#if !validRange}<p role="status">{m['errors.date_range_invalid']()}</p>
 	{:else if expenses.length === 0}<Text
 			>{m['labels.no_subjects_in_period']({ subjects: m['nouns.expense']({ count: 0 }) })}</Text
@@ -196,12 +229,12 @@
 	.expense-overview {
 		container: expense-overview / inline-size;
 	}
-	.filters {
+	.overview-header {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: end;
+		align-items: center;
 		gap: var(--dui-spacing-md);
-		margin-block: var(--dui-spacing-md);
+		justify-content: space-between;
 	}
 	.results {
 		display: grid;

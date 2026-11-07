@@ -119,7 +119,11 @@ describe('expense overview presentation', () => {
 		expect(html).not.toContain('linked-marker')
 		expect(html).not.toContain('linked-food')
 		expect(html).not.toContain('linked-travel')
-		expect(html).not.toContain('Travel')
+		const legend = html.match(/<ul class="legend\b[^>]*>([\s\S]*?)<\/ul>/)?.[1]
+		expect(legend).toBeDefined()
+		expect(legend).toContain('Food')
+		expect(legend).not.toContain('Travel')
+		expect(html).toContain('<option value="travel">Travel</option>')
 	})
 	it('handles empty periods and unavailable historical category names', () => {
 		expect(overview([])).toContain('No Expenses in this time period.')

@@ -7,7 +7,6 @@
 	import { app } from '#lib/schema.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import PageHeader from '#lib/components/navigation/PageHeader.svelte'
 	import QueryContent from '#lib/components/shared/QueryContent.svelte'
 	import ExpenseOverview from '#lib/components/reports/ExpenseOverview.svelte'
 	import { browser } from '$app/env'
@@ -74,7 +73,6 @@
 </script>
 
 <svelte:head><title>{m['navigation.overview']()} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['navigation.overview']()} />
 <QueryContent
 	queries={[transactions, categories, tags, links, transfers]}
 	loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}

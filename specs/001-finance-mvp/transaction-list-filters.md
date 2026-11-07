@@ -76,9 +76,10 @@ async workflow, actor, Jazz subscription, authorization decision, or persistence
 The existing URL and overview session storage continue owning the actual bounds.
 
 Use the packed DUI snapshot from merged UI PR #14 and remove the superseded
-archive. The approved localization addition is labels.custom_subject,
-“Custom {subject}”, with the existing plural date noun. Paraglide regeneration is
-authorized; other labels reuse existing messages.
+archive. The date choices now use `labels.last_week` (“Last week”),
+`labels.last_month` (“Last month”), and `labels.custom` (“Custom”). The previous
+custom and counted-day messages, including their unused day noun, have been removed.
+Paraglide regeneration is authorized; other labels reuse existing messages.
 
 Review checklist:
 
