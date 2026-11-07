@@ -84,8 +84,14 @@ current ready identity. A stale request cannot replace or release the active req
 Cancellation latches while an acquisition or leaf is pending. Every acquisition completion path retains
 its resource before cleanup; late results cannot start another write. The native owner drains transaction
 acquisition, pending staging, commit and settlement, or confirms rollback before closing its client.
-A commit receipt forbids rollback. Unknown rollback, commit or close outcomes retain resources in a
-blocked state with explicit release retry. A crash never reports false cleanup. Owners must receive
+A commit receipt forbids rollback. Unknown rollback, settlement or close outcomes retain resources in
+blocked states whose explicit retry repeats only that native operation. Permanently rejected acquisition
+or commit receipts and native actor crashes require a document reload; they never repeatedly await the
+same rejected promise. The existing Try again action requests that reload through the application root.
+Reload does not acknowledge cleanup or automatically replay restoration: the user reselects the original
+file, and journal plus destination evidence determine whether the same operation can resume. An issued
+operation without sufficient evidence remains incomplete. Scope invalidation supersedes cancellation;
+shutdown cannot be downgraded by a later cancel. A crash never reports false cleanup. Owners must receive
 SHUTDOWN and finish drain before they are stopped or their account manager is released.
 
 Raw File/password/bytes, checked archives, typed graphs and native handles stay outside actor snapshots.
@@ -107,6 +113,11 @@ transaction. Capture rechecks the complete scope and validates the payload, comm
 mutations, and awaits the native verdict before encryption/download handoff. A conflict discards the
 attempt; explicit retry hydrates again with a fresh transaction. No maintenance mode, writer registry or
 repeated graph-comparison protocol is used. Authority confirmation can remain pending offline.
+
+Export failure recovery keeps one release invocation alive across scope changes and shutdown. A failed
+release retains its request, disables another export, and offers explicit reload instead of reporting
+closed. If the route leaves before release finishes, its retained observer reports a failed release to
+the application root so recovery remains accessible outside settings.
 
 The settings export machine owns unavailable/editing/preparing states and one fixed invoked export
 across work, cancellation and drain. Scope includes identity, workspace, membership, attachment and
@@ -267,6 +278,20 @@ before querying it, matching the adjacent native policy test; application saves 
 Both protected/plain 521-transaction UI restore flows passed with the refactored planner in 43.8 and
 47.8 seconds, including exact transaction facts, attachment bytes, unchanged source and history lookup.
 
+Orchestration cleanup verification on 2026-11-07:
+
+- **1,901/1,901** unit/integration tests passed, including 81 application lifecycle and 30 backup tests.
+- All 96 existing restore experiments passed in the expanded 99-case run. That run passed 98 cases;
+  the new lost-commit-receipt experiment initially assumed the write was durable before document reload.
+  Its fault injection now awaits actual remote acceptance before discarding the caller's receipt.
+  Both permanent receipt-failure cases then passed in a focused 15.67-second run. A second complete
+  99-case run was not performed.
+- **3/3** backup settings UI tests passed together: failed release remains recoverable after leaving
+  settings and reload retains identity; password/plain flows verify 521 transactions, attachment bytes,
+  unchanged source and duplicate prevention. The full restore flows took 39.6 and 46.1 seconds.
+- Application diagnostics found zero errors/warnings. Test/service-worker types, e2e scope validation,
+  production build, changed-file formatting and diff checks passed. No new files or catalog edits.
+
 Commands use the repository's pinned dependencies:
 
 ```sh
@@ -278,7 +303,7 @@ pnpm exec tsc --project src/service-worker/tsconfig.json --noEmit
 pnpm check:tests
 pnpm check:e2e
 FINANCE_PREVIEW=true PUBLIC_JAZZ_APP_ID=ci-build PUBLIC_JAZZ_SERVER_URL=http://127.0.0.1:9 pnpm exec vite build
-FINANCE_E2E_PORT=5192 FINANCE_E2E_REUSE_SERVER=true pnpm exec playwright test tests/features/workspace-settings.e2e.ts --project workspace
+FINANCE_E2E_PORT=5192 FINANCE_E2E_REUSE_SERVER=true pnpm exec playwright test --config tests/config/playwright.workspace.config.ts tests/features/workspace-settings.e2e.ts --grep 'workspace backup downloads'
 ```
 
 Run Node/framework checks and builds before starting the isolated preview. They regenerate SvelteKit

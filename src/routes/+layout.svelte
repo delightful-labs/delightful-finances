@@ -76,7 +76,8 @@
 		createApplicationReadinessMachine(
 			{
 				readHref: () => `${page.url.pathname}${page.url.search}${page.url.hash}`,
-				navigate: (destination) => goto(destination)
+				navigate: (destination) => goto(destination),
+				reload: () => window.location.reload()
 			},
 			(session) => createJazzRestorationAdapter(session, getCurrentJazzSession),
 			createJazzSessionReadinessAdapter,
@@ -115,7 +116,7 @@
 	<SessionStartup />
 {/snippet}
 
-{#if restoreView.visibleOutsideSettings && (page.url.pathname !== '/settings/workspace' || startupState.current.hasTag('startup-error'))}
+{#if restoreView.visibleOutsideSettings && (page.url.pathname !== '/settings/workspace' || !startupState.current.matches( { running: 'ready' } ))}
 	<WorkspaceBackup
 		kind="restore"
 		view={{ ...restoreView, editable: false }}

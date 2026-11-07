@@ -126,9 +126,17 @@
 		backupActor.send({ type: 'OBSERVE', facts: backupObservation() })
 	})
 	onDestroy(() => {
+		// Keep failed release visible after this route leaves; do not stop an unresolved owner.
+		const reportRelease = () => {
+			if (selectWorkspaceBackup(backupActor.getSnapshot()).canReload)
+				readiness.actor.send({ type: 'RELOAD_REQUIRED' })
+		}
+		const releaseSubscription = backupActor.subscribe(reportRelease)
+		reportRelease()
 		const completion = toPromise(backupActor)
 		backupActor.send({ type: 'SHUTDOWN' })
 		const finish = () => {
+			releaseSubscription.unsubscribe()
 			backupSubscription.unsubscribe()
 			backupActor.stop()
 		}
@@ -171,6 +179,7 @@
 		ondownload={(protection, password) =>
 			backupActor.send({ type: 'SUBMIT', protection, password })}
 		oncancel={() => backupActor.send({ type: 'CANCEL' })}
+		onreload={() => readiness.actor.send({ type: 'RELOAD' })}
 	/>
 {/if}
 <WorkspaceBackup

@@ -25,6 +25,7 @@ import {
 	createApplicationReadinessMachine,
 	selectAttachedWorkspace,
 	selectRecoveryView,
+	selectApplicationWorkspaceRestore,
 	captureTransferMutationScope
 } from './application-readiness.js'
 import type { WorkspaceAttachment, ReadinessObservation } from './readiness.js'
@@ -1602,7 +1603,7 @@ it('does not forward saved resource output to an immediately completed drain joi
 })
 
 describe('application-owned workspace restore drain', () => {
-	async function fixture() {
+	async function fixture(crash = false, reload = vi.fn<() => void>()) {
 		const current = session(),
 			snapshot = accountSnapshot(crypto.randomUUID())
 		Object.defineProperty(snapshot, 'client', {
@@ -1617,6 +1618,13 @@ describe('application-owned workspace restore drain', () => {
 		const { createWorkspaceRestoreController, prepareWorkspaceRestoreFile } =
 			await import('../workspaces/workspace-restore.js')
 		const controller = createWorkspaceRestoreController().provide({
+			actions: crash
+				? {
+						fail: () => {
+							throw new Error('Injected controller crash')
+						}
+					}
+				: {},
 			actors: {
 				readFile: fromPromise<
 					void,
@@ -1629,7 +1637,7 @@ describe('application-owned workspace restore drain', () => {
 		})
 		const actor = createActor(
 			createApplicationReadinessMachine(
-				undefined,
+				{ readHref: () => '/', navigate: async () => {}, reload },
 				(value) => createJazzRestorationAdapter(value, () => current.value),
 				createJazzSessionReadinessAdapter,
 				{ appId: crypto.randomUUID(), serverUrl: 'http://disposable.invalid', environment: 'test' }
@@ -1648,8 +1656,62 @@ describe('application-owned workspace restore drain', () => {
 		await entered.promise
 		expect(actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
 		expect(JSON.stringify(actor.getSnapshot())).not.toContain('secret-backup-password')
-		return { actor, current, gate, pending, workspace, restore, retry, startup }
+		return { actor, current, gate, pending, workspace, restore, retry, startup, reload }
 	}
+	it('offers reload after an actual controller crash without retrying the SDK or acknowledging cleanup', async () => {
+		const reload = vi
+			.fn<() => void>()
+			.mockImplementationOnce(() => {
+				throw new Error('Injected reload failure')
+			})
+			.mockImplementation(() => {})
+		const f = await fixture(true, reload)
+		f.gate.reject(new Error('Injected file read failure'))
+		await waitFor(f.actor, (state) => state.matches({ reloadRecovery: 'required' }))
+		expect(f.actor.getSnapshot().children.workspaceRestore?.getSnapshot().status).toBe('error')
+		expect(selectApplicationWorkspaceRestore(f.actor.getSnapshot())).toMatchObject({
+			busy: true,
+			editable: false,
+			canCancel: false,
+			canReload: true,
+			canRetryRelease: false,
+			canConfirm: false,
+			canOpen: false,
+			message: 'failed'
+		})
+		f.actor.send({ type: 'SHUTDOWN' })
+		f.actor.send({ type: 'RETRY' })
+		await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+		await waitFor(f.actor, (state) => state.matches({ reloadRecovery: 'required' }))
+		f.actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type: 'RELOAD' } })
+		await waitFor(f.actor, (state) => state.matches({ reloadRecovery: 'requested' }))
+		expect(reload).toHaveBeenCalledTimes(2)
+		expect(f.actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
+		expect(f.restore).not.toHaveBeenCalled()
+		expect(f.retry).not.toHaveBeenCalled()
+		expect(f.startup.owner.getSnapshot().context.released.has(f.startup.scope.attachment)).toBe(
+			false
+		)
+	})
+	it('retains reload intent against late failure and startup events', async () => {
+		const f = await fixture()
+		f.actor.send({ type: 'RELOAD_REQUIRED' })
+		f.actor.send({ type: 'RETRY' })
+		f.actor.send({ type: 'CLEANUP_FAILED' })
+		f.actor.send({ type: 'RELOAD_REQUIRED' })
+		f.actor.send({ type: 'SHUTDOWN' })
+		await waitFor(f.actor, (state) => state.matches({ reloadRecovery: 'requested' }))
+		const readiness = f.actor.getSnapshot().children.sessionReadiness
+		if (!readiness) throw new Error('Missing readiness observer')
+		readiness.send({ type: 'SHUTDOWN' })
+		await waitFor(readiness, (state) => state.status === 'done')
+		expect(f.actor.getSnapshot().matches({ reloadRecovery: 'requested' })).toBe(true)
+		expect(f.reload).toHaveBeenCalledOnce()
+		expect(f.restore).not.toHaveBeenCalled()
+		expect(f.retry).not.toHaveBeenCalled()
+		expect(f.actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
+		f.gate.resolve()
+	})
 	for (const command of ['shutdown', 'retry', 'recovery', 'startup-failure', 'observer-failure']) {
 		it(`retains restore resources before ${command}`, async () => {
 			const f = await fixture()

@@ -164,6 +164,7 @@ type Event =
 	| { type: 'READINESS_RELEASED' }
 	| { type: 'STARTUP_UNAVAILABLE' }
 	| { type: 'RETRY' }
+	| { type: 'RELOAD' | 'RELOAD_REQUIRED' }
 	| { type: 'ACQUIRED_STATUS'; status: Status; afterRetry: number | undefined }
 	| { type: 'OBSERVATION_UNAVAILABLE' }
 	| { type: 'MUTATION_REJECTED'; transactionId: string }
@@ -201,7 +202,11 @@ function currentSelectionScope(context: Context, scope: WorkspaceLease['scope'])
 
 /** Layout-owned factories bind acquired session capabilities; Finance owns domain coordination. */
 export function createApplicationReadinessMachine(
-	navigation: { readHref: () => string; navigate: (destination: string) => Promise<void> } = {
+	navigation: {
+		readHref: () => string
+		navigate: (destination: string) => Promise<void>
+		reload?: () => void
+	} = {
 		readHref: () => '',
 		navigate: async () => {
 			throw new Error('Navigation unavailable')
@@ -212,6 +217,7 @@ export function createApplicationReadinessMachine(
 	restoreConfiguration?: WorkspaceRestoreConfiguration
 ) {
 	const actors = {
+		reload: fromPromise<void>(() => Promise.resolve().then(() => required(navigation.reload)())),
 		workspaceRestore: createWorkspaceRestoreController(navigation.navigate),
 		recovery: sessionRecoveryMachine,
 		selectionAttachment: createWorkspaceSelectionAttachmentMachine(),
@@ -244,6 +250,7 @@ export function createApplicationReadinessMachine(
 			drainRestore: undefined
 		},
 		{
+			restoreReloadAllowed: undefined
 			startupOwnerFailed: undefined
 			currentStartup: undefined
 			currentReadiness: undefined
@@ -297,6 +304,10 @@ export function createApplicationReadinessMachine(
 			})
 		},
 		guards: {
+			restoreReloadAllowed: or([
+				stateIn('reloadRecovery'),
+				({ context }) => context.workspaceRestoreView.canReload
+			]),
 			cleanupPending: ({ context }) => context.cleanupRelease.outcome === 'unresolved',
 			currentReadiness: ({ context, event }) =>
 				'scope' in event &&
@@ -519,7 +530,7 @@ export function createApplicationReadinessMachine(
 					})
 				},
 				onError: {
-					target: '.cleanupFailed',
+					target: '.reloadRecovery',
 					actions: assign({
 						workspaceRestoreView: ({ context }) => ({
 							...context.workspaceRestoreView,
@@ -527,6 +538,9 @@ export function createApplicationReadinessMachine(
 							editable: false,
 							canCancel: false,
 							canRetryRelease: false,
+							canConfirm: false,
+							canOpen: false,
+							canReload: true,
 							alert: true,
 							message: 'failed',
 							visibleOutsideSettings: true
@@ -638,6 +652,10 @@ export function createApplicationReadinessMachine(
 			],
 			WORKSPACE_RESTORE_COMMAND: [
 				{
+					guard: and([({ event }) => event.command.type === 'RELOAD', 'restoreReloadAllowed']),
+					actions: raise({ type: 'RELOAD' })
+				},
+				{
 					guard: and([
 						stateIn({ running: 'ready' }),
 						({ context, event }) =>
@@ -649,10 +667,15 @@ export function createApplicationReadinessMachine(
 					actions: sendTo('workspaceRestore', ({ event }) => event.command)
 				},
 				{
-					guard: ({ event }) => event.command.type !== 'CONFIRM' && event.command.type !== 'OPEN',
+					guard: ({ event }) =>
+						event.command.type !== 'CONFIRM' &&
+						event.command.type !== 'OPEN' &&
+						event.command.type !== 'RELOAD',
 					actions: sendTo('workspaceRestore', ({ event }) => event.command)
 				}
 			],
+			RELOAD: '.reloadRecovery.reloading',
+			RELOAD_REQUIRED: '.reloadRecovery',
 			'xstate.error.actor.*': [
 				{
 					guard: ({ context, event }) => context.drainActor?.id === event.actorId,
@@ -1241,6 +1264,33 @@ export function createApplicationReadinessMachine(
 					STARTUP_UNAVAILABLE: {},
 					OBSERVATION_UNAVAILABLE: {},
 					ACQUIRED_STATUS: {}
+				}
+			},
+			reloadRecovery: {
+				tags: 'startup-error',
+				initial: 'required',
+				on: {
+					RELOAD_REQUIRED: {},
+					SHUTDOWN: {},
+					START: {},
+					RECOVER: {},
+					ATTACH_WORKSPACE: {},
+					ATTACH_PENDING: {},
+					CLEANUP_FAILED: {},
+					RESOURCE_OWNER_FAILED: {},
+					STARTUP_UNAVAILABLE: {},
+					OBSERVATION_UNAVAILABLE: {},
+					ACQUIRED_STATUS: {},
+					'xstate.error.actor.*': {},
+					'xstate.done.actor.*': {}
+				},
+				states: {
+					required: { on: { RETRY: 'reloading' } },
+					reloading: {
+						invoke: { src: 'reload', onDone: 'requested', onError: 'required' },
+						on: { RELOAD: {}, RETRY: {}, WORKSPACE_RESTORE_COMMAND: {} }
+					},
+					requested: { on: { RETRY: 'reloading' } }
 				}
 			},
 			waitingForStartup: {
@@ -2044,6 +2094,11 @@ export function selectApplicationWorkspaceRestore(
 	const current = ready && view.identityId === snapshot.context.session?.getSnapshot().account?.id
 	return {
 		...view,
+		canReload:
+			(view.canReload || snapshot.matches('reloadRecovery')) &&
+			!snapshot.matches({ reloadRecovery: 'reloading' }),
+		canCancel: view.canCancel && !snapshot.matches('reloadRecovery'),
+		canRetryRelease: view.canRetryRelease && !snapshot.matches('reloadRecovery'),
 		editable: view.editable && ready,
 		canConfirm: view.canConfirm && current,
 		canOpen: view.canOpen && current

@@ -179,6 +179,52 @@ for (const role of ['admin', 'member', 'viewer']) {
 test.describe('workspace backup downloads', () => {
 	// These measurements share one disposable server; seed and export one large scope at a time.
 	test.describe.configure({ mode: 'default' })
+	test(
+		'failed backup release remains recoverable after leaving settings',
+		{ tag: ['@workspaces', '@backup'] },
+		async ({ page }) => {
+			await start(page)
+			const identity = await page.evaluate(() => {
+				const { db, userId } = window.workspaceSettingsTest
+				const begin = db.beginExclusiveTransaction.bind(db)
+				db.beginExclusiveTransaction = () => {
+					const transaction = begin()
+					transaction.commit = () => {
+						sessionStorage.setItem('backup-test-commit-attempt', '1')
+						throw new Error('Injected export failure before native commit')
+					}
+					transaction.rollback = async () => false
+					return transaction
+				}
+				return userId
+			})
+			await page.locator('#workspace-backup-protection').selectOption('none')
+			await page.getByRole('button', { name: 'Download Backup', exact: true }).click()
+			await expect(
+				page.getByRole('alert').filter({ hasText: 'Couldn’t complete the request.' })
+			).toBeVisible()
+			await expect(
+				page.getByRole('button', { name: 'Download Backup', exact: true })
+			).toBeDisabled()
+			await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible()
+			expect(await page.evaluate(() => sessionStorage.getItem('backup-test-commit-attempt'))).toBe(
+				'1'
+			)
+			await navigateSidebar(page, 'Overview')
+			const retry = page.getByRole('main').getByRole('button', { name: 'Try again', exact: true })
+			await expect(retry).toBeVisible()
+			await Promise.all([
+				page.waitForEvent('framenavigated', { predicate: (frame) => frame === page.mainFrame() }),
+				retry.click()
+			])
+			await expect(page.getByLabel('Current Workspace', { exact: true })).not.toHaveValue('')
+			await installWorkspaceSettingsTest(page)
+			expect(await page.evaluate(() => window.workspaceSettingsTest.userId)).toBe(identity)
+			expect(await page.evaluate(() => sessionStorage.getItem('backup-test-commit-attempt'))).toBe(
+				'1'
+			)
+		}
+	)
 	for (const protection of ['password', 'none']) {
 		test(
 			`downloads and independently reopens a Finance ${protection} backup without changing source`,

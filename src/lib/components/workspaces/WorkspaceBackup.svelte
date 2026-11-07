@@ -15,6 +15,7 @@
 				view: ReturnType<typeof selectWorkspaceBackup>
 				ondownload: (protection: 'none' | 'password', password: string) => void
 				oncancel: () => void
+				onreload: () => void
 		  }
 		| {
 				kind: 'restore'
@@ -83,6 +84,9 @@
 		{#if props.view.canCancel}<Button type="button" onclick={props.oncancel}
 				>{m['actions.cancel']()}</Button
 			>{/if}
+		{#if props.view.canReload}<Button type="button" onclick={props.onreload}
+				>{m['actions.retry']()}</Button
+			>{/if}
 		{#if props.view.message}<p role={props.view.alert ? 'alert' : 'status'}>
 				{messages[props.view.message]()}
 			</p>{/if}
@@ -132,6 +136,11 @@
 		{#if props.view.canRetryRelease}<Button
 				type="button"
 				onclick={() => props.kind === 'restore' && props.oncommand('RETRY_RELEASE')}
+				>{m['actions.retry']()}</Button
+			>{/if}
+		{#if props.view.canReload}<Button
+				type="button"
+				onclick={() => props.kind === 'restore' && props.oncommand('RELOAD')}
 				>{m['actions.retry']()}</Button
 			>{/if}
 		{#if props.view.canCancel}<Button

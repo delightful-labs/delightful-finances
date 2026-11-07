@@ -96,9 +96,11 @@ type Context = FinanceRestoreSessionResult & {
 	interruption: 'cancelled' | 'closed' | 'invalidated' | undefined
 }
 const restoreInterruption = (previous: Context['interruption'], event: { type: string }) =>
-	event.type === 'SHUTDOWN'
+	previous === 'closed' || event.type === 'SHUTDOWN'
 		? 'closed'
-		: (previous ?? (event.type === 'CANCEL' ? 'cancelled' : 'invalidated'))
+		: previous === 'invalidated' || event.type === 'INVALIDATE'
+			? 'invalidated'
+			: 'cancelled'
 type Options = {
 	account: AccountHandle
 	serverUrl: string
@@ -315,7 +317,7 @@ export function createFinanceRestoreSession<
 			target: 'releasingArtifacts',
 			actions: { type: 'forgetReceipt' } satisfies { type: 'forgetReceipt' }
 		},
-		{ target: 'transactionBlocked' }
+		{ target: proof === 'remoteRejected' ? 'settlementBlocked' : 'rollbackBlocked' }
 	]
 	const rememberWrite = {
 		type: 'rememberWrite',
@@ -482,13 +484,13 @@ export function createFinanceRestoreSession<
 				}
 			},
 			waitingForTransaction: {
-				invoke: { src: 'acquisition', onDone: 'waitingForPending', onError: 'transactionBlocked' }
+				invoke: { src: 'acquisition', onDone: 'waitingForPending', onError: 'restartRequired' }
 			},
 			waitingForPending: {
 				invoke: { src: 'pending', onDone: afterPending, onError: afterPending }
 			},
 			waitingForCommit: {
-				invoke: { src: 'commit', onDone: 'identifyingCommit', onError: 'transactionBlocked' }
+				invoke: { src: 'commit', onDone: 'identifyingCommit', onError: 'restartRequired' }
 			},
 			identifyingCommit: {
 				invoke: {
@@ -499,7 +501,7 @@ export function createFinanceRestoreSession<
 							transactionId = event.output
 						}
 					},
-					onError: 'transactionBlocked'
+					onError: 'identificationBlocked'
 				}
 			},
 			settlingCommit: {
@@ -513,7 +515,7 @@ export function createFinanceRestoreSession<
 				invoke: {
 					src: 'rollback',
 					onDone: verifiedRelease('rollbackConfirmed'),
-					onError: 'transactionBlocked'
+					onError: 'rollbackBlocked'
 				}
 			},
 			closingClient: {
@@ -531,9 +533,18 @@ export function createFinanceRestoreSession<
 			releasingArtifacts: {
 				invoke: { src: 'release', onDone: 'complete', onError: 'artifactsBlocked' }
 			},
-			transactionBlocked: {
+			restartRequired: { tags: 'restore-restart-required' },
+			identificationBlocked: {
 				tags: 'restore-release-blocked',
-				on: { RETRY_RELEASE: 'waitingForTransaction' }
+				on: { RETRY_RELEASE: 'identifyingCommit' }
+			},
+			settlementBlocked: {
+				tags: 'restore-release-blocked',
+				on: { RETRY_RELEASE: 'settlingCommit' }
+			},
+			rollbackBlocked: {
+				tags: 'restore-release-blocked',
+				on: { RETRY_RELEASE: 'rollingBack' }
 			},
 			clientBlocked: { tags: 'restore-release-blocked', on: { RETRY_RELEASE: 'closingClient' } },
 			artifactsBlocked: {
@@ -1186,7 +1197,7 @@ export function bindWorkspaceRestoreFile(
 }
 const restoreJournalName = 'finance-workspace-restores'
 export type WorkspaceRestoreCommand = {
-	type: 'CONFIRM' | 'CANCEL' | 'DRAIN' | 'RETRY_RELEASE' | 'DISMISS' | 'OPEN'
+	type: 'CONFIRM' | 'CANCEL' | 'DRAIN' | 'RETRY_RELEASE' | 'DISMISS' | 'OPEN' | 'RELOAD'
 }
 export type WorkspaceRestoreMessage =
 	'preparing' | 'restoring' | 'done' | 'cancelled' | 'failed' | 'conflict' | undefined
@@ -1198,6 +1209,7 @@ export type WorkspaceRestoreView = {
 	confirmAction: 'create' | 'retry'
 	canCancel: boolean
 	canRetryRelease: boolean
+	canReload: boolean
 	canOpen: boolean
 	visibleOutsideSettings: boolean
 	message: WorkspaceRestoreMessage
@@ -1213,6 +1225,7 @@ export const emptyWorkspaceRestoreView: WorkspaceRestoreView = {
 	confirmAction: 'create',
 	canCancel: false,
 	canRetryRelease: false,
+	canReload: false,
 	canOpen: false,
 	visibleOutsideSettings: false,
 	message: undefined,
@@ -1400,7 +1413,7 @@ export function createWorkspaceRestoreController(
 			}),
 			interrupt: assign({
 				interruption: ({ context, event }) =>
-					context.interruption ?? (event.type === 'CANCEL' ? 'cancelled' : 'invalidated')
+					event.type === 'CANCEL' ? (context.interruption ?? 'cancelled') : 'invalidated'
 			})
 		}
 	})
@@ -1661,12 +1674,6 @@ export function createWorkspaceRestoreController(
 									'interrupt',
 									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
 								]
-							},
-							'xstate.snapshot.*': {
-								guard: ({ context, event }) =>
-									event.type === `xstate.snapshot.${context.native?.id}` &&
-									event.snapshot.hasTag('restore-release-blocked'),
-								target: 'releaseBlocked'
 							}
 						}
 					},
@@ -1678,12 +1685,27 @@ export function createWorkspaceRestoreController(
 									type: 'RETRY_RELEASE'
 								})
 							},
-							CANCEL: { actions: 'interrupt' },
-							DRAIN: { actions: 'interrupt' },
-							SCOPE_CHANGED: { actions: 'interrupt' }
+							CANCEL: {
+								actions: [
+									'interrupt',
+									sendTo(({ context }) => required(context.native), { type: 'CANCEL' })
+								]
+							},
+							DRAIN: {
+								actions: [
+									'interrupt',
+									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
+								]
+							},
+							SCOPE_CHANGED: {
+								actions: [
+									'interrupt',
+									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
+								]
+							}
 						}
 					},
-					nativeCrashed: {},
+					restartRequired: {},
 					cleaning: {
 						invoke: {
 							src: 'cleanup',
@@ -1698,6 +1720,21 @@ export function createWorkspaceRestoreController(
 					CANCEL: { actions: 'interrupt' },
 					DRAIN: { actions: 'interrupt' },
 					SCOPE_CHANGED: { actions: 'interrupt' },
+					'xstate.snapshot.*': [
+						{
+							guard: ({ context, event }) =>
+								event.type === `xstate.snapshot.${context.native?.id}` &&
+								event.snapshot.hasTag('restore-restart-required'),
+							target: '.restartRequired',
+							actions: 'fail'
+						},
+						{
+							guard: ({ context, event }) =>
+								event.type === `xstate.snapshot.${context.native?.id}` &&
+								event.snapshot.hasTag('restore-release-blocked'),
+							target: '.releaseBlocked'
+						}
+					],
 					'xstate.done.actor.*': {
 						guard: ({ context, event }) => event.actorId === context.native?.id,
 						target: '.cleaning',
@@ -1719,7 +1756,7 @@ export function createWorkspaceRestoreController(
 					},
 					'xstate.error.actor.*': {
 						guard: ({ context, event }) => event.actorId === context.native?.id,
-						target: '.nativeCrashed',
+						target: '.restartRequired',
 						actions: assign({ result: 'failed' })
 					}
 				}
@@ -1784,7 +1821,7 @@ export function selectWorkspaceRestoreReport(
 		blocked =
 			snapshot.matches({ operation: 'releaseBlocked' }) ||
 			snapshot.matches({ operation: 'cleanupBlocked' }),
-		crashed = snapshot.matches({ operation: 'nativeCrashed' })
+		restartRequired = snapshot.matches({ operation: 'restartRequired' })
 	const result =
 		context.result === 'done' && context.interruption !== 'invalidated'
 			? 'done'
@@ -1802,16 +1839,17 @@ export function selectWorkspaceRestoreReport(
 		canCancel:
 			busy &&
 			!blocked &&
-			!crashed &&
+			!restartRequired &&
 			!snapshot.matches({ operation: 'cleaning' }) &&
 			!snapshot.matches('openingDestination'),
 		canRetryRelease: blocked,
+		canReload: restartRequired,
 		canOpen: !busy && result === 'done' && context.binding !== undefined,
 		visibleOutsideSettings: busy || result !== undefined,
 		message: busy
 			? review
 				? undefined
-				: blocked || crashed
+				: blocked || restartRequired
 					? 'failed'
 					: snapshot.matches({ operation: 'restoring' })
 						? 'restoring'

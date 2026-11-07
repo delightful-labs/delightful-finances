@@ -2110,7 +2110,14 @@ describe('browser replica separation', () => {
 			sample: RecoverySample,
 			serverUrl: string,
 			mode: 'new' | 'resume',
-			fault: 'none' | 'acquisition' | 'commit' | 'rollback' | 'close' = 'none'
+			fault:
+				| 'none'
+				| 'acquisition'
+				| 'commit'
+				| 'rollback'
+				| 'close'
+				| 'open-rejected'
+				| 'commit-rejected' = 'none'
 		) {
 			await page.evaluate(
 				async ({ sample, serverUrl, mode, fault }) => {
@@ -2191,6 +2198,19 @@ describe('browser replica separation', () => {
 								retain
 							)
 							commits = () => [...adapter.commits]
+							if (fault === 'open-rejected')
+								adapter.writer.open = () => {
+									stats.transactions++
+									return Promise.reject(new Error('Injected acquisition rejection'))
+								}
+							if (fault === 'commit-rejected') {
+								const commit = adapter.writer.commit
+								adapter.writer.commit = async (tx) => {
+									const write = await commit(tx)
+									await adapter.writer.acceptRemote(write)
+									throw new Error('Injected lost commit receipt after native commit')
+								}
+							}
 							if (fault === 'rollback') {
 								const open = adapter.writer.open,
 									rollback = adapter.writer.rollback
@@ -2535,6 +2555,11 @@ describe('browser replica separation', () => {
 								(snapshot) => api.selectWorkspaceRestoreReport(snapshot).view.canRetryRelease
 							)
 							const blockedView = api.selectWorkspaceRestoreReport(actor.getSnapshot()).view
+							actor.send({ type: 'CANCEL' })
+							actor.send({ type: 'SCOPE_CHANGED' })
+							actor.send({ type: 'DRAIN' })
+							const nativeInterruption = actor.getSnapshot().context.native?.getSnapshot()
+								.context.interruption
 							actor.send({ type: 'RETRY_RELEASE' })
 							await api.waitFor(
 								actor,
@@ -2586,6 +2611,7 @@ describe('browser replica separation', () => {
 								historicalView,
 								acquisitions,
 								closeAttempts,
+								nativeInterruption,
 								blockedView
 							}
 						},
@@ -2600,7 +2626,8 @@ describe('browser replica separation', () => {
 						message: 'failed'
 					})
 					expect(resumed.closeAttempts).toBe(2)
-					expect(resumed.view.message).toBe('done')
+					expect(resumed.view).toMatchObject({ message: undefined, busy: false, canOpen: false })
+					expect(resumed.nativeInterruption).toBe('closed')
 					expect(resumed.historicalView.message).toBe('done')
 					expect(resumed.acquisitions).toBe(0)
 					expect(resumed.journal.record?.checkpoint.kind).toBe('complete')
@@ -3002,8 +3029,10 @@ describe('browser replica separation', () => {
 							actor.send({ type: 'INVALIDATE', binding: { ...binding, generation: 2 } })
 							if (actor.getSnapshot().status !== 'active')
 								throw new Error('Stale invalidation stopped owner')
+							actor.send({ type: 'CANCEL' })
 							if (interruption === 'INVALIDATE') actor.send({ type: 'INVALIDATE', binding })
 							else actor.send({ type: interruption })
+							actor.send({ type: 'CANCEL' })
 						},
 						{ interruption, operation: sample.intent.operation }
 					)
@@ -3037,6 +3066,184 @@ describe('browser replica separation', () => {
 			},
 			60_000
 		)
+		it.each(['open-rejected', 'commit-rejected'] satisfies ('open-rejected' | 'commit-rejected')[])(
+			'session owner requires restart after permanent %s without replaying or claiming cleanup',
+			async (fault) => {
+				const core = await startLocalJazzServer({
+					appId: crypto.randomUUID(),
+					schema: isolationApp,
+					permissions: isolationPermissions,
+					inMemory: true,
+					allowLocalFirstAuth: true
+				})
+				const browser = await chromium.launch({ channel: 'chromium' }),
+					page = await browser.newPage()
+				try {
+					const identity = await openOwner(page, core.appId, core.url, true),
+						sample = await recoverySample(retainedFile, core.appId, identity)
+					await startOwnedSession(page, sample, core.url, 'new', fault)
+					const result = await page.evaluate(async () => {
+						const api = window.financeRestoreRecovery,
+							runtime = window.financeRestoreSessionRuntime
+						await api.waitFor(runtime.actor, (state) => state.hasTag('restore-restart-required'))
+						const before = { ...runtime.stats, commits: runtime.commits() }
+						runtime.actor.send({ type: 'RETRY_RELEASE' })
+						runtime.actor.send({ type: 'SHUTDOWN' })
+						await Promise.resolve()
+						return {
+							before,
+							after: { ...runtime.stats, commits: runtime.commits() },
+							state: runtime.actor.getSnapshot().value,
+							status: runtime.actor.getSnapshot().status
+						}
+					})
+					expect(result.state).toBe('restartRequired')
+					expect(result.status).toBe('active')
+					expect(result.after).toEqual(result.before)
+					expect(result.after).toMatchObject({ acquisitions: 1, closeAttempts: 0, releases: 0 })
+					// A real document restart discards no journal and does not automatically resume writes.
+					await page.reload()
+					expect(await openOwner(page, core.appId, core.url, false)).toBe(identity)
+					await startOwnedSession(page, sample, core.url, 'resume')
+					const resumed = await page.evaluate(() =>
+						window.financeRestoreRecovery.toPromise(window.financeRestoreSessionRuntime.actor)
+					)
+					expect(resumed.outcome).toBe(fault === 'open-rejected' ? 'incomplete' : 'complete')
+					expect(resumed.record?.intent.operation).toEqual(sample.intent.operation)
+					if (fault === 'commit-rejected')
+						expect(await retainedSource(page, sample)).toMatchObject({
+							hash: sample.intent.archive.payloadSha256
+						})
+					else
+						expect(
+							await page.evaluate(() => window.financeRestoreSessionRuntime.commits())
+						).toEqual([])
+				} finally {
+					await browser.close()
+					await core.stop()
+				}
+			},
+			60_000
+		)
+		it('file controller offers restart after a native crash and resumes the same destination after reload', async () => {
+			const core = await startLocalJazzServer({
+				appId: crypto.randomUUID(),
+				schema: isolationApp,
+				permissions: isolationPermissions,
+				inMemory: true,
+				allowLocalFirstAuth: true
+			})
+			const browser = await chromium.launch({ channel: 'chromium' }),
+				page = await browser.newPage()
+			try {
+				const identity = await openOwner(page, core.appId, core.url, true)
+				const first = await page.evaluate(
+					async ({ file, appId, serverUrl }) => {
+						const api = window.financeRestoreRecovery,
+							session = window.financeRecoveryOwner
+						let acquisitions = 0,
+							closes = 0
+						const actor = api
+							.createActor(
+								api.createWorkspaceRestoreController(undefined, async (config) => {
+									acquisitions++
+									const client = await window.financeRestoreIsolation.createJazzClient(config)
+									return {
+										...client,
+										db: new Proxy(client.db, {
+											get(target, key, receiver) {
+												if (key === 'getAuthState')
+													return () => {
+														throw new Error('Injected native guard crash')
+													}
+												return Reflect.get(target, key, receiver)
+											}
+										}),
+										shutdown: (settings) => {
+											closes++
+											return client.shutdown(settings)
+										}
+									}
+								})
+							)
+							.start()
+						const request = api.prepareWorkspaceRestoreFile(
+							new File([new Uint8Array(file)], 'backup.dlf'),
+							''
+						)
+						api.bindWorkspaceRestoreFile(request, session, { appId, serverUrl, environment: 'dev' })
+						actor.send({ type: 'SUBMIT', request })
+						await api.waitFor(
+							actor,
+							(state) => api.selectWorkspaceRestoreReport(state).view.canConfirm
+						)
+						const binding = actor.getSnapshot().context.binding
+						actor.send({ type: 'CONFIRM' })
+						await api.waitFor(
+							actor,
+							(state) => api.selectWorkspaceRestoreReport(state).view.canReload
+						)
+						actor.send({ type: 'DRAIN' })
+						actor.send({ type: 'RETRY_RELEASE' })
+						return {
+							binding,
+							acquisitions,
+							closes,
+							view: api.selectWorkspaceRestoreReport(actor.getSnapshot()).view,
+							nativeStatus: actor.getSnapshot().context.native?.getSnapshot().status
+						}
+					},
+					{ file: retainedFile, appId: core.appId, serverUrl: core.url }
+				)
+				expect(first).toMatchObject({
+					acquisitions: 1,
+					closes: 0,
+					nativeStatus: 'error',
+					view: {
+						busy: true,
+						editable: false,
+						canReload: true,
+						canRetryRelease: false,
+						canCancel: false,
+						message: 'failed'
+					}
+				})
+				await page.reload()
+				expect(await openOwner(page, core.appId, core.url, false)).toBe(identity)
+				const resumed = await page.evaluate(
+					async ({ file, appId, serverUrl }) => {
+						const api = window.financeRestoreRecovery,
+							actor = api.createActor(api.createWorkspaceRestoreController()).start(),
+							request = api.prepareWorkspaceRestoreFile(
+								new File([new Uint8Array(file)], 'backup.dlf'),
+								''
+							)
+						api.bindWorkspaceRestoreFile(request, window.financeRecoveryOwner, {
+							appId,
+							serverUrl,
+							environment: 'dev'
+						})
+						actor.send({ type: 'SUBMIT', request })
+						await api.waitFor(
+							actor,
+							(state) => api.selectWorkspaceRestoreReport(state).view.canConfirm
+						)
+						const binding = actor.getSnapshot().context.binding
+						actor.send({ type: 'CONFIRM' })
+						await api.waitFor(actor, (state) => !api.selectWorkspaceRestoreReport(state).view.busy)
+						const view = api.selectWorkspaceRestoreReport(actor.getSnapshot()).view
+						actor.stop()
+						return { binding, view }
+					},
+					{ file: retainedFile, appId: core.appId, serverUrl: core.url }
+				)
+				expect(resumed.binding).toEqual(first.binding)
+				expect(resumed.view).toMatchObject({ message: 'done', canOpen: true, canReload: false })
+			} finally {
+				await browser.close()
+				await core.stop()
+			}
+		}, 60_000)
 		it.each(['rollback', 'close'] satisfies ('rollback' | 'close')[])(
 			'session owner keeps resources after unconfirmed %s',
 			async (fault) => {
@@ -3077,7 +3284,7 @@ describe('browser replica separation', () => {
 						const api = window.financeRestoreRecovery,
 							runtime = window.financeRestoreSessionRuntime
 						await api.waitFor(runtime.actor, (snapshot) =>
-							snapshot.matches(fault === 'rollback' ? 'transactionBlocked' : 'clientBlocked')
+							snapshot.matches(fault === 'rollback' ? 'rollbackBlocked' : 'clientBlocked')
 						)
 					}, fault)
 					expect(
