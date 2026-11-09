@@ -1,7 +1,12 @@
+import { isEarlierSelectionKey, type AccountStorageBinding } from './account-storage-namespace.js'
 import {
 	HOST_PROTOCOL_VERSION,
 	MAX_ACCOUNT_STORE_LENGTH,
+	MAX_ACCOUNT_SNAPSHOT_LENGTH,
 	MAX_HOST_BROKERS,
+	MAX_STORAGE_SLOTS,
+	MAX_EARLIER_STORES,
+	accountSnapshotSchema,
 	hostRequestSchema,
 	hostScopeSchema,
 	type HostReply
@@ -11,11 +16,13 @@ type BrokerHandle = Pick<SharedWorker, 'port' | 'addEventListener' | 'removeEven
 export type WindowHostBinding = {
 	scope: string
 	accountStorageKey: string
+	accountSelection?: AccountStorageBinding
 	broker: { url: string; baseName: string }
 }
 type NativeHost = {
 	origin: string
 	storage: Pick<Storage, 'getItem' | 'setItem'>
+	inventory?: Pick<Storage, 'length' | 'key'>
 	openBroker: (url: string, name: string) => BrokerHandle
 }
 
@@ -38,6 +45,11 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 		throw new Error('Invalid broker binding')
 	if (!binding.accountStorageKey || binding.accountStorageKey.length > 65_536)
 		throw new Error('Invalid account storage binding')
+	if (binding.accountSelection && binding.accountSelection.key !== binding.accountStorageKey)
+		throw new Error('Mismatched account storage binding')
+	const selectionBinding = binding.accountSelection ? { ...binding.accountSelection } : undefined
+	const admittedEarlier = (key: string) =>
+		selectionBinding !== undefined && isEarlierSelectionKey(selectionBinding, key)
 	const generationKey = `jazz:shared-worker-generation:${binding.broker.baseName}`
 	const workers = new Set<BrokerHandle>()
 	let lastSequence = 0
@@ -94,6 +106,53 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 		// a duplicate can never repeat a storage write or open another broker.
 		lastSequence = request.sequence
 		try {
+			if (request.type === 'READ_ACCOUNT_SNAPSHOT') {
+				const current = native.storage.getItem(binding.accountStorageKey)
+				const earlier: { key: string; value: string | null }[] = []
+				if (current !== null && current.length > MAX_ACCOUNT_STORE_LENGTH)
+					throw new Error('Account store exceeds protocol bound')
+				let snapshotLength = current?.length ?? 0
+				if (selectionBinding?.earlierPathname) {
+					const inventory = native.inventory
+					if (!inventory) throw new Error('Storage inventory unavailable')
+					const length = inventory.length
+					if (!Number.isSafeInteger(length) || length < 0 || length > MAX_STORAGE_SLOTS)
+						throw new Error('Storage inventory exceeds protocol bound')
+					for (let index = 0; index < length; index++) {
+						const key = inventory.key(index)
+						if (key === null || !admittedEarlier(key)) continue
+						if (earlier.length >= MAX_EARLIER_STORES || key.length > 65_536)
+							throw new Error('Earlier inventory exceeds protocol bound')
+						const value = native.storage.getItem(key)
+						snapshotLength += key.length + (value?.length ?? 0)
+						if (
+							(value !== null && value.length > MAX_ACCOUNT_STORE_LENGTH) ||
+							snapshotLength > MAX_ACCOUNT_SNAPSHOT_LENGTH
+						)
+							throw new Error('Account snapshot exceeds protocol bound')
+						earlier.push({ key, value })
+					}
+				}
+				const snapshot = accountSnapshotSchema.parse({ current, earlier })
+				reply({ ...correlation, type: 'SNAPSHOT', snapshot })
+				return
+			}
+			if (request.type === 'READ_EARLIER' || request.type === 'WRITE_EARLIER') {
+				if (!admittedEarlier(request.key)) {
+					reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
+					return
+				}
+				if (request.type === 'WRITE_EARLIER') {
+					native.storage.setItem(request.key, request.value)
+					reply({ ...correlation, type: 'WRITTEN' })
+				} else {
+					const value = native.storage.getItem(request.key)
+					if (value !== null && value.length > MAX_ACCOUNT_STORE_LENGTH)
+						throw new Error('Account store exceeds protocol bound')
+					reply({ ...correlation, type: 'ACCOUNT', value })
+				}
+				return
+			}
 			if (request.type === 'READ_ACCOUNT') {
 				const value = native.storage.getItem(binding.accountStorageKey)
 				if (value !== null && value.length > MAX_ACCOUNT_STORE_LENGTH)

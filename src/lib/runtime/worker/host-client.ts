@@ -21,8 +21,8 @@ type Pending = {
 	resolve: (reply: HostReply) => void
 	reject: (error: WorkerHostError) => void
 }
-/** Low-level correlated native requests only. Account read/transform/write and
- * Web Lock ownership belong to the future account-store chart, not this transport. */
+/** Low-level correlated native requests only. Account read/transform/write decisions and
+ * Web Lock ownership belong to the account-store chart, not this transport. */
 export function createWorkerHostClient(port: MessagePort, scope: string, onFailure: () => void) {
 	hostScopeSchema.parse(scope)
 	const pending = new Map<string, Pending>()
@@ -108,7 +108,10 @@ export function createWorkerHostClient(port: MessagePort, scope: string, onFailu
 			const timer = setTimeout(() => fail('timeout'), HOST_REQUEST_TIMEOUT_MS)
 			pending.set(requestId, {
 				sequence: message.data.sequence,
-				write: command.type === 'WRITE_ACCOUNT' || command.type === 'WRITE_GENERATION',
+				write:
+					command.type === 'WRITE_ACCOUNT' ||
+					command.type === 'WRITE_EARLIER' ||
+					command.type === 'WRITE_GENERATION',
 				expected,
 				timer,
 				resolve,
@@ -127,6 +130,19 @@ export function createWorkerHostClient(port: MessagePort, scope: string, onFailu
 	}
 	return {
 		accountStorage: {
+			readSnapshot: async () => {
+				const reply = await request({ type: 'READ_ACCOUNT_SNAPSHOT' }, 'SNAPSHOT')
+				if (reply.type !== 'SNAPSHOT') throw new WorkerHostError('invalid-reply', 'not-issued')
+				return reply.snapshot
+			},
+			readEarlier: async (key: string) => {
+				const reply = await request({ type: 'READ_EARLIER', key }, 'ACCOUNT')
+				if (reply.type !== 'ACCOUNT') throw new WorkerHostError('invalid-reply', 'not-issued')
+				return reply.value
+			},
+			writeEarlier: async (key: string, value: string) => {
+				await request({ type: 'WRITE_EARLIER', key, value }, 'WRITTEN')
+			},
 			read: async () => {
 				const reply = await request({ type: 'READ_ACCOUNT' }, 'ACCOUNT')
 				if (reply.type !== 'ACCOUNT') throw new WorkerHostError('invalid-reply', 'not-issued')

@@ -39,9 +39,14 @@ facade remain separate implementation steps before live session handoff.
 
 ## Review and qualification
 
-Source checks only for this new adapter. After implementation review, add native
-MessageChannel coverage for: closing before a queued write executes, an already
-acknowledged write remaining committed, request-port failure with working control
-port, delayed valid receipt after timeout, duplicate close, stale/foreign receipt,
-and explicit disposal retaining the graph's custody. No user storage or app
-server is involved in those tests.
+After implementation approval, all 24 native bridge tests pass on Node
+24.22.2 (`pnpm test:worker-host`), including seven focused close-channel cases:
+acknowledged storage remains committed, storage requests after the close receipt
+cannot execute, control closure survives data-client failure, delayed receipts
+remain observable after timeout without retry, malformed/foreign/uncorrelated
+receipts are ignored, disposal is not a receipt, and failed Window closure is
+never acknowledged. The standalone strict TypeScript check also passes.
+
+These are native Node MessageChannel tests, not browser persistence qualification.
+The next legacy-storage batch remains subject to separate implementation review
+before updating/running affected bridge and account-store campaigns.

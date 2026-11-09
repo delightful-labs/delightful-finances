@@ -1,7 +1,12 @@
 import { accountRegistryUrl, parseAuthSecret } from 'jazz-tools'
 import { z } from 'zod'
-
-const prefix = 'jazz-account-selection-v1:'
+import {
+	ACCOUNT_SELECTION_PREFIX,
+	isEarlierSelectionKey,
+	type AccountStorageBinding
+} from './account-storage-namespace.js'
+export { isEarlierSelectionKey, type AccountStorageBinding } from './account-storage-namespace.js'
+const prefix = ACCOUNT_SELECTION_PREFIX
 const backendUser = z.object({
 	format: z.literal('jazz-backend-user-v1'),
 	account: z.string(),
@@ -39,11 +44,6 @@ const selection = z
 export type AccountSelection = z.infer<typeof selection>
 export type EarlierSelection = { key: string; value: string | null }
 export type AccountSelectionSnapshot = { current: string | null; earlier: EarlierSelection[] }
-export type AccountStorageBinding = {
-	key: string
-	earlierSuffix: string
-	earlierPathname: string | undefined
-}
 /** registry is obtained from the SDK's public accountRegistryUrl contract. The
  * environment is opaque and defaults to the existing Window SDK's 'dev'. */
 export function accountStorageBinding(
@@ -58,18 +58,6 @@ export function accountStorageBinding(
 		earlierPathname: legacyScope?.trim()
 			? new URL(accountRegistryUrl('https://finance.invalid', legacyScope.trim())).pathname
 			: undefined
-	}
-}
-export function isEarlierSelectionKey(binding: AccountStorageBinding, key: string) {
-	if (!binding.earlierPathname || !key.startsWith(prefix) || !key.endsWith(binding.earlierSuffix))
-		return false
-	try {
-		return (
-			new URL(decodeURIComponent(key.slice(prefix.length, -binding.earlierSuffix.length)))
-				.pathname === binding.earlierPathname
-		)
-	} catch {
-		return false
 	}
 }
 export function parseAccountSelection(value: string | null): AccountSelection | undefined {

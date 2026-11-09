@@ -2,6 +2,9 @@ import { z } from 'zod'
 
 export const HOST_PROTOCOL_VERSION = 1
 export const MAX_ACCOUNT_STORE_LENGTH = 1024 * 1024
+export const MAX_STORAGE_SLOTS = 4096
+export const MAX_EARLIER_STORES = 128
+export const MAX_ACCOUNT_SNAPSHOT_LENGTH = 2 * 1024 * 1024
 export const MAX_HOST_REQUESTS = 8
 export const MAX_HOST_BROKERS = 32
 export const HOST_REQUEST_TIMEOUT_MS = 10_000
@@ -18,9 +21,31 @@ export const generationSchema = z
 	.regex(/^\d{1,16}$/)
 	.refine((value) => Number.isSafeInteger(Number(value)))
 const accountValue = z.string().max(MAX_ACCOUNT_STORE_LENGTH)
+export const accountSnapshotSchema = z
+	.object({
+		current: accountValue.nullable(),
+		earlier: z
+			.array(z.object({ key: storageKey, value: accountValue.nullable() }).strict())
+			.max(MAX_EARLIER_STORES)
+	})
+	.strict()
+	.refine(
+		(snapshot) =>
+			(snapshot.current?.length ?? 0) +
+				snapshot.earlier.reduce(
+					(size, entry) => size + entry.key.length + (entry.value?.length ?? 0),
+					0
+				) <=
+			MAX_ACCOUNT_SNAPSHOT_LENGTH
+	)
 
 export const hostRequestSchema = z.discriminatedUnion('type', [
 	correlation.extend({ type: z.literal('READ_ACCOUNT') }).strict(),
+	correlation.extend({ type: z.literal('READ_ACCOUNT_SNAPSHOT') }).strict(),
+	correlation.extend({ type: z.literal('READ_EARLIER'), key: storageKey }).strict(),
+	correlation
+		.extend({ type: z.literal('WRITE_EARLIER'), key: storageKey, value: accountValue })
+		.strict(),
 	correlation.extend({ type: z.literal('WRITE_ACCOUNT'), value: accountValue }).strict(),
 	correlation
 		.extend({
@@ -40,6 +65,7 @@ const messagePort = z.custom<MessagePort>(
 )
 export const hostReplySchema = z.discriminatedUnion('type', [
 	correlation.extend({ type: z.literal('ACCOUNT'), value: accountValue.nullable() }).strict(),
+	correlation.extend({ type: z.literal('SNAPSHOT'), snapshot: accountSnapshotSchema }).strict(),
 	correlation
 		.extend({ type: z.literal('GENERATION'), value: z.string().max(65_536).nullable() })
 		.strict(),
