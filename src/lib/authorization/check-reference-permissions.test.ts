@@ -9,28 +9,31 @@ import {
 	transactionCheckRelations
 } from '../schema/checks.js'
 
-const app = s.defineApp({
-	organizations: s.table({ name: s.string() }, {}),
-	accounts: s.table(
-		{ organizationId: s.uuid() },
-		{ organization: s.rel('organizations', 'organizationId') }
-	),
-	...checksSchema,
-	transactions: s.table(
-		{
-			organizationId: s.uuid(),
-			accountId: s.uuid(),
-			kind: s.enum('income', 'expense'),
-			paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
-			...transactionCheckColumns
-		},
-		{
-			...transactionCheckRelations,
-			organization: s.rel('organizations', 'organizationId'),
-			account: s.rel('accounts', 'accountId')
-		}
-	)
-})
+const app = s.defineApp(
+	{
+		organizations: s.table({ name: s.string() }, {}),
+		accounts: s.table(
+			{ organizationId: s.uuid() },
+			{ organization: s.rel('organizations', 'organizationId') }
+		),
+		...checksSchema,
+		transactions: s.table(
+			{
+				organizationId: s.uuid(),
+				accountId: s.uuid(),
+				kind: s.enum('income', 'expense'),
+				paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
+				...transactionCheckColumns
+			},
+			{
+				...transactionCheckRelations,
+				organization: s.rel('organizations', 'organizationId'),
+				account: s.rel('accounts', 'accountId')
+			}
+		)
+	},
+	{ migrations: 'none' }
+)
 const permissions = s.definePermissions(app, ({ policy, allOf }) => {
 	const checkAccess = (accountId: string | RowRefValue, organizationId: string | RowRefValue) =>
 		policy.accounts.exists.where({ id: accountId, organizationId })
@@ -135,26 +138,30 @@ describe('transaction Check references', () => {
 	] satisfies [string, Partial<s.InsertOf<typeof app.transactions>>][])(
 		'rejects a %s reference pairing',
 		async (_description, patch) => {
-			await db.expectDenied((target) =>
-				target.insert(app.transactions, {
-					...transactionValues('expense'),
-					...patch
-				})
-			)
+			await expect(
+				db.expectDenied((target) =>
+					target.insert(app.transactions, {
+						...transactionValues('expense'),
+						...patch
+					})
+				)
+			).resolves.toBeUndefined()
 		}
 	)
 
 	it('rejects references that cross organization or account scope', async () => {
 		const check = await createCheck()
-		await db.expectDenied((target) =>
-			target.insert(
-				app.transactions,
-				transactionValues('income', check.id, {
-					organizationId: foreignOrganizationId,
-					accountId: foreignAccountId
-				})
+		await expect(
+			db.expectDenied((target) =>
+				target.insert(
+					app.transactions,
+					transactionValues('income', check.id, {
+						organizationId: foreignOrganizationId,
+						accountId: foreignAccountId
+					})
+				)
 			)
-		)
+		).resolves.toBeUndefined()
 	})
 
 	it('checks reference compatibility on direct transaction updates', async () => {
@@ -169,11 +176,13 @@ describe('transaction Check references', () => {
 			organizationId: foreignOrganizationId,
 			accountId: foreignAccountId
 		})
-		await db.expectDenied((target) =>
-			target.update(app.transactions, transaction.id, {
-				checkId: otherCheck.id,
-				paymentMethod: 'check'
-			})
-		)
+		await expect(
+			db.expectDenied((target) =>
+				target.update(app.transactions, transaction.id, {
+					checkId: otherCheck.id,
+					paymentMethod: 'check'
+				})
+			)
+		).resolves.toBeUndefined()
 	})
 })

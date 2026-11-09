@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createActor, fromCallback, waitFor } from 'xstate'
-import type { JazzClient, JazzSession, JazzSessionConfig } from 'jazz-tools/svelte'
+import type { JazzClient, JazzSession, JazzClientConfig } from 'jazz-tools/client'
 import { createSessionStartupMachine } from 'delightful-local-first/session/workflow'
 import type { SessionStartupReport } from 'delightful-local-first/session/contracts'
 import type { JazzStartupBinding } from './jazz-session.js'
@@ -10,10 +10,10 @@ vi.mock('$app/env', () => environment)
 // Keep the real shared owner/attachment; stub only SDK creation at the public backend boundary.
 // The vendored ESM adapter is external in Vitest, so mocking its transitive SDK import is insufficient.
 const backend = vi.hoisted(() => ({
-	create: vi.fn<(config: JazzSessionConfig) => Promise<JazzSession<JazzClient>>>()
+	create: vi.fn<(config: JazzClientConfig) => Promise<JazzSession<JazzClient>>>()
 }))
 vi.mock('delightful-local-first/backend/jazz/session', () => ({
-	createJazzSessionAcquisition: (config: JazzSessionConfig) => {
+	createJazzSessionAcquisition: (config: JazzClientConfig) => {
 		const captured = { ...config }
 		return { binding: Object.freeze({}), capability: { open: () => backend.create(captured) } }
 	}
@@ -21,10 +21,10 @@ vi.mock('delightful-local-first/backend/jazz/session', () => ({
 const actors = new Set<{ stop: () => void }>()
 const owners = new Set<JazzStartupBinding['owner']>()
 const config = {
-	appId: 'test-app',
+	scope: 'test-app',
 	serverUrl: 'http://localhost:1234',
 	initial: 'local-first'
-} satisfies JazzSessionConfig
+} satisfies JazzClientConfig
 
 type Session = JazzSession<JazzClient>
 function sessionStub(): Session {
@@ -34,11 +34,8 @@ function sessionStub(): Session {
 		subscribe: () => () => {},
 		createLocalFirst: unused,
 		restoreLocalFirst: unused,
-		becomeBackend: unused,
-		registerJWT: unused,
-		loginJWT: unused,
-		loginOrRegisterJWT: unused,
-		linkJWT: unused,
+		loginWithBackend: unused,
+		linkWithBackend: unused,
 		logout: vi.fn(async () => {}),
 		retry: unused,
 		close: vi.fn(async () => {})

@@ -17,7 +17,7 @@ async function addAccount(page: Page, name: string) {
 		const db = snapshot.client.db
 		const workspace = await db.one(
 			app.organizations.where({ ownerId: snapshot.account.id, kind: 'personal' }),
-			{ tier: 'local' }
+			{ tier: 'local-first' }
 		)
 		if (!workspace) throw new Error('Test workspace is not ready.')
 		await db

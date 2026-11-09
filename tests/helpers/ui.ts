@@ -26,10 +26,21 @@ export async function navigateSidebar(page: Page, label: string) {
 	if (label === 'Accounts') await openSidebarSection(page, 'Accounts')
 	if (['Workspaces', 'Banks', 'Account', 'Login'].includes(label))
 		await openSidebarSection(page, 'Settings')
-	await page
-		.locator('aside')
-		.getByRole('link', { name: label === 'Accounts' ? 'Manage Accounts' : label, exact: true })
-		.click()
+	const link = page.locator('aside').getByRole('link', {
+		name: label === 'Accounts' ? 'Manage Accounts' : label,
+		exact: true
+	})
+	const href = await link.getAttribute('href')
+	if (!href) throw new Error('Missing sidebar destination')
+	const destination = new URL(href, page.url()).href
+	// A same-URL sidebar click still navigates. Wait for its history commit so
+	// a subsequent workspace request cannot be overtaken by that older click.
+	await Promise.all([
+		page.waitForEvent('framenavigated', {
+			predicate: (frame) => frame === page.mainFrame() && frame.url() === destination
+		}),
+		link.click()
+	])
 }
 
 export function creationDialog(page: Page, label: string) {

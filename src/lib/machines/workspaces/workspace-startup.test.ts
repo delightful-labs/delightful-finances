@@ -193,7 +193,7 @@ describe('optional seed ownership', () => {
 		await vi.waitFor(() => expect(f.all).toHaveBeenCalledTimes(6))
 		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(true)
 		expect(f.reports().at(-1)?.report.status).toEqual({ kind: 'ready', profileId })
-		expect(f.beginExclusiveTransaction).not.toHaveBeenCalled()
+		expect(f.beginSerializableTransaction).not.toHaveBeenCalled()
 		f.actor.send({ type: 'SHUTDOWN' })
 		await waitFor(f.actor, (s) => s.status === 'done')
 	})

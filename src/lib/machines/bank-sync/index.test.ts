@@ -540,9 +540,9 @@ describe('bank-owned log retention', () => {
 	it.each(['SYNC', 'CONNECT'])(
 		'drains retention as well as %s before closing and ignores late observations',
 		async (command) => {
-			const opening = Promise.withResolvers<Transaction<'exclusive'>>()
+			const opening = Promise.withResolvers<Transaction<'serializable'>>()
 			const rollback = Promise.withResolvers<boolean>()
-			const tx = new Transaction('exclusive', () => {
+			const tx = new Transaction('serializable', () => {
 				throw new Error('Unit fixture must not open Jazz')
 			})
 			const rows: SyncAttempt[] = Array.from({ length: 101 }, (_, index) => ({

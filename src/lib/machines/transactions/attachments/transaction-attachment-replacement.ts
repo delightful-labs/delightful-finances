@@ -35,10 +35,10 @@ const read = fromPromise(
 					id: request.attachment.id,
 					transactionId: request.transaction.id
 				}),
-				{ tier: 'local' }
+				{ tier: 'local-first' }
 			),
-			tx.one(app.transactions.where({ id: request.transaction.id }), { tier: 'local' }),
-			tx.one(app.files.where({ id: request.attachment.fileId }), { tier: 'local' })
+			tx.one(app.transactions.where({ id: request.transaction.id }), { tier: 'local-first' }),
+			tx.one(app.files.where({ id: request.attachment.fileId }), { tier: 'local-first' })
 		])
 		return { attachment, transaction, file }
 	}

@@ -5,3 +5,6 @@ test-results/
 playwright-report/
 coverage/
 pnpm-lock.yaml
+
+# Preserve historical source formatting.
+archive/

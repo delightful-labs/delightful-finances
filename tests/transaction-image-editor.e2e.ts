@@ -95,7 +95,7 @@ async function images(page: Page, transactionId: string) {
 		if (!db) throw new Error('Missing session')
 		const links = await db.all(
 			app.transactionAttachments.where({ transactionId }).include({ file: { parts: true } }),
-			{ tier: 'local' }
+			{ tier: 'local-first' }
 		)
 		return links.map((link) => ({
 			id: link.id,
@@ -191,7 +191,7 @@ test(
 			const row = await getCurrentJazzSession()
 				?.getSnapshot()
 				.client?.db.one(app.transactions.where({ description: 'Editor draft receipt' }), {
-					tier: 'local'
+					tier: 'local-first'
 				})
 			return row?.id
 		})

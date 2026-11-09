@@ -3,7 +3,7 @@ import base from './base.js'
 
 const seedEnabled = process.env.PUBLIC_FAKE_DATA === 'true'
 const debugEnabled = process.env.PUBLIC_DEBUG === 'true'
-const port = seedEnabled ? 5186 : 5187
+const port = Number(process.env.FINANCE_E2E_PORT ?? (seedEnabled ? 5186 : 5187))
 export default defineConfig({
 	...base,
 	fullyParallel: false,
@@ -20,7 +20,7 @@ export default defineConfig({
 		video: 'off'
 	},
 	webServer: {
-		command: `pnpm dev:agent --host 127.0.0.1 --port ${port}`,
+		command: `pnpm dev:agent --host 0.0.0.0 --port ${port}`,
 		url: `http://127.0.0.1:${port}`,
 		reuseExistingServer: process.env.FINANCE_E2E_REUSE_SERVER === 'true' && !process.env.CI,
 		env: {

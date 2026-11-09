@@ -1,17 +1,49 @@
-import { createJazzSession, createJazzClient } from 'jazz-tools/client'
-import { app as isolationApp, previousApp as originalApp } from '../../src/lib/schema.js'
+import {
+	createJazzClient as createSession,
+	type JazzClientConfig,
+	type JazzClient
+} from 'jazz-tools/client'
+import { createDb, type DbConfig } from 'jazz-tools'
+const loadLocalFirst = () => import('jazz-tools/local-first')
+async function openLocalFirstSession({
+	appId,
+	...config
+}: Omit<JazzClientConfig, 'appId'> & { appId?: string }) {
+	const session = await createSession({
+		...config,
+		...(appId ? { scope: appId } : {}),
+		client: loadLocalFirst
+	})
+	try {
+		await session.getSnapshot().client?.db.upgradeToLocalFirst(loadLocalFirst)
+		return session
+	} catch (error) {
+		await session.close()
+		throw error
+	}
+}
+async function openAccountClient(config: DbConfig): Promise<JazzClient> {
+	const db = await createDb(config)
+	return {
+		db,
+		get session() {
+			return db.getAuthState().session ?? null
+		},
+		shutdown: (options) => db.shutdown(options)
+	}
+}
+
+import { app as isolationApp } from '../../src/lib/schema.js'
 
 // Test-only SDK bindings. The host test owns every operation and resource lifetime.
 const probe = {
-	createJazzSession,
-	createJazzClient,
-	app: isolationApp,
-	originalApp
+	openLocalFirstSession,
+	openAccountClient,
+	app: isolationApp
 }
 declare global {
 	interface Window {
 		financeRestoreIsolation: typeof probe
-		upgradeRestoreIsolation(): Promise<void>
 	}
 }
 if (typeof window !== 'undefined') window.financeRestoreIsolation = probe
@@ -215,7 +247,7 @@ declare global {
 	interface Window {
 		financeRestoreRecovery: typeof recovery
 		pauseRecoveryReplies(): Promise<void>
-		financeRecoveryOwner: Awaited<ReturnType<typeof createJazzSession>>
+		financeRecoveryOwner: Awaited<ReturnType<typeof openLocalFirstSession>>
 		financeRestoreCatalog: { published: Promise<void>; close(): void }
 		financeRestoreSessionRuntime: {
 			actor: import('xstate').ActorRefFrom<ReturnType<typeof createFinanceRestoreSession>>
@@ -233,7 +265,7 @@ declare global {
 			releaseTransaction(): void
 		}
 		financeRecoveryRuntime: {
-			client: Awaited<ReturnType<typeof createJazzClient>>
+			client: Awaited<ReturnType<typeof openAccountClient>>
 			sample: RecoverySample
 			probe: ReturnType<typeof createRecoveryProbe>
 			binding: RecoveryInput['binding']

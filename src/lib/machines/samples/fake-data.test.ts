@@ -32,13 +32,13 @@ it('generates valid related data, integer amounts, both directions and stable na
 	}
 })
 
-it('confirms all 123 inserts as a single exclusive write and releases resources', async () => {
+it('confirms all 123 inserts as a single serializable write and releases resources', async () => {
 	const f = seedFixture()
 	const confirmation = Promise.withResolvers<void>()
 	f.wait.mockReturnValue(confirmation.promise)
 	const actor = createActor(fakeDataSetup, { input: f.input }).start()
 	await waitFor(actor, (snapshot) => snapshot.matches({ running: { work: 'settling' } }))
-	expect(f.beginExclusiveTransaction).toHaveBeenCalledOnce()
+	expect(f.beginSerializableTransaction).toHaveBeenCalledOnce()
 	expect(f.insert).toHaveBeenCalledTimes(123)
 	expect(f.commit).toHaveBeenCalledOnce()
 	expect(actor.getSnapshot().status).toBe('active')
@@ -66,7 +66,7 @@ it.each([0, 1])(
 			settlement: 'notStarted'
 		})
 		expect(f.all).toHaveBeenCalledTimes(2)
-		expect(f.beginExclusiveTransaction).not.toHaveBeenCalled()
+		expect(f.beginSerializableTransaction).not.toHaveBeenCalled()
 	}
 )
 
@@ -86,7 +86,7 @@ it.each(['remoteData', 'notOwner', 'missingCategories'])(
 			.mockResolvedValueOnce(reason === 'missingCategories' ? [] : categories)
 		const result = await toPromise(createActor(fakeDataSetup, { input: f.input }).start())
 		expect(result.outcome).toBe(reason === 'missingCategories' ? 'failed' : 'skipped')
-		expect(f.beginExclusiveTransaction).not.toHaveBeenCalled()
+		expect(f.beginSerializableTransaction).not.toHaveBeenCalled()
 	}
 )
 
@@ -141,7 +141,7 @@ it('cancels an outstanding authoritative read and ignores its late completion', 
 	expect(await toPromise(actor)).toEqual({ outcome: 'cancelled', settlement: 'notStarted' })
 	remote.resolve([])
 	await Promise.resolve()
-	expect(f.beginExclusiveTransaction).not.toHaveBeenCalled()
+	expect(f.beginSerializableTransaction).not.toHaveBeenCalled()
 })
 
 it('drains a recheck and rolls back before acknowledging shutdown', async () => {

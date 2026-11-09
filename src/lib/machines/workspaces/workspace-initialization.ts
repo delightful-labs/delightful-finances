@@ -15,7 +15,7 @@ import {
 
 type Db = Pick<
 	ReturnType<typeof getDb>,
-	'all' | 'beginTransaction' | 'beginExclusiveTransaction' | 'getConfig'
+	'all' | 'beginTransaction' | 'beginSerializableTransaction' | 'getConfig'
 >
 type Input = { db: Db; userId: string }
 

@@ -51,12 +51,12 @@ type InternalTransferContext = Pick<
 const normal = s.definePermissions(previousApp, (bindings) => {
 	const { policy, session, anyOf, allOf, allowedTo } = bindings
 	const isMember = (organizationId: IdExpression) =>
-		policy.organizationMembers.exists.where({ organizationId, userId: session.user.account })
+		policy.organizationMembers.exists.where({ organizationId, userId: session.user })
 
 	const hasRole = (organizationId: IdExpression, role: Role) =>
 		policy.organizationMembers.exists.where({
 			organizationId,
-			userId: session.user.account,
+			userId: session.user,
 			role
 		})
 
@@ -70,13 +70,13 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 		anyOf([
 			policy.organizationMembers.exists.where({
 				organizationId,
-				userId: session.user.account,
+				userId: session.user,
 				role: ORGANIZATION_ROLE.MEMBER,
 				accountAccessMode: ACCOUNT_ACCESS.ALL
 			}),
 			policy.organizationMembers.exists.where({
 				organizationId,
-				userId: session.user.account,
+				userId: session.user,
 				role: ORGANIZATION_ROLE.VIEWER,
 				accountAccessMode: ACCOUNT_ACCESS.ALL
 			})
@@ -88,7 +88,7 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 			hasRole(organizationId, ORGANIZATION_ROLE.ADMIN),
 			policy.organizationMembers.exists.where({
 				organizationId,
-				userId: session.user.account,
+				userId: session.user,
 				role: ORGANIZATION_ROLE.MEMBER,
 				accountAccessMode: ACCOUNT_ACCESS.ALL
 			})
@@ -103,7 +103,7 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 				policy.accountMemberships.exists.where({
 					organizationId,
 					accountId,
-					userId: session.user.account
+					userId: session.user
 				})
 			])
 		])
@@ -115,13 +115,13 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 				hasRole(organizationId, ORGANIZATION_ROLE.MEMBER),
 				policy.organizationMembers.exists.where({
 					organizationId,
-					userId: session.user.account,
+					userId: session.user,
 					accountAccessMode: ACCOUNT_ACCESS.SELECTED
 				}),
 				policy.accountMemberships.exists.where({
 					organizationId,
 					accountId,
-					userId: session.user.account,
+					userId: session.user,
 					access: 'write'
 				})
 			])
@@ -134,13 +134,13 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 				hasRole(organizationId, ORGANIZATION_ROLE.MEMBER),
 				policy.organizationMembers.exists.where({
 					organizationId,
-					userId: session.user.account,
+					userId: session.user,
 					accountAccessMode: ACCOUNT_ACCESS.SELECTED
 				}),
 				policy.accountMemberships.exists.where({
 					organizationId,
 					accountId,
-					userId: session.user.account,
+					userId: session.user,
 					canDelete: true
 				})
 			])
@@ -152,20 +152,20 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 			allOf([
 				policy.organizationMembers.exists.where({
 					organizationId: transfer.organizationId,
-					userId: session.user.account,
+					userId: session.user,
 					role: ORGANIZATION_ROLE.MEMBER,
 					accountAccessMode: ACCOUNT_ACCESS.SELECTED
 				}),
 				policy.accountMemberships.exists.where({
 					organizationId: transfer.organizationId,
 					accountId: transfer.expenseAccountId,
-					userId: session.user.account,
+					userId: session.user,
 					access: 'write'
 				}),
 				policy.accountMemberships.exists.where({
 					organizationId: transfer.organizationId,
 					accountId: transfer.incomeAccountId,
-					userId: session.user.account,
+					userId: session.user,
 					access: 'write'
 				})
 			])
@@ -356,23 +356,23 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 	const transactionHasNoTransfer = () => ({ internalTransferId: { isNull: true } })
 
 	policy.organizations.allowRead.where((organization) => isMember(organization.id))
-	policy.organizations.allowInsert.where({ ownerId: session.user.account })
+	policy.organizations.allowInsert.where({ ownerId: session.user })
 	policy.organizations.allowUpdate
 		.whereOld((organization) => isAdmin(organization.id))
 		.whereNew((organization) => isAdmin(organization.id))
 	policy.organizations.allowDelete.never()
 
 	policy.organizationMembers.allowRead.where((member) =>
-		anyOf([{ userId: session.user.account }, isAdmin(member.organizationId)])
+		anyOf([{ userId: session.user }, isAdmin(member.organizationId)])
 	)
 	policy.organizationMembers.allowInsert.where((member) =>
 		anyOf([
 			isAdmin(member.organizationId),
 			allOf([
-				{ userId: session.user.account, role: ORGANIZATION_ROLE.OWNER },
+				{ userId: session.user, role: ORGANIZATION_ROLE.OWNER },
 				policy.organizations.exists.where({
 					id: member.organizationId,
-					ownerId: session.user.account
+					ownerId: session.user
 				})
 			])
 		])
@@ -381,12 +381,12 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 		.whereOld((member) => isAdmin(member.organizationId))
 		.whereNew((member) => isAdmin(member.organizationId))
 	policy.organizationMembers.allowDelete.where((member) =>
-		anyOf([{ userId: session.user.account }, isAdmin(member.organizationId)])
+		anyOf([{ userId: session.user }, isAdmin(member.organizationId)])
 	)
 
 	policy.profiles.allowRead.where((profile) =>
 		anyOf([
-			{ userId: session.user.account },
+			{ userId: session.user },
 			policy.exists(
 				policy.organizationMembers
 					.where({ profileId: profile.id })
@@ -394,14 +394,12 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 						left: 'organizationId',
 						right: 'organizationId'
 					})
-					.where({ userId: session.user.account })
+					.where({ userId: session.user })
 			)
 		])
 	)
-	policy.profiles.allowInsert.where({ userId: session.user.account })
-	policy.profiles.allowUpdate
-		.whereOld({ userId: session.user.account })
-		.whereNew({ userId: session.user.account })
+	policy.profiles.allowInsert.where({ userId: session.user })
+	policy.profiles.allowUpdate.whereOld({ userId: session.user }).whereNew({ userId: session.user })
 	policy.profiles.allowDelete.never()
 
 	policy.accounts.allowRead.where((account) => canReadAccount(account.id, account.organizationId))
@@ -414,7 +412,7 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 	policy.accounts.allowDelete.never()
 
 	policy.accountMemberships.allowRead.where((grant) =>
-		anyOf([{ userId: session.user.account }, isAdmin(grant.organizationId)])
+		anyOf([{ userId: session.user }, isAdmin(grant.organizationId)])
 	)
 	policy.accountMemberships.allowInsert.where((grant) => isAdmin(grant.organizationId))
 	policy.accountMemberships.allowUpdate
@@ -645,7 +643,7 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 	policy.checkDetails.allowDelete.never()
 
 	const ownsConnection = (connection: { organizationId: IdExpression; ownerId: IdExpression }) =>
-		allOf([isAdmin(connection.organizationId), { ownerId: session.user.account }])
+		allOf([isAdmin(connection.organizationId), { ownerId: session.user }])
 	policy.simplefinConnections.allowRead.where((connection) => isAdmin(connection.organizationId))
 	policy.simplefinConnections.allowInsert.where((connection) =>
 		allOf([ownsConnection(connection), { accessUrl: '' }])
@@ -670,7 +668,7 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 	) =>
 		allOf([
 			isAdmin(attempt.organizationId),
-			{ initiatedBy: session.user.account },
+			{ initiatedBy: session.user },
 			policy.simplefinConnections.exists.where({
 				id: attempt.connectionId,
 				organizationId: attempt.organizationId,
@@ -714,7 +712,7 @@ const normal = s.definePermissions(previousApp, (bindings) => {
 			policy.simplefinSyncAttempts.exists.where({
 				id: result.attemptId,
 				organizationId: result.organizationId,
-				initiatedBy: session.user.account,
+				initiatedBy: session.user,
 				outcome: 'unfinished'
 			}),
 			policy.accounts.exists.where({
@@ -844,17 +842,17 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 	const recovery = (workspaceId: RowRefValue) =>
 		policy.restoreOperations.exists.where({
 			workspaceId,
-			ownerId: session.user.account,
+			ownerId: session.user,
 			status: 'incomplete'
 		})
 	policy.restoreOperations.allowRead.where((row) =>
 		anyOf([
-			{ ownerId: session.user.account, status: 'incomplete' },
+			{ ownerId: session.user, status: 'incomplete' },
 			allOf([
 				{ status: 'active' },
 				policy.organizationMembers.exists.where({
 					organizationId: row.workspaceId,
-					userId: session.user.account,
+					userId: session.user,
 					role: { in: ['owner', 'admin'] }
 				})
 			])
@@ -862,10 +860,10 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 	)
 	policy.restoreOperations.allowInsert.where((row) =>
 		allOf([
-			{ ownerId: session.user.account, status: 'incomplete' },
+			{ ownerId: session.user, status: 'incomplete' },
 			policy.organizations.exists.where({
 				id: row.workspaceId,
-				ownerId: session.user.account,
+				ownerId: session.user,
 				restoreOperationId: row.id,
 				name: row.workspaceName,
 				kind: row.workspaceKind,
@@ -874,10 +872,10 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 		])
 	)
 	policy.restoreOperations.allowUpdate
-		.whereOld({ ownerId: session.user.account, status: 'incomplete' })
+		.whereOld({ ownerId: session.user, status: 'incomplete' })
 		.whereNew((row) =>
 			allOf([
-				{ ownerId: session.user.account, status: 'active' },
+				{ ownerId: session.user, status: 'active' },
 				policy.restoreOperations.exists.where({
 					id: row.id,
 					workspaceId: row.workspaceId,
@@ -1038,32 +1036,77 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 			])
 		])
 	)
+
+	// Backup v1/v2 allow each side to fall back to the legacy shared amount/currency.
+	// Match the same resolved facts as validation; never fall back over an explicit value.
+	const restoredTransferEndpoint = (row: InternalTransferContext, side: 'expense' | 'income') => {
+		const amountMissing =
+			side === 'expense'
+				? { expenseAmountMinor: { isNull: true } }
+				: { incomeAmountMinor: { isNull: true } }
+		const amountPresent =
+			side === 'expense'
+				? { expenseAmountMinor: { isNull: false } }
+				: { incomeAmountMinor: { isNull: false } }
+		const currencyMissing =
+			side === 'expense'
+				? { expenseCurrency: { isNull: true } }
+				: { incomeCurrency: { isNull: true } }
+		const currencyPresent =
+			side === 'expense'
+				? { expenseCurrency: { isNull: false } }
+				: { incomeCurrency: { isNull: false } }
+		const endpoint = {
+			id: side === 'expense' ? row.expenseTransactionId : row.incomeTransactionId,
+			organizationId: row.organizationId,
+			accountId: side === 'expense' ? row.expenseAccountId : row.incomeAccountId,
+			kind: side,
+			internalTransferId: row.id
+		}
+		const amount = side === 'expense' ? row.expenseAmountMinor : row.incomeAmountMinor
+		const currency = side === 'expense' ? row.expenseCurrency : row.incomeCurrency
+		return anyOf([
+			allOf([
+				amountPresent,
+				currencyPresent,
+				policy.transactions.exists.where({ ...endpoint, amountMinor: amount, currency })
+			]),
+			allOf([
+				amountPresent,
+				currencyMissing,
+				policy.transactions.exists.where({
+					...endpoint,
+					amountMinor: amount,
+					currency: row.currency
+				})
+			]),
+			allOf([
+				amountMissing,
+				currencyPresent,
+				policy.transactions.exists.where({ ...endpoint, amountMinor: row.amountMinor, currency })
+			]),
+			allOf([
+				amountMissing,
+				currencyMissing,
+				policy.transactions.exists.where({
+					...endpoint,
+					amountMinor: row.amountMinor,
+					currency: row.currency
+				})
+			])
+		])
+	}
 	policy.internalTransfers.allowInsert.where((row) =>
 		anyOf([
 			raw(originalRule('internalTransfers', 'insert', 'with_check')),
 			allOf([
 				recovery(row.organizationId),
-				policy.transactions.exists.where({
-					id: row.expenseTransactionId,
-					organizationId: row.organizationId,
-					accountId: row.expenseAccountId,
-					kind: 'expense',
-					amountMinor: row.expenseAmountMinor,
-					currency: row.expenseCurrency,
-					internalTransferId: row.id
-				}),
-				policy.transactions.exists.where({
-					id: row.incomeTransactionId,
-					organizationId: row.organizationId,
-					accountId: row.incomeAccountId,
-					kind: 'income',
-					amountMinor: row.incomeAmountMinor,
-					currency: row.incomeCurrency,
-					internalTransferId: row.id
-				})
+				restoredTransferEndpoint(row, 'expense'),
+				restoredTransferEndpoint(row, 'income')
 			])
 		])
 	)
+
 	policy.files.allowRead.where((row) =>
 		anyOf([
 			raw(originalRule('files', 'select', 'using')),
@@ -1072,7 +1115,7 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 				policy.restoreOperations.exists.where({
 					sourceFileId: row.id,
 					workspaceId: row.organizationId,
-					ownerId: session.user.account,
+					ownerId: session.user,
 					status: 'incomplete'
 				})
 			]),
@@ -1082,7 +1125,7 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 					policy.restoreOperations
 						.where({ sourceFileId: row.id, workspaceId: row.organizationId, status: 'active' })
 						.join(policy.organizationMembers, { left: 'workspaceId', right: 'organizationId' })
-						.where({ userId: session.user.account, role: { in: ['owner', 'admin'] } })
+						.where({ userId: session.user, role: { in: ['owner', 'admin'] } })
 				)
 			])
 		])
@@ -1096,7 +1139,7 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 				policy.restoreOperations.exists.where({
 					sourceFileId: row.id,
 					workspaceId: row.organizationId,
-					ownerId: session.user.account,
+					ownerId: session.user,
 					status: 'incomplete'
 				})
 			]),
@@ -1105,7 +1148,7 @@ const overrides = s.definePermissions(app, ({ policy, session, anyOf, allOf, raw
 					policy.transactions
 						.where({ id: row.transactionId })
 						.join(policy.restoreOperations, { left: 'organizationId', right: 'workspaceId' })
-						.where({ ownerId: session.user.account, status: 'incomplete' })
+						.where({ ownerId: session.user, status: 'incomplete' })
 				),
 				anyOf([
 					{ organizationId: { isNull: true } },
