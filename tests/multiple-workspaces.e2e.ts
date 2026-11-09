@@ -571,11 +571,11 @@ test(
 				page.evaluate(async (id) => {
 					const { db, app, userId } = window.workspaceSettingsTest
 					const categories = await db.all(app.categories.where({ organizationId: id }), {
-						tier: 'global'
+						tier: 'remote'
 					})
 					const member = (
 						await db.all(app.organizationMembers.where({ organizationId: id, userId }), {
-							tier: 'global'
+							tier: 'remote'
 						})
 					)[0]
 					return {
@@ -649,7 +649,7 @@ test(
 		await harness(page)
 		const after = await page.evaluate(async () => {
 			const { db, app, userId } = window.workspaceSettingsTest
-			const profiles = await db.all(app.profiles.where({ userId }), { tier: 'global' })
+			const profiles = await db.all(app.profiles.where({ userId }), { tier: 'remote' })
 			return {
 				profiles: profiles.map((row) => ({
 					id: row.id,
@@ -762,7 +762,7 @@ test(
 			.poll(async () =>
 				page.evaluate(async (workspaceId) => {
 					const { db, app } = window.workspaceSettingsTest
-					return (await db.all(app.organizations.where({ id: workspaceId }), { tier: 'global' }))[0]
+					return (await db.all(app.organizations.where({ id: workspaceId }), { tier: 'remote' }))[0]
 						?.name
 				}, id)
 			)
@@ -786,7 +786,7 @@ test(
 			expect(
 				await page.evaluate(async (workspaceId) => {
 					const { db, app } = window.workspaceSettingsTest
-					return (await db.all(app.organizations.where({ id: workspaceId }), { tier: 'global' }))[0]
+					return (await db.all(app.organizations.where({ id: workspaceId }), { tier: 'remote' }))[0]
 						?.name
 				}, id)
 			).toBe('Protected workspace')

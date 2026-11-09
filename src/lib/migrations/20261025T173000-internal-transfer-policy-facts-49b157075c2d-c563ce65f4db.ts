@@ -1,12 +1,12 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	migrate: {
 		internalTransfers: {
-			expenseAccountId: s.add.ref('accounts', { default: null }),
-			incomeAccountId: s.add.ref('accounts', { default: null }),
-			amountMinor: s.add.bigint({ default: null }),
-			currency: s.add.string({ default: null })
+			expenseAccountId: m.add.ref('accounts', { default: null }),
+			incomeAccountId: m.add.ref('accounts', { default: null }),
+			amountMinor: m.add.bigint({ default: null }),
+			currency: m.add.string({ default: null })
 		}
 	},
 	fromHash: '49b157075c2d',

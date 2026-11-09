@@ -2,8 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test as base, type BrowserContext, type Page } from '@playwright/test'
-import { startLocalJazzServer, type LocalJazzServerHandle } from 'jazz-tools/testing'
-import { createJazzSession, type Db } from 'jazz-tools/backend'
+import type { LocalJazzServerHandle } from 'jazz-tools/testing'
+import { startLocalJazzServer, allowTestBrowserOrigin } from './helpers/jazz-test-server.js'
+import type { Db } from 'jazz-tools/backend'
+import { openNativeJazzSession as createJazzSession } from './helpers/native-jazz.js'
 import { app } from '../src/lib/schema.js'
 import permissions from '../src/lib/permissions.js'
 import { createSilentJazzProxy } from './helpers/silent-jazz-proxy.js'
@@ -22,6 +24,7 @@ const test = base.extend<{
 	profile: string
 }>({
 	remote: async ({}, use) => {
+		allowTestBrowserOrigin('http://127.0.0.1:4185')
 		const backend = await startLocalJazzServer({
 			inMemory: true,
 			appId: '77777777-7777-4777-8777-777777777777',

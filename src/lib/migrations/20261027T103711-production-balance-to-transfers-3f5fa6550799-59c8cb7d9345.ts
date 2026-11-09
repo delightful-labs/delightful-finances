@@ -1,16 +1,16 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	createTables: {
 		internalTransfers: true
 	},
 	migrate: {
 		accountMemberships: {
-			canDelete: s.add.boolean({ default: false })
+			canDelete: m.add.boolean({ default: false })
 		},
 
 		transactions: {
-			internalTransferId: s.add.ref('internalTransfers', { default: null })
+			internalTransferId: m.add.ref('internalTransfers', { default: null })
 		}
 	},
 	fromHash: '3f5fa6550799',

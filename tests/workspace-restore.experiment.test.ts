@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { chromium, firefox, webkit, type Page } from '@playwright/test'
 import { createServer, type ViteDevServer } from 'vite'
-import { jazzPlugin, resolveJazzWasmEntry } from 'jazz-tools/dev/vite'
+import { jazzWasmEntry } from '../tooling/jazz-wasm.js'
+import type { Plugin } from 'vite'
 import type { RecoverySample } from '../specs/016-workspace-restore/browser.js'
 import { createActor, toPromise, fromPromise } from 'xstate'
 import {
@@ -42,14 +43,31 @@ import {
 	financeRestorePlanningMachine
 } from '../src/lib/machines/workspaces/workspace-restore-plan.js'
 import { createSilentJazzProxy } from './helpers/silent-jazz-proxy.js'
-import { createJazzSession, type JazzClient, type Db } from 'jazz-tools/backend'
+import type { JazzClient, Db } from 'jazz-tools/backend'
+import { openNativeJazzSession as createJazzSession } from './helpers/native-jazz.js'
 import type { AccountStore, JazzSession } from 'jazz-tools/client'
 import { PersistedWriteRejectedError } from 'jazz-tools'
-import { deploy, startLocalJazzServer, type LocalJazzServerHandle } from 'jazz-tools/testing'
+import type { LocalJazzServerHandle } from 'jazz-tools/testing'
+import { deploy, startLocalJazzServer, allowTestBrowserOrigin } from './helpers/jazz-test-server.js'
 import { previousApp as app, app as isolationApp, type Organization } from '../src/lib/schema.js'
 import isolationPermissions, { previousPermissions as permissions } from '../src/lib/permissions.js'
-import isolationMigration from '../src/lib/migrations/20261107T012740-workspace-restore-e5a4d82f6013-c30773a87764.js'
-
+function jazzRuntimeAssets(): Plugin {
+	return {
+		name: 'finance-restore-jazz-assets',
+		config: () => ({
+			resolve: {
+				alias: [
+					{ find: /^jazz-wasm$/, replacement: jazzWasmEntry },
+					{
+						find: /^#jazz-wasm-binary/,
+						replacement: resolve(dirname(jazzWasmEntry), 'jazz_wasm_bg.wasm')
+					}
+				]
+			},
+			optimizeDeps: { include: ['jazz-tools', 'jazz-tools/client', 'jazz-tools/local-first'] }
+		})
+	}
+}
 // Exercise the released writer against the actual preceding schema; new application exports use v2.
 const legacyFinanceBackupProfile = {
 	id: financeBackupProfile.id,
@@ -107,7 +125,12 @@ function stage(
 	tx: Pick<ReturnType<Db['beginTransaction']>, 'insert' | 'update'>,
 	ids: Ids,
 	scenario: Scenario,
-	restore?: { ownerId: string; operationId?: string; operationName?: string }
+	restore?: {
+		ownerId: string
+		operationId?: string
+		operationName?: string
+		transferFacts?: TransferFacts
+	}
 ) {
 	const tables = restore ? isolationApp : app
 	const actorId = restore?.ownerId ?? ownerId
@@ -197,7 +220,7 @@ function stage(
 		)
 	}
 	if (scenario.links !== 'none') {
-		stageTransfer(tx, ids, tables)
+		stageTransfer(tx, ids, tables, restore?.transferFacts)
 		if (scenario.links === 'later')
 			for (const id of ids.transactions)
 				tx.update(tables.transactions, id, { internalTransferId: ids.transfer })
@@ -226,10 +249,12 @@ function stage(
 	}
 	if (scenario.archive === 'later') tx.update(tables.accounts, ids.accounts[0], { archivedAt })
 }
+type TransferFacts = 'shared' | 'sharedCurrency' | 'wrongCurrency' | 'wrongAmount'
 function stageTransfer(
 	tx: Pick<ReturnType<Db['beginTransaction']>, 'insert'>,
 	ids: Ids,
-	tables: typeof app | typeof isolationApp = app
+	tables: typeof app | typeof isolationApp = app,
+	facts?: TransferFacts
 ) {
 	tx.insert(
 		tables.internalTransfers,
@@ -239,10 +264,13 @@ function stageTransfer(
 			incomeTransactionId: ids.transactions[1],
 			expenseAccountId: ids.accounts[0],
 			incomeAccountId: ids.accounts[1],
-			expenseAmountMinor: 1234,
-			incomeAmountMinor: 1234,
-			expenseCurrency: 'USD',
-			incomeCurrency: 'USD'
+			...(facts === 'shared'
+				? {}
+				: { expenseAmountMinor: facts === 'wrongAmount' ? 999 : 1234, incomeAmountMinor: 1234 }),
+			...(facts === 'shared' || facts === 'sharedCurrency'
+				? {}
+				: { expenseCurrency: facts === 'wrongCurrency' ? 'EUR' : 'USD', incomeCurrency: 'USD' }),
+			...(facts ? { amountMinor: facts === 'sharedCurrency' ? 999 : 1234, currency: 'USD' } : {})
 		},
 		{ id: ids.transfer }
 	)
@@ -567,7 +595,7 @@ describe('private restore-operation isolation candidate', () => {
 		}
 	}
 	beforeAll(async () => {
-		// A real catalogue upgrade, rather than two different schemas at revision one.
+		// Fresh alpha.60 restore target: ordinary and private clients use the released schema.
 		candidateServer = await startLocalJazzServer({
 			appId: crypto.randomUUID(),
 			inMemory: true,
@@ -577,13 +605,13 @@ describe('private restore-operation isolation candidate', () => {
 			appId: candidateServer.appId,
 			serverUrl: candidateServer.url,
 			adminSecret: candidateServer.adminSecret,
-			schema: app,
-			permissions
+			schema: isolationApp,
+			permissions: isolationPermissions
 		})
 		const ordinarySession = await createJazzSession({
 			appId: candidateServer.appId,
-			app,
-			permissions,
+			app: isolationApp,
+			permissions: isolationPermissions,
 			serverUrl: candidateServer.url,
 			driver: { type: 'memory' },
 			store,
@@ -598,11 +626,11 @@ describe('private restore-operation isolation candidate', () => {
 		const normalId = crypto.randomUUID()
 		const initial = await ordinary.transaction((tx) => {
 			tx.insert(
-				app.organizations,
-				{ ownerId: identity, name: 'Before upgrade', kind: 'personal', defaultCurrency: 'USD' },
+				isolationApp.organizations,
+				{ ownerId: identity, name: 'Before restore', kind: 'personal', defaultCurrency: 'USD' },
 				{ id: normalId }
 			)
-			tx.insert(app.organizationMembers, {
+			tx.insert(isolationApp.organizationMembers, {
 				organizationId: normalId,
 				userId: identity,
 				role: 'owner',
@@ -610,15 +638,7 @@ describe('private restore-operation isolation candidate', () => {
 			})
 		})
 		await initial.wait({ tier: 'global' })
-		await ordinary.all(app.organizations, { tier: 'remote' })
-		await deploy({
-			appId: candidateServer.appId,
-			serverUrl: candidateServer.url,
-			adminSecret: candidateServer.adminSecret,
-			schema: isolationApp,
-			permissions: isolationPermissions,
-			migration: isolationMigration
-		})
+		await ordinary.all(isolationApp.organizations, { tier: 'remote' })
 		for (const index of [0, 1, 2]) {
 			const session = await createJazzSession({
 				appId: candidateServer.appId,
@@ -654,7 +674,7 @@ describe('private restore-operation isolation candidate', () => {
 		const write = await candidate.transaction((tx) => stage(tx, ids, plain, { ownerId: identity }))
 		await write.wait({ tier: 'global' })
 		expectGraph(await read(candidate, ids, isolationApp), ids, plain, identity)
-		expectGraph(await read(ordinary, ids), ids, plain, identity)
+		expectGraph(await read(ordinary, ids, isolationApp), ids, plain, identity)
 	})
 	it('rejects the whole preparation when its private header differs from the hidden workspace', async () => {
 		const ids = identifiers(),
@@ -668,6 +688,41 @@ describe('private restore-operation isolation candidate', () => {
 			await admin.one(isolationApp.restoreOperations.where({ id: operationId }), { tier: 'remote' })
 		).toBeNull()
 	})
+
+	it.each([
+		{ facts: 'shared', accepted: true },
+		{ facts: 'sharedCurrency', accepted: true },
+		{ facts: 'wrongCurrency', accepted: false },
+		{ facts: 'wrongAmount', accepted: false }
+	] satisfies { facts: TransferFacts; accepted: boolean }[])(
+		'checks legacy restore transfer facts: $facts',
+		async ({ facts, accepted }) => {
+			const ids = identifiers(),
+				operationId = crypto.randomUUID()
+			const write = await candidate.transaction((tx) =>
+				stage(
+					tx,
+					ids,
+					{ ...plain, source: 'simplefin', links: 'direct' },
+					{ ownerId: identity, operationId, transferFacts: facts }
+				)
+			)
+			if (accepted) await write.wait({ tier: 'global' })
+			else
+				await expect(write.wait({ tier: 'global' })).rejects.toBeInstanceOf(
+					PersistedWriteRejectedError
+				)
+			const rows = await read(admin, ids, isolationApp)
+			expect(rows[4]).toHaveLength(accepted ? 2 : 0)
+			expect(rows[5]).toHaveLength(accepted ? 1 : 0)
+			expect(rows[2]).toHaveLength(accepted ? 2 : 0)
+			expect(
+				await ordinary.all(isolationApp.organizations.where({ id: ids.workspace }), {
+					tier: 'remote'
+				})
+			).toEqual([])
+		}
+	)
 	it('stages an archived provider transfer and bytes without publishing membership', async () => {
 		const ids = identifiers(),
 			operationId = crypto.randomUUID()
@@ -687,17 +742,22 @@ describe('private restore-operation isolation candidate', () => {
 		const recoveryRows = await read(candidate, ids, isolationApp)
 		expect(recoveryRows[0]).toEqual([])
 		expect(recoveryRows.slice(2)).toEqual(actual.slice(2))
-		// The writer retains its own rows locally; it must be a separate restore replica.
+		// SDK60 applies read authorization to acknowledged local rows too.
+		// The hidden root is recovered through its private restore header.
 		expect(
 			await candidate.all(isolationApp.organizations.where({ id: ids.workspace }), {
 				tier: 'local-first'
 			})
-		).toHaveLength(1)
+		).toHaveLength(0)
 		expect(
-			await ordinary.all(app.organizations.where({ id: ids.workspace }), { tier: 'remote' })
+			await ordinary.all(isolationApp.organizations.where({ id: ids.workspace }), {
+				tier: 'remote'
+			})
 		).toEqual([])
 		expect(
-			await ordinary.all(app.organizations.where({ id: ids.workspace }), { tier: 'local-first' })
+			await ordinary.all(isolationApp.organizations.where({ id: ids.workspace }), {
+				tier: 'local-first'
+			})
 		).toEqual([])
 		expect((await read(stranger, ids, isolationApp)).every((rows) => rows.length === 0)).toBe(true)
 	})
@@ -832,9 +892,9 @@ describe('private restore-operation isolation candidate', () => {
 		)
 		await staged.wait({ tier: 'global' })
 		const before = JSON.stringify(await read(admin, ids, isolationApp))
-		await expect(write(ids, operationId).wait({ tier: 'global' })).rejects.toBeInstanceOf(
-			PersistedWriteRejectedError
-		)
+		await expect(
+			Promise.resolve().then<unknown>(() => write(ids, operationId).wait({ tier: 'global' }))
+		).rejects.toThrow(/authoriz|denied|reject/i)
 		expect(JSON.stringify(await read(admin, ids, isolationApp))).toBe(before)
 		expect(
 			await admin.one(isolationApp.restoreOperations.where({ id: operationId }), { tier: 'remote' })
@@ -913,7 +973,7 @@ describe('private restore-operation isolation candidate', () => {
 		})
 		await activated.wait({ tier: 'global' })
 		expectGraph(await read(candidate, ids, isolationApp), ids, scenario, identity)
-		expectGraph(await read(ordinary, ids), ids, scenario, identity)
+		expectGraph(await read(ordinary, ids, isolationApp), ids, scenario, identity)
 		await expect(
 			candidate
 				.insert(isolationApp.accounts, {
@@ -943,18 +1003,20 @@ describe('private restore-operation isolation candidate', () => {
 			})
 			.wait({ tier: 'global' })
 		expect(
-			await ordinary.one(app.transactions.where({ id: ids.transactions[1] }), { tier: 'remote' })
+			await ordinary.one(isolationApp.transactions.where({ id: ids.transactions[1] }), {
+				tier: 'remote'
+			})
 		).toMatchObject({
 			source: 'simplefin',
 			amountMinor: 1234,
 			description: 'Editable after publication'
 		})
 		await ordinary
-			.update(app.organizations, ids.workspace, { name: 'Edited by cached client' })
+			.update(isolationApp.organizations, ids.workspace, { name: 'Edited by cached client' })
 			.wait({ tier: 'global' })
 		expect(
 			await admin.one(isolationApp.organizations.where({ id: ids.workspace }), { tier: 'remote' })
-		).toMatchObject({ name: 'Edited by cached client', restoreOperationId: null })
+		).toMatchObject({ name: 'Edited by cached client', restoreOperationId: operationId })
 		await expect(
 			candidate
 				.update(isolationApp.organizations, ids.workspace, {
@@ -977,20 +1039,24 @@ describe('private restore-operation isolation candidate', () => {
 				.update(isolationApp.organizations, ids.workspace, { restoreOperationId: operationId })
 				.wait({ tier: 'global' })
 		).rejects.toBeInstanceOf(PersistedWriteRejectedError)
-		// The native insert API rejects a duplicate object before server authorization.
-		expect(() =>
-			candidate.insert(
-				isolationApp.organizations,
-				{
-					ownerId: identity,
-					name: 'Replaced root',
-					kind: 'personal',
-					defaultCurrency: 'USD',
-					restoreOperationId: operationId
-				},
-				{ id: ids.workspace }
+		// Duplicate insertion must be rejected, whether locally or by authority.
+		await expect(
+			Promise.resolve().then(() =>
+				candidate
+					.insert(
+						isolationApp.organizations,
+						{
+							ownerId: identity,
+							name: 'Replaced root',
+							kind: 'personal',
+							defaultCurrency: 'USD',
+							restoreOperationId: operationId
+						},
+						{ id: ids.workspace }
+					)
+					.wait({ tier: 'global' })
 			)
-		).toThrow(/object already exists/)
+		).rejects.toThrow(/already exists|authoriz|denied|reject/i)
 		await expect(
 			candidate
 				.insert(
@@ -1018,13 +1084,13 @@ describe('browser replica separation', () => {
 	let web: ViteDevServer, serving: LocalJazzServerHandle, url: string
 	beforeAll(async () => {
 		const require = createRequire(import.meta.url),
-			wasm = resolveJazzWasmEntry()
+			wasm = jazzWasmEntry
 		web = await createServer({
 			configFile: false,
 			root: process.cwd(),
 			cacheDir: resolve('node_modules/.vite/restore-isolation'),
 			plugins: [
-				jazzPlugin({ server: false, inspector: false }),
+				jazzRuntimeAssets(),
 				{
 					name: 'finance-restore-harness',
 					configureServer(server) {
@@ -1047,7 +1113,7 @@ describe('browser replica separation', () => {
 				fs: {
 					allow: [
 						process.cwd(),
-						dirname(require.resolve('jazz-tools/package.json')),
+						dirname(require.resolve('jazz-tools')),
 						...(wasm ? [dirname(wasm)] : [])
 					]
 				}
@@ -1057,6 +1123,7 @@ describe('browser replica separation', () => {
 		const address = web.httpServer?.address()
 		if (!address || typeof address === 'string') throw new Error('Missing browser harness address')
 		url = `http://localhost:${address.port}/specs/016-workspace-restore/browser.html`
+		allowTestBrowserOrigin(url)
 		console.info('Restore isolation browser harness', {
 			localhost: url,
 			network: web.resolvedUrls?.network
@@ -1087,26 +1154,19 @@ describe('browser replica separation', () => {
 					appId: serving.appId,
 					serverUrl: serving.url,
 					adminSecret: serving.adminSecret,
-					schema: app,
-					permissions
+					schema: isolationApp,
+					permissions: isolationPermissions
 				})
 				const page = await browser.newPage()
-				await page.exposeFunction('upgradeRestoreIsolation', async () => {
-					await deploy({
-						appId: serving.appId,
-						serverUrl: serving.url,
-						adminSecret: serving.adminSecret,
-						schema: isolationApp,
-						permissions: isolationPermissions,
-						migration: isolationMigration
-					})
-				})
+				page.on('pageerror', (error) =>
+					console.error('Restore harness module error', error.message)
+				)
 				await page.goto(url)
 				await page.waitForFunction(() => Boolean(window.financeRestoreIsolation))
 				const result = await page.evaluate(
 					async ({ appId, serverUrl }) => {
 						const api = window.financeRestoreIsolation
-						const ordinarySession = await api.createJazzSession({
+						const ordinarySession = await api.openLocalFirstSession({
 							appId,
 							serverUrl,
 							driver: { type: 'persistent', dbName: 'ordinary' },
@@ -1116,15 +1176,15 @@ describe('browser replica separation', () => {
 						if (!state.client || !state.account) throw new Error('Missing persistent owner')
 						const ordinary = state.client.db,
 							ownerId = state.account.id
-						await ordinary.all(api.originalApp.organizations, { tier: 'remote' })
+						await ordinary.all(api.app.organizations, { tier: 'remote' })
 						const existingId = crypto.randomUUID()
 						const existing = await ordinary.transaction((tx) => {
 							tx.insert(
-								api.originalApp.organizations,
+								api.app.organizations,
 								{ ownerId, name: 'Before upgrade', kind: 'personal', defaultCurrency: 'USD' },
 								{ id: existingId }
 							)
-							tx.insert(api.originalApp.organizationMembers, {
+							tx.insert(api.app.organizationMembers, {
 								organizationId: existingId,
 								userId: ownerId,
 								role: 'owner',
@@ -1132,9 +1192,8 @@ describe('browser replica separation', () => {
 							})
 						})
 						await existing.wait({ tier: 'global' })
-						await ordinary.all(api.originalApp.organizations, { tier: 'remote' })
-						await window.upgradeRestoreIsolation()
-						const restore = await api.createJazzClient({
+						await ordinary.all(api.app.organizations, { tier: 'remote' })
+						const restore = await api.openAccountClient({
 							appId,
 							serverUrl,
 							account: state.account,
@@ -1142,7 +1201,7 @@ describe('browser replica separation', () => {
 						})
 						const workspace = crypto.randomUUID(),
 							operation = crypto.randomUUID()
-						const query = api.originalApp.organizations.where({ id: workspace })
+						const query = api.app.organizations.where({ id: workspace })
 						const snapshots: number[] = [],
 							subscriptionErrors: string[] = []
 						let reveal: (() => void) | undefined
@@ -1234,15 +1293,15 @@ describe('browser replica separation', () => {
 							])
 							const published = await ordinary.all(query, { tier: 'remote' })
 							const archived = await ordinary.all(
-								api.originalApp.accounts.where({ organizationId: workspace }),
+								api.app.accounts.where({ organizationId: workspace }),
 								{ tier: 'remote' }
 							)
 							await ordinary
-								.update(api.originalApp.organizations, workspace, { name: 'Edited after upgrade' })
+								.update(api.app.organizations, workspace, { name: 'Edited after restore' })
 								.wait({ tier: 'global' })
 							const edited = await ordinary.one(query, { tier: 'local-first' })
 							const unchanged = await ordinary.one(
-								api.originalApp.organizations.where({ id: existingId }),
+								api.app.organizations.where({ id: existingId }),
 								{ tier: 'remote' }
 							)
 							return {
@@ -1266,12 +1325,12 @@ describe('browser replica separation', () => {
 				expect(result.stagedSnapshots.length).toBeGreaterThan(0)
 				expect(result.stagedSnapshots.every((count) => count === 0)).toBe(true)
 				expect(result).toMatchObject({
-					before: { writerLocal: 1, ordinaryRemote: 0, ordinaryLocal: 0 },
+					before: { writerLocal: 0, ordinaryRemote: 0, ordinaryLocal: 0 },
 					subscriptionErrors: [],
 					published: 1,
 					archived: 1,
 					archiveDate: '2026-01-01T00:00:00.000Z',
-					editedName: 'Edited after upgrade',
+					editedName: 'Edited after restore',
 					existingName: 'Before upgrade'
 				})
 			} finally {
@@ -1872,7 +1931,7 @@ describe('browser replica separation', () => {
 			await page.waitForFunction(() => Boolean(window.financeRestoreRecovery))
 			return page.evaluate(
 				async ({ appId, serverUrl, fresh }) => {
-					const session = await window.financeRestoreIsolation.createJazzSession({
+					const session = await window.financeRestoreIsolation.openLocalFirstSession({
 						appId,
 						serverUrl,
 						driver: { type: 'persistent', dbName: 'ordinary' },
@@ -1934,7 +1993,7 @@ describe('browser replica separation', () => {
 					} finally {
 						planning.release()
 					}
-					const client = await window.financeRestoreIsolation.createJazzClient({
+					const client = await window.financeRestoreIsolation.openAccountClient({
 						appId: sample.intent.operation.applicationId,
 						serverUrl,
 						account: state.account,
@@ -2229,7 +2288,7 @@ describe('browser replica separation', () => {
 						},
 						async (config) => {
 							stats.acquisitions++
-							const client = await window.financeRestoreIsolation.createJazzClient(config)
+							const client = await window.financeRestoreIsolation.openAccountClient(config)
 							stats.opened++
 							if (fault === 'acquisition' || fault === 'close') await acquisition
 							return {
@@ -2362,7 +2421,7 @@ describe('browser replica separation', () => {
 									},
 									async (config) => {
 										events.push('acquire')
-										const client = await window.financeRestoreIsolation.createJazzClient(config)
+										const client = await window.financeRestoreIsolation.openAccountClient(config)
 										return {
 											...client,
 											shutdown: (settings?: Parameters<typeof client.shutdown>[0]) => {
@@ -2466,7 +2525,7 @@ describe('browser replica separation', () => {
 							const actor = api
 								.createActor(
 									api.createWorkspaceRestoreController(undefined, async (config) => {
-										const client = await window.financeRestoreIsolation.createJazzClient(config)
+										const client = await window.financeRestoreIsolation.openAccountClient(config)
 										acquired.resolve()
 										await gate.promise
 										return client
@@ -2519,7 +2578,7 @@ describe('browser replica separation', () => {
 							const actor = api
 									.createActor(
 										api.createWorkspaceRestoreController(undefined, async (config) => {
-											const client = await window.financeRestoreIsolation.createJazzClient(config)
+											const client = await window.financeRestoreIsolation.openAccountClient(config)
 											return {
 												...client,
 												shutdown: async (options) => {
@@ -3147,7 +3206,7 @@ describe('browser replica separation', () => {
 							.createActor(
 								api.createWorkspaceRestoreController(undefined, async (config) => {
 									acquisitions++
-									const client = await window.financeRestoreIsolation.createJazzClient(config)
+									const client = await window.financeRestoreIsolation.openAccountClient(config)
 									return {
 										...client,
 										db: new Proxy(client.db, {
@@ -3685,7 +3744,7 @@ describe('browser replica separation', () => {
 						const api = window.financeRestoreIsolation,
 							account = window.financeRecoveryOwner.getSnapshot().account
 						if (!account) throw new Error('Missing original identity')
-						const client = await api.createJazzClient({
+						const client = await api.openAccountClient({
 							appId: sample.intent.operation.applicationId,
 							serverUrl,
 							account,

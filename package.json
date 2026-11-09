@@ -40,6 +40,7 @@
 		"@playwright/test": "^1.60.0",
 		"@poppanator/sveltekit-svg": "^7.0.1",
 		"@sveltejs/adapter-auto": "^8.0.0",
+		"@sveltejs/adapter-vercel": "7.0.2",
 		"@sveltejs/kit": "^3.0.1",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@types/node": "^26.6.5",
@@ -58,14 +59,21 @@
 		"@faker-js/faker": "^10.6.0",
 		"@opentelemetry/api": "^1.9.1",
 		"@statelyai/inspect": "^0.7.2",
+		"@vercel/functions": "3.11.0",
+		"@vercel/sandbox": "3.9.1",
 		"@xstate/svelte": "^5.0.0",
-		"delightful-local-first": "file:vendor/delightful-local-first-ad99117-backup.tgz",
+		"delightful-local-first": "file:vendor/delightful-local-first-jazz-alpha60.tgz",
 		"delightful-ui": "file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz",
-		"jazz-tools": "2.0.0-alpha.59",
+		"jazz-tools": "2.0.0-alpha.60",
 		"layerchart": "^2.9.0",
 		"pica": "^10.0.3",
 		"tdesign-icons-svg": "^0.4.7",
+		"ws": "8.22.1",
 		"xstate": "^5.33.2",
 		"zod": "4.1.11"
-	}
+	},
+	"engines": {
+		"node": "24.x"
+	},
+	"packageManager": "pnpm@10.22.0"
 }

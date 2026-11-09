@@ -12,8 +12,8 @@ export type RetentionResult = {
 	deletedCount: number
 	settlement: 'notStarted' | 'confirmed' | 'unresolved'
 }
-type Db = Pick<Dependencies['db'], 'beginExclusiveTransaction'>
-type Transaction = ReturnType<Db['beginExclusiveTransaction']>
+type Db = Pick<Dependencies['db'], 'beginSerializableTransaction'>
+type Transaction = ReturnType<Db['beginSerializableTransaction']>
 type Input = { scope: RetentionScope }
 type Reader = Pick<Dependencies['db'], 'all'>
 type ReadInput = { reader: Reader; scope: RetentionScope; tier: ReadTier }
@@ -22,7 +22,7 @@ function sameIds(left: readonly { id: string }[], right: readonly { id: string }
 	return left.length === right.length && right.every((row) => ids.has(row.id))
 }
 const transactions = createJazzTransactionActors(
-	(db: Db) => db.beginExclusiveTransaction(),
+	(db: Db) => db.beginSerializableTransaction(),
 	(write: ReturnType<Transaction['commit']>) => write.wait()
 )
 type Context = Input & {
@@ -36,7 +36,7 @@ type Context = Input & {
 	result: RetentionResult
 }
 
-/** Owns the exclusive snapshot and atomic deletion; never performs provider work. */
+/** Owns the serializable snapshot and atomic deletion; never performs provider work. */
 export function createSyncLogRetentionMachine(
 	dependencies: Pick<Dependencies, 'db' | 'observe'>,
 	deadlineMs = 5000

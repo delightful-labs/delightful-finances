@@ -13,7 +13,7 @@ export default defineConfig({
 	expect: { timeout: 15_000 },
 	use: { ...base.use, baseURL: 'http://127.0.0.1:4185', serviceWorkers: 'allow' },
 	webServer: {
-		command: 'pnpm build && pnpm preview --host 127.0.0.1 --port 4185 --strictPort',
+		command: 'pnpm build && pnpm preview --host 0.0.0.0 --port 4185 --strictPort',
 		url: 'http://127.0.0.1:4185',
 		reuseExistingServer: false,
 		timeout: 180_000,

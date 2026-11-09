@@ -13,13 +13,8 @@ import {
 	type EventObject,
 	type Snapshot
 } from 'xstate'
-import {
-	createJazzClient,
-	type AccountHandle,
-	type JazzClient,
-	type JazzClientConfig
-} from 'jazz-tools/client'
-import type { Db, Transaction, WriteHandle } from 'jazz-tools'
+import { type AccountHandle, type JazzClient } from 'jazz-tools/client'
+import { createDb, type Db, type DbConfig, type Transaction, type WriteHandle } from 'jazz-tools'
 import { sameBackupBinding, type BackupBinding } from 'delightful-local-first/backup/binding'
 import type {
 	RestoreEvent,
@@ -70,6 +65,12 @@ import {
 	financeRestorePlanningMachine
 } from './workspace-restore-plan.js'
 
+type RestoreClient = Pick<JazzClient, 'db' | 'shutdown'>
+/** One account-bound acquisition; the restore chart retains and drains its lifetime. */
+async function openRestoreClient(config: DbConfig): Promise<RestoreClient> {
+	const db = await createDb(config)
+	return { db, shutdown: (options) => db.shutdown(options) }
+}
 export type FinanceRestoreDb = Pick<Db, 'all' | 'getAuthState' | 'getConfig' | 'beginTransaction'>
 export type FinanceRestoreComparisonInput = {
 	binding: BackupBinding
@@ -122,7 +123,7 @@ export function createFinanceWorkspaceRestore(
 		plan: FinanceRestorePlanRequest
 		releaseFile(): void
 	},
-	acquireClient: (config: JazzClientConfig) => Promise<JazzClient> = createJazzClient
+	acquireClient: (config: DbConfig) => Promise<RestoreClient> = openRestoreClient
 ) {
 	const { archive, plan: planning, releaseFile, ...options } = issued
 	const plan = planning.read()
@@ -152,12 +153,12 @@ export function createFinanceRestoreSession<
 		db: FinanceRestoreDb,
 		retain: Writer['retainDetached']
 	) => FinanceRestoreSessionAdapter<WriteSnapshot, WriteEvent, ComparisonSnapshot, ComparisonEvent>,
-	acquireClient: (config: JazzClientConfig) => Promise<JazzClient> = createJazzClient
+	acquireClient: (config: DbConfig) => Promise<RestoreClient> = openRestoreClient
 ) {
 	const options = Object.freeze({ ...issued })
 	const binding = Object.freeze({ ...options.binding }),
 		intent = createRestoreJournalRecord(options.intent).intent
-	let client: JazzClient | undefined,
+	let client: RestoreClient | undefined,
 		transaction: Transaction<'mergeable'> | undefined,
 		write: WriteHandle | undefined,
 		transactionId: string | undefined
@@ -417,7 +418,7 @@ export function createFinanceRestoreSession<
 						...interruptedDrain,
 						{
 							guard: () =>
-								db.getAuthState().session?.user.account !== binding.identityId ||
+								db.getAuthState().session?.user !== binding.identityId ||
 								db.getConfig().appId !== binding.applicationId,
 							target: 'closingClient',
 							actions: assign({ interruption: 'invalidated' })
@@ -920,7 +921,7 @@ export function createFinanceRestoreAdapter(
 						{
 							guard: ({ context, event }) =>
 								!event.output ||
-								db.getAuthState().session?.user.account !== intent.operation.identityId ||
+								db.getAuthState().session?.user !== intent.operation.identityId ||
 								canonicalRecovery(context.input.intent) !== canonicalRecovery(intent) ||
 								db.getConfig().appId !== intent.operation.applicationId ||
 								context.input.binding.workspaceId !== graph.workspace.id ||
@@ -1261,7 +1262,7 @@ export function createWorkspaceRestoreController(
 	navigate: (destination: string) => Promise<void> = async () => {
 		throw new Error('Navigation unavailable')
 	},
-	acquireClient: (config: JazzClientConfig) => Promise<JazzClient> = createJazzClient
+	acquireClient: (config: DbConfig) => Promise<RestoreClient> = openRestoreClient
 ) {
 	const actors = {
 		observe: fromCallback<RestoreControllerEvent, WorkspaceRestoreFile>(({ input, sendBack }) => {

@@ -184,7 +184,9 @@ for (const scenario of scenarios) {
 						await import(sessionPath)
 					const db = getCurrentJazzSession()?.getSnapshot().client?.db
 					if (!db) throw new Error('Missing offline database')
-					const rows = await db.all(app.transactions.where({ organizationId }), { tier: 'local' })
+					const rows = await db.all(app.transactions.where({ organizationId }), {
+						tier: 'local-first'
+					})
 					return {
 						readable: rows.some((row) => row.id === fixture.transactionId),
 						otherReadable: rows.some((row) => row.id === fixture.hiddenId)

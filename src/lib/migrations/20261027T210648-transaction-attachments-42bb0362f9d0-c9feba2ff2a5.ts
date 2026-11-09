@@ -1,19 +1,19 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	migrate: {
 		transactionAttachments: {
 			// Add reference metadata with an identity lens; existing UUID values are preserved.
 		},
 
 		files: {
-			transactionId: s.add.ref('transactions', { default: null }),
-			accountId: s.add.ref('accounts', { default: null }),
-			organizationId: s.add.ref('organizations', { default: null })
+			transactionId: m.add.ref('transactions', { default: null }),
+			accountId: m.add.ref('accounts', { default: null }),
+			organizationId: m.add.ref('organizations', { default: null })
 		},
 
 		fileParts: {
-			data: s.add.bytes({ default: null })
+			data: m.add.bytes({ default: null })
 		}
 	},
 	fromHash: '42bb0362f9d0',

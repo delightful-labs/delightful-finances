@@ -195,8 +195,10 @@ test(
 		// One public SDK operation on Finance's existing session, not a new provider/client.
 		await page.evaluate(async () => {
 			const sessionPath = '/src/lib/runtime/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-				await import(sessionPath)
+			const {
+				getCurrentJazzSession,
+				loadLocalFirstClient
+			}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 			const session = getCurrentJazzSession()
 			if (!session) throw new Error('Test session is not ready')
 			await session.createLocalFirst()
@@ -254,8 +256,10 @@ test(
 					const schemaPath = '/src/lib/schema.ts'
 					const sessionPath = '/src/lib/runtime/jazz-session.ts'
 					const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-					const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-						await import(sessionPath)
+					const {
+						getCurrentJazzSession,
+						loadLocalFirstClient
+					}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 					const snapshot = getCurrentJazzSession()?.getSnapshot()
 					if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
 					return (
@@ -291,8 +295,10 @@ async function avatarRecord(page: Page, remote = false) {
 		const schemaPath = '/src/lib/schema.ts'
 		const sessionPath = '/src/lib/runtime/jazz-session.ts'
 		const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-			await import(sessionPath)
+		const {
+			getCurrentJazzSession,
+			loadLocalFirstClient
+		}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 		const snapshot = getCurrentJazzSession()?.getSnapshot()
 		if (!snapshot?.client || !snapshot.account) throw new Error('Session not ready')
 		const profile = await snapshot.client.db.one(
@@ -603,6 +609,7 @@ declare global {
 			shutdownAttempts: number
 			storageFailures: number
 			releaseSharedClient?: () => Promise<void>
+			abortShutdown?: () => void
 		}
 	}
 }
@@ -610,8 +617,10 @@ declare global {
 async function currentIdentity(page: Page) {
 	return page.evaluate(async () => {
 		const sessionPath = '/src/lib/runtime/jazz-session.ts'
-		const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-			await import(sessionPath)
+		const {
+			getCurrentJazzSession,
+			loadLocalFirstClient
+		}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 		return getCurrentJazzSession()?.getSnapshot().account?.id
 	})
 }
@@ -670,8 +679,10 @@ test(
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.evaluate(async () => {
 			const sessionPath = '/src/lib/runtime/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-				await import(sessionPath)
+			const {
+				getCurrentJazzSession,
+				loadLocalFirstClient
+			}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 			const client = getCurrentJazzSession()?.getSnapshot().client
 			if (!client) throw new Error('Test session is not ready.')
 			window.authFailureTest = { shutdownAttempts: 0, storageFailures: 0 }
@@ -778,31 +789,41 @@ test(
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		await page.evaluate(async () => {
 			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const schemaPath = '/src/lib/schema.ts'
 			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
 				await import(sessionPath)
-			const snapshot = getCurrentJazzSession()?.getSnapshot()
-			if (!snapshot?.client || !snapshot.account) throw new Error('Test session is not ready.')
-			// Use the same public SDK module URL as the application to share its client registry.
-			const moduleSource = await (await fetch('/src/routes/+layout.svelte')).text()
-			const sdkPath = moduleSource.match(/from\s*['"]([^'"]*jazz-tools[^'"]*)['"]/)?.[1]
-			if (!sdkPath) throw new Error('Could not find the application SDK module.')
-			const { createJazzClient }: typeof import('jazz-tools/svelte') = await import(sdkPath)
-			const config = snapshot.client.db.getConfig()
-			if (!config.serverUrl) throw new Error('Test database URL is missing.')
-			const holder = await createJazzClient({
-				appId: config.appId,
-				serverUrl: config.serverUrl,
-				account: snapshot.account
-			})
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Test session is not ready.')
+			const account = await db.one(app.accounts)
+			if (!account) throw new Error('Missing recovery account')
+			await db.disconnect()
+			await db
+				.insert(app.accounts, {
+					organizationId: account.organizationId,
+					name: 'Pending recovery qualification',
+					kind: 'cash',
+					currency: 'USD'
+				})
+				.wait({ tier: 'local' })
 			window.authFailureTest = {
 				shutdownAttempts: 0,
 				storageFailures: 0,
-				releaseSharedClient: () => holder.shutdown()
+				releaseSharedClient: () => db.reconnect(),
+				abortShutdown: () => db.abortGracefulShutdown()
 			}
 		})
 		try {
 			await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 			await page.getByRole('button', { name: 'Login', exact: true }).click()
+			// Abort the SDK's real graceful wait. The SDK emits its native recoverable
+			// shutdown error and retains the original client; frozen sessions stay intact.
+			await expect
+				.poll(async () => {
+					await page.evaluate(() => window.authFailureTest.abortShutdown?.())
+					return page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ }).isVisible()
+				})
+				.toBe(true)
 			await expect(page.getByRole('main').getByRole('alert').filter({ hasText: /\S/ })).toHaveText(
 				'The account could not be restored. Please try again.'
 			)
@@ -846,8 +867,10 @@ test(
 		await expect(page.getByLabel('Recovery phrase', { exact: true })).toBeVisible()
 		await page.evaluate(async () => {
 			const sessionPath = '/src/lib/runtime/jazz-session.ts'
-			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-				await import(sessionPath)
+			const {
+				getCurrentJazzSession,
+				loadLocalFirstClient
+			}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 			const session = getCurrentJazzSession()
 			if (!session) throw new Error('Session unavailable')
 			window.recoveryNavigationTest = { restoreCalls: 0, navigationFailures: 0 }
@@ -904,8 +927,10 @@ test(
 			const schemaPath = '/src/lib/schema.ts'
 			const sessionPath = '/src/lib/runtime/jazz-session.ts'
 			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-				await import(sessionPath)
+			const {
+				getCurrentJazzSession,
+				loadLocalFirstClient
+			}: typeof import('../src/lib/runtime/jazz-session.js') = await import(sessionPath)
 			const snapshot = getCurrentJazzSession()?.getSnapshot()
 			if (!snapshot?.client || !snapshot.account) throw new Error('Missing session')
 			const db = snapshot.client.db

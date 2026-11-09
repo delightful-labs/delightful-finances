@@ -11,6 +11,11 @@ export function workerAssetsManifest(): Plugin {
 	return {
 		name: 'finance-worker-assets-manifest',
 		apply: 'build',
+		configResolved(config) {
+			const output = config.worker.rolldownOptions.output
+			for (const entry of Array.isArray(output) ? output : [output])
+				if (entry) entry.assetFileNames = '_app/immutable/assets/[name].[hash][extname]'
+		},
 		applyToEnvironment: (environment) => environment.name === 'client',
 		generateBundle: {
 			order: 'post',
@@ -33,7 +38,7 @@ export function workerAssetsManifest(): Plugin {
 				for (const asset of Object.values(bundle)) {
 					if (
 						asset.type === 'asset' &&
-						asset.fileName.includes('/immutable/workers/') &&
+						asset.fileName.startsWith('_app/immutable/') &&
 						!asset.fileName.endsWith('.map') &&
 						!listed.has(asset.fileName)
 					) {

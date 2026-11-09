@@ -26,7 +26,7 @@ const row: SyncAttempt = {
 	failureCode: null
 }
 function resource() {
-	const tx = new Transaction('exclusive', () => {
+	const tx = new Transaction('serializable', () => {
 		throw new Error('Unit fixture must not open Jazz')
 	})
 	vi.spyOn(tx, 'commit').mockImplementation(vi.fn().mockReturnValue({ wait: async () => {} }))

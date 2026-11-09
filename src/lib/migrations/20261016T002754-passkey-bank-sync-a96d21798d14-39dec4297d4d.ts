@@ -1,6 +1,6 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	// Existing rows gain only null defaults; no finance records are removed.
 	migrate: {
 		simplefinAccountLinks: {
@@ -9,15 +9,15 @@ export default s.defineMigration({
 
 		simplefinConnections: {
 			ownerId: { _type: 'add', sqlType: 'UUID', default: null },
-			credentialVersion: s.add.int({ default: null }),
-			credentialId: s.add.string({ default: null }),
-			prfSalt: s.add.string({ default: null }),
-			iv: s.add.string({ default: null }),
-			ciphertext: s.add.string({ default: null }),
-			lastOutcome: s.add.enum('succeeded', 'partial', 'failed', { default: null }),
-			importedCount: s.add.int({ default: null }),
-			existingCount: s.add.int({ default: null }),
-			omittedCount: s.add.int({ default: null })
+			credentialVersion: m.add.int({ default: null }),
+			credentialId: m.add.string({ default: null }),
+			prfSalt: m.add.string({ default: null }),
+			iv: m.add.string({ default: null }),
+			ciphertext: m.add.string({ default: null }),
+			lastOutcome: m.add.enum('succeeded', 'partial', 'failed', { default: null }),
+			importedCount: m.add.int({ default: null }),
+			existingCount: m.add.int({ default: null }),
+			omittedCount: m.add.int({ default: null })
 		}
 	},
 	fromHash: 'a96d21798d14',

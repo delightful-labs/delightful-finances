@@ -1,10 +1,10 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	migrate: {
 		tags: {
 			// Preserve existing tags as untyped; do not infer a kind or rewrite history.
-			kind: s.add.enum('expense', 'income', { default: null })
+			kind: m.add.enum('expense', 'income', { default: null })
 		}
 	},
 	fromHash: 'bcc2715859fa',

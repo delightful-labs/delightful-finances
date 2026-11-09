@@ -27,28 +27,29 @@ export async function holdWorkspaceWrite(page: Page, kind: 'transfer' | 'bank') 
 		const insert = db.insert
 		let armed = true
 		if (kind === 'transfer') {
-			db.beginTransaction = (...args) => {
-				const transaction = begin(...args)
-				if (!armed) return transaction
-				armed = false
-				const commit = transaction.commit.bind(transaction)
-				transaction.commit = (...args) => {
-					const handle = commit(...args)
-					const wait = handle.wait.bind(handle)
-					handle.wait = async (...options) => {
-						const [option] = options
-						const result =
-							option.tier === 'edge'
-								? await wait({ tier: 'edge' })
-								: await wait({ tier: option.tier })
-						started = true
-						await gate.promise
-						return result
+			Object.defineProperty(db, 'beginTransaction', {
+				configurable: true,
+				writable: true,
+				value: (...args: Parameters<typeof begin>) => {
+					const transaction = begin(...args)
+					if (!armed) return transaction
+					armed = false
+					const commit = transaction.commit.bind(transaction)
+					transaction.commit = (...args) => {
+						const handle = commit(...args)
+						const wait = handle.wait.bind(handle)
+						handle.wait = async (...options) => {
+							const [option] = options
+							const result = await wait({ tier: option.tier })
+							started = true
+							await gate.promise
+							return result
+						}
+						return handle
 					}
-					return handle
+					return transaction
 				}
-				return transaction
-			}
+			})
 		} else {
 			Object.defineProperty(db, 'insert', {
 				configurable: true,
@@ -97,7 +98,11 @@ export async function holdWorkspaceWrite(page: Page, kind: 'transfer' | 'bank') 
 			},
 			release: () => gate.resolve(),
 			restore: () => {
-				db.beginTransaction = begin
+				Object.defineProperty(db, 'beginTransaction', {
+					configurable: true,
+					writable: true,
+					value: begin
+				})
 				if (descriptor) Object.defineProperty(db, 'insert', descriptor)
 				else Reflect.deleteProperty(db, 'insert')
 				unsubscribe()

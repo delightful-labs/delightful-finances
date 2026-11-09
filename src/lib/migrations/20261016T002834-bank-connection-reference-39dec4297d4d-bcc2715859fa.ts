@@ -1,6 +1,6 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	migrate: {
 		simplefinAccountLinks: {
 			// Add reference metadata with an identity lens; existing UUID values are preserved.

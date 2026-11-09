@@ -6,6 +6,13 @@ import type { Duplex } from 'node:stream'
 /** Real transport adapter: accepts WebSocket upgrades, then withholds every Jazz frame. */
 export function createSilentJazzProxy(upstreamUrl: string) {
 	const upstream = new URL(upstreamUrl)
+	const upstreamRequest = (path: string) => {
+		const relative = new URL(path, 'http://test.invalid')
+		const target = new URL(upstream)
+		target.pathname = upstream.pathname.replace(/\/$/, '') + relative.pathname
+		target.search = relative.search
+		return target
+	}
 	const sockets = new Set<Duplex>()
 	const upstreamSockets = new Set<Duplex>()
 	let mode: 'forward' | 'silent' = 'forward'
@@ -18,7 +25,7 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 			return
 		}
 		const forwarded = request(
-			new URL(incoming.url ?? '/', upstream),
+			upstreamRequest(incoming.url ?? '/'),
 			{ method: incoming.method, headers: { ...incoming.headers, host: upstream.host } },
 			(response) => {
 				outgoing.writeHead(response.statusCode ?? 502, response.headers)
@@ -60,7 +67,7 @@ export function createSilentJazzProxy(upstreamUrl: string) {
 				''
 			)
 			remote.write(
-				`${incoming.method} ${incoming.url} HTTP/${incoming.httpVersion}\r\n${headers}\r\n`
+				`${incoming.method} ${upstreamRequest(incoming.url ?? '/').pathname}${upstreamRequest(incoming.url ?? '/').search} HTTP/${incoming.httpVersion}\r\n${headers}\r\n`
 			)
 			if (head.length) remote.write(head)
 			socket.pipe(remote)

@@ -1,9 +1,9 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	migrate: {
 		accountMemberships: {
-			canDelete: s.add.boolean({ default: false })
+			canDelete: m.add.boolean({ default: false })
 		}
 	},
 	fromHash: 'bf5f6b2cc7ef',

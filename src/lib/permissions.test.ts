@@ -189,33 +189,41 @@ describe('independent Check permissions', () => {
 			(await selectedMemberDb.one(app.checks.where({ id: check.id }), { tier: 'remote' }))
 				?.memoOnCheck
 		).toBe('Updated')
-		await selectedMemberDb.expectDenied((writer) =>
-			writer.insert(app.checks, {
-				organizationId,
-				accountId: otherAccountId,
-				checkNumber: '102',
-				checkDate: '2026-10-23'
-			})
-		)
+		await expect(
+			selectedMemberDb.expectDenied((writer) =>
+				writer.insert(app.checks, {
+					organizationId,
+					accountId: otherAccountId,
+					checkNumber: '102',
+					checkDate: '2026-10-23'
+				})
+			)
+		).resolves.toBeUndefined()
 		await db.update(app.checks, check.id, { accountId: otherAccountId }).wait({ tier: 'global' })
 		expect((await db.one(app.checks.where({ id: check.id }), { tier: 'remote' }))?.accountId).toBe(
 			otherAccountId
 		)
-		await db.expectDenied((writer) => writer.delete(app.checks, check.id))
+		await expect(
+			db.expectDenied((writer) => writer.delete(app.checks, check.id))
+		).resolves.toBeUndefined()
 	})
 
 	it('keeps Check access within organization and viewer rules', async () => {
 		const check = await createCheck()
 		expect(await viewerDb.one(app.checks.where({ id: check.id }), { tier: 'remote' })).toBeTruthy()
-		await viewerDb.expectDenied((writer) => writer.update(app.checks, check.id, { bankName: 'No' }))
-		await selectedMemberDb.expectDenied((writer) =>
-			writer.insert(app.checks, {
-				organizationId: otherOrganizationId,
-				accountId: foreignAccountId,
-				checkNumber: '103',
-				checkDate: '2026-10-23'
-			})
-		)
+		await expect(
+			viewerDb.expectDenied((writer) => writer.update(app.checks, check.id, { bankName: 'No' }))
+		).resolves.toBeUndefined()
+		await expect(
+			selectedMemberDb.expectDenied((writer) =>
+				writer.insert(app.checks, {
+					organizationId: otherOrganizationId,
+					accountId: foreignAccountId,
+					checkNumber: '103',
+					checkDate: '2026-10-23'
+				})
+			)
+		).resolves.toBeUndefined()
 	})
 
 	it.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
@@ -241,31 +249,39 @@ describe('independent Check permissions', () => {
 			accountId: foreignAccountId
 		})
 		for (const checkId of [crypto.randomUUID(), otherCheck.id, foreignCheck.id]) {
-			await db.expectDenied((writer) =>
+			await expect(
+				db.expectDenied((writer) =>
+					writer.insert(app.transactions, {
+						...transaction('expense'),
+						paymentMethod: 'check',
+						checkId
+					})
+				)
+			).resolves.toBeUndefined()
+		}
+		await expect(
+			db.expectDenied((writer) =>
 				writer.insert(app.transactions, {
 					...transaction('expense'),
-					paymentMethod: 'check',
-					checkId
+					paymentMethod: 'cash',
+					checkId: check.id
 				})
 			)
-		}
-		await db.expectDenied((writer) =>
-			writer.insert(app.transactions, {
-				...transaction('expense'),
-				paymentMethod: 'cash',
-				checkId: check.id
-			})
-		)
+		).resolves.toBeUndefined()
 		const row = await db.insert(app.transactions, transaction('expense')).wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, row.id, { paymentMethod: 'check', checkId: otherCheck.id })
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, row.id, { paymentMethod: 'check', checkId: otherCheck.id })
+			)
+		).resolves.toBeUndefined()
 		await db
 			.update(app.transactions, row.id, { paymentMethod: 'check', checkId: check.id })
 			.wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, row.id, { checkDetailsId: crypto.randomUUID() })
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, row.id, { checkDetailsId: crypto.randomUUID() })
+			)
+		).resolves.toBeUndefined()
 	})
 })
 
@@ -276,7 +292,9 @@ describe('tag permission integrity', () => {
 	] satisfies { name: string; kind: 'expense'; categoryId: string | null }[])(
 		'rejects $name',
 		async (values) => {
-			await db.expectDenied((writer) => writer.insert(app.tags, { organizationId, ...values }))
+			await expect(
+				db.expectDenied((writer) => writer.insert(app.tags, { organizationId, ...values }))
+			).resolves.toBeUndefined()
 		}
 	)
 	it('accepts typed tags with matching or absent categories and rejects incompatible updates', async () => {
@@ -286,20 +304,26 @@ describe('tag permission integrity', () => {
 				.insert(app.tags, { organizationId, name: kind, kind, categoryId })
 				.wait({ tier: 'global' })
 			expect(tag.kind).toBe(kind)
-			await db.expectDenied((writer) =>
-				writer.update(app.tags, tag.id, { categoryId: foreignCategoryId })
-			)
-			await db.expectDenied((writer) =>
-				writer.update(app.tags, tag.id, {
-					categoryId: kind === 'expense' ? incomeCategoryId : expenseCategoryId
-				})
-			)
-			await db.expectDenied((writer) =>
-				writer.update(app.tags, tag.id, {
-					kind: kind === 'expense' ? 'income' : 'expense',
-					categoryId: null
-				})
-			)
+			await expect(
+				db.expectDenied((writer) =>
+					writer.update(app.tags, tag.id, { categoryId: foreignCategoryId })
+				)
+			).resolves.toBeUndefined()
+			await expect(
+				db.expectDenied((writer) =>
+					writer.update(app.tags, tag.id, {
+						categoryId: kind === 'expense' ? incomeCategoryId : expenseCategoryId
+					})
+				)
+			).resolves.toBeUndefined()
+			await expect(
+				db.expectDenied((writer) =>
+					writer.update(app.tags, tag.id, {
+						kind: kind === 'expense' ? 'income' : 'expense',
+						categoryId: null
+					})
+				)
+			).resolves.toBeUndefined()
 			const uncategorized = await db
 				.insert(app.tags, { organizationId, name: 'No category', kind })
 				.wait({ tier: 'global' })
@@ -312,13 +336,15 @@ describe('tag permission integrity', () => {
 				.insert(app.tags, { organizationId, name: 'Assignment', kind })
 				.wait({ tier: 'global' })
 			if (kind === 'income') {
-				await db.expectDenied((writer) =>
-					writer.insert(app.transactionTags, {
-						organizationId,
-						transactionId: expenseId,
-						tagId: tag.id
-					})
-				)
+				await expect(
+					db.expectDenied((writer) =>
+						writer.insert(app.transactionTags, {
+							organizationId,
+							transactionId: expenseId,
+							tagId: tag.id
+						})
+					)
+				).resolves.toBeUndefined()
 			} else {
 				const link = await db
 					.insert(app.transactionTags, { organizationId, transactionId: expenseId, tagId: tag.id })
@@ -326,13 +352,15 @@ describe('tag permission integrity', () => {
 				expect(link.tagId).toBe(tag.id)
 			}
 		}
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, expenseId, {
-				kind: 'income',
-				categoryId: incomeCategoryId,
-				paymentMethod: 'cash'
-			})
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, expenseId, {
+					kind: 'income',
+					categoryId: incomeCategoryId,
+					paymentMethod: 'cash'
+				})
+			)
+		).resolves.toBeUndefined()
 	})
 	it('rejects missing/null kinds on direct SDK inserts and updates', async () => {
 		for (const kind of [undefined, null]) {
@@ -363,13 +391,15 @@ describe('tag permission integrity', () => {
 		expect(
 			await db.one(app.transactionTags.where({ id: historicalLinkId }), { tier: 'remote' })
 		).toBeTruthy()
-		await db.expectDenied((writer) =>
-			writer.insert(app.transactionTags, {
-				organizationId,
-				transactionId: expenseId,
-				tagId: historicalTagId
-			})
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.insert(app.transactionTags, {
+					organizationId,
+					transactionId: expenseId,
+					tagId: historicalTagId
+				})
+			)
+		).resolves.toBeUndefined()
 		await db.delete(app.transactionTags, historicalLinkId).wait({ tier: 'global' })
 		expect(
 			await db.one(app.transactionTags.where({ id: historicalLinkId }), { tier: 'remote' })
@@ -379,20 +409,24 @@ describe('tag permission integrity', () => {
 		const tag = await db
 			.insert(app.tags, { organizationId, name: 'Scope', kind: 'expense' })
 			.wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.tags, tag.id, { organizationId: otherOrganizationId })
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.tags, tag.id, { organizationId: otherOrganizationId })
+			)
+		).resolves.toBeUndefined()
 		const foreign = await db
 			.insert(app.tags, { organizationId: otherOrganizationId, name: 'Foreign', kind: 'expense' })
 			.wait({ tier: 'global' })
 		for (const scope of [organizationId, otherOrganizationId]) {
-			await db.expectDenied((writer) =>
-				writer.insert(app.transactionTags, {
-					organizationId: scope,
-					transactionId: expenseId,
-					tagId: foreign.id
-				})
-			)
+			await expect(
+				db.expectDenied((writer) =>
+					writer.insert(app.transactionTags, {
+						organizationId: scope,
+						transactionId: expenseId,
+						tagId: foreign.id
+					})
+				)
+			).resolves.toBeUndefined()
 		}
 	})
 })
@@ -415,13 +449,17 @@ describe('transaction attachment permissions', () => {
 		expect(
 			await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }))
 		).toBeTruthy()
-		await viewerDb.expectDenied((writer) =>
-			writer.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
-		)
-		await viewerDb.expectDenied((writer) => writer.delete(app.transactionAttachments, link.id))
+		await expect(
+			viewerDb.expectDenied((writer) =>
+				writer.insert(app.transactionAttachments, { transactionId: expenseId, fileId: file.id })
+			)
+		).resolves.toBeUndefined()
+		await expect(
+			viewerDb.expectDenied((writer) => writer.delete(app.transactionAttachments, link.id))
+		).resolves.toBeUndefined()
 		await selectedMemberDb.delete(app.transactionAttachments, link.id).wait({ tier: 'global' })
 		expect(await db.one(app.files.where({ id: file.id }), { tier: 'remote' })).toBeNull()
-		expect(await db.one(app.files.where({ id: file.id }), { tier: 'local' })).toBeNull()
+		expect(await db.one(app.files.where({ id: file.id }), { tier: 'local-first' })).toBeNull()
 	})
 	describe('attachment account and organization boundaries', () => {
 		let allowed: Awaited<ReturnType<typeof imageLink>>
@@ -624,17 +662,21 @@ describe('transaction attachment permissions', () => {
 			.insert(app.transactions, { ...transaction('expense'), accountId: otherAccountId })
 			.wait({ tier: 'global' })
 		const foreign = await imageLink(otherTransaction.id)
-		await viewerDb.expectDenied((writer) =>
-			writer.update(app.transactionAttachments, link.id, { fileId: file.id })
-		)
-		await selectedMemberDb.expectDenied((writer) =>
-			writer.update(app.transactionAttachments, link.id, { fileId: foreign.file.id })
-		)
+		await expect(
+			viewerDb.expectDenied((writer) =>
+				writer.update(app.transactionAttachments, link.id, { fileId: file.id })
+			)
+		).resolves.toBeUndefined()
+		await expect(
+			selectedMemberDb.expectDenied((writer) =>
+				writer.update(app.transactionAttachments, link.id, { fileId: foreign.file.id })
+			)
+		).resolves.toBeUndefined()
 		await expect(async () => {
 			await selectedMemberDb
 				.update(app.transactionAttachments, foreign.link.id, { fileId: foreign.file.id })
 				.wait({ tier: 'global' })
-		}).rejects.toThrow(/read policy denied UPDATE on table transactionAttachments/)
+		}).rejects.toMatchObject({ name: 'PersistedWriteRejectedError', code: 'permission_denied' })
 		expect(
 			await db.one(app.transactionAttachments.where({ id: link.id }), { tier: 'remote' })
 		).toMatchObject({ fileId: file.id })
@@ -708,7 +750,7 @@ describe('transaction attachment permissions', () => {
 			})
 			expect(
 				await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
-					tier: 'local'
+					tier: 'local-first'
 				})
 			).toMatchObject({ fileId: next.id })
 		} finally {
@@ -736,7 +778,7 @@ describe('transaction attachment permissions', () => {
 			})
 			expect(
 				await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
-					tier: 'local'
+					tier: 'local-first'
 				})
 			).toMatchObject({ fileId: file.id })
 		} finally {
@@ -800,7 +842,7 @@ describe('transaction attachment permissions', () => {
 			await write.wait({ tier: 'global' })
 			const current = await selectedMemberDb.one(
 				app.transactionAttachments.where({ id: link.id }),
-				{ tier: 'local' }
+				{ tier: 'local-first' }
 			)
 			expect(current?.fileId).not.toBe(file.id)
 			expect(current?.id).toBe(link.id)
@@ -846,7 +888,7 @@ describe('transaction attachment permissions', () => {
 			})
 			expect(
 				await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
-					tier: 'local'
+					tier: 'local-first'
 				})
 			).toMatchObject({ fileId: file.id })
 		} finally {
@@ -932,7 +974,7 @@ describe('transaction attachment permissions', () => {
 				expect(platform.encode).not.toHaveBeenCalled()
 				expect(
 					await selectedMemberDb.one(app.transactionAttachments.where({ id: link.id }), {
-						tier: 'local'
+						tier: 'local-first'
 					})
 				).toMatchObject({ fileId: file.id })
 			} finally {
@@ -974,10 +1016,14 @@ describe('income payment method permissions', () => {
 			})
 			.wait({ tier: 'global' })
 		expect(row.paymentMethod).toBeNull()
-		await db.expectDenied((writer) =>
-			writer.insert(app.transactions, { ...transaction('income'), paymentMethod: 'check' })
-		)
-		await db.expectDenied((writer) => writer.update(app.transactions, row.id, { source: 'manual' }))
+		await expect(
+			db.expectDenied((writer) =>
+				writer.insert(app.transactions, { ...transaction('income'), paymentMethod: 'check' })
+			)
+		).resolves.toBeUndefined()
+		await expect(
+			db.expectDenied((writer) => writer.update(app.transactions, row.id, { source: 'manual' }))
+		).resolves.toBeUndefined()
 	})
 })
 
@@ -1008,20 +1054,24 @@ describe('immutable transaction provenance', () => {
 			await db
 				.update(app.transactions, row.id, { description: 'User description', memo: 'User notes' })
 				.wait({ tier: 'global' })
-			await db.expectDenied((writer) =>
-				writer.update(app.transactions, row.id, { externalId: 'changed' })
-			)
+			await expect(
+				db.expectDenied((writer) =>
+					writer.update(app.transactions, row.id, { externalId: 'changed' })
+				)
+			).resolves.toBeUndefined()
 			await expect(
 				Promise.resolve().then(() =>
 					db.update(app.transactions, row.id, { externalId: null }).wait({ tier: 'global' })
 				)
 			).rejects.toThrow()
-			await db.expectDenied((writer) =>
-				writer.update(app.transactions, row.id, {
-					source: 'manual',
-					paymentMethod: kind === 'income' ? 'cash' : null
-				})
-			)
+			await expect(
+				db.expectDenied((writer) =>
+					writer.update(app.transactions, row.id, {
+						source: 'manual',
+						paymentMethod: kind === 'income' ? 'cash' : null
+					})
+				)
+			).resolves.toBeUndefined()
 			const saved = await db.one(app.transactions.where({ id: row.id }), { tier: 'remote' })
 			expect(saved).toMatchObject({
 				source: 'simplefin',
@@ -1034,9 +1084,11 @@ describe('immutable transaction provenance', () => {
 	)
 	it('rejects converting a manual expense into a provider transaction', async () => {
 		const row = await db.insert(app.transactions, transaction('expense')).wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, row.id, { source: 'simplefin', externalId: 'forged' })
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, row.id, { source: 'simplefin', externalId: 'forged' })
+			)
+		).resolves.toBeUndefined()
 	})
 })
 
@@ -1197,15 +1249,21 @@ describe('linked transaction update safety', () => {
 		await db
 			.update(app.transactions, linkedExpenseId, { description: 'Card payment' })
 			.wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, linkedExpenseId, { amountMinor: 101 })
-		)
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, linkedExpenseId, { accountId: otherAccountId })
-		)
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, linkedExpenseId, { currency: 'CAD' })
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, linkedExpenseId, { amountMinor: 101 })
+			)
+		).resolves.toBeUndefined()
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, linkedExpenseId, { accountId: otherAccountId })
+			)
+		).resolves.toBeUndefined()
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, linkedExpenseId, { currency: 'CAD' })
+			)
+		).resolves.toBeUndefined()
 		const saved = await db.one(app.transactions.where({ id: linkedExpenseId }), { tier: 'remote' })
 		expect(saved).toMatchObject({
 			amountMinor: 100,
@@ -1370,9 +1428,9 @@ describe('linked transaction deletion permissions', () => {
 			.wait({ tier: 'global' })
 		await clearTransferMarkers(db, linkedExpenseId, linkedIncomeId)
 
-		await selectedMemberDb.expectDenied((writer) =>
-			writer.delete(app.internalTransfers, transferId)
-		)
+		await expect(
+			selectedMemberDb.expectDenied((writer) => writer.delete(app.internalTransfers, transferId))
+		).resolves.toBeUndefined()
 		expect(
 			(await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'remote' }))?.id
 		).toBe(transferId)
@@ -1386,7 +1444,9 @@ describe('linked transaction deletion permissions', () => {
 		)?.expenseTransactionId
 		if (!linkedExpenseId) throw new Error('Missing seeded transfer expense')
 		await clearTransferMarkers(selectedMemberDb, linkedExpenseId, linkedIncomeId)
-		await selectedMemberDb.expectDenied((writer) => writer.delete(app.transactions, linkedIncomeId))
+		await expect(
+			selectedMemberDb.expectDenied((writer) => writer.delete(app.transactions, linkedIncomeId))
+		).resolves.toBeUndefined()
 		expect(
 			(await db.one(app.transactions.where({ id: linkedIncomeId }), { tier: 'remote' }))?.id
 		).toBe(linkedIncomeId)
@@ -1922,13 +1982,15 @@ describe('new paired transfer insertion', () => {
 					{ id: pair.incomeTransactionId }
 				)
 				.wait({ tier: 'global' })
-			await db.expectDenied((writer) =>
-				writer.insert(
-					app.internalTransfers,
-					{ ...pair.transfer, ...overrides },
-					{ id: pair.transferId }
+			await expect(
+				db.expectDenied((writer) =>
+					writer.insert(
+						app.internalTransfers,
+						{ ...pair.transfer, ...overrides },
+						{ id: pair.transferId }
+					)
 				)
-			)
+			).resolves.toBeUndefined()
 			expect(
 				await db.one(app.internalTransfers.where({ id: pair.transferId }), { tier: 'remote' })
 			).toBeNull()
@@ -1950,9 +2012,11 @@ describe('new paired transfer insertion', () => {
 					.update(app.transactions, pair.incomeTransactionId, { internalTransferId: null })
 					.wait({ tier: 'global' })
 			const claimantId = crypto.randomUUID()
-			await db.expectDenied((writer) =>
-				writer.insert(app.internalTransfers, pair.transfer, { id: claimantId })
-			)
+			await expect(
+				db.expectDenied((writer) =>
+					writer.insert(app.internalTransfers, pair.transfer, { id: claimantId })
+				)
+			).resolves.toBeUndefined()
 			expect(
 				await db.one(app.internalTransfers.where({ id: claimantId }), { tier: 'remote' })
 			).toBeNull()
@@ -1978,19 +2042,23 @@ describe('new paired transfer insertion', () => {
 		const ordinary = await db
 			.insert(app.transactions, transaction('expense'))
 			.wait({ tier: 'global' })
-		await db.expectDenied((writer) =>
-			writer.update(app.transactions, ordinary.id, { internalTransferId: marker })
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.update(app.transactions, ordinary.id, { internalTransferId: marker })
+			)
+		).resolves.toBeUndefined()
 	})
 
 	it('does not admit a new provider transaction with an orphan marker', async () => {
-		await db.expectDenied((writer) =>
-			writer.insert(app.transactions, {
-				...transaction('expense'),
-				source: 'simplefin',
-				externalId: 'forged-transfer-marker',
-				internalTransferId: crypto.randomUUID()
-			})
-		)
+		await expect(
+			db.expectDenied((writer) =>
+				writer.insert(app.transactions, {
+					...transaction('expense'),
+					source: 'simplefin',
+					externalId: 'forged-transfer-marker',
+					internalTransferId: crypto.randomUUID()
+				})
+			)
+		).resolves.toBeUndefined()
 	})
 })

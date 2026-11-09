@@ -160,13 +160,13 @@ describe('Jazz local transfer deletion', () => {
 		await deleteBundle.wait({ tier: 'local' })
 
 		expect(
-			await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'local' })
+			await db.one(app.internalTransfers.where({ id: transferId }), { tier: 'local-first' })
 		).toBeNull()
 		expect(
-			await db.one(app.transactions.where({ id: expenseTransactionId }), { tier: 'local' })
+			await db.one(app.transactions.where({ id: expenseTransactionId }), { tier: 'local-first' })
 		).toBeNull()
 		expect(
-			await db.one(app.transactions.where({ id: incomeTransactionId }), { tier: 'local' })
+			await db.one(app.transactions.where({ id: incomeTransactionId }), { tier: 'local-first' })
 		).toBeNull()
 	})
 })

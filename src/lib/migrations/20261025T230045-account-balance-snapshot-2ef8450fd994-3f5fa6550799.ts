@@ -1,10 +1,10 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	migrate: {
 		simplefinAccountLinks: {
-			availableBalance: s.add.string({ default: null }),
-			balanceDate: s.add.timestamp({ default: null })
+			availableBalance: m.add.string({ default: null }),
+			balanceDate: m.add.timestamp({ default: null })
 		}
 	},
 	fromHash: '2ef8450fd994',

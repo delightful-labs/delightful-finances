@@ -5,7 +5,7 @@ import { workspaceInitialization } from './workspace-initialization.js'
 import { workspaceFakeData } from './workspace-fake-data.js'
 type Db = Pick<
 	ReturnType<typeof getDb>,
-	'all' | 'beginTransaction' | 'beginExclusiveTransaction' | 'getConfig'
+	'all' | 'beginTransaction' | 'beginSerializableTransaction' | 'getConfig'
 >
 export function createWorkspaceStartupMachine(db: Db) {
 	return createSharedStartup<

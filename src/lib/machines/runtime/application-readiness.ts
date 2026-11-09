@@ -126,6 +126,7 @@ type Context = {
 	recoveryAttempt: number
 	recoveryRequest: RecoveryRequest | undefined
 	recoveryResult: RecoveryResult | undefined
+	preparingSession: Session | undefined
 	session: Session | undefined
 	startupBinding: JazzStartupBinding | undefined
 	readinessScope: SessionReadinessScope | undefined
@@ -214,7 +215,8 @@ export function createApplicationReadinessMachine(
 	},
 	bindRestoration?: (session: Session) => RecoveryRestorationBinding,
 	bindReadiness?: (session: Session) => SessionReadinessBinding,
-	restoreConfiguration?: WorkspaceRestoreConfiguration
+	restoreConfiguration?: WorkspaceRestoreConfiguration,
+	prepareSession: (session: Session) => Promise<void> = async () => {}
 ) {
 	const actors = {
 		reload: fromPromise<void>(() => Promise.resolve().then(() => required(navigation.reload)())),
@@ -224,6 +226,7 @@ export function createApplicationReadinessMachine(
 		transferMutationOwner: createInternalTransferMutationOwner(),
 		startup: createSessionStartupMachine<Session>(),
 		sessionReadiness: createSessionReadinessMachine(),
+		prepareLocalFirst: fromPromise<void, Session>(({ input }) => prepareSession(input)),
 		bindSessionReadiness: fromPromise(({ input }: { input: Session }) =>
 			Promise.resolve({ session: input, readiness: required(bindReadiness)(input) })
 		),
@@ -252,6 +255,7 @@ export function createApplicationReadinessMachine(
 		{
 			restoreReloadAllowed: undefined
 			startupOwnerFailed: undefined
+			preparationClosing: undefined
 			currentStartup: undefined
 			currentReadiness: undefined
 			currentObservation: undefined
@@ -304,6 +308,7 @@ export function createApplicationReadinessMachine(
 			})
 		},
 		guards: {
+			preparationClosing: stateIn({ preparingLocalFirst: 'stopping' }),
 			restoreReloadAllowed: or([
 				stateIn('reloadRecovery'),
 				({ context }) => context.workspaceRestoreView.canReload
@@ -494,6 +499,7 @@ export function createApplicationReadinessMachine(
 			recoveryAttempt: 0,
 			recoveryRequest: undefined,
 			recoveryResult: undefined,
+			preparingSession: undefined,
 			session: undefined,
 			startupBinding: undefined,
 			readinessScope: undefined,
@@ -1308,7 +1314,8 @@ export function createApplicationReadinessMachine(
 				on: {
 					SESSION_ACQUIRED: {
 						guard: 'currentStartup',
-						target: 'bindingReadiness'
+						target: 'preparingLocalFirst',
+						actions: assign({ preparingSession: ({ event }) => event.session })
 					},
 					SESSION_STARTUP_FAILED: [
 						{ guard: 'startupOwnerFailed', target: 'settlingStartupFailure' },
@@ -1316,18 +1323,33 @@ export function createApplicationReadinessMachine(
 					]
 				}
 			},
+			preparingLocalFirst: {
+				initial: 'active',
+				states: { active: {}, stopping: {} },
+				on: { SHUTDOWN: '.stopping', ATTACH_WORKSPACE: {}, ATTACH_PENDING: {} },
+				invoke: {
+					src: 'prepareLocalFirst',
+					input: ({ context }) => required(context.preparingSession),
+					onDone: [
+						{ guard: 'preparationClosing', target: 'closing' },
+						{ target: 'bindingReadiness' }
+					],
+					onError: [
+						{ guard: 'preparationClosing', target: 'closing' },
+						{ target: 'settlingReadinessCrash' }
+					]
+				}
+			},
 			bindingReadiness: {
 				invoke: {
 					src: 'bindSessionReadiness',
-					input: ({ event }) => {
-						if (event.type !== 'SESSION_ACQUIRED') throw new Error('Missing acquired session')
-						return event.session
-					},
+					input: ({ context }) => required(context.preparingSession),
 					onDone: {
 						target: 'running',
 						actions: [
 							assign(({ event }) => ({
 								session: event.output.session,
+								preparingSession: undefined,
 								readinessScope: { binding: event.output.readiness.binding, attachment: {} },
 								observation: 0,
 								retryAttempt: 0,
@@ -2014,6 +2036,7 @@ export function createApplicationReadinessMachine(
 					workspace: undefined,
 					attachment: undefined,
 					pending: undefined,
+					preparingSession: undefined,
 					session: undefined,
 					startupBinding: undefined,
 					readinessScope: undefined,

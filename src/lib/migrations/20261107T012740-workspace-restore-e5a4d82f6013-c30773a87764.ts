@@ -1,12 +1,12 @@
-import { schema as s } from 'jazz-tools'
+import { schema as s, defineMigration, migration as m } from 'jazz-tools'
 
-export default s.defineMigration({
+export default defineMigration({
 	createTables: {
 		restoreOperations: true
 	},
 	migrate: {
 		organizations: {
-			restoreOperationId: s.add.ref('restoreOperations', { default: null })
+			restoreOperationId: m.add.ref('restoreOperations', { default: null })
 		}
 	},
 	fromHash: 'e5a4d82f6013',

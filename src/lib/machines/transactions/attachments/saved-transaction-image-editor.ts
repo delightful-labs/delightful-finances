@@ -60,7 +60,7 @@ const hydrate = fromPromise(
 					fileId: input.target.fileId
 				})
 				.include({ file: { parts: true }, transaction: true }),
-			{ tier: 'local' }
+			{ tier: 'local-first' }
 		)
 )
 function completeContents(row: OutputFrom<typeof hydrate>): boolean {

@@ -12,44 +12,65 @@ The `Conventional PR title` GitHub Actions check validates titles when a PR is o
 
 ## Development
 
-Use Node 22.17 or newer and pnpm. Start the shared development server with `pnpm dev`; its URL is printed by Vite. `pnpm check` checks application and service-worker types without starting another Jazz server. `pnpm build` produces the production app and native service worker.
+Use Node 24 and pnpm 10.22.0. `pnpm check` checks application and service-worker types;
+`pnpm build` produces the production app and native service worker.
 
-`pnpm dev` keeps the app at `http://localhost:5173` and Jazz on port 5174, with Jazz's persistent project storage. An occupied port causes startup to fail. Always use the same browser profile and hostname (`localhost` and `127.0.0.1` have separate browser storage).
+`pnpm dev` serves the app at `http://localhost:5173`, binding to the network, and serves Jazz at
+`/jazz` on that same origin. Its alpha.60 SQLite store is `.jazz/alpha60/finance`. An occupied
+port causes startup to fail. Keep the same browser profile and hostname: `localhost` and
+`127.0.0.1` have separate browser storage.
 
-Agents should use `pnpm dev:agent` at `http://localhost:5180`. This uses the existing isolated configuration with an in-memory Jazz server on an automatically assigned port; its data is disposable across restarts. Concurrent agents can choose separate page ports with `pnpm dev:agent --port 5181`. Keep the user's persistent server and storage untouched. The default and authentication Playwright configurations also start isolated servers rather than reusing the user's server.
+Agents use `pnpm dev:agent` at `http://localhost:5180`, or choose another port with
+`pnpm dev:agent --port 5181`. Agent Jazz data is in memory and disposable. Concurrent verification
+that regenerates SvelteKit files needs a separate checkout with its own dependencies and generated
+files. Keep the user's persistent server and storage untouched.
 
-Set `PUBLIC_JAZZ_APP_ID` and `PUBLIC_JAZZ_SERVER_URL` for the production deployment before building. These public settings are declared in `src/env.ts` and included in the build. The Jazz development plugin supplies them for the local development server.
+Development and Vercel builds use the same-origin Jazz endpoint automatically. For a local production
+preview, build with `PUBLIC_JAZZ_SERVER_URL=same-origin`; start the preview with
+`FINANCE_EPHEMERAL_JAZZ=true` only when disposable test data is intended.
 
-## Netlify deployment
+## Vercel deployment
 
-Create and claim a hosted app in the Jazz dashboard first. In Netlify's environment variables, set `PUBLIC_JAZZ_APP_ID` to that hosted app's ID, `PUBLIC_JAZZ_SERVER_URL` to `https://v2.sync.jazz.tools/`, and `JAZZ_ADMIN_SECRET` to its admin secret. Make these values available during builds; keep the admin secret private and restrict it to the production deploy context. Never give it a `PUBLIC_` prefix or commit it.
+`vercel.json` selects SvelteKit, the frozen pnpm lockfile, and `pnpm build`. The Vercel adapter
+uses Node 24 in `iad1`. `/jazz` exposes Jazz's supported backend handler with local-first guest
+admission; backend credentials stay server-side. Production does not need Jazz Cloud provisioning
+or a separate `deploy:jazz` command.
 
-`netlify.toml` runs `pnpm deploy:jazz && pnpm build` for production deployments. The Jazz command uses the installed SDK version and deploys `src/lib/schema.ts`, `src/lib/permissions.ts`, and migrations from `src/lib/migrations`. A failed database deployment stops the frontend build. A successful database deployment takes effect immediately, even if the subsequent frontend build fails, so schema and permission changes must remain compatible with the currently published app.
+Jazz's Vercel store manages a Sandbox with one vCPU, a persistent Drive capped at 1 GiB, and SQLite
+blob storage. It requests hibernation after 60 seconds of inactivity. The Drive retains the database
+across Sandbox stops. Production has its own stable core; Git-based previews use separate branch
+cores. A CLI preview without Git metadata must provide a distinct `FINANCE_JAZZ_CORE_NAME` for that
+preview. Never give a preview the production core's name. Keep browser tabs closed when unused and
+monitor the Vercel plan's Sandbox allocation.
 
-Deploy Previews run `pnpm build:deploy-preview`. Each build provisions a fresh Jazz Cloud app, waits for its admin endpoint to become available, deploys its schema and permissions, then builds the frontend with that app's public settings. Preview builds override inherited Jazz app/server settings and need no preconfigured Jazz secret. The generated admin secret is used for readiness checks and passed only to the schema-deploy child process, never written to a file, logged, or passed to the frontend build. Jazz deployment output is suppressed to avoid printing server payloads; the build log identifies the failed stage and reports HTTP status codes from recognized Jazz admin errors. Readiness checks are bounded to 12 attempts with five-second pauses; each request has a five-second timeout. Temporary 404/502/503/504 responses and request timeouts wait for another check. App creation itself is never retried automatically. A failure stops the build instead of falling back to a shared app.
+The alpha.60 target is a fresh database. Export and preserve an existing Finance backup before
+moving data, then use Restore Workspace on the new target and save the new account's recovery
+phrase privately. This does not perform an in-place alpha.59 database upgrade. Genuine alpha.59 v1
+and v2 backup fixtures verify restored financial fields, relationships, attachment bytes, and retained
+source history. Backup validation remains enforced, including transfer amounts and currencies.
 
-Every preview rebuild starts with fresh data. These generated apps remain unclaimed and Jazz automatically deletes them after 14 days, including apps left by failed or cancelled builds. Rebuild an expired preview to restore its backend. This flow intentionally does not retain admin credentials for later inspection/claiming. See [Jazz provisioning and app lifetime](https://jazz.tools/docs/getting-started/server-setup).
-
-The preview command refuses to run unless Netlify's `CONTEXT` is `deploy-preview`. Branch deploys and local `pnpm build` remain frontend-only builds and require their own public Jazz settings.
+The original Netlify deployment is retained as a rollback artifact with new builds paused. The
+remaining Netlify commands/configuration describe the preceding Jazz Cloud deployment and are not
+the alpha.60 deployment path. Restore that existing artifact and its saved DNS route for rollback;
+do not rebuild it from this SDK migration branch.
 
 ## Fake data
 
 Set `PUBLIC_FAKE_DATA=true` to fill an empty app with three fake accounts and 120 income/expense
 transactions from the last 90 days. This flag defaults to `false` independently of `PUBLIC_DEBUG`.
-Set it in `.env.local` and restart development, or as a build-scoped Netlify environment variable
-and rebuild. `netlify.toml` enables it for Deploy Previews. To test an empty preview, set it to
-`false` in that TOML context and rebuild; TOML values override Netlify UI environment settings.
+Set it in `.env.local` and restart development, or as a build-scoped Vercel preview environment
+variable and rebuild. Vercel previews do not enable sample data automatically.
 
 Startup seeds only the signed-in owner's initial workspace when there are no visible accounts or
 transactions, including archived data. Populated apps are left untouched. An authoritative read and
-an exclusive transaction guard empty-data eligibility; stable IDs and one confirmed commit prevent
+a serializable transaction guard empty-data eligibility; stable IDs and one confirmed commit prevent
 refresh duplication. Clearing all finance data makes the app eligible again while the flag is on.
 Faker generates persisted record names/descriptions; developer-menu labels remain localized. The
 manual 25-transaction action also uses Faker and remains controlled by the debug menu.
 
 ## Debug logging
 
-`PUBLIC_DEBUG` is the sole gate for application logging and the developer menu. Vite defaults it to `true` when serving in development mode and `false` otherwise, while preserving explicit shell or mode-specific `.env` values. Set `PUBLIC_DEBUG=false` in `.env.local` to disable debugging locally, then restart the development server. `netlify.toml` enables debugging for deploy previews at build time; a rebuild is required. Other deployed contexts can opt in with a build-scoped `PUBLIC_DEBUG=true` setting.
+`PUBLIC_DEBUG` is the sole gate for application logging and the developer menu. Vite defaults it to `true` when serving in development mode and `false` otherwise, while preserving explicit shell or mode-specific `.env` values. Set `PUBLIC_DEBUG=false` in `.env.local` to disable debugging locally, then restart the development server. Deployed contexts can opt in with a build-scoped `PUBLIC_DEBUG=true` setting and a rebuild.
 
 The same setting enables the existing developer menu, including its sample transaction controls. The menu trigger retains its existing keyboard-focus behavior and appearance. Sample creation still requires the current workspace's write permissions.
 

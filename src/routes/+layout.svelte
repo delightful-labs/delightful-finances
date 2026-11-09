@@ -17,7 +17,8 @@
 		selectApplicationWorkspaceRestore
 	} from '#lib/machines/runtime/application-readiness.js'
 	import { readinessKey, type ReadinessContext } from '#lib/runtime/bank-sync.js'
-	import { JazzSessionProvider, type JazzSessionConfig } from 'jazz-tools/svelte'
+	import { JazzSessionProvider } from 'jazz-tools/svelte'
+	import type { JazzClientConfig } from 'jazz-tools/client'
 	import DeveloperMenu from '#lib/components/diagnostics/DeveloperMenu.svelte'
 	import DemoViewport from '#lib/components/diagnostics/DemoViewport.svelte'
 	import JazzStartup from '#lib/components/startup/JazzStartup.svelte'
@@ -31,7 +32,12 @@
 	import { browser } from '$app/env'
 	import { workspaceRoute } from '#lib/domain/workspace-routes.js'
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
-	import { getCurrentJazzSession, getJazzStartupBinding } from '#lib/runtime/jazz-session.js'
+	import {
+		getCurrentJazzSession,
+		getJazzStartupBinding,
+		loadLocalFirstClient,
+		prepareLocalFirstSession
+	} from '#lib/runtime/jazz-session.js'
 
 	let { children }: { children: Snippet } = $props()
 	const routeWorkspaceId = $derived(browser ? workspaceRoute(page.url.search).workspaceId : null)
@@ -66,11 +72,20 @@
 	})
 	setContext(financeFiltersKey, financeFilters)
 
+	const serverUrl = browser
+		? new URL(
+				PUBLIC_JAZZ_SERVER_URL === 'same-origin' ? '/jazz' : PUBLIC_JAZZ_SERVER_URL || '/jazz',
+				window.location.origin
+			).href
+		: '/jazz'
+	const legacyScope = PUBLIC_JAZZ_SERVER_URL !== 'same-origin' ? PUBLIC_JAZZ_APP_ID : ''
+	const applicationId = legacyScope || serverUrl.replace(/\/+$/, '')
 	const jazzConfig = {
-		appId: PUBLIC_JAZZ_APP_ID,
-		serverUrl: PUBLIC_JAZZ_SERVER_URL,
+		...(legacyScope ? { scope: legacyScope } : {}),
+		client: loadLocalFirstClient,
+		serverUrl,
 		initial: 'local-first'
-	} satisfies JazzSessionConfig
+	} satisfies JazzClientConfig
 
 	const actor = createActor(
 		createApplicationReadinessMachine(
@@ -82,10 +97,11 @@
 			(session) => createJazzRestorationAdapter(session, getCurrentJazzSession),
 			createJazzSessionReadinessAdapter,
 			{
-				appId: jazzConfig.appId,
+				appId: applicationId,
 				serverUrl: jazzConfig.serverUrl,
 				environment: browser ? window.location.origin : 'finance'
-			}
+			},
+			prepareLocalFirstSession
 		),
 		{ inspect: inspectActor }
 	).start()
@@ -103,7 +119,7 @@
 	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
 </script>
 
-<DeveloperMenu appId={jazzConfig.appId} serverUrl={jazzConfig.serverUrl} />
+<DeveloperMenu appId={applicationId} serverUrl={jazzConfig.serverUrl} />
 
 <DemoViewport enabled={PUBLIC_SIMPLEFIN_DEMO === 'true'} />
 

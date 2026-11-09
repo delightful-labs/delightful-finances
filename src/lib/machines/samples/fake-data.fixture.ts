@@ -34,7 +34,7 @@ export function seedFixture() {
 	const unavailable = () => {
 		throw new Error('Unit fixture must not open a Jazz runtime')
 	}
-	const tx = new Transaction('exclusive', unavailable)
+	const tx = new Transaction('serializable', unavailable)
 	const reads = new Transaction('mergeable', unavailable)
 	const all = vi.spyOn(reads, 'all').mockResolvedValue([])
 	all
@@ -54,8 +54,8 @@ export function seedFixture() {
 	const wait = vi.fn(async () => {})
 	const commit = vi.spyOn(tx, 'commit').mockImplementation(vi.fn().mockReturnValue({ wait }))
 	const rollback = vi.spyOn(tx, 'rollback').mockResolvedValue(true)
-	const beginExclusiveTransaction = vi.fn(() => tx)
-	const db = { all: reads.all.bind(reads), beginExclusiveTransaction }
+	const beginSerializableTransaction = vi.fn(() => tx)
+	const db = { all: reads.all.bind(reads), beginSerializableTransaction }
 	return {
 		input: { db, organizationId, userId, profileId },
 		all,
@@ -65,6 +65,6 @@ export function seedFixture() {
 		wait,
 		commit,
 		rollback,
-		beginExclusiveTransaction
+		beginSerializableTransaction
 	}
 }

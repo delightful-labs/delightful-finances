@@ -181,7 +181,7 @@ export async function persisted(page: Page, id: string) {
 		const links = await db.all(app.transactionTags.where({ transactionId: id }))
 		const transfers = await db.all(app.internalTransfers.where({ expenseTransactionId: id }))
 		const check = row?.checkId
-			? await db.one(app.checks.where({ id: row.checkId }), { tier: 'local' })
+			? await db.one(app.checks.where({ id: row.checkId }), { tier: 'local-first' })
 			: null
 		return {
 			accountId: row?.accountId,
