@@ -1,4 +1,6 @@
 <script lang="ts">
+	import NavigationSpacer from './NavigationSpacer.svelte'
+	import { setPageNavigation } from './page-navigation.js'
 	import AppTopMenu from './AppTopMenu.svelte'
 	import AppDrawer from './AppDrawer.svelte'
 	import AppDrawerNavigation from './AppDrawerNavigation.svelte'
@@ -63,12 +65,17 @@
 	const toggleId = `${shellId}-toggle`
 	let drawerOpen = $state(false)
 	let mobileViewport = $state(false)
+	setPageNavigation(navigationSpacer)
 	const mainInert = $derived(mobileViewport && drawerOpen)
 
 	onMount(() => {
 		mobileViewport = isMobile()
 		drawerOpen = !mobileViewport
 	})
+
+	function toggleDrawer() {
+		drawerOpen = !drawerOpen
+	}
 
 	function dismissMobileDrawer() {
 		if (isMobile()) drawerOpen = false
@@ -77,8 +84,14 @@
 
 <svelte:window onresize={() => (mobileViewport = isMobile())} />
 
+{#snippet navigationSpacer()}
+	<NavigationSpacer collapsed={drawerOpen} gap="var(--dui-spacing-md)" />
+{/snippet}
+
 <div class="app-shell">
-	<AppTopMenu {drawerId} {toggleId} {drawerOpen} onToggle={() => (drawerOpen = !drawerOpen)} />
+	<div class="navigation-control">
+		<AppTopMenu {drawerId} {toggleId} {drawerOpen} onToggle={toggleDrawer} />
+	</div>
 	<div class="workspace" data-drawer-open={drawerOpen}>
 		<AppDrawer {drawerId} bind:drawerOpen>
 			<AppDrawerNavigation pathname={page.url.pathname} onNavigate={dismissMobileDrawer}>
@@ -131,26 +144,50 @@
 
 <style>
 	.app-shell {
+		--app-navigation-size: 2.75rem;
+		--app-page-padding: var(--dui-space-sm, 1rem);
 		--dui-drawer-height: 100%;
 		--dui-details-content-border-width: 0;
 		display: grid;
-		grid-template-rows: max-content auto;
+		grid-template-rows: minmax(0, 1fr);
+		min-block-size: 0;
+		max-block-size: 100dvh;
 		height: 100dvh;
 		overflow: hidden;
 	}
 
+	.navigation-control {
+		grid-area: 1 / 1;
+		align-self: start;
+		justify-self: start;
+		position: sticky;
+		inset-block-start: var(--app-page-padding);
+		margin: var(--app-page-padding);
+		z-index: 3;
+	}
+
 	.workspace {
+		grid-area: 1 / 1;
 		display: flex;
 		align-items: flex-start;
 		min-block-size: 0;
+		overflow: hidden;
 	}
 
 	.content {
+		min-block-size: 0;
 		flex: 1 1 0%;
 		min-width: 0;
-		padding: var(--dui-space-sm, 1rem);
+		padding: var(--app-page-padding);
+		box-sizing: border-box;
 		overflow: auto;
 		height: 100%;
+	}
+
+	.content:has(:global(.transaction-workspace)) {
+		display: grid;
+		grid-template-rows: minmax(0, 1fr);
+		overflow: hidden;
 	}
 
 	.drawer-dismiss {

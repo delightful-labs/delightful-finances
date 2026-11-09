@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+
 	import { getContext, untrack, type Snippet } from 'svelte'
 	import { createQuerySubscription } from 'delightful-local-first/backend/jazz/data'
 	import { page } from '$app/state'
@@ -8,6 +10,7 @@
 	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { EXPENSE, INCOME } from '#lib/domain/transaction-kind.js'
 	import { withQueryParams } from '#lib/domain/query-params.js'
+	import { Heading } from 'delightful-ui'
 	import { m } from '#lib/paraglide/messages.js'
 	import QueryContent from '../shared/QueryContent.svelte'
 	import PageHeader from '../navigation/PageHeader.svelte'
@@ -16,7 +19,7 @@
 	import SavedTransferForm from './SavedTransferForm.svelte'
 	import TransactionWorkspace from '../transactions/TransactionWorkspace.svelte'
 	import Message from '../shared/Message.svelte'
-	let { children }: { children: Snippet } = $props()
+	let { children, navigation }: { children: Snippet; navigation: Snippet } = $props()
 	const filters = getContext<FinanceFilters>(financeFiltersKey)
 	const transactions = createQuerySubscription(() =>
 		filters.activeOrganizationId
@@ -97,36 +100,46 @@
 </script>
 
 <TransactionWorkspace
+	{navigation}
 	index={page.url.pathname === '/transfers'}
 	{heading}
 	listHref={page.params.id || page.url.pathname === '/transfers/new' ? listHref : undefined}
 >
 	{#if page.params.id}
-		<PageHeader
-			title={m['labels.subject_details']({ subject: m['nouns.transfer']({ count: 1 }) })}
-		/>
-		<QueryContent
-			queries={[transactions, links, accounts]}
-			loadingMessage={m['status.loading_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
-			errorMessage={m['errors.load_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
-		>
-			{#if selectedPair}
-				<SavedTransferForm
-					expense={selectedPair.expense}
-					income={selectedPair.income}
-					accounts={accounts.current ?? []}
-				/>
-			{:else}
-				<Message
-					message={m['status.unavailable_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
-				/>
-			{/if}
-		</QueryContent>
+		<PageLayout {navigation}>
+			{#snippet pageHeading()}<PageHeader
+					title={m['labels.subject_details']({ subject: m['nouns.transfer']({ count: 1 }) })}
+				/>{/snippet}
+			<QueryContent
+				queries={[transactions, links, accounts]}
+				loadingMessage={m['status.loading_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
+				errorMessage={m['errors.load_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
+			>
+				{#if selectedPair}
+					<SavedTransferForm
+						expense={selectedPair.expense}
+						income={selectedPair.income}
+						accounts={accounts.current ?? []}
+					/>
+				{:else}
+					<Message
+						message={m['status.unavailable_subject']({
+							subject: m['nouns.transfer']({ count: 1 })
+						})}
+					/>
+				{/if}
+			</QueryContent>
+		</PageLayout>
 	{/if}
 	{@render children()}
-	{#snippet list(showHeading)}
-		<div class="wrapper">
-			{#if showHeading}<PageHeader title={heading} />{/if}
+	{#snippet list(showHeading, navigation, closeControl)}
+		<PageLayout {navigation}>
+			{#snippet pageHeading()}
+				<div class="transfer-list-heading">
+					<Heading level={showHeading ? 'h1' : 'h2'}>{heading}</Heading>
+					{@render closeControl?.()}
+				</div>
+			{/snippet}
 			<QueryContent
 				queries={[transactions, links, accounts]}
 				loadingMessage={m['status.loading_subject']({ subject: m['nouns.transfer']({ count: 2 }) })}
@@ -146,13 +159,15 @@
 				href={withQueryParams('/transfers/new', { page: requestedPage > 1 ? requestedPage : null })}
 				label={m['actions.add_subject']({ subject: m['nouns.transfer']({ count: 1 }) })}
 			/>
-		</div>
+		</PageLayout>
 	{/snippet}
 </TransactionWorkspace>
 
 <style>
-	.wrapper {
-		display: grid;
+	.transfer-list-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
 		gap: var(--dui-spacing-md);
 	}
 </style>

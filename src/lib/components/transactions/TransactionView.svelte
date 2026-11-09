@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
 	import { createLogger } from '#lib/diagnostics/logger.js'
 	import { safeBankError } from '#lib/integrations/diagnostics.js'
 
@@ -26,12 +27,14 @@
 	} from '#lib/filters/transaction-list-filters.js'
 
 	let {
+		navigation,
 		kind,
 		heading,
 		listPath,
 		closeControl,
 		showHeading = true
 	}: {
+		navigation: Snippet
 		kind: TransactionKind
 		heading: string
 		listPath: string
@@ -184,18 +187,20 @@
 	const currencies = $derived([...new Set(visibleTransactions.map((row) => row.currency))].sort())
 </script>
 
-<div class="wrapper">
-	{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
-		<TransactionListFilters
-			{closeControl}
-			title={heading}
-			headingLevel={showHeading ? 'h1' : 'h2'}
-			value={listFilters}
-			categories={filterCategories}
-			{currencies}
-			onchange={changeListFilters}
-		/>
-	{/key}
+<PageLayout {navigation}>
+	{#snippet pageHeading()}
+		{#key JSON.stringify([filters.activeOrganizationId, kind, filters.selectedAccountIds])}
+			<TransactionListFilters
+				{closeControl}
+				title={showHeading ? heading : m['nouns.transaction']({ count: 2 })}
+				headingLevel={showHeading ? 'h1' : 'h2'}
+				value={listFilters}
+				categories={filterCategories}
+				{currencies}
+				onchange={changeListFilters}
+			/>
+		{/key}
+	{/snippet}
 	<QueryContent
 		queries={[transactions, accounts, categories, tags, links]}
 		loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
@@ -229,11 +234,4 @@
 			subject: heading
 		})}
 	/>
-</div>
-
-<style>
-	.wrapper {
-		display: grid;
-		gap: var(--dui-spacing-md);
-	}
-</style>
+</PageLayout>

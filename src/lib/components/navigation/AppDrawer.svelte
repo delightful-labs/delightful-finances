@@ -1,4 +1,6 @@
 <script lang="ts">
+	import NavigationSpacer from './NavigationSpacer.svelte'
+	import FinanceLogo from '#lib/assets/delightful-finance-logo.svg?component'
 	import { Drawer } from 'delightful-ui'
 	import type { Snippet } from 'svelte'
 	import { m } from '#lib/paraglide/messages.js'
@@ -25,7 +27,13 @@
 	bind:open={drawerOpen}
 >
 	<div class="sidebar-content">
-		{@render children()}
+		<div>
+			<div class="drawer-brand">
+				<NavigationSpacer />
+				<FinanceLogo class="app-logo" role="img" aria-label={m['app.name']()} />
+			</div>
+			{@render children()}
+		</div>
 		{@render footer()}
 	</div>
 </Drawer>
@@ -51,6 +59,22 @@
 				--dui-drawer-width: calc(100% - 3.5rem);
 			}
 		}
+	}
+
+	.drawer-brand {
+		display: flex;
+		align-items: center;
+		min-block-size: 2.75rem;
+		gap: 0.5rem;
+		padding: var(--app-page-padding);
+	}
+
+	.drawer-brand :global(.app-logo) {
+		inline-size: auto;
+		min-inline-size: 0;
+		flex: 1;
+		max-inline-size: 100%;
+		block-size: 2.75rem;
 	}
 
 	.sidebar-content {

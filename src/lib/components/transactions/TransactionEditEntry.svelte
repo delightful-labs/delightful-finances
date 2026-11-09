@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import { createLogger } from '#lib/diagnostics/logger.js'
 	import { safeBankError } from '#lib/integrations/diagnostics.js'
@@ -569,123 +573,126 @@
 		]()}</title
 	></svelte:head
 >
-<PageHeader
-	title={m['labels.subject_details']({ subject: m['nouns.transaction']({ count: 1 }) })}
-/>
-<QueryContent
-	queries={[transactionQuery]}
-	loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
-	errorMessage={m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
->
-	{#key `${session.current.account?.id}:${filters.activeOrganizationId}:${page.params.id}`}
-		<TransactionDetails
-			transaction={observe().transaction}
-			creatorProfile={creatorQuery.current}
-			editorProfile={editorQuery.current}
-		>
-			{#snippet actions()}
-				<InternalTransferDeleteActions
-					transactionId={transaction?.id ?? page.params.id ?? ''}
-					available={Boolean(
-						linkedTransfer &&
-						formView.fieldsEditable &&
-						transferDeleteResult?.outcome !== 'succeeded'
-					)}
-					pending={transferDeletePending}
-					feedback={editWorkflow.selectDeleteFeedback(editSnapshot)}
-					onDelete={deleteLinkedTransfer}
-				/>
-			{/snippet}
-			{#snippet form()}
-				<FormFeedback
-					view={formView}
-					subject={m['nouns.transaction']({ count: 1 })}
-					reasonText={(reason) => formReasonText[reason]()}
-					invalidMessage={m['forms.validation_error']()}
-					section="readiness"
-					onRetryReadiness={retryReadiness}
-				/>
-				{#if initialTransaction && transaction}
-					<TransactionForm
-						mode="edit"
-						onaddcategory={() => categoryModal?.open()}
-						canAddCategory={categoryController.view.canOpen}
-						{createdCategory}
-						kind={transaction.kind}
-						paymentEntry={transactionPages[transaction.kind].paymentEntry}
-						{initialTransaction}
-						oninput={inputForm}
-						onattachmentschange={updateAttachments}
-						{attachmentPickerRevision}
-						organizationId={filters.activeOrganizationId}
-						accounts={availableAccounts}
-						defaultAccountId={initialTransaction.accountId}
-						categories={availableCategories}
-						defaultCategoryId={initialTransaction.categoryId}
-						{tagSuggestions}
-						{transferSuggestions}
-						{transferEditorState}
-						{transferConflict}
-						{selectedTransferCandidateId}
-						onSelectTransferCandidate={selectTransferCandidate}
-						{transferSearchEnabled}
-						{writableTransferSuggestionIds}
-						onTransferSearchEnabledChange={(enabled) =>
-							editActor.send({ type: enabled ? 'ENABLE_SEARCH' : 'DISABLE_SEARCH' })}
-						{transferLinkPending}
-						{transferLinkResult}
-						transferStatusLabel={editWorkflow.selectTransferStatus(editSnapshot)}
-						transferUnlinkAvailable={linkedTransfer !== null}
-						{transferUnlinkWritable}
-						{transferUnlinkPending}
-						{transferUnlinkResult}
-						{linkedCounterpartHref}
-						onLinkCounterpart={linkCounterpart}
-						onUnlinkTransfer={unlinkTransfer}
-						view={formView}
-						onsubmit={submitForm}
-						onreset={resetForm}
-					>
-						{#snippet savedImages()}
-							{#if transaction}
-								{#key `${transaction.id}:${transaction.accountId}:${transaction.organizationId}`}
-									<SavedTransactionImages
-										{db}
-										{transaction}
-										images={attachmentImages}
-										canEdit={formView.fieldsEditable}
-										removingIds={removingAttachmentIds}
-										failedIds={failedAttachmentIds}
-										onremove={removeAttachment}
-									/>
-								{/key}
-							{/if}
-						{/snippet}
-					</TransactionForm>
-				{/if}
-			{/snippet}
-		</TransactionDetails>
-	{/key}
-</QueryContent>
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader
+			title={m['labels.subject_details']({ subject: m['nouns.transaction']({ count: 1 }) })}
+		/>{/snippet}
 
-{#if transaction}
-	<CategoryForm
-		bind:this={categoryModal}
-		scope={categoryScope}
-		fixedKind={transaction.kind}
-		view={categoryController.view}
-		onopen={categoryController.open}
-		onsubmit={(event) => {
-			event.preventDefault()
-			if (!(event.currentTarget instanceof HTMLFormElement) || !transaction) return
-			categoryController.submitValues({
-				name: new FormData(event.currentTarget).get('name'),
-				kind: transaction.kind
-			})
-		}}
-		onreset={categoryController.reset}
-		onRetryReadiness={categoryController.retryReadiness}
+	<QueryContent
+		queries={[transactionQuery]}
+		loadingMessage={m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
+		errorMessage={m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}
 	>
-		{#snippet trigger()}{/snippet}
-	</CategoryForm>
-{/if}
+		{#key `${session.current.account?.id}:${filters.activeOrganizationId}:${page.params.id}`}
+			<TransactionDetails
+				transaction={observe().transaction}
+				creatorProfile={creatorQuery.current}
+				editorProfile={editorQuery.current}
+			>
+				{#snippet actions()}
+					<InternalTransferDeleteActions
+						transactionId={transaction?.id ?? page.params.id ?? ''}
+						available={Boolean(
+							linkedTransfer &&
+							formView.fieldsEditable &&
+							transferDeleteResult?.outcome !== 'succeeded'
+						)}
+						pending={transferDeletePending}
+						feedback={editWorkflow.selectDeleteFeedback(editSnapshot)}
+						onDelete={deleteLinkedTransfer}
+					/>
+				{/snippet}
+				{#snippet form()}
+					<FormFeedback
+						view={formView}
+						subject={m['nouns.transaction']({ count: 1 })}
+						reasonText={(reason) => formReasonText[reason]()}
+						invalidMessage={m['forms.validation_error']()}
+						section="readiness"
+						onRetryReadiness={retryReadiness}
+					/>
+					{#if initialTransaction && transaction}
+						<TransactionForm
+							mode="edit"
+							onaddcategory={() => categoryModal?.open()}
+							canAddCategory={categoryController.view.canOpen}
+							{createdCategory}
+							kind={transaction.kind}
+							paymentEntry={transactionPages[transaction.kind].paymentEntry}
+							{initialTransaction}
+							oninput={inputForm}
+							onattachmentschange={updateAttachments}
+							{attachmentPickerRevision}
+							organizationId={filters.activeOrganizationId}
+							accounts={availableAccounts}
+							defaultAccountId={initialTransaction.accountId}
+							categories={availableCategories}
+							defaultCategoryId={initialTransaction.categoryId}
+							{tagSuggestions}
+							{transferSuggestions}
+							{transferEditorState}
+							{transferConflict}
+							{selectedTransferCandidateId}
+							onSelectTransferCandidate={selectTransferCandidate}
+							{transferSearchEnabled}
+							{writableTransferSuggestionIds}
+							onTransferSearchEnabledChange={(enabled) =>
+								editActor.send({ type: enabled ? 'ENABLE_SEARCH' : 'DISABLE_SEARCH' })}
+							{transferLinkPending}
+							{transferLinkResult}
+							transferStatusLabel={editWorkflow.selectTransferStatus(editSnapshot)}
+							transferUnlinkAvailable={linkedTransfer !== null}
+							{transferUnlinkWritable}
+							{transferUnlinkPending}
+							{transferUnlinkResult}
+							{linkedCounterpartHref}
+							onLinkCounterpart={linkCounterpart}
+							onUnlinkTransfer={unlinkTransfer}
+							view={formView}
+							onsubmit={submitForm}
+							onreset={resetForm}
+						>
+							{#snippet savedImages()}
+								{#if transaction}
+									{#key `${transaction.id}:${transaction.accountId}:${transaction.organizationId}`}
+										<SavedTransactionImages
+											{db}
+											{transaction}
+											images={attachmentImages}
+											canEdit={formView.fieldsEditable}
+											removingIds={removingAttachmentIds}
+											failedIds={failedAttachmentIds}
+											onremove={removeAttachment}
+										/>
+									{/key}
+								{/if}
+							{/snippet}
+						</TransactionForm>
+					{/if}
+				{/snippet}
+			</TransactionDetails>
+		{/key}
+	</QueryContent>
+
+	{#if transaction}
+		<CategoryForm
+			bind:this={categoryModal}
+			scope={categoryScope}
+			fixedKind={transaction.kind}
+			view={categoryController.view}
+			onopen={categoryController.open}
+			onsubmit={(event) => {
+				event.preventDefault()
+				if (!(event.currentTarget instanceof HTMLFormElement) || !transaction) return
+				categoryController.submitValues({
+					name: new FormData(event.currentTarget).get('name'),
+					kind: transaction.kind
+				})
+			}}
+			onreset={categoryController.reset}
+			onRetryReadiness={categoryController.retryReadiness}
+		>
+			{#snippet trigger()}{/snippet}
+		</CategoryForm>
+	{/if}
+</PageLayout>

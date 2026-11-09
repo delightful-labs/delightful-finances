@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { page } from '$app/state'
@@ -33,15 +37,20 @@
 		]()}</title
 	></svelte:head
 >
-<PageHeader title={m['actions.restore_subject']({ subject: m['nouns.account']({ count: 1 }) })} />
-<LoginForm
-	restoring={recovery.busy}
-	navigationOnly={recovery.navigationOnly}
-	restoreError={recovery.invalid}
-	sessionError={recovery.failed || Boolean(snapshot.current.error)}
-	navigationError={recovery.navigationFailed}
-	canRetryNavigation={recovery.canRetryNavigation}
-	draftRevision={recovery.draftRevision}
-	onRetryNavigation={() => readiness.actor.send({ type: 'RETRY_NAVIGATION' })}
-	onsubmit={restoreAccount}
-/>
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader
+			title={m['actions.restore_subject']({ subject: m['nouns.account']({ count: 1 }) })}
+		/>{/snippet}
+
+	<LoginForm
+		restoring={recovery.busy}
+		navigationOnly={recovery.navigationOnly}
+		restoreError={recovery.invalid}
+		sessionError={recovery.failed || Boolean(snapshot.current.error)}
+		navigationError={recovery.navigationFailed}
+		canRetryNavigation={recovery.canRetryNavigation}
+		draftRevision={recovery.draftRevision}
+		onRetryNavigation={() => readiness.actor.send({ type: 'RETRY_NAVIGATION' })}
+		onsubmit={restoreAccount}
+	/>
+</PageLayout>

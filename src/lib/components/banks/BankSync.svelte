@@ -159,7 +159,6 @@
 {/snippet}
 
 <div class="bank-flow">
-	<h1>{m['bank.title']()}</h1>
 	<p>{m['bank.manual_only']()}</p>
 	{#if status && !(browserOffline && status?.key === 'bank.idle_step')}
 		<p role="status" aria-live="polite">{statusText}</p>
@@ -299,7 +298,6 @@
 		min-inline-size: 0;
 	}
 
-	h1,
 	h2,
 	p,
 	ul {

@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { inspectActor } from '#lib/diagnostics/inspector.js'
 	import { observeRow, observeRows } from '#lib/runtime/observations.js'
 	import {
@@ -168,24 +172,27 @@
 </script>
 
 <svelte:head><title>{m['nouns.account']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['nouns.account']({ count: 2 })} />
-<AccountCreation />
-<AccountList
-	{view}
-	{onArchive}
-	{balances}
-	onActionsOpenChange={(open) => (accountActionsOpen = open)}
-	grantQueries={[organizationMembers, allAccountGrants]}
-	deleteGrantView={{
-		canManage:
-			membership.current?.role === ORGANIZATION_ROLE.OWNER ||
-			membership.current?.role === ORGANIZATION_ROLE.ADMIN,
-		busy: deleteGrantView.busy,
-		result: deleteGrantView.result,
-		members: observeRows(organizationMembers.current).filter(
-			(member) => member.role === ORGANIZATION_ROLE.MEMBER
-		),
-		grants: observeRows(allAccountGrants.current)
-	}}
-	{onDeleteGrant}
-/>
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader title={m['nouns.account']({ count: 2 })} />{/snippet}
+
+	<AccountCreation />
+	<AccountList
+		{view}
+		{onArchive}
+		{balances}
+		onActionsOpenChange={(open) => (accountActionsOpen = open)}
+		grantQueries={[organizationMembers, allAccountGrants]}
+		deleteGrantView={{
+			canManage:
+				membership.current?.role === ORGANIZATION_ROLE.OWNER ||
+				membership.current?.role === ORGANIZATION_ROLE.ADMIN,
+			busy: deleteGrantView.busy,
+			result: deleteGrantView.result,
+			members: observeRows(organizationMembers.current).filter(
+				(member) => member.role === ORGANIZATION_ROLE.MEMBER
+			),
+			grants: observeRows(allAccountGrants.current)
+		}}
+		{onDeleteGrant}
+	/>
+</PageLayout>
