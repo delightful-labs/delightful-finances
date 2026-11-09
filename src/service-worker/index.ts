@@ -8,6 +8,7 @@ const scopePath = new URL(self.registration.scope).pathname
 const offlineShellPath = new URL('offline', self.registration.scope).pathname
 const financeDetailPath =
 	/^(?:expenses|income|transfers)\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+// Include all immutable assets, including the self-hosted Jost and Cascadia Code fonts.
 const cachedPaths = new Set(
 	[...immutable, ...assets, ...prerendered].map(
 		({ path }) => new URL(path.replace(/^\//, ''), self.registration.scope).pathname
