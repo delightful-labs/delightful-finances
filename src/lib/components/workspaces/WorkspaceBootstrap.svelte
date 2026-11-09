@@ -9,7 +9,7 @@
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import { fromStore } from 'svelte/store'
 	import { goto } from '$app/navigation'
-	import { page } from '$app/state'
+	import { page, navigating } from '$app/state'
 	import {
 		selectWorkspaceView,
 		type WorkspaceCoordinatorSnapshot,
@@ -191,6 +191,11 @@
 		read: readReadiness,
 		navigate: (destination, signal, expectedHref, replace) => {
 			signal.throwIfAborted()
+			// A link can already be loading while page.url still describes the old route.
+			// Canonicalizing that old route must not supersede the user's navigation.
+			const pending = navigating.to?.url
+			if (pending && `${pending.pathname}${pending.search}${pending.hash}` !== expectedHref)
+				return Promise.resolve()
 			if (`${page.url.pathname}${page.url.search}${page.url.hash}` !== expectedHref)
 				return Promise.resolve()
 			return goto(destination, { replace })
