@@ -61,7 +61,7 @@
 		"@vercel/sandbox": "3.9.1",
 		"@xstate/svelte": "^5.0.0",
 		"delightful-local-first": "file:vendor/delightful-local-first-jazz-alpha60.tgz",
-		"delightful-ui": "file:vendor/delightful-ui-0.0.25-without-linked-list-row.tgz",
+		"delightful-ui": "file:vendor/delightful-ui-dd358b8-typography.tgz",
 		"jazz-tools": "2.0.0-alpha.60",
 		"layerchart": "^2.9.0",
 		"pica": "^10.0.3",
