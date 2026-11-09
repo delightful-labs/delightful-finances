@@ -1,4 +1,7 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
 	import { observeRow } from '#lib/runtime/observations.js'
 	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import { createWorkspaceRenameFormOptions } from '#lib/machines/workspaces/workspace-rename.js'
@@ -145,52 +148,54 @@
 </script>
 
 <svelte:head><title>{m['nouns.workspace']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['nouns.workspace']({ count: 2 })} />
-<QueryContent
-	queries={[organizations]}
-	loadingMessage={m['status.loading_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
-	errorMessage={m['errors.load_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
->
-	<WorkspaceSelector
-		organizations={organizations.current}
-		organizationId={filters.activeOrganizationId}
-		label={m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}
-		onchange={(workspaceId) => coordinator.actor?.send({ type: 'SELECT_WORKSPACE', workspaceId })}
-	/>
-</QueryContent>
-{#if filters.activeOrganizationId}
-	<Heading level="h2"
-		>{m['labels.subject_settings']({ subject: m['nouns.workspace']({ count: 1 }) })}</Heading
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader title={m['nouns.workspace']({ count: 2 })} />{/snippet}
+	<QueryContent
+		queries={[organizations]}
+		loadingMessage={m['status.loading_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
+		errorMessage={m['errors.load_subject']({ subject: m['nouns.workspace']({ count: 2 }) })}
 	>
-	<WorkspaceNameForm
-		name={workspace?.name ?? ''}
-		defaultCurrency={workspace?.defaultCurrency === ACCOUNT_CURRENCY.TZS
-			? ACCOUNT_CURRENCY.TZS
-			: ACCOUNT_CURRENCY.USD}
-		view={form.view}
-		onsubmit={form.submit}
-		onreset={form.reset}
-		oninput={form.input}
-		onRetryReadiness={form.retryReadiness}
-	/>
+		<WorkspaceSelector
+			organizations={organizations.current}
+			organizationId={filters.activeOrganizationId}
+			label={m['actions.select_subject']({ subject: m['nouns.workspace']({ count: 1 }) })}
+			onchange={(workspaceId) => coordinator.actor?.send({ type: 'SELECT_WORKSPACE', workspaceId })}
+		/>
+	</QueryContent>
+	{#if filters.activeOrganizationId}
+		<Heading level="h2"
+			>{m['labels.subject_settings']({ subject: m['nouns.workspace']({ count: 1 }) })}</Heading
+		>
+		<WorkspaceNameForm
+			name={workspace?.name ?? ''}
+			defaultCurrency={workspace?.defaultCurrency === ACCOUNT_CURRENCY.TZS
+				? ACCOUNT_CURRENCY.TZS
+				: ACCOUNT_CURRENCY.USD}
+			view={form.view}
+			onsubmit={form.submit}
+			onreset={form.reset}
+			oninput={form.input}
+			onRetryReadiness={form.retryReadiness}
+		/>
+		<WorkspaceBackup
+			kind="download"
+			view={backupView}
+			ondownload={(protection, password) =>
+				backupActor.send({ type: 'SUBMIT', protection, password })}
+			oncancel={() => backupActor.send({ type: 'CANCEL' })}
+			onreload={() => readiness.actor.send({ type: 'RELOAD' })}
+		/>
+	{/if}
 	<WorkspaceBackup
-		kind="download"
-		view={backupView}
-		ondownload={(protection, password) =>
-			backupActor.send({ type: 'SUBMIT', protection, password })}
-		oncancel={() => backupActor.send({ type: 'CANCEL' })}
-		onreload={() => readiness.actor.send({ type: 'RELOAD' })}
+		kind="restore"
+		view={restoreView}
+		onrestore={(file, password) =>
+			readiness.actor.send({
+				type: 'WORKSPACE_RESTORE',
+				request: prepareWorkspaceRestoreFile(file, password)
+			})}
+		oncommand={(type) =>
+			readiness.actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type } })}
 	/>
-{/if}
-<WorkspaceBackup
-	kind="restore"
-	view={restoreView}
-	onrestore={(file, password) =>
-		readiness.actor.send({
-			type: 'WORKSPACE_RESTORE',
-			request: prepareWorkspaceRestoreFile(file, password)
-		})}
-	oncommand={(type) =>
-		readiness.actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type } })}
-/>
-<WorkspaceCreation />
+	<WorkspaceCreation />
+</PageLayout>

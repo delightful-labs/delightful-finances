@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte'
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
 	import { EXPENSES_PATH } from '#lib/domain/transaction-kind.js'
 	import ExpensePieChart from './ExpensePieChart.svelte'
 	import { Heading, Text, InputText, Select } from 'delightful-ui'
@@ -14,6 +16,7 @@
 	import { getLocale } from '#lib/paraglide/runtime.js'
 	import { m } from '#lib/paraglide/messages.js'
 	let {
+		navigation = emptyNavigation,
 		transactions,
 		categoryNames,
 		tagNamesByTransaction,
@@ -21,6 +24,7 @@
 		filters = null,
 		onfilterschange = () => {}
 	}: {
+		navigation?: Snippet
 		transactions: readonly TransactionRow[]
 		categoryNames: ReadonlyMap<string, string>
 		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
@@ -117,110 +121,118 @@
 	const id = $props.id()
 </script>
 
-<div class="overview-header">
-	<Heading level="h1">{m['navigation.overview']()}</Heading>
-	<FilterPopovers>
-		{#snippet search()}
-			<InputText
-				label={m['actions.search_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
-				type="search"
-				bind:value={query}
-			/>
-		{/snippet}
-		{#snippet filters()}
-			<DateRangeFilter
-				{start}
-				{end}
-				onchange={(nextStart, nextEnd) => {
-					start = nextStart
-					end = nextEnd
-					selectedCategory = null
-				}}
-				onpreset={preset}
-			/>
+{#snippet emptyNavigation()}{/snippet}
 
-			{#if currencies.length > 1}<label
-					>{m['labels.currency']()}
-					<select bind:value={selectedCurrency} onchange={() => (selectedCategory = null)}
-						>{#each currencies as code (code)}<option value={code}>{code}</option>{/each}</select
-					></label
-				>{/if}
-			<Select
-				label={m['actions.filter_subject']({ subject: m['nouns.category']({ count: 1 }) })}
-				value={selectedCategory ?? ''}
-				onchange={(event) => (selectedCategory = event.currentTarget.value || null)}
-			>
-				<option value=""
-					>{m['labels.all_subjects']({ subjects: m['nouns.category']({ count: 2 }) })}</option
-				>
-				{#each [...categoryNames] as [key, name] (key)}<option value={key}>{name}</option>{/each}
-			</Select>
-		{/snippet}
-	</FilterPopovers>
-</div>
+<PageLayout {navigation}>
+	{#snippet pageHeading()}
+		<div class="overview-header">
+			<Heading level="h1">{m['navigation.overview']()}</Heading>
+			<FilterPopovers>
+				{#snippet search()}
+					<InputText
+						label={m['actions.search_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
+						type="search"
+						bind:value={query}
+					/>
+				{/snippet}
+				{#snippet filters()}
+					<DateRangeFilter
+						{start}
+						{end}
+						onchange={(nextStart, nextEnd) => {
+							start = nextStart
+							end = nextEnd
+							selectedCategory = null
+						}}
+						onpreset={preset}
+					/>
 
-<section class="expense-overview" aria-labelledby={`${id}-title`}>
-	<Heading level="h2" id={`${id}-title`}
-		>{m['labels.subjects_by_subject']({
-			subjects: m['nouns.expense']({ count: 2 }),
-			subject: m['nouns.category']({ count: 1 })
-		})}</Heading
-	>
-	{#if !validRange}<p role="status">{m['errors.date_range_invalid']()}</p>
-	{:else if expenses.length === 0}<Text
-			>{m['labels.no_subjects_in_period']({ subjects: m['nouns.expense']({ count: 0 }) })}</Text
-		>
-	{:else}
-		<div class="results">
-			<div>
-				<Text
-					>{m['labels.total_subject_amount']({
-						subject: m['nouns.expense']({ count: 2 }),
-						amount: formatMoney(total, currency, getLocale())
-					})}</Text
-				>
-				{#if total > 0}
-					<div class="chart" aria-label={m['overview_expenses.chart']()}>
-						{#key JSON.stringify(categoryIds)}
-							<ExpensePieChart
-								data={categoryIds.map((key) => ({
-									key,
-									value: slices.find((slice) => slice.key === key)?.value ?? 0,
-									color: categoryColor(key)
-								}))}
-								onselect={select}
-							/>
-						{/key}
-					</div>
-				{/if}
-				<CategoryLegend
-					items={slices}
-					selectedKey={activeCategory}
-					{currency}
-					allLabel={m['labels.all_subjects']({ subjects: m['nouns.category']({ count: 2 }) })}
-					onselect={select}
-					onclear={() => (selectedCategory = null)}
-				/>
-			</div>
-			<section aria-labelledby={`${id}-transactions`}>
-				<Heading level="h3" id={`${id}-transactions`}
-					>{activeCategory
-						? slices.find((slice) => slice.key === activeCategory)?.label
-						: m['labels.subjects_in_period']({
-								subjects: m['nouns.expense']({ count: 2 })
-							})}</Heading
-				>
-				<TransactionItems
-					transactions={visible}
-					{categoryNames}
-					{tagNamesByTransaction}
-					transactionHref={(transactionId) =>
-						`${EXPENSES_PATH}/${encodeURIComponent(transactionId)}`}
-				/>
-			</section>
+					{#if currencies.length > 1}<label
+							>{m['labels.currency']()}
+							<select bind:value={selectedCurrency} onchange={() => (selectedCategory = null)}
+								>{#each currencies as code (code)}<option value={code}>{code}</option
+									>{/each}</select
+							></label
+						>{/if}
+					<Select
+						label={m['actions.filter_subject']({ subject: m['nouns.category']({ count: 1 }) })}
+						value={selectedCategory ?? ''}
+						onchange={(event) => (selectedCategory = event.currentTarget.value || null)}
+					>
+						<option value=""
+							>{m['labels.all_subjects']({ subjects: m['nouns.category']({ count: 2 }) })}</option
+						>
+						{#each [...categoryNames] as [key, name] (key)}<option value={key}>{name}</option
+							>{/each}
+					</Select>
+				{/snippet}
+			</FilterPopovers>
 		</div>
-	{/if}
-</section>
+	{/snippet}
+
+	<section class="expense-overview" aria-labelledby={`${id}-title`}>
+		<Heading level="h2" id={`${id}-title`}
+			>{m['labels.subjects_by_subject']({
+				subjects: m['nouns.expense']({ count: 2 }),
+				subject: m['nouns.category']({ count: 1 })
+			})}</Heading
+		>
+		{#if !validRange}<p role="status">{m['errors.date_range_invalid']()}</p>
+		{:else if expenses.length === 0}<Text
+				>{m['labels.no_subjects_in_period']({ subjects: m['nouns.expense']({ count: 0 }) })}</Text
+			>
+		{:else}
+			<div class="results">
+				<div>
+					<Text
+						>{m['labels.total_subject_amount']({
+							subject: m['nouns.expense']({ count: 2 }),
+							amount: formatMoney(total, currency, getLocale())
+						})}</Text
+					>
+					{#if total > 0}
+						<div class="chart" aria-label={m['overview_expenses.chart']()}>
+							{#key JSON.stringify(categoryIds)}
+								<ExpensePieChart
+									data={categoryIds.map((key) => ({
+										key,
+										value: slices.find((slice) => slice.key === key)?.value ?? 0,
+										color: categoryColor(key)
+									}))}
+									onselect={select}
+								/>
+							{/key}
+						</div>
+					{/if}
+					<CategoryLegend
+						items={slices}
+						selectedKey={activeCategory}
+						{currency}
+						allLabel={m['labels.all_subjects']({ subjects: m['nouns.category']({ count: 2 }) })}
+						onselect={select}
+						onclear={() => (selectedCategory = null)}
+					/>
+				</div>
+				<section aria-labelledby={`${id}-transactions`}>
+					<Heading level="h3" id={`${id}-transactions`}
+						>{activeCategory
+							? slices.find((slice) => slice.key === activeCategory)?.label
+							: m['labels.subjects_in_period']({
+									subjects: m['nouns.expense']({ count: 2 })
+								})}</Heading
+					>
+					<TransactionItems
+						transactions={visible}
+						{categoryNames}
+						{tagNamesByTransaction}
+						transactionHref={(transactionId) =>
+							`${EXPENSES_PATH}/${encodeURIComponent(transactionId)}`}
+					/>
+				</section>
+			</div>
+		{/if}
+	</section>
+</PageLayout>
 
 <style>
 	section {

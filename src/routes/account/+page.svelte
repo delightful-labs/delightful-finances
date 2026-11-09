@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { observeRow } from '#lib/runtime/observations.js'
 	import { fromStore } from 'svelte/store'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
@@ -47,27 +51,30 @@
 </script>
 
 <svelte:head><title>{m['nouns.account']({ count: 1 })} · {m['app.name']()}</title></svelte:head>
-<PageHeader title={m['nouns.account']({ count: 1 })} />
-<RecoveryPhraseIntegration />
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader title={m['nouns.account']({ count: 1 })} />{/snippet}
 
-<ProfileNameForm
-	profileId={profile?.id ?? ''}
-	displayName={profile?.displayName}
-	view={form.view}
-	onsubmit={form.submit}
-	onreset={form.reset}
-	oninput={form.input}
-	onRetryReadiness={form.retryReadiness}
-/>
-<ProfileAvatarForm
-	profileId={profile?.id ?? ''}
-	avatarData={profile?.avatarData}
-	mimeType={profile?.avatarMimeType}
-	view={avatarForm.view}
-	onsubmit={avatarForm.submit}
-	onreset={avatarForm.reset}
-	oninput={avatarForm.input}
-	onRetryReadiness={avatarForm.retryReadiness}
-	onRemove={removeAvatar}
-	onSelectionChange={(file) => avatarForm.changeValues({ action: 'upload', file })}
-/>
+	<RecoveryPhraseIntegration />
+
+	<ProfileNameForm
+		profileId={profile?.id ?? ''}
+		displayName={profile?.displayName}
+		view={form.view}
+		onsubmit={form.submit}
+		onreset={form.reset}
+		oninput={form.input}
+		onRetryReadiness={form.retryReadiness}
+	/>
+	<ProfileAvatarForm
+		profileId={profile?.id ?? ''}
+		avatarData={profile?.avatarData}
+		mimeType={profile?.avatarMimeType}
+		view={avatarForm.view}
+		onsubmit={avatarForm.submit}
+		onreset={avatarForm.reset}
+		oninput={avatarForm.input}
+		onRetryReadiness={avatarForm.retryReadiness}
+		onRemove={removeAvatar}
+		onSelectionChange={(file) => avatarForm.changeValues({ action: 'upload', file })}
+	/>
+</PageLayout>

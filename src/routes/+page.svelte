@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
 	import { EXPENSE } from '#lib/domain/transaction-kind.js'
 	import { resolveInternalTransferLinks } from '#lib/domain/internal-transfer.js'
 	import { transactionTagNames } from '#lib/domain/transaction-tags.js'
@@ -80,6 +82,7 @@
 >
 	{#key JSON.stringify([filters.activeOrganizationId, filters.selectedAccountIds])}
 		<ExpenseOverview
+			{navigation}
 			transactions={visibleTransactions}
 			{categoryNames}
 			{tagNamesByTransaction}

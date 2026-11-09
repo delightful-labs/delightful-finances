@@ -81,83 +81,91 @@
 {:else if groups.length === 0}
 	<Text size="sm">{m['transactions.empty.title']()}</Text>
 {:else}
-	{#each visibleGroups as group (group.bookedOn)}
-		<section aria-labelledby={`${listId}-${group.bookedOn}`}>
-			<Details open caretPosition="right">
-				{#snippet caret(expanded)}
-					<span class="caret"><Icon icon={expanded ? ChevronDown : ChevronRight} /></span>
-				{/snippet}
-				{#snippet summary()}
-					<SplitRow>
-						<Heading level="h2" size="md" id={`${listId}-${group.bookedOn}`}>
-							<time datetime={group.bookedOn}
-								>{dateFormatter.format(new Date(`${group.bookedOn}T00:00:00Z`))}</time
-							>
-						</Heading>
-						{#snippet trailing()}
-							<div class="totals">
-								{#each showTotals ? [...group.totals] : [] as [currency, amount] (currency)}
-									<Text
-										size="sm"
-										as="span"
-										aria-label={m['transactions.daily_total_amount']({
-											amount: formatMoney(amount, currency, getLocale())
-										})}
-									>
-										{formatMoney(amount, currency, getLocale())}
-									</Text>
-								{/each}
-							</div>
-						{/snippet}
-					</SplitRow>
-				{/snippet}
-				<ul class="entries">
-					{#each group.transactions as transaction (transaction.id)}
-						{#if item}
-							{@render item(transaction)}
-						{:else}
-							<TransactionListItem
-								href={transactionHref(transaction.id)}
-								{transaction}
-								categoryName={categoryNames.get(transaction.categoryId)}
-								tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
-							/>
-						{/if}
-					{/each}
-				</ul>
-			</Details>
-		</section>
-	{/each}
-	{#if pageCount > 1}
-		<Pagination label={m['transactions.pagination.label']()}>
-			<PaginationLink
-				label={m['labels.previous_subject']({ subject: m['nouns.page']({ count: 1 }) })}
-				href={pageHref(page - 1)}
-				disabled={page === 1}>‹</PaginationLink
-			>
-			{#each pageNumbers as number, index (number)}
-				{#if index > 0 && number - (pageNumbers[index - 1] ?? number) > 1}
-					<PaginationLink
-						label={m['labels.more_subjects']({ subjects: m['nouns.page']({ count: 2 }) })}
-						ellipsis>…</PaginationLink
-					>
-				{/if}
+	<div class="transaction-list">
+		{#each visibleGroups as group (group.bookedOn)}
+			<section aria-labelledby={`${listId}-${group.bookedOn}`}>
+				<Details open caretPosition="right">
+					{#snippet caret(expanded)}
+						<span class="caret"><Icon icon={expanded ? ChevronDown : ChevronRight} /></span>
+					{/snippet}
+					{#snippet summary()}
+						<SplitRow>
+							<Heading level="h2" size="md" id={`${listId}-${group.bookedOn}`}>
+								<time datetime={group.bookedOn}
+									>{dateFormatter.format(new Date(`${group.bookedOn}T00:00:00Z`))}</time
+								>
+							</Heading>
+							{#snippet trailing()}
+								<div class="totals">
+									{#each showTotals ? [...group.totals] : [] as [currency, amount] (currency)}
+										<Text
+											size="sm"
+											as="span"
+											aria-label={m['transactions.daily_total_amount']({
+												amount: formatMoney(amount, currency, getLocale())
+											})}
+										>
+											{formatMoney(amount, currency, getLocale())}
+										</Text>
+									{/each}
+								</div>
+							{/snippet}
+						</SplitRow>
+					{/snippet}
+					<ul class="entries">
+						{#each group.transactions as transaction (transaction.id)}
+							{#if item}
+								{@render item(transaction)}
+							{:else}
+								<TransactionListItem
+									href={transactionHref(transaction.id)}
+									{transaction}
+									categoryName={categoryNames.get(transaction.categoryId)}
+									tagNames={tagNamesByTransaction.get(transaction.id) ?? []}
+								/>
+							{/if}
+						{/each}
+					</ul>
+				</Details>
+			</section>
+		{/each}
+		{#if pageCount > 1}
+			<Pagination label={m['transactions.pagination.label']()}>
 				<PaginationLink
-					label={m['labels.page_number']({ number: number })}
-					href={pageHref(number)}
-					current={page === number}>{number}</PaginationLink
+					label={m['labels.previous_subject']({ subject: m['nouns.page']({ count: 1 }) })}
+					href={pageHref(page - 1)}
+					disabled={page === 1}>‹</PaginationLink
 				>
-			{/each}
-			<PaginationLink
-				label={m['labels.next_subject']({ subject: m['nouns.page']({ count: 1 }) })}
-				href={pageHref(page + 1)}
-				disabled={page === pageCount}>›</PaginationLink
-			>
-		</Pagination>
-	{/if}
+				{#each pageNumbers as number, index (number)}
+					{#if index > 0 && number - (pageNumbers[index - 1] ?? number) > 1}
+						<PaginationLink
+							label={m['labels.more_subjects']({ subjects: m['nouns.page']({ count: 2 }) })}
+							ellipsis>…</PaginationLink
+						>
+					{/if}
+					<PaginationLink
+						label={m['labels.page_number']({ number: number })}
+						href={pageHref(number)}
+						current={page === number}>{number}</PaginationLink
+					>
+				{/each}
+				<PaginationLink
+					label={m['labels.next_subject']({ subject: m['nouns.page']({ count: 1 }) })}
+					href={pageHref(page + 1)}
+					disabled={page === pageCount}>›</PaginationLink
+				>
+			</Pagination>
+		{/if}
+	</div>
 {/if}
 
 <style>
+	.transaction-list {
+		display: grid;
+		gap: var(--dui-spacing-md);
+		min-inline-size: 0;
+	}
+
 	section {
 		--dui-details-content-padding: 0;
 		--dui-details-summary-padding: var(--dui-spacing-xs);

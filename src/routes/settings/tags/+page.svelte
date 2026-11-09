@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { observeRow, observeRows } from '#lib/runtime/observations.js'
 	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import { tagArchiveSchema, tagFormSchema } from '#lib/validation/tags.js'
@@ -119,30 +123,32 @@
 <svelte:head>
 	<title>{m['nouns.tag']({ count: 2 })} · {m['app.name']()}</title>
 </svelte:head>
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader title={m['nouns.tag']({ count: 2 })} />{/snippet}
 
-<PageHeader title={m['nouns.tag']({ count: 2 })} />
-<QueryContent
-	queries={[membership, tags, categories]}
-	loadingMessage={m['status.loading_subject']({ subject: m['nouns.tag']({ count: 2 }) })}
-	errorMessage={m['errors.load_subject']({ subject: m['nouns.tag']({ count: 2 }) })}
->
-	{#if filters.activeOrganizationId && membership.current}
-		<TagList
-			tags={tags.current ?? []}
-			{categoryNames}
-			archivableTagIds={archivableIds}
-			archiveView={archive.view}
-			{onArchive}
-		/>
-	{/if}
-</QueryContent>
+	<QueryContent
+		queries={[membership, tags, categories]}
+		loadingMessage={m['status.loading_subject']({ subject: m['nouns.tag']({ count: 2 }) })}
+		errorMessage={m['errors.load_subject']({ subject: m['nouns.tag']({ count: 2 }) })}
+	>
+		{#if filters.activeOrganizationId && membership.current}
+			<TagList
+				tags={tags.current ?? []}
+				{categoryNames}
+				archivableTagIds={archivableIds}
+				archiveView={archive.view}
+				{onArchive}
+			/>
+		{/if}
+	</QueryContent>
 
-<TagForm
-	{scope}
-	view={form.view}
-	onopen={form.open}
-	onsubmit={form.submit}
-	onreset={form.reset}
-	onRetryReadiness={form.retryReadiness}
-	categories={availableCategories}
-/>
+	<TagForm
+		{scope}
+		view={form.view}
+		onopen={form.open}
+		onsubmit={form.submit}
+		onreset={form.reset}
+		onRetryReadiness={form.retryReadiness}
+		categories={availableCategories}
+	/>
+</PageLayout>

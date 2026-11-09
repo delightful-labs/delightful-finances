@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
 	import { transactionKindForPath, transactionPages } from '#lib/domain/transaction-kind.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import type { Snippet } from 'svelte'
@@ -34,14 +36,22 @@
 </script>
 
 <TransactionWorkspace
+	{navigation}
 	{children}
 	{index}
 	{heading}
 	drawerHeading={m['nouns.transaction']({ count: 2 })}
 	{listHref}
 >
-	{#snippet list(showHeading, closeControl)}
-		<TransactionView {kind} {heading} listPath={config.path} {showHeading} {closeControl} />
+	{#snippet list(showHeading, navigation, closeControl)}
+		<TransactionView
+			{navigation}
+			{kind}
+			{heading}
+			listPath={config.path}
+			{showHeading}
+			{closeControl}
+		/>
 	{/snippet}
 </TransactionWorkspace>
 

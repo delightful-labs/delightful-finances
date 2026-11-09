@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { observeRow, observeRows } from '#lib/runtime/observations.js'
 	import { createScopedFormController } from '#lib/forms/forms.svelte.js'
 	import {
@@ -127,30 +131,33 @@
 </script>
 
 <svelte:head><title>{m['nouns.category']({ count: 2 })} · {m['app.name']()}</title></svelte:head>
-<QueryContent
-	keepContentWhileLoading
-	queries={[categories, transactions, tags, membership]}
-	loadingMessage={m['status.loading_subject']({ subject: m['nouns.category']({ count: 2 }) })}
-	errorMessage={m['errors.load_subject']({ subject: m['nouns.category']({ count: 2 }) })}
->
-	<PageHeader title={m['nouns.category']({ count: 2 })} />
-	{#if filters.activeOrganizationId && (membership.current || membership.isLoading)}
-		<CategoryList
-			loading={categories.isLoading}
-			categories={categories.current ?? []}
-			{counts}
-			archivableCategoryIds={archivableIds}
-			archiveView={archive.view}
-			{onArchive}
-		/>
-	{/if}
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader title={m['nouns.category']({ count: 2 })} />{/snippet}
 
-	<CategoryForm
-		{scope}
-		view={form.view}
-		onopen={form.open}
-		onsubmit={form.submit}
-		onreset={form.reset}
-		onRetryReadiness={form.retryReadiness}
-	/>
-</QueryContent>
+	<QueryContent
+		keepContentWhileLoading
+		queries={[categories, transactions, tags, membership]}
+		loadingMessage={m['status.loading_subject']({ subject: m['nouns.category']({ count: 2 }) })}
+		errorMessage={m['errors.load_subject']({ subject: m['nouns.category']({ count: 2 }) })}
+	>
+		{#if filters.activeOrganizationId && (membership.current || membership.isLoading)}
+			<CategoryList
+				loading={categories.isLoading}
+				categories={categories.current ?? []}
+				{counts}
+				archivableCategoryIds={archivableIds}
+				archiveView={archive.view}
+				{onArchive}
+			/>
+		{/if}
+
+		<CategoryForm
+			{scope}
+			view={form.view}
+			onopen={form.open}
+			onsubmit={form.submit}
+			onreset={form.reset}
+			onRetryReadiness={form.retryReadiness}
+		/>
+	</QueryContent>
+</PageLayout>

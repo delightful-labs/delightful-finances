@@ -27,7 +27,7 @@
 
 <div class="filter-header">
 	{#if title}<Heading level={headingLevel}>{title}</Heading>{/if}
-	<FilterPopovers>
+	<FilterPopovers trailing={closeControl}>
 		{#snippet search()}
 			<InputText
 				label={m['actions.search_subject']({ subject: m['nouns.transaction']({ count: 2 }) })}
@@ -69,7 +69,6 @@
 			{/if}
 		{/snippet}
 	</FilterPopovers>
-	{@render closeControl?.()}
 </div>
 
 <style>
@@ -77,7 +76,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: var(--dui-spacing-md);
+		gap: var(--dui-spacing-xs);
 		min-inline-size: 0;
 	}
 </style>

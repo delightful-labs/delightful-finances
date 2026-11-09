@@ -1,4 +1,8 @@
 <script lang="ts">
+	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
+
 	import { transactionPages, type TransactionKind } from '#lib/domain/transaction-kind.js'
 	import { workspaceHref } from '#lib/domain/workspace-routes.js'
 	import { goto } from '$app/navigation'
@@ -164,33 +168,35 @@
 </script>
 
 <svelte:head><title>{title} · {m['app.name']()}</title></svelte:head>
-<PageHeader {title} />
+<PageLayout {navigation}>
+	{#snippet pageHeading()}<PageHeader {title} />{/snippet}
 
-<FormFeedback
-	view={form.view}
-	subject={m['nouns.transaction']({ count: 1 })}
-	reasonText={(reason) => formReasonText[reason]()}
-	invalidMessage={m['forms.validation_error']()}
-	section={form.view.readiness.kind === 'ready' ? 'readiness' : 'all'}
-	onRetryReadiness={form.retryReadiness}
-/>
-{#if form.view.readiness.kind === 'blocked' && form.view.readiness.reason === 'noAccounts'}
-	<AccountCreation />
-{:else if form.view.readiness.kind === 'ready'}
-	<TransactionForm
-		{kind}
-		paymentEntry={config.paymentEntry}
-		organizationId={filters.activeOrganizationId}
-		{accounts}
-		onattachmentschange={updateAttachments}
-		{attachmentPickerRevision}
-		{defaultAccountId}
-		categories={availableCategories}
-		defaultCategoryId={defaultCategory?.id}
-		{tagSuggestions}
+	<FormFeedback
 		view={form.view}
-		onsubmit={form.submit}
-		onreset={form.reset}
-		oncancel={() => goto(workspaceHref(filters.activeOrganizationId, config.path))}
+		subject={m['nouns.transaction']({ count: 1 })}
+		reasonText={(reason) => formReasonText[reason]()}
+		invalidMessage={m['forms.validation_error']()}
+		section={form.view.readiness.kind === 'ready' ? 'readiness' : 'all'}
+		onRetryReadiness={form.retryReadiness}
 	/>
-{/if}
+	{#if form.view.readiness.kind === 'blocked' && form.view.readiness.reason === 'noAccounts'}
+		<AccountCreation />
+	{:else if form.view.readiness.kind === 'ready'}
+		<TransactionForm
+			{kind}
+			paymentEntry={config.paymentEntry}
+			organizationId={filters.activeOrganizationId}
+			{accounts}
+			onattachmentschange={updateAttachments}
+			{attachmentPickerRevision}
+			{defaultAccountId}
+			categories={availableCategories}
+			defaultCategoryId={defaultCategory?.id}
+			{tagSuggestions}
+			view={form.view}
+			onsubmit={form.submit}
+			onreset={form.reset}
+			oncancel={() => goto(workspaceHref(filters.activeOrganizationId, config.path))}
+		/>
+	{/if}
+</PageLayout>

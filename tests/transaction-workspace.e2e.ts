@@ -347,7 +347,12 @@ for (const desktop of [true, false]) {
 				const drawer = main.locator('aside[data-side="right"]')
 				if (desktop) {
 					await expect(drawer).toHaveAttribute('data-open', 'true')
-					await expect(main.locator('.transaction-content')).toHaveText('', { useInnerText: true })
+					await expect(
+						main.locator('.transaction-content').getByRole('heading', {
+							name: kind === 'income' ? 'Income' : 'Expenses',
+							exact: true
+						})
+					).toBeVisible()
 				} else await expect(drawer).toHaveCount(0)
 				await main.getByRole('link', { name: label, exact: true }).click()
 				await expectWorkspaceUrl(page, `${base}/new`, workspaceId)
@@ -429,7 +434,7 @@ test(
 			has: page.getByRole('link', { name: /^Transaction details:/ })
 		})
 		await expect(drawer).toHaveAttribute('data-open', 'true')
-		await drawer.getByRole('button', { name: 'Close Transactions', exact: true }).click()
+		await main.getByRole('button', { name: 'Close Transactions', exact: true }).click()
 		await expect(drawer).toHaveAttribute('aria-hidden', 'true')
 		const reopen = main.getByRole('button', { name: 'Open Transactions', exact: true })
 		await reopen.click()
@@ -518,3 +523,158 @@ for (const kind of ['income', 'expense']) {
 		}
 	)
 }
+
+test(
+	'drawer toggles stay in place while headers scroll independently and pagination retains its gap',
+	{ tag: ['@transactions', '@navigation'] },
+	async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 420 })
+		await page.emulateMedia({ reducedMotion: 'reduce' })
+		const workspaceId = await seed(page)
+		await page.goto(`/expenses/new?workspace=${workspaceId}`)
+		const workspace = page.locator('.transaction-workspace')
+		const drawer = workspace.locator('aside[data-side="right"]')
+		const rightToggle = workspace.locator('.drawer-toggle button')
+		const leftToggle = page.getByRole('button', { name: 'Toggle Main navigation', exact: true })
+		const mainScroll = workspace.locator('.transaction-page > .page-layout')
+		const listScroll = drawer.locator('.page-layout')
+		await expect(drawer.locator('.entries > li')).toHaveCount(0)
+		await expect(
+			drawer.locator('.page-heading').getByRole('heading', { name: 'Transactions', exact: true })
+		).toBeVisible()
+		await expect(
+			mainScroll.getByRole('heading', { name: 'Add Expenses', exact: true })
+		).toBeVisible()
+		await expect(rightToggle).toHaveAttribute('aria-expanded', 'true')
+
+		const gaps = () =>
+			drawer.evaluate((node) => {
+				const buttons = node.querySelectorAll('.filter-actions > button')
+				const close = document.querySelector('.drawer-toggle button')
+				const search = buttons[0]?.getBoundingClientRect()
+				const filter = buttons[1]?.getBoundingClientRect()
+				const toggle = close?.getBoundingClientRect()
+				if (!search || !filter || !toggle) throw new Error('Missing drawer controls')
+				return { searchFilter: filter.left - search.right, filterClose: toggle.left - filter.right }
+			})
+		await expect
+			.poll(async () => {
+				const gap = await gaps()
+				return Math.abs(gap.searchFilter - gap.filterClose)
+			})
+			.toBeLessThan(1)
+		expect((await gaps()).searchFilter).toBeGreaterThan(0)
+		const beforeData = await rightToggle.boundingBox()
+		if (!beforeData) throw new Error('Missing initial control geometry')
+		await page.evaluate(async (workspaceId) => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			const account = (await db.all(app.accounts.where({ organizationId: workspaceId })))[0]
+			const category = (
+				await db.all(app.categories.where({ organizationId: workspaceId, kind: 'expense' }))
+			)[0]
+			if (!account || !category) throw new Error('Missing ledger fixture')
+			for (let index = 0; index < 26; index++) {
+				await db
+					.insert(app.transactions, {
+						organizationId: workspaceId,
+						accountId: account.id,
+						categoryId: category.id,
+						kind: 'expense',
+						amountMinor: 100,
+						currency: 'USD',
+						bookedOn: '2026-10-19',
+						description: `Layout fixture ${index}`,
+						source: 'manual'
+					})
+					.wait({ tier: 'local' })
+			}
+		}, workspaceId)
+		await expect(drawer.locator('.entries > li')).toHaveCount(25)
+		await expect.poll(async () => (await rightToggle.boundingBox())?.x).toBe(beforeData.x)
+		await expect
+			.poll(async () => {
+				const gap = await gaps()
+				return Math.abs(gap.searchFilter - gap.filterClose)
+			})
+			.toBeLessThan(1)
+
+		const rightBefore = await rightToggle.boundingBox()
+		const leftBefore = await leftToggle.boundingBox()
+		if (!rightBefore || !leftBefore) throw new Error('Missing toggle geometry')
+		await rightToggle.evaluate((node) => node.setAttribute('data-persistent-toggle', 'yes'))
+		for (const toggle of [leftToggle, rightToggle]) {
+			const style = await toggle.evaluate((node) => ({
+				radius: getComputedStyle(node).borderRadius,
+				shadow: getComputedStyle(node).boxShadow
+			}))
+			expect(style.radius).toBe('0px')
+			expect(style.shadow).not.toBe('none')
+		}
+
+		const pageHeading = mainScroll.locator('.page-heading')
+		const listHeading = listScroll.locator('.page-heading')
+		const pageHeadingBefore = await pageHeading.boundingBox()
+		const listHeadingBefore = await listHeading.boundingBox()
+		if (!pageHeadingBefore || !listHeadingBefore) throw new Error('Missing headings')
+		expect(await mainScroll.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true)
+		expect(await listScroll.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true)
+		await mainScroll.evaluate((node) => {
+			node.scrollTop = 150
+		})
+		await expect.poll(() => listScroll.evaluate((node) => node.scrollTop)).toBe(0)
+		expect((await pageHeading.boundingBox())?.y).toBeLessThan(pageHeadingBefore.y - 100)
+		await listScroll.evaluate((node) => {
+			node.scrollTop = 150
+		})
+		expect((await listHeading.boundingBox())?.y).toBeLessThan(listHeadingBefore.y - 100)
+		expect(await mainScroll.evaluate((node) => node.scrollTop)).toBe(150)
+		expect((await rightToggle.boundingBox())?.y).toBe(rightBefore.y)
+		expect((await leftToggle.boundingBox())?.y).toBe(leftBefore.y)
+		expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(
+			420
+		)
+
+		await mainScroll.evaluate((node) => {
+			node.scrollTop = 0
+		})
+		await listScroll.evaluate((node) => {
+			node.scrollTop = 0
+		})
+		for (const open of [false, true]) {
+			await rightToggle.click()
+			await expect(rightToggle).toHaveAttribute('aria-expanded', String(open))
+			await expect(rightToggle).toHaveAttribute('data-persistent-toggle', 'yes')
+			await expect.poll(async () => (await rightToggle.boundingBox())?.x).toBe(rightBefore.x)
+			expect((await rightToggle.boundingBox())?.y).toBe(rightBefore.y)
+		}
+		for (const open of [false, true]) {
+			await leftToggle.click()
+			await expect(leftToggle).toHaveAttribute('aria-expanded', String(open))
+			expect((await leftToggle.boundingBox())?.x).toBe(leftBefore.x)
+			expect((await leftToggle.boundingBox())?.y).toBe(leftBefore.y)
+		}
+		await expect
+			.poll(async () => {
+				const gap = await gaps()
+				return Math.abs(gap.searchFilter - gap.filterClose)
+			})
+			.toBeLessThan(1)
+
+		const pagination = drawer.getByRole('navigation', { name: 'Transaction pages', exact: true })
+		const group = drawer.locator('section').last()
+		const paginationBox = await pagination.boundingBox()
+		const groupBox = await group.boundingBox()
+		if (!paginationBox || !groupBox) throw new Error('Missing pagination geometry')
+		const grid = pagination.locator('..')
+		expect(await grid.evaluate((node) => getComputedStyle(node).display)).toBe('grid')
+		const gap = await grid.evaluate((node) => parseFloat(getComputedStyle(node).rowGap))
+		expect(gap).toBeGreaterThan(0)
+		expect(paginationBox.y - groupBox.y - groupBox.height).toBeCloseTo(gap, 0)
+	}
+)

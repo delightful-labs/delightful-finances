@@ -6,7 +6,11 @@
 	import FilterIcon from 'tdesign-icons-svg/src/filter.svg?component'
 	import { m } from '#lib/paraglide/messages.js'
 
-	let { search, filters }: { search: Snippet; filters: Snippet } = $props()
+	let {
+		search,
+		filters,
+		trailing
+	}: { search: Snippet; filters: Snippet; trailing?: Snippet | undefined } = $props()
 	const id = $props.id()
 
 	function dismissPopover(event: KeyboardEvent) {
@@ -41,6 +45,7 @@
 	<Popover id={`${id}-filters`} onkeydown={dismissPopover}
 		><div class="fields">{@render filters()}</div></Popover
 	>
+	{@render trailing?.()}
 </div>
 
 <style>

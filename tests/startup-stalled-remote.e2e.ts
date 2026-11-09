@@ -306,6 +306,8 @@ async function prepareSavedExpense(page: Page) {
 	if (!target) throw new Error('Expected saved detail URL')
 	await page.goto(target)
 	await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34')
+	// The populated draft can render before session restoration has enabled editing.
+	await expect(page.getByLabel('Amount', { exact: true })).toBeEnabled()
 	const transactionId = new URL(target, page.url()).pathname.split('/').at(-1)
 	if (!transactionId) throw new Error('Expected transaction ID')
 	return { target, workspace, transactionId }
