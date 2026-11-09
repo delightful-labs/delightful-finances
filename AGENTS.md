@@ -21,3 +21,5 @@
 - Delightful Labs operates through open source and open learning. Create its GitHub repositories as public unless the user explicitly requests otherwise.
 
 - The coordinated XState v6 and UI/worker migration follows [its design specification](specs/013-local-first-startup/xstate-v6-migration.md). Review the exact installed v6 docs and stability manifest, adapt logic to published APIs without patching XState, and preserve implementation review before tests.
+
+- For v6 machine testing, follow the generated-testing section in `specs/013-local-first-startup/xstate-v6-migration.md`: prefer `@xstate/test` campaigns with independent behavioral oracles; preserve integration tests and existing implementation-review gates.

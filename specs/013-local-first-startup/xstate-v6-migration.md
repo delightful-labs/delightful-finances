@@ -194,3 +194,37 @@ Stage the work for focused review:
 No startup/performance/privacy/platform improvement is claimed until the actual
 Finance implementation has passed those checks. Static source review and the
 Clipper reference are design evidence, not Finance acceptance results.
+
+## Generated testing with the v6 test beta
+
+Use the published `@xstate/test@2.0.0-beta.0` with its required peer
+`fast-check@4.10.2` for generated machine coverage. These are experimental APIs;
+keep exact versions and review changes on upgrade. Zod and Effect are optional,
+not prerequisites. See the [model-based testing guide](https://stately.ai/docs/xstate/v6/model-based-testing)
+and the README shipped with the installed test package.
+
+Prefer `propertyTest` for varied command sequences and shrinking, and `testPaths`
+for bounded reachable paths. Use an independent product contract with a real actor
+or adapter as `sut`; compare observed behavior through `read` and `projectModel`.
+Do not implement the SUT by copying the expected model snapshot. Declare generators
+explicitly for type-only event schemas. Keep bounds, seeds and coverage thresholds
+visible, and distinguish generated coverage from exhaustive proof. Shortest paths
+omit ignored/self-loop commands; exercise rejection and duplicates in generated
+sequences and targeted regressions.
+
+For asynchronous actors use executed mode with generated outcomes where appropriate.
+Scheduler exploration covers only work instrumented through that scheduler; it does
+not prove all browser, worker, Jazz or native interleavings. Preserve integration
+coverage for actual cleanup, cancellation, persistence and realm boundaries.
+
+Use the library failure store (`failures` with a stable key) to retain shrunk traces,
+ignore `.xstate-test/` in source control, and upload it on CI failure once campaigns
+are enabled. Promote meaningful fixed failures into tracked regression fixtures
+using `replayTest` with `expect: 'pass'`; the automatic store removes fixed failures.
+Do not build another custom sequence runner or patch XState/test declarations.
+
+This repository still uses XState v5. Install the v6 test beta when the connected
+actor graph moves to v6, rather than introducing incompatible peers now. Plan
+independent UI/worker contract models for cancellation, stale replies, duplicate
+completion, account switches and disposal, then verify actual worker/Jazz adapters
+with integration tests. Preserve existing implementation-review gates.
