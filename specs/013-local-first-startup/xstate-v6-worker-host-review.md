@@ -1,6 +1,6 @@
 # Finance migration: native worker-host foundation
 
-Status: implementation ready for focused review; not activated or runtime-qualified.
+Status: foundation committed as `5daf37a`; approved transport tests pass. The worker remains inactive and browser/runtime qualification remains pending.
 Branch: `feat/xstate-v6-worker-runtime`, based on merged main `2cfba58`.
 
 ## This review batch
@@ -134,3 +134,28 @@ Next review unit: preserve identity-store/lock semantics and record the complete
 connected v6 session/workspace graph and its UI-host capabilities before changing
 the global runtime/framework/shared-artifact pins. Generated `@xstate/test`
 campaigns enter with that connected v6 graph, after implementation review.
+
+## Review approval and focused transport qualification
+
+The user approved this foundation with “Commit and continue.” It is committed as
+`5daf37a`. The approved transport implementation now has 17 passing cases in
+`host-protocol.test.ts` and `host-channel.test.ts`, using real native MessageChannels
+and controlled native storage/broker boundaries. Strict test/source types pass.
+
+Reproduce with Node 24.22.2 and pnpm 10.22.0:
+
+```sh
+pnpm exec tsc --project tsconfig.worker-host.json
+pnpm test:worker-host
+```
+
+The dedicated config avoids SvelteKit/Paraglide generation and the user's dev
+server. Cases cover invalid/oversized commands, exact namespace binding,
+generation-key and broker admission, native error sanitization, duplicate-write
+rejection, asynchronous broker failure, stale replies, bounded pending calls,
+explicit close and unknown write acknowledgement. These are native transport
+checks, not browser persistence or worker SDK acceptance evidence.
+
+The next v6 account-store graph is documented in
+`xstate-v6-account-store-review.md`; its implementation awaits its own review
+before tests, and is not yet connected to the live Finance session.
