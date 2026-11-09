@@ -13,14 +13,15 @@ async function attachmentState(page: Page, transactionId: string) {
 		const links = await db.all(app.transactionAttachments.where({ transactionId }))
 		return Promise.all(
 			links.map(async ({ id, fileId }) => {
-				const file = await db.one(app.files.where({ id: fileId }), { tier: 'local' })
-				const parts = await db.all(app.fileParts.where({ fileId }))
+				const file = await db.one(app.files.where({ id: fileId }), { tier: 'local-first' })
+				const parts = await db.all(app.fileParts.where({ fileId }).orderBy('partIndex'))
 				return {
 					id,
 					fileId,
 					fileName: file?.fileName,
 					mimeType: file?.mimeType,
-					parts: parts.length
+					parts: parts.length,
+					bytes: parts.flatMap((part) => [...(part.data ?? [])])
 				}
 			})
 		)
@@ -91,9 +92,30 @@ test(
 		expect(attached).toMatchObject({ fileName: 'receipt.png', mimeType: 'image/png' })
 		expect(attached?.parts).toBeGreaterThan(0)
 		const fileId = attached?.fileId
-		if (!fileId) throw new Error('Uploaded file was not found')
-		// Keep a second authorized reference so retained contents remain readable.
-		await page.evaluate(
+		if (!fileId || !attached) throw new Error('Uploaded file was not found')
+
+		await page.keyboard.press('Escape')
+		await expect(information).toBeFocused()
+		await information.press('Enter')
+		await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).focus()
+		await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).press('Enter')
+		await expect.poll(() => attachmentState(page, transactionId)).toHaveLength(0)
+		if (!fileId || !attached) throw new Error('Uploaded file was not found')
+		const retained = await page.evaluate(async (fileId) => {
+			const schemaPath = '/src/lib/schema.ts'
+			const sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing database')
+			return db.one(app.files.where({ id: fileId }), { tier: 'local-first' })
+		}, fileId)
+		// Unlinked contents are deliberately hidden by Finance's file policy.
+		expect(retained).toBeNull()
+		// Reattaching the original reference proves removal retained the same file
+		// and bytes, without relying on a mismatched cross-transaction reference.
+		const reattached = await page.evaluate(
 			async ({ fileId, transactionId }) => {
 				const schemaPath = '/src/lib/schema.ts',
 					sessionPath = '/src/lib/runtime/jazz-session.ts'
@@ -104,28 +126,17 @@ test(
 				if (!db) throw new Error('Missing database')
 				await db
 					.insert(app.transactionAttachments, { transactionId, fileId })
-					.wait({ tier: 'local' })
+					.wait({ tier: 'global' })
+				const file = await db.one(app.files.where({ id: fileId }), { tier: 'remote' })
+				const parts = await db.all(app.fileParts.where({ fileId }).orderBy('partIndex'), {
+					tier: 'remote'
+				})
+				return { id: file?.id, bytes: parts.flatMap((part) => [...(part.data ?? [])]) }
 			},
-			{ fileId, transactionId: seed.id }
+			{ fileId, transactionId }
 		)
-		await page.keyboard.press('Escape')
-		await expect(information).toBeFocused()
-		await information.press('Enter')
-		await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).focus()
-		await page.getByRole('button', { name: 'Remove receipt.png', exact: true }).press('Enter')
-		await expect.poll(() => attachmentState(page, transactionId)).toHaveLength(0)
-		if (!fileId) throw new Error('Uploaded file was not found')
-		const retained = await page.evaluate(async (fileId) => {
-			const schemaPath = '/src/lib/schema.ts'
-			const sessionPath = '/src/lib/runtime/jazz-session.ts'
-			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
-			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
-				await import(sessionPath)
-			const db = getCurrentJazzSession()?.getSnapshot().client?.db
-			if (!db) throw new Error('Missing database')
-			return db.one(app.files.where({ id: fileId }), { tier: 'local' })
-		}, fileId)
-		expect(retained?.id).toBe(fileId)
+		expect(reattached.id).toBe(fileId)
+		expect(reattached.bytes).toEqual(attached.bytes)
 	}
 )
 

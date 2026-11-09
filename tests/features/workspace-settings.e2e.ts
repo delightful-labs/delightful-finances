@@ -186,16 +186,20 @@ test.describe('workspace backup downloads', () => {
 			await start(page)
 			const identity = await page.evaluate(() => {
 				const { db, userId } = window.workspaceSettingsTest
-				const begin = db.beginExclusiveTransaction.bind(db)
-				db.beginExclusiveTransaction = () => {
-					const transaction = begin()
-					transaction.commit = () => {
-						sessionStorage.setItem('backup-test-commit-attempt', '1')
-						throw new Error('Injected export failure before native commit')
+				const begin = db.beginSerializableTransaction.bind(db)
+				Object.defineProperty(db, 'beginSerializableTransaction', {
+					configurable: true,
+					writable: true,
+					value: () => {
+						const transaction = begin()
+						transaction.commit = () => {
+							sessionStorage.setItem('backup-test-commit-attempt', '1')
+							throw new Error('Injected export failure before native commit')
+						}
+						transaction.rollback = async () => false
+						return transaction
 					}
-					transaction.rollback = async () => false
-					return transaction
-				}
+				})
 				return userId
 			})
 			await page.locator('#workspace-backup-protection').selectOption('none')

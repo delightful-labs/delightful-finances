@@ -232,11 +232,8 @@ function session(db?: MutationErrorDb) {
 		close: vi.fn(async () => {}),
 		createLocalFirst: vi.fn(async () => {}),
 		restoreLocalFirst: vi.fn(async () => {}),
-		becomeBackend: vi.fn(async () => {}),
-		registerJWT: vi.fn(async () => {}),
-		loginJWT: vi.fn(async () => {}),
-		loginOrRegisterJWT: vi.fn(async () => {}),
-		linkJWT: vi.fn(async () => {}),
+		loginWithBackend: vi.fn(async () => {}),
+		linkWithBackend: vi.fn(async () => {}),
 		logout: vi.fn(async () => {})
 	}
 	return { value, getSnapshot, subscribe, unsubscribe, notify: () => notify() }
@@ -244,11 +241,18 @@ function session(db?: MutationErrorDb) {
 async function start(
 	open: () => Promise<Session>,
 	existing?: Session,
-	inspect: (event: InspectionEvent) => void = () => {}
+	inspect: (event: InspectionEvent) => void = () => {},
+	prepare?: (session: Session) => Promise<void>
 ) {
 	const startup = startupOwner(open, existing)
 	const actor = createActor(
-		createApplicationReadinessMachine(undefined, undefined, createJazzSessionReadinessAdapter),
+		createApplicationReadinessMachine(
+			undefined,
+			undefined,
+			createJazzSessionReadinessAdapter,
+			undefined,
+			prepare
+		),
 		{ inspect }
 	).start()
 	startupBindings.set(actor, startup)
@@ -1774,4 +1778,36 @@ describe('application-owned workspace restore drain', () => {
 		f.gate.resolve()
 		await waitFor(f.actor, (state) => state.status === 'done')
 	})
+})
+
+it('keeps the session out of the UI until local-first preparation has completed', async () => {
+	const current = session(),
+		gate = Promise.withResolvers<void>()
+	const prepare = vi.fn(() => gate.promise)
+	const actor = await start(async () => current.value, undefined, undefined, prepare)
+	beginStartup(actor)
+	await waitFor(actor, (state) => state.matches({ preparingLocalFirst: 'active' }))
+	expect(prepare).toHaveBeenCalledWith(current.value)
+	expect(actor.getSnapshot().context.session).toBeUndefined()
+	gate.resolve()
+	await waitFor(actor, (state) => state.matches('running'))
+	expect(actor.getSnapshot().context.session).toBe(current.value)
+})
+it('drains local-first preparation before acknowledging application shutdown', async () => {
+	const current = session(),
+		gate = Promise.withResolvers<void>()
+	const actor = await start(
+		async () => current.value,
+		undefined,
+		undefined,
+		() => gate.promise
+	)
+	beginStartup(actor)
+	await waitFor(actor, (state) => state.matches({ preparingLocalFirst: 'active' }))
+	actor.send({ type: 'SHUTDOWN' })
+	expect(actor.getSnapshot().matches({ preparingLocalFirst: 'stopping' })).toBe(true)
+	expect(actor.getSnapshot().context.session).toBeUndefined()
+	gate.resolve()
+	await waitFor(actor, (state) => state.status === 'done')
+	expect(actor.getSnapshot().context.workspace).toBeUndefined()
 })

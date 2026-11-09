@@ -1,7 +1,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
-import { createJazzSession, type JazzClient } from 'jazz-tools/backend'
-import { startLocalJazzServer, type LocalJazzServerHandle } from 'jazz-tools/testing'
+import {
+	createJazzClient,
+	createJazz,
+	memory,
+	acceptLocalFirstAuth,
+	type JazzClient
+} from 'jazz-tools/backend'
+import { createServer } from 'node:http'
 import type { JazzSession } from 'jazz-tools/client'
 import type { Db } from 'jazz-tools'
 import {
@@ -23,41 +29,41 @@ import {
 } from '../machines/workspaces/workspace-backup.js'
 import { encodeAttachmentBytes, financeBackupProfile, readFinanceMetadata } from './workspace.js'
 
-let server: LocalJazzServerHandle, db: Db, writer: Db, identityId: string
+let authority: ReturnType<typeof createJazz>,
+	server: ReturnType<typeof createServer>,
+	db: Db,
+	writer: Db,
+	identityId: string
 const sessions: JazzSession<JazzClient>[] = []
 beforeAll(async () => {
-	server = await startLocalJazzServer({
-		schema: app,
+	authority = createJazz({ app, permissions, store: memory(), authenticate: acceptLocalFirstAuth })
+	server = createServer((request, response) => authority.nodeHandler(request, response))
+	await authority.attach(server)
+	await authority.ready()
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const address = server.address()
+	if (!address || typeof address === 'string') throw new Error('Missing disposable backup listener')
+	const session = await createJazzClient({
+		app,
 		permissions,
-		inMemory: true,
-		allowLocalFirstAuth: true
+		serverUrl: `http://127.0.0.1:${address.port}/jazz`,
+		driver: { type: 'memory' },
+		initial: 'local-first'
 	})
-	for (const initial of ['local-first', { backendSecret: server.backendSecret }] satisfies (
-		'local-first' | { backendSecret: string }
-	)[]) {
-		const session = await createJazzSession({
-			appId: server.appId,
-			app,
-			permissions,
-			serverUrl: server.url,
-			driver: { type: 'memory' },
-			initial
-		})
-		sessions.push(session)
-	}
-	const owner = sessions[0]?.getSnapshot(),
-		authority = sessions[1]?.getSnapshot()
-	if (!owner?.client || !owner.account || !authority?.client)
-		throw new Error('Disposable clients unavailable')
+	sessions.push(session)
+	const owner = session.getSnapshot()
+	if (!owner.client || !owner.account) throw new Error('Disposable backup client unavailable')
 	db = owner.client.db
-	writer = authority.client.db
+	writer = authority.db
 	identityId = owner.account.id
 	db.onMutationError(() => {})
 }, 30000)
 afterEach(() => vi.restoreAllMocks())
 afterAll(async () => {
 	for (const session of sessions) await session.close()
-	await server?.stop()
+	await authority?.close()
+	server?.closeAllConnections()
+	if (server) await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 async function seed(scope: 'complete' | 'ownership' = 'complete') {
 	const g = {
@@ -698,10 +704,10 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 				loading: false,
 				failed: false
 			}
-			const begin = db.beginExclusiveTransaction.bind(db)
+			const begin = db.beginSerializableTransaction.bind(db)
 			let rollback: (() => Promise<boolean>) | undefined
 			const rollbackAttempt = vi.fn(async () => false)
-			vi.spyOn(db, 'beginExclusiveTransaction').mockImplementation(() => {
+			vi.spyOn(db, 'beginSerializableTransaction').mockImplementation(() => {
 				const transaction = begin()
 				const nativeRollback = transaction.rollback.bind(transaction)
 				rollback = () => Promise.resolve(nativeRollback())

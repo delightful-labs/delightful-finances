@@ -144,9 +144,15 @@ afterAll(async () => {
 })
 it('keeps the 100 boundary, rejects nonowner/unfinished deletion, and allows authorized admin reads', async () => {
 	expect(await run()).toEqual({ kind: 'unchanged', deletedCount: 0, settlement: 'notStarted' })
-	await admin.expectDenied((db) => db.delete(app.simplefinSyncAttempts, attemptId(1)))
-	await admin.expectDenied((db) => db.delete(app.simplefinSyncAccountResults, resultId))
-	await owner.expectDenied((db) => db.delete(app.simplefinSyncAttempts, unfinishedId))
+	await expect(
+		admin.expectDenied((db) => db.delete(app.simplefinSyncAttempts, attemptId(1)))
+	).resolves.toBeUndefined()
+	await expect(
+		admin.expectDenied((db) => db.delete(app.simplefinSyncAccountResults, resultId))
+	).resolves.toBeUndefined()
+	await expect(
+		owner.expectDenied((db) => db.delete(app.simplefinSyncAttempts, unfinishedId))
+	).resolves.toBeUndefined()
 	expect(await run(admin, fixture.accountFor(adminSession))).toMatchObject({
 		kind: 'deferred',
 		deletedCount: 0

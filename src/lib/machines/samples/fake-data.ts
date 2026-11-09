@@ -1,12 +1,11 @@
 import { assign, fromPromise, not, or, setup, stateIn, type OutputFrom } from 'xstate'
-import { ReadTier } from 'jazz-tools'
-import type { getDb } from 'jazz-tools/svelte'
+import { ReadTier, type Db } from 'jazz-tools'
 import { app } from '../../schema.js'
 import type { FakeDataPlan } from '../../domain/fake-data.js'
 import { createJazzTransactionActors } from '../persistence/jazz-transaction-actors.js'
 
-export type FakeDataDb = Pick<ReturnType<typeof getDb>, 'all' | 'beginExclusiveTransaction'>
-type Transaction = ReturnType<FakeDataDb['beginExclusiveTransaction']>
+export type FakeDataDb = Pick<Db, 'all' | 'beginSerializableTransaction'>
+type Transaction = ReturnType<FakeDataDb['beginSerializableTransaction']>
 type Input = { db: FakeDataDb; organizationId: string; userId: string }
 type Event = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
 type Settlement = 'notStarted' | 'confirmed' | 'unresolved'
@@ -21,7 +20,7 @@ function required<T>(value: T | undefined): T {
 	return value
 }
 const transactionActors = createJazzTransactionActors(
-	(db: FakeDataDb) => db.beginExclusiveTransaction(),
+	(db: FakeDataDb) => db.beginSerializableTransaction(),
 	(write: ReturnType<Transaction['commit']>) => write.wait()
 )
 const readLocal = fromPromise(async ({ input }: { input: Input }) => {
@@ -87,7 +86,7 @@ type Context = Input & {
 	result: FakeDataResult | undefined
 }
 
-/** Seed only authoritative emptiness; own the exclusive transaction until confirmed or rolled back. */
+/** Seed only authoritative emptiness; own the serializable transaction until confirmed or rolled back. */
 export const fakeDataSetup = setup<
 	Context,
 	Event,

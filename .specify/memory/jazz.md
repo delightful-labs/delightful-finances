@@ -166,3 +166,13 @@ staging the atomic deletion. Terminal log records are immutable under the policy
 Browser retention and full-policy tests verify this path; unit tests reject
 partial/mismatched local knowledge. See
 [`spec 014 verification`](../../specs/014-bank-sync-log/verification.md).
+
+## Alpha.60 transfer predicate semantics
+
+The minimal transfer-policy fixture now permits clearing both endpoint markers and deleting the
+relationship in one mergeable bundle when its explicitly declared final-state predicates hold.
+Its transaction-update policy is `always`, and transfer-delete requires both endpoints unlinked.
+The prior alpha.59 rejection was an SDK evaluation behavior, rather than an explicit deny in those
+rules. The alpha.60 fixture verifies the final deleted relationship and both cleared markers.
+Finance's production workflow retains its existing staged unlink sequence; this compatibility
+qualification does not relax access checks or the restrictions on deleting referenced endpoints.

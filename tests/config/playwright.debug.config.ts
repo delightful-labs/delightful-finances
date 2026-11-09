@@ -3,7 +3,7 @@ import base from './base.js'
 
 const enabled = process.env.PUBLIC_DEBUG === 'true'
 const production = process.env.DEBUG_PRODUCTION_SMOKE === 'true'
-const port = production ? 5185 : enabled ? 5182 : 5183
+const port = Number(process.env.FINANCE_E2E_PORT ?? (production ? 5185 : enabled ? 5182 : 5183))
 
 export default defineConfig({
 	...base,
@@ -31,8 +31,8 @@ export default defineConfig({
 			JAZZ_ADMIN_SECRET: ''
 		},
 		command: production
-			? `pnpm preview --host 127.0.0.1 --port ${port} --strictPort`
-			: `pnpm dev:agent --host 127.0.0.1 --port ${port}`,
+			? `pnpm preview --host 0.0.0.0 --port ${port} --strictPort`
+			: `pnpm dev:agent --host 0.0.0.0 --port ${port}`,
 		url: `http://127.0.0.1:${port}`,
 		reuseExistingServer: process.env.FINANCE_E2E_REUSE_SERVER === 'true' && !process.env.CI
 	}

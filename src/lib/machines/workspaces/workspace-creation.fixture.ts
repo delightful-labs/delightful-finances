@@ -58,7 +58,7 @@ export function creationFixture() {
 	const wait = vi.fn(async (_options: { tier: 'local' }) => {})
 	const commit = vi.spyOn(tx, 'commit').mockImplementation(vi.fn().mockReturnValue({ wait }))
 	const beginTransaction = vi.fn(() => tx)
-	const beginExclusiveTransaction = vi.fn(() => {
+	const beginSerializableTransaction = vi.fn(() => {
 		throw new Error('Automatic fake data must be disabled in workspace fixtures')
 	})
 	const readScope = new Transaction('mergeable', () => {
@@ -66,7 +66,7 @@ export function creationFixture() {
 	})
 	const hydrate = vi.spyOn(readScope, 'all').mockResolvedValue([])
 	hydrate.mockResolvedValueOnce([{ id: profileId, userId }])
-	const db = { beginTransaction, beginExclusiveTransaction, all: readScope.all.bind(readScope) }
+	const db = { beginTransaction, beginSerializableTransaction, all: readScope.all.bind(readScope) }
 	function transaction(purpose: 'additional' | 'bootstrap' = 'additional') {
 		const actor = createActor(workspaceCreationTransaction, { input: { db, attempt, purpose } })
 		cleanups.push(() => actor.stop())
@@ -92,7 +92,7 @@ export function creationFixture() {
 		const getConfig = vi.fn().mockReturnValue({ serverUrl: 'https://unused.invalid' })
 		const actor = createActor(workspaceInitialization, {
 			input: {
-				db: { beginTransaction, beginExclusiveTransaction, all: discover, getConfig },
+				db: { beginTransaction, beginSerializableTransaction, all: discover, getConfig },
 				userId
 			}
 		})

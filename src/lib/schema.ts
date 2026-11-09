@@ -24,7 +24,7 @@ const schema = {
 	...batchesSchema
 }
 
-export const previousApp = s.defineApp(schema)
+export const previousApp = s.defineApp(schema, { migrations: 'none' })
 
 const restoreDefinition = {
 	...schema,
@@ -50,7 +50,7 @@ const restoreDefinition = {
 		{ workspace: s.rel('organizations', 'workspaceId'), sourceFile: s.rel('files', 'sourceFileId') }
 	)
 }
-export const app = s.defineApp(restoreDefinition)
+export const app = s.defineApp(restoreDefinition, { migrations: 'none' })
 
 // Workspace business data excludes operational restore metadata.
 export type Organization = s.RowOf<typeof previousApp.organizations>

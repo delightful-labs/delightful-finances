@@ -21,12 +21,12 @@ async function seed(page: Page, count = 0, acrossDates = false) {
 			const db = snapshot.client.db
 			const organization = await db.one(
 				app.organizations.where({ ownerId: snapshot.account.id, kind: 'personal' }),
-				{ tier: 'local' }
+				{ tier: 'local-first' }
 			)
 			if (!organization) throw new Error('Workspace not ready')
 			const categories = await db.all(
 				app.categories.where({ organizationId: organization.id, kind: 'expense' }),
-				{ tier: 'local' }
+				{ tier: 'local-first' }
 			)
 			const category = categories[0]
 			if (!category) throw new Error('Category not ready')
@@ -420,31 +420,36 @@ test(
 				started: false,
 				release: () => gate.resolve(),
 				restore: () => {
-					db.beginTransaction = begin
+					Object.defineProperty(db, 'beginTransaction', {
+						configurable: true,
+						writable: true,
+						value: begin
+					})
 				}
 			}
-			db.beginTransaction = (...args) => {
-				const transaction = begin(...args)
-				if (!first) return transaction
-				first = false
-				const commit = transaction.commit.bind(transaction)
-				transaction.commit = (...args) => {
-					const handle = commit(...args)
-					const wait = handle.wait.bind(handle)
-					handle.wait = async (...options) => {
-						const [option] = options
-						const result =
-							option.tier === 'edge'
-								? await wait({ tier: 'edge' })
-								: await wait({ tier: option.tier })
-						window.paginationBatchGate.started = true
-						await gate.promise
-						return result
+			Object.defineProperty(db, 'beginTransaction', {
+				configurable: true,
+				writable: true,
+				value: (...args: Parameters<typeof begin>) => {
+					const transaction = begin(...args)
+					if (!first) return transaction
+					first = false
+					const commit = transaction.commit.bind(transaction)
+					transaction.commit = (...args) => {
+						const handle = commit(...args)
+						const wait = handle.wait.bind(handle)
+						handle.wait = async (...options) => {
+							const [option] = options
+							const result = await wait({ tier: option.tier })
+							window.paginationBatchGate.started = true
+							await gate.promise
+							return result
+						}
+						return handle
 					}
-					return handle
+					return transaction
 				}
-				return transaction
-			}
+			})
 			return { sourceId, destinationId: destination.id }
 		})
 		try {

@@ -168,32 +168,46 @@ it('allows the owner to record and settle an attempt and account result, with ad
 		(await admin.one(app.simplefinSyncAccountResults.where({ id: result.id }), { tier: 'remote' }))
 			?.importedCount
 	).toBe(2)
-	await owner.expectDenied((db) =>
-		db.update(app.simplefinSyncAttempts, row.id, { outcome: 'unfinished' })
-	)
-	await owner.expectDenied((db) =>
-		db.update(app.simplefinSyncAccountResults, result.id, { importedCount: 99 })
-	)
+	await expect(
+		owner.expectDenied((db) =>
+			db.update(app.simplefinSyncAttempts, row.id, { outcome: 'unfinished' })
+		)
+	).resolves.toBeUndefined()
+	await expect(
+		owner.expectDenied((db) =>
+			db.update(app.simplefinSyncAccountResults, result.id, { importedCount: 99 })
+		)
+	).resolves.toBeUndefined()
 })
 it('denies nonowner writes, viewer reads, forged scope, terminal inserts and deletes', async () => {
 	const row = await owner.insert(app.simplefinSyncAttempts, attempt()).wait({ tier: 'global' })
 	expect(
 		await viewer.one(app.simplefinSyncAttempts.where({ id: row.id }), { tier: 'remote' })
 	).toBeNull()
-	await admin.expectDenied((db) =>
-		db.insert(app.simplefinSyncAttempts, {
-			...attempt(),
-			initiatedBy: fixture.accountFor(adminSession)
-		})
-	)
-	await owner.expectDenied((db) =>
-		db.insert(app.simplefinSyncAttempts, { ...attempt(), organizationId: crypto.randomUUID() })
-	)
-	await owner.expectDenied((db) =>
-		db.insert(app.simplefinSyncAttempts, { ...attempt(), outcome: 'succeeded' })
-	)
-	await owner.expectDenied((db) =>
-		db.update(app.simplefinSyncAttempts, row.id, { startedAt: new Date() })
-	)
-	await owner.expectDenied((db) => db.delete(app.simplefinSyncAttempts, row.id))
+	await expect(
+		admin.expectDenied((db) =>
+			db.insert(app.simplefinSyncAttempts, {
+				...attempt(),
+				initiatedBy: fixture.accountFor(adminSession)
+			})
+		)
+	).resolves.toBeUndefined()
+	await expect(
+		owner.expectDenied((db) =>
+			db.insert(app.simplefinSyncAttempts, { ...attempt(), organizationId: crypto.randomUUID() })
+		)
+	).resolves.toBeUndefined()
+	await expect(
+		owner.expectDenied((db) =>
+			db.insert(app.simplefinSyncAttempts, { ...attempt(), outcome: 'succeeded' })
+		)
+	).resolves.toBeUndefined()
+	await expect(
+		owner.expectDenied((db) =>
+			db.update(app.simplefinSyncAttempts, row.id, { startedAt: new Date() })
+		)
+	).resolves.toBeUndefined()
+	await expect(
+		owner.expectDenied((db) => db.delete(app.simplefinSyncAttempts, row.id))
+	).resolves.toBeUndefined()
 })
