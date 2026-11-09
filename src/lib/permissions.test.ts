@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createPolicyTestApp, type PolicyTestApp, type TestDb } from 'jazz-tools/testing'
 import { app, type TransactionRow } from './schema.js'
 import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
@@ -57,9 +57,9 @@ function transaction(kind: 'expense' | 'income') {
 	} satisfies import('jazz-tools').schema.InsertOf<typeof app.transactions>
 }
 
-beforeAll(async () => {
-	fixture = await createPolicyTestApp(app, permissions, expect)
-	db = fixture.as(session)
+async function createPermissionFixture() {
+	const fixture = await createPolicyTestApp(app, permissions, expect)
+	const db = fixture.as(session)
 	const userId = fixture.accountFor(session)
 
 	for (const id of [organizationId, otherOrganizationId]) {
@@ -98,9 +98,9 @@ beforeAll(async () => {
 			)
 		)
 	}
-	selectedMemberDb = fixture.as(selectedMemberSession)
-	viewerDb = fixture.as(viewerSession)
-	selectedMemberId = fixture.accountFor(selectedMemberSession)
+	const selectedMemberDb = fixture.as(selectedMemberSession)
+	const viewerDb = fixture.as(viewerSession)
+	const selectedMemberId = fixture.accountFor(selectedMemberSession)
 	const viewerId = fixture.accountFor(viewerSession)
 	await fixture.seed((seed) =>
 		seed.insert(app.organizationMembers, {
@@ -157,6 +157,10 @@ beforeAll(async () => {
 			{ id: historicalLinkId }
 		)
 	)
+	return { fixture, db, selectedMemberDb, viewerDb, selectedMemberId }
+}
+beforeAll(async () => {
+	;({ fixture, db, selectedMemberDb, viewerDb, selectedMemberId } = await createPermissionFixture())
 }, 30_000)
 afterAll(async () => {
 	await fixture?.shutdown()
@@ -1675,6 +1679,16 @@ describe.each(['income', 'expense'] satisfies ('income' | 'expense')[])(
 )
 
 describe('new paired transfer insertion', () => {
+	let fixture: PolicyTestApp
+	let db: TestDb
+	// These cases must not inherit the earlier tests' records and session clients.
+	beforeEach(async () => {
+		;({ fixture, db } = await createPermissionFixture())
+	}, 30_000)
+	afterEach(async () => {
+		await fixture?.shutdown()
+	})
+
 	const invalidTransferFacts = [
 		{ label: 'amount', overrides: { expenseAmountMinor: 101 } },
 		{ label: 'currency', overrides: { incomeCurrency: 'TZS' } },
