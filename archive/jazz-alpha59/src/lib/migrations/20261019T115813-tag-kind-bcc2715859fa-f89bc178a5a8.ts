@@ -1,13 +1,14 @@
-import { schema as s, defineMigration, migration as m } from 'jazz-tools'
+import { schema as s } from 'jazz-tools'
 
-export default defineMigration({
+export default s.defineMigration({
 	migrate: {
-		profiles: {
-			initialWorkspaceId: m.add.ref('organizations', { default: null })
+		tags: {
+			// Preserve existing tags as untyped; do not infer a kind or rewrite history.
+			kind: s.add.enum('expense', 'income', { default: null })
 		}
 	},
-	fromHash: '45a86ca09b02',
-	toHash: '3407b5b1f26c',
+	fromHash: 'bcc2715859fa',
+	toHash: 'f89bc178a5a8',
 	from: {
 		accountMemberships: s.table(
 			{
@@ -144,7 +145,6 @@ export default defineMigration({
 			{
 				organizationId: s.uuid(),
 				name: s.string(),
-				kind: s.enum('expense', 'income').optional(),
 				categoryId: s.uuid().optional(),
 				archivedAt: s.timestamp().optional()
 			},
@@ -181,7 +181,6 @@ export default defineMigration({
 				accountId: s.uuid(),
 				organizationId: s.uuid(),
 				bookedOn: s.string(),
-				description: s.string().optional(),
 				memo: s.string().optional(),
 				paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 				checkDetailsId: s.uuid().optional(),
@@ -313,7 +312,6 @@ export default defineMigration({
 		profiles: s.table(
 			{
 				userId: s.uuid(),
-				initialWorkspaceId: s.uuid().optional(),
 				displayName: s.string().optional(),
 				avatarData: s.bytes().optional(),
 				avatarMimeType: s.enum('image/png', 'image/jpeg', 'image/webp').optional()
@@ -386,7 +384,6 @@ export default defineMigration({
 				accountId: s.uuid(),
 				organizationId: s.uuid(),
 				bookedOn: s.string(),
-				description: s.string().optional(),
 				memo: s.string().optional(),
 				paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 				checkDetailsId: s.uuid().optional(),

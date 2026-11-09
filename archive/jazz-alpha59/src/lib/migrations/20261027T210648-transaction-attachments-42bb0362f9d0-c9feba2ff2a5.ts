@@ -1,16 +1,23 @@
-import { schema as s, defineMigration, migration as m } from 'jazz-tools'
+import { schema as s } from 'jazz-tools'
 
-export default defineMigration({
+export default s.defineMigration({
 	migrate: {
-		internalTransfers: {
-			expenseAmountMinor: m.add.bigint({ default: null }),
-			expenseCurrency: m.add.string({ default: null }),
-			incomeAmountMinor: m.add.bigint({ default: null }),
-			incomeCurrency: m.add.string({ default: null })
+		transactionAttachments: {
+			// Add reference metadata with an identity lens; existing UUID values are preserved.
+		},
+
+		files: {
+			transactionId: s.add.ref('transactions', { default: null }),
+			accountId: s.add.ref('accounts', { default: null }),
+			organizationId: s.add.ref('organizations', { default: null })
+		},
+
+		fileParts: {
+			data: s.add.bytes({ default: null })
 		}
 	},
-	fromHash: '59c8cb7d9345',
-	toHash: '42bb0362f9d0',
+	fromHash: '42bb0362f9d0',
+	toHash: 'c9feba2ff2a5',
 	from: {
 		accountMemberships: s.table(
 			{
@@ -95,6 +102,22 @@ export default defineMigration({
 				transactions: s.reverse('transactions', 'check')
 			}
 		),
+		fileParts: s.table(
+			{
+				fileId: s.uuid(),
+				partIndex: s.int(),
+				sizeBytes: s.int()
+			},
+			{}
+		),
+		files: s.table(
+			{
+				fileName: s.string(),
+				mimeType: s.string(),
+				sizeBytes: s.int()
+			},
+			{}
+		),
 		internalTransfers: s.table(
 			{
 				organizationId: s.uuid(),
@@ -102,6 +125,10 @@ export default defineMigration({
 				incomeTransactionId: s.uuid(),
 				expenseAccountId: s.uuid().optional(),
 				incomeAccountId: s.uuid().optional(),
+				expenseAmountMinor: s.bigint().optional(),
+				expenseCurrency: s.string().optional(),
+				incomeAmountMinor: s.bigint().optional(),
+				incomeCurrency: s.string().optional(),
 				amountMinor: s.bigint().optional(),
 				currency: s.string().optional()
 			},
@@ -340,6 +367,31 @@ export default defineMigration({
 				transactions: s.reverse('transactions', 'check')
 			}
 		),
+		fileParts: s.table(
+			{
+				fileId: s.uuid(),
+				partIndex: s.int(),
+				sizeBytes: s.int(),
+				data: s.bytes().optional()
+			},
+			{
+				file: s.rel('files', 'fileId')
+			}
+		),
+		files: s.table(
+			{
+				transactionId: s.uuid().optional(),
+				accountId: s.uuid().optional(),
+				organizationId: s.uuid().optional(),
+				fileName: s.string(),
+				mimeType: s.string(),
+				sizeBytes: s.int()
+			},
+			{
+				transaction: s.rel('transactions', 'transactionId'),
+				parts: s.reverse('fileParts', 'file')
+			}
+		),
 		internalTransfers: s.table(
 			{
 				organizationId: s.uuid(),
@@ -449,7 +501,8 @@ export default defineMigration({
 				fileId: s.uuid()
 			},
 			{
-				transaction: s.rel('transactions', 'transactionId')
+				transaction: s.rel('transactions', 'transactionId'),
+				file: s.rel('files', 'fileId')
 			}
 		),
 		transactionBatches: s.table(

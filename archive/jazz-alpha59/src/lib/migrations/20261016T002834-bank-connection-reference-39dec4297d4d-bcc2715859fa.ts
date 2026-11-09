@@ -1,24 +1,20 @@
-import { schema as s, defineMigration, migration as m } from 'jazz-tools'
+import { schema as s } from 'jazz-tools'
 
-export default defineMigration({
-	createTables: {
-		restoreOperations: true
-	},
+export default s.defineMigration({
 	migrate: {
-		organizations: {
-			restoreOperationId: m.add.ref('restoreOperations', { default: null })
+		simplefinAccountLinks: {
+			// Add reference metadata with an identity lens; existing UUID values are preserved.
 		}
 	},
-	fromHash: 'e5a4d82f6013',
-	toHash: 'c30773a87764',
+	fromHash: '39dec4297d4d',
+	toHash: 'bcc2715859fa',
 	from: {
 		accountMemberships: s.table(
 			{
 				organizationId: s.uuid(),
 				userId: s.uuid(),
 				accountId: s.uuid(),
-				access: s.enum('read', 'write'),
-				canDelete: s.boolean()
+				access: s.enum('read', 'write')
 			},
 			{
 				organization: s.rel('organizations', 'organizationId'),
@@ -77,69 +73,6 @@ export default defineMigration({
 				transaction: s.rel('transactions', 'transactionId'),
 				organization: s.rel('organizations', 'organizationId'),
 				account: s.rel('accounts', 'accountId')
-			}
-		),
-		checks: s.table(
-			{
-				organizationId: s.uuid(),
-				accountId: s.uuid(),
-				checkNumber: s.string(),
-				checkDate: s.string(),
-				payerName: s.string().optional(),
-				bankName: s.string().optional(),
-				memoOnCheck: s.string().optional()
-			},
-			{
-				organization: s.rel('organizations', 'organizationId'),
-				account: s.rel('accounts', 'accountId'),
-				transactions: s.reverse('transactions', 'check')
-			}
-		),
-		fileParts: s.table(
-			{
-				fileId: s.uuid(),
-				partIndex: s.int(),
-				sizeBytes: s.int(),
-				data: s.bytes().optional()
-			},
-			{
-				file: s.rel('files', 'fileId')
-			}
-		),
-		files: s.table(
-			{
-				transactionId: s.uuid().optional(),
-				accountId: s.uuid().optional(),
-				organizationId: s.uuid().optional(),
-				fileName: s.string(),
-				mimeType: s.string(),
-				sizeBytes: s.int()
-			},
-			{
-				transaction: s.rel('transactions', 'transactionId'),
-				parts: s.reverse('fileParts', 'file')
-			}
-		),
-		internalTransfers: s.table(
-			{
-				organizationId: s.uuid(),
-				expenseTransactionId: s.uuid(),
-				incomeTransactionId: s.uuid(),
-				expenseAccountId: s.uuid().optional(),
-				incomeAccountId: s.uuid().optional(),
-				expenseAmountMinor: s.bigint().optional(),
-				expenseCurrency: s.string().optional(),
-				incomeAmountMinor: s.bigint().optional(),
-				incomeCurrency: s.string().optional(),
-				amountMinor: s.bigint().optional(),
-				currency: s.string().optional()
-			},
-			{
-				organization: s.rel('organizations', 'organizationId'),
-				expenseTransaction: s.rel('transactions', 'expenseTransactionId'),
-				incomeTransaction: s.rel('transactions', 'incomeTransactionId'),
-				expenseAccount: s.rel('accounts', 'expenseAccountId'),
-				incomeAccount: s.rel('accounts', 'incomeAccountId')
 			}
 		),
 		organizationMembers: s.table(
@@ -168,7 +101,6 @@ export default defineMigration({
 				categories: s.reverse('categories', 'organization'),
 				tags: s.reverse('tags', 'organization'),
 				transactions: s.reverse('transactions', 'organization'),
-				internalTransfers: s.reverse('internalTransfers', 'organization'),
 				simplefinConnections: s.reverse('simplefinConnections', 'organization'),
 				batches: s.reverse('transactionBatches', 'organization'),
 				batchTemplates: s.reverse('batchTemplates', 'organization')
@@ -177,13 +109,25 @@ export default defineMigration({
 		profiles: s.table(
 			{
 				userId: s.uuid(),
-				initialWorkspaceId: s.uuid().optional(),
 				displayName: s.string().optional(),
 				avatarData: s.bytes().optional(),
 				avatarMimeType: s.enum('image/png', 'image/jpeg', 'image/webp').optional()
 			},
 			{
 				memberships: s.reverse('organizationMembers', 'profile')
+			}
+		),
+		simplefinAccountLinks: s.table(
+			{
+				organizationId: s.uuid(),
+				accountId: s.uuid(),
+				connectionId: s.uuid().optional(),
+				simplefinAccountId: s.string(),
+				simplefinOrgId: s.string().optional()
+			},
+			{
+				organization: s.rel('organizations', 'organizationId'),
+				account: s.rel('accounts', 'accountId')
 			}
 		),
 		simplefinConnections: s.table(
@@ -213,7 +157,6 @@ export default defineMigration({
 			{
 				organizationId: s.uuid(),
 				name: s.string(),
-				kind: s.enum('expense', 'income'),
 				categoryId: s.uuid().optional(),
 				archivedAt: s.timestamp().optional()
 			},
@@ -229,8 +172,7 @@ export default defineMigration({
 				fileId: s.uuid()
 			},
 			{
-				transaction: s.rel('transactions', 'transactionId'),
-				file: s.rel('files', 'fileId')
+				transaction: s.rel('transactions', 'transactionId')
 			}
 		),
 		transactionBatches: s.table(
@@ -244,19 +186,16 @@ export default defineMigration({
 		),
 		transactions: s.table(
 			{
-				amountMinor: s.bigint(),
+				amountMinor: s.int(),
 				kind: s.enum('expense', 'income'),
 				currency: s.string(),
 				categoryId: s.uuid(),
 				accountId: s.uuid(),
 				organizationId: s.uuid(),
 				bookedOn: s.string(),
-				description: s.string().optional(),
 				memo: s.string().optional(),
 				paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 				checkDetailsId: s.uuid().optional(),
-				checkId: s.uuid().optional(),
-				internalTransferId: s.uuid().optional(),
 				source: s.enum('manual', 'simplefin'),
 				externalId: s.string().optional(),
 				batchId: s.uuid().optional()
@@ -268,8 +207,6 @@ export default defineMigration({
 				batch: s.rel('transactionBatches', 'batchId'),
 				tags: s.reverse('transactionTags', 'transaction'),
 				checkDetails: s.rel('checkDetails', 'checkDetailsId'),
-				internalTransfer: s.rel('internalTransfers', 'internalTransferId'),
-				check: s.rel('checks', 'checkId'),
 				attachments: s.reverse('transactionAttachments', 'transaction')
 			}
 		),
@@ -292,8 +229,7 @@ export default defineMigration({
 				organizationId: s.uuid(),
 				userId: s.uuid(),
 				accountId: s.uuid(),
-				access: s.enum('read', 'write'),
-				canDelete: s.boolean()
+				access: s.enum('read', 'write')
 			},
 			{
 				organization: s.rel('organizations', 'organizationId'),
@@ -354,69 +290,6 @@ export default defineMigration({
 				account: s.rel('accounts', 'accountId')
 			}
 		),
-		checks: s.table(
-			{
-				organizationId: s.uuid(),
-				accountId: s.uuid(),
-				checkNumber: s.string(),
-				checkDate: s.string(),
-				payerName: s.string().optional(),
-				bankName: s.string().optional(),
-				memoOnCheck: s.string().optional()
-			},
-			{
-				organization: s.rel('organizations', 'organizationId'),
-				account: s.rel('accounts', 'accountId'),
-				transactions: s.reverse('transactions', 'check')
-			}
-		),
-		fileParts: s.table(
-			{
-				fileId: s.uuid(),
-				partIndex: s.int(),
-				sizeBytes: s.int(),
-				data: s.bytes().optional()
-			},
-			{
-				file: s.rel('files', 'fileId')
-			}
-		),
-		files: s.table(
-			{
-				transactionId: s.uuid().optional(),
-				accountId: s.uuid().optional(),
-				organizationId: s.uuid().optional(),
-				fileName: s.string(),
-				mimeType: s.string(),
-				sizeBytes: s.int()
-			},
-			{
-				transaction: s.rel('transactions', 'transactionId'),
-				parts: s.reverse('fileParts', 'file')
-			}
-		),
-		internalTransfers: s.table(
-			{
-				organizationId: s.uuid(),
-				expenseTransactionId: s.uuid(),
-				incomeTransactionId: s.uuid(),
-				expenseAccountId: s.uuid().optional(),
-				incomeAccountId: s.uuid().optional(),
-				expenseAmountMinor: s.bigint().optional(),
-				expenseCurrency: s.string().optional(),
-				incomeAmountMinor: s.bigint().optional(),
-				incomeCurrency: s.string().optional(),
-				amountMinor: s.bigint().optional(),
-				currency: s.string().optional()
-			},
-			{
-				organization: s.rel('organizations', 'organizationId'),
-				expenseTransaction: s.rel('transactions', 'expenseTransactionId'),
-				incomeTransaction: s.rel('transactions', 'incomeTransactionId'),
-				expenseAccount: s.rel('accounts', 'expenseAccountId'),
-				incomeAccount: s.rel('accounts', 'incomeAccountId')
-			}
-		),
 		organizationMembers: s.table(
 			{
 				organizationId: s.uuid(),
@@ -435,8 +308,7 @@ export default defineMigration({
 				name: s.string(),
 				kind: s.enum('personal', 'business'),
 				defaultCurrency: s.string(),
-				ownerId: s.uuid(),
-				restoreOperationId: s.uuid().optional()
+				ownerId: s.uuid()
 			},
 			{
 				members: s.reverse('organizationMembers', 'organization'),
@@ -444,17 +316,14 @@ export default defineMigration({
 				categories: s.reverse('categories', 'organization'),
 				tags: s.reverse('tags', 'organization'),
 				transactions: s.reverse('transactions', 'organization'),
-				internalTransfers: s.reverse('internalTransfers', 'organization'),
 				simplefinConnections: s.reverse('simplefinConnections', 'organization'),
 				batches: s.reverse('transactionBatches', 'organization'),
-				batchTemplates: s.reverse('batchTemplates', 'organization'),
-				restoreOperation: s.rel('restoreOperations', 'restoreOperationId')
+				batchTemplates: s.reverse('batchTemplates', 'organization')
 			}
 		),
 		profiles: s.table(
 			{
 				userId: s.uuid(),
-				initialWorkspaceId: s.uuid().optional(),
 				displayName: s.string().optional(),
 				avatarData: s.bytes().optional(),
 				avatarMimeType: s.enum('image/png', 'image/jpeg', 'image/webp').optional()
@@ -463,21 +332,18 @@ export default defineMigration({
 				memberships: s.reverse('organizationMembers', 'profile')
 			}
 		),
-		restoreOperations: s.table(
+		simplefinAccountLinks: s.table(
 			{
-				workspaceId: s.uuid(),
-				sourceFileId: s.uuid(),
-				ownerId: s.uuid(),
-				status: s.enum('incomplete', 'active'),
-				payloadSha256: s.string(),
-				graphSha256: s.string(),
-				workspaceName: s.string(),
-				workspaceKind: s.enum('personal', 'business'),
-				workspaceCurrency: s.string()
+				organizationId: s.uuid(),
+				accountId: s.uuid(),
+				connectionId: s.uuid().optional(),
+				simplefinAccountId: s.string(),
+				simplefinOrgId: s.string().optional()
 			},
 			{
-				workspace: s.rel('organizations', 'workspaceId'),
-				sourceFile: s.rel('files', 'sourceFileId')
+				organization: s.rel('organizations', 'organizationId'),
+				account: s.rel('accounts', 'accountId'),
+				connection: s.rel('simplefinConnections', 'connectionId')
 			}
 		),
 		simplefinConnections: s.table(
@@ -507,7 +373,6 @@ export default defineMigration({
 			{
 				organizationId: s.uuid(),
 				name: s.string(),
-				kind: s.enum('expense', 'income'),
 				categoryId: s.uuid().optional(),
 				archivedAt: s.timestamp().optional()
 			},
@@ -523,8 +388,7 @@ export default defineMigration({
 				fileId: s.uuid()
 			},
 			{
-				transaction: s.rel('transactions', 'transactionId'),
-				file: s.rel('files', 'fileId')
+				transaction: s.rel('transactions', 'transactionId')
 			}
 		),
 		transactionBatches: s.table(
@@ -538,19 +402,16 @@ export default defineMigration({
 		),
 		transactions: s.table(
 			{
-				amountMinor: s.bigint(),
+				amountMinor: s.int(),
 				kind: s.enum('expense', 'income'),
 				currency: s.string(),
 				categoryId: s.uuid(),
 				accountId: s.uuid(),
 				organizationId: s.uuid(),
 				bookedOn: s.string(),
-				description: s.string().optional(),
 				memo: s.string().optional(),
 				paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 				checkDetailsId: s.uuid().optional(),
-				checkId: s.uuid().optional(),
-				internalTransferId: s.uuid().optional(),
 				source: s.enum('manual', 'simplefin'),
 				externalId: s.string().optional(),
 				batchId: s.uuid().optional()
@@ -562,8 +423,6 @@ export default defineMigration({
 				batch: s.rel('transactionBatches', 'batchId'),
 				tags: s.reverse('transactionTags', 'transaction'),
 				checkDetails: s.rel('checkDetails', 'checkDetailsId'),
-				internalTransfer: s.rel('internalTransfers', 'internalTransferId'),
-				check: s.rel('checks', 'checkId'),
 				attachments: s.reverse('transactionAttachments', 'transaction')
 			}
 		),

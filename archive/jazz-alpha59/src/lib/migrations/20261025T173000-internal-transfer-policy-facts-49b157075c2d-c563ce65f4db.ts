@@ -1,27 +1,24 @@
-import { schema as s, defineMigration, migration as m } from 'jazz-tools'
+import { schema as s } from 'jazz-tools'
 
-export default defineMigration({
-	createTables: {
-		internalTransfers: true
-	},
+export default s.defineMigration({
 	migrate: {
-		accountMemberships: {
-			canDelete: m.add.boolean({ default: false })
-		},
-
-		transactions: {
-			internalTransferId: m.add.ref('internalTransfers', { default: null })
+		internalTransfers: {
+			expenseAccountId: s.add.ref('accounts', { default: null }),
+			incomeAccountId: s.add.ref('accounts', { default: null }),
+			amountMinor: s.add.bigint({ default: null }),
+			currency: s.add.string({ default: null })
 		}
 	},
-	fromHash: '3f5fa6550799',
-	toHash: '59c8cb7d9345',
+	fromHash: '49b157075c2d',
+	toHash: 'c563ce65f4db',
 	from: {
 		accountMemberships: s.table(
 			{
 				organizationId: s.uuid(),
 				userId: s.uuid(),
 				accountId: s.uuid(),
-				access: s.enum('read', 'write')
+				access: s.enum('read', 'write'),
+				canDelete: s.boolean()
 			},
 			{
 				organization: s.rel('organizations', 'organizationId'),
@@ -98,6 +95,18 @@ export default defineMigration({
 				transactions: s.reverse('transactions', 'check')
 			}
 		),
+		internalTransfers: s.table(
+			{
+				organizationId: s.uuid(),
+				expenseTransactionId: s.uuid(),
+				incomeTransactionId: s.uuid()
+			},
+			{
+				organization: s.rel('organizations', 'organizationId'),
+				expenseTransaction: s.rel('transactions', 'expenseTransactionId'),
+				incomeTransaction: s.rel('transactions', 'incomeTransactionId')
+			}
+		),
 		organizationMembers: s.table(
 			{
 				organizationId: s.uuid(),
@@ -124,6 +133,7 @@ export default defineMigration({
 				categories: s.reverse('categories', 'organization'),
 				tags: s.reverse('tags', 'organization'),
 				transactions: s.reverse('transactions', 'organization'),
+				internalTransfers: s.reverse('internalTransfers', 'organization'),
 				simplefinConnections: s.reverse('simplefinConnections', 'organization'),
 				batches: s.reverse('transactionBatches', 'organization'),
 				batchTemplates: s.reverse('batchTemplates', 'organization')
@@ -453,7 +463,6 @@ export default defineMigration({
 				paymentMethod: s.enum('cash', 'check', 'transfer', 'electronic').optional(),
 				checkDetailsId: s.uuid().optional(),
 				checkId: s.uuid().optional(),
-				internalTransferId: s.uuid().optional(),
 				source: s.enum('manual', 'simplefin'),
 				externalId: s.string().optional(),
 				batchId: s.uuid().optional()
@@ -465,7 +474,6 @@ export default defineMigration({
 				batch: s.rel('transactionBatches', 'batchId'),
 				tags: s.reverse('transactionTags', 'transaction'),
 				checkDetails: s.rel('checkDetails', 'checkDetailsId'),
-				internalTransfer: s.rel('internalTransfers', 'internalTransferId'),
 				check: s.rel('checks', 'checkId'),
 				attachments: s.reverse('transactionAttachments', 'transaction')
 			}

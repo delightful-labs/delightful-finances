@@ -34,7 +34,7 @@ preview, build with `PUBLIC_JAZZ_SERVER_URL=same-origin`; start the preview with
 `vercel.json` selects SvelteKit, the frozen pnpm lockfile, and `pnpm build`. The Vercel adapter
 uses Node 24 in `iad1`. `/jazz` exposes Jazz's supported backend handler with local-first guest
 admission; backend credentials stay server-side. Production does not need Jazz Cloud provisioning
-or a separate `deploy:jazz` command.
+or a separate schema-deployment command.
 
 Jazz's Vercel store manages a Sandbox with one vCPU, a persistent Drive capped at 1 GiB, and SQLite
 blob storage. It requests hibernation after 60 seconds of inactivity. The Drive retains the database
@@ -49,10 +49,13 @@ phrase privately. This does not perform an in-place alpha.59 database upgrade. G
 and v2 backup fixtures verify restored financial fields, relationships, attachment bytes, and retained
 source history. Backup validation remains enforced, including transfer amounts and currencies.
 
-The original Netlify deployment is retained as a rollback artifact with new builds paused. The
-remaining Netlify commands/configuration describe the preceding Jazz Cloud deployment and are not
-the alpha.60 deployment path. Restore that existing artifact and its saved DNS route for rollback;
-do not rebuild it from this SDK migration branch.
+The original Netlify deployment is retained as a rollback artifact with new builds paused. Legacy
+migrations, schema snapshots and Netlify/Jazz Cloud scripts are preserved under
+[`archive/jazz-alpha59`](archive/jazz-alpha59/README.md), outside the active source and deployment paths.
+The archive keeps their original alpha.59 contents; it is not executed by the current SDK. Future
+alpha.60 schema changes need migrations from the new database's actual baseline.
+Restore the existing Netlify artifact and its saved DNS route for hosting rollback; do not rebuild it
+from this SDK migration branch or use the archived migration chain as a data rollback mechanism.
 
 ## Fake data
 
