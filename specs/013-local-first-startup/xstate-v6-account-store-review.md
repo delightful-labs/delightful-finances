@@ -103,12 +103,23 @@ have source expressions, type-only schemas and runtime implementations; JSON
 serialization therefore requires evaluators/implementations and is not a durable
 write-replay mechanism. No stored actor checkpoints are introduced.
 
-The approved foundation's 17 transport tests pass on Node 24.22.2. No tests of this
-new account-store implementation have been added or run before its review.
-Qualification will use independent `@xstate/test` models for lock/cancellation,
-legacy ambiguity and root preservation, duplicate/stale receipts and unknown-write
-custody. The test beta must have a compatible v6 peer context while the UI remains
-v5; do not resolve it against Finance's v5 runtime or override its peer contract.
+After implementation approval, qualification passes on Node 24.22.2:
+`pnpm test:worker-state` runs 10 focused cases plus a 100-run generated
+`@xstate/test` campaign (seed 60401, up to 20 commands per run). Focused cases
+cover primary preference, legacy fallback/ambiguity, root preservation, inventory
+refresh after write, queued-lock cancellation, cancellation during read,
+validation failure and confirmed-unissued rejection. The independent generated
+contract checks write/lock custody through shutdown, stale receipts, lost
+acknowledgements and failed drain. State, event and transition coverage assertions
+pass. These use native Node Web Locks with unique fixture namespaces; they do
+not qualify browser persistence or live Jazz integration.
+
+The private `tooling/worker-state-tests` workspace has an exact v6 runtime and
+compatible `@xstate/test` peer, while the app retains v5 and its exact v6 alias.
+`pnpm --filter @delightful-finances/worker-state-tests check` passes. CI runs this
+check and campaign, and retains generated counterexamples on failure. No peer
+override, XState patch, actor-type erasure or generated Paraglide change is used.
+The previously approved foundation's 17 transport tests also passed.
 
 Still required before activation:
 
