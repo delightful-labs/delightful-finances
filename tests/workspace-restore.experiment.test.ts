@@ -64,7 +64,12 @@ function jazzRuntimeAssets(): Plugin {
 					}
 				]
 			},
-			optimizeDeps: { include: ['jazz-tools', 'jazz-tools/client', 'jazz-tools/local-first'] }
+			optimizeDeps: {
+				// The HTML is middleware-generated, so Vite cannot infer its module entry.
+				// Scan the full harness before first load to avoid dependency-triggered reloads.
+				entries: ['specs/016-workspace-restore/browser.ts'],
+				include: ['jazz-tools', 'jazz-tools/client', 'jazz-tools/local-first']
+			}
 		})
 	}
 }
