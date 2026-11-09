@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   jazz-tools@2.0.0-alpha.60:
-    hash: 9f3f5cd768967c1c09836307d0e3d49db1899fdb8e7b25228179635441168d28
+    hash: 8ac0c63ad8035cefef8a5cf7bf52d4cf26383b891568623dbeb4782c4fcad08f
     path: patches/jazz-tools@2.0.0-alpha.60.patch
 
 importers:
@@ -33,13 +33,13 @@ importers:
         version: 5.0.0(svelte@5.57.2)(xstate@5.33.2)
       delightful-local-first:
         specifier: file:vendor/delightful-local-first-jazz-alpha60.tgz
-        version: file:vendor/delightful-local-first-jazz-alpha60.tgz(delightful-ui@file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.60(patch_hash=9f3f5cd768967c1c09836307d0e3d49db1899fdb8e7b25228179635441168d28)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1))(svelte@5.57.2)(xstate@5.33.2)
+        version: file:vendor/delightful-local-first-jazz-alpha60.tgz(delightful-ui@file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.60(patch_hash=8ac0c63ad8035cefef8a5cf7bf52d4cf26383b891568623dbeb4782c4fcad08f)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1))(svelte@5.57.2)(xstate@5.33.2)
       delightful-ui:
         specifier: file:vendor/delightful-ui-dd358b8-typography.tgz
         version: file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2)
       jazz-tools:
         specifier: 2.0.0-alpha.60
-        version: 2.0.0-alpha.60(patch_hash=9f3f5cd768967c1c09836307d0e3d49db1899fdb8e7b25228179635441168d28)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1)
+        version: 2.0.0-alpha.60(patch_hash=8ac0c63ad8035cefef8a5cf7bf52d4cf26383b891568623dbeb4782c4fcad08f)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1)
       layerchart:
         specifier: ^2.9.0
         version: 2.9.0(@sveltejs/kit@3.0.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.1(svelte@5.57.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.51.2)))(svelte@5.57.2)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.51.2)))(svelte@5.57.2)(zod@4.1.11)
@@ -3223,13 +3223,13 @@ snapshots:
     dependencies:
       robust-predicates: 3.0.3
 
-  delightful-local-first@file:vendor/delightful-local-first-jazz-alpha60.tgz(delightful-ui@file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.60(patch_hash=9f3f5cd768967c1c09836307d0e3d49db1899fdb8e7b25228179635441168d28)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1))(svelte@5.57.2)(xstate@5.33.2):
+  delightful-local-first@file:vendor/delightful-local-first-jazz-alpha60.tgz(delightful-ui@file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2))(jazz-tools@2.0.0-alpha.60(patch_hash=8ac0c63ad8035cefef8a5cf7bf52d4cf26383b891568623dbeb4782c4fcad08f)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1))(svelte@5.57.2)(xstate@5.33.2):
     dependencies:
       svelte: 5.57.2
       zod: 4.1.11
     optionalDependencies:
       delightful-ui: file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2)
-      jazz-tools: 2.0.0-alpha.60(patch_hash=9f3f5cd768967c1c09836307d0e3d49db1899fdb8e7b25228179635441168d28)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1)
+      jazz-tools: 2.0.0-alpha.60(patch_hash=8ac0c63ad8035cefef8a5cf7bf52d4cf26383b891568623dbeb4782c4fcad08f)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1)
       xstate: 5.33.2
 
   delightful-ui@file:vendor/delightful-ui-dd358b8-typography.tgz(svelte@5.57.2):
@@ -3407,7 +3407,7 @@ snapshots:
       '@garden-co/jazz-napi-win32-x64-msvc': 2.0.0-alpha.60
     optional: true
 
-  jazz-tools@2.0.0-alpha.60(patch_hash=9f3f5cd768967c1c09836307d0e3d49db1899fdb8e7b25228179635441168d28)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1):
+  jazz-tools@2.0.0-alpha.60(patch_hash=8ac0c63ad8035cefef8a5cf7bf52d4cf26383b891568623dbeb4782c4fcad08f)(@vercel/functions@3.11.0(ws@8.22.1))(@vercel/sandbox@3.9.1)(svelte@5.57.2)(ws@8.22.1):
     dependencies:
       '@noble/curves': 2.0.1
       '@noble/hashes': 2.0.1
