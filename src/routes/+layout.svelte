@@ -22,6 +22,7 @@
 	import DeveloperMenu from '#lib/components/diagnostics/DeveloperMenu.svelte'
 	import DemoViewport from '#lib/components/diagnostics/DemoViewport.svelte'
 	import JazzStartup from '#lib/components/startup/JazzStartup.svelte'
+	import PwaUpdateIntegration from '#lib/components/pwa/PwaUpdateIntegration.svelte'
 	import SessionStartup from '#lib/components/startup/SessionStartup.svelte'
 	import WorkspaceBackup from '#lib/components/workspaces/WorkspaceBackup.svelte'
 	import WorkspaceBootstrap from '#lib/components/workspaces/WorkspaceBootstrap.svelte'
@@ -34,6 +35,7 @@
 	import { financeFiltersKey, type FinanceFilters } from '#lib/filters/finance-filters.js'
 	import {
 		getCurrentJazzSession,
+		getCurrentSessionAvailability,
 		getJazzStartupBinding,
 		loadLocalFirstClient,
 		prepareLocalFirstSession
@@ -114,7 +116,15 @@
 	const startupState = fromStore(snapshot)
 	const jazzSession = $derived(startupState.current.context.session)
 	const restoreView = $derived(selectApplicationWorkspaceRestore(startupState.current))
-	onMount(() => actor.send({ type: 'START', startup: getJazzStartupBinding(jazzConfig) }))
+	let startupAvailability = $state<ReturnType<typeof getCurrentSessionAvailability>>()
+	onMount(() => {
+		const startup = getJazzStartupBinding(jazzConfig)
+		const subscription = startup.owner.subscribe(() => {
+			startupAvailability = getCurrentSessionAvailability()
+		})
+		actor.send({ type: 'START', startup })
+		return () => subscription.unsubscribe()
+	})
 	// The machine completes only after its workspace/bank children finish cleanup.
 	onDestroy(() => actor.send({ type: 'SHUTDOWN' }))
 </script>
@@ -129,7 +139,7 @@
 />
 
 {#snippet startup()}
-	<SessionStartup />
+	<SessionStartup waitingForOtherVersion={startupAvailability !== undefined} />
 {/snippet}
 
 {#if restoreView.visibleOutsideSettings && (page.url.pathname !== '/settings/workspace' || !startupState.current.matches( { running: 'ready' } ))}
@@ -144,9 +154,12 @@
 		oncommand={(type) => actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type } })}
 	/>
 {/if}
+{#if !jazzSession || startupState.current.hasTag('startup-error')}
+	<PwaUpdateIntegration />
+{/if}
 <main>
 	{#if startupState.current.hasTag('startup-error')}
-		<SessionStartup />
+		<SessionStartup waitingForOtherVersion={startupAvailability !== undefined} />
 	{:else if jazzSession}
 		<JazzSessionProvider session={jazzSession} fallback={startup}>
 			{#key startupState.current.context.attachmentRevision}

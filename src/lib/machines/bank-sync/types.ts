@@ -36,6 +36,7 @@ export type ProviderResponse = Awaited<ReturnType<typeof fetchAccounts>>
 export type BankCommand =
 	| { type: 'DISCOVER' }
 	| { type: 'SYNC' }
+	| { type: 'RECONNECT' }
 	| { type: 'MAP'; providerId: string; accountId: string }
 	| { type: 'CREATE_ACCOUNT'; providerId: string }
 	| { type: 'DISCONNECT' }

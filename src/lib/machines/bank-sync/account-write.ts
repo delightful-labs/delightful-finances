@@ -1,6 +1,5 @@
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
-import { stableUuid } from '#lib/data.js'
 import type { appAccountSchema } from '#lib/validation/accounts.js'
 import { createAuthorizationMachine } from './authorization.js'
 import { required } from './identity.js'
@@ -55,8 +54,8 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 				)
 		}),
 		linkId: createAsyncLogic({
-			run: ({ input }: { input: AccountWrite }) =>
-				stableUuid(input.work.scope.organizationId, `simplefin-link:${input.provider.id}`)
+			// Deleted Jazz rows cannot be reinserted under their old IDs.
+			run: async (_: { input: AccountWrite }): Promise<string> => crypto.randomUUID()
 		}),
 		authorize: createAuthorizationMachine(dependencies),
 		transaction: accountWriteTransaction

@@ -73,6 +73,7 @@ afterEach(() => {
 	actors.clear()
 	owners.clear()
 	vi.restoreAllMocks()
+	vi.unstubAllGlobals()
 })
 
 describe('browser shared acquisition binding', () => {
@@ -129,6 +130,68 @@ describe('browser shared acquisition binding', () => {
 				.every((event) => event.reason === 'openFailed')
 		).toBe(true)
 		expect(console.error).not.toHaveBeenCalled()
+	})
+
+	it('waits for the other worker and resumes all attachments without a retry', async () => {
+		const released = Promise.withResolvers<void>()
+		const request = vi.fn((_key: string, _options: unknown, callback: () => void) =>
+			released.promise.then(callback)
+		)
+		vi.stubGlobal('navigator', { locks: { request } })
+		const session = sessionStub()
+		backend.create
+			.mockRejectedValueOnce(
+				new Error(
+					'IndexedDB database finance-db is active in another Jazz SharedWorker realm; wait for that worker to close before retrying'
+				)
+			)
+			.mockResolvedValueOnce(session)
+		const runtime = await import('./jazz-session.js')
+		const first = attach(runtime.getJazzStartupBinding(config))
+		const second = attach(runtime.getJazzStartupBinding(config))
+		await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+		expect(runtime.getCurrentSessionAvailability()).toEqual({
+			resourceKey: 'jazz:browser-physical-database:finance-db'
+		})
+		expect(first.reports.some((event) => event.type === 'SESSION_STARTUP_FAILED')).toBe(false)
+		expect(backend.create).toHaveBeenCalledTimes(1)
+		released.resolve()
+		await waitFor(first.actor, (s) => s.matches({ bound: 'attached' }))
+		await waitFor(second.actor, (s) => s.matches({ bound: 'attached' }))
+		expect(backend.create).toHaveBeenCalledTimes(2)
+		expect(runtime.getCurrentSessionAvailability()).toBeUndefined()
+		expect(runtime.getCurrentJazzSession()).toBe(session)
+	})
+
+	it('cancels the pending lock request after the last attachment leaves', async () => {
+		const aborted = vi.fn()
+		const request = vi.fn(
+			(_key: string, options: { signal: AbortSignal }) =>
+				new Promise<void>((_resolve, reject) =>
+					options.signal.addEventListener('abort', () => {
+						aborted()
+						reject(options.signal.reason)
+					})
+				)
+		)
+		vi.stubGlobal('navigator', { locks: { request } })
+		backend.create.mockRejectedValueOnce(
+			new Error(
+				'IndexedDB database finance-db is active in another Jazz SharedWorker realm; wait for that worker to close before retrying'
+			)
+		)
+		const runtime = await import('./jazz-session.js')
+		const first = attach(runtime.getJazzStartupBinding(config))
+		const second = attach(runtime.getJazzStartupBinding(config))
+		await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+		first.actor.send({ type: 'SHUTDOWN' })
+		await waitFor(first.actor, (s) => s.status === 'done')
+		expect(aborted).not.toHaveBeenCalled()
+		second.actor.send({ type: 'SHUTDOWN' })
+		await waitFor(second.actor, (s) => s.status === 'done')
+		expect(aborted).toHaveBeenCalledOnce()
+		expect(runtime.getCurrentSessionAvailability()).toBeUndefined()
+		expect(backend.create).toHaveBeenCalledTimes(1)
 	})
 
 	it('does not allocate an owner or SDK session during SSR', async () => {
