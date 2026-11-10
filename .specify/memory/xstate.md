@@ -26,6 +26,9 @@ manifest before relying on a beta API.
 - The installed Svelte binding's `useActorRef` still calls `stop()` on destruction.
   Own roots explicitly when graceful shutdown and financial/native cleanup must
   finish first. Public actor refs do not confer ownership of start/stop lifecycle.
+- Copy live Jazz query rows and arrays with `observeRow` / `observeRows` before
+  admitting them as actor observations. Development snapshots freeze plain context;
+  retaining a live subscription array prevents Jazz from applying later deltas.
 - Native browser/SDK handles are opaque resources. Tests must model that opacity;
   do not disable freezing or use mutable plain-object SDK/canvas substitutes that
   the engine correctly treats as immutable application data.

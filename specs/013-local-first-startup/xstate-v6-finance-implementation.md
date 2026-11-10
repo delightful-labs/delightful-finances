@@ -54,12 +54,26 @@ observed through actor creation when no transition exists.
 
 ## Remaining worker work
 
-Finish the recursive calculation-purity audit before final migration acceptance.
-Remaining clock/identifier creation in bank-operation transitions and backup
-request preparation in entry calculation need owned effect/leaf boundaries;
-passing behavioral tests alone does not establish that these calculations are
-safe to preview or repeat. Preserve backup's requirement that raw passwords stay
-outside actor snapshots while making that change.
+The calculation-purity follow-up moved bank clock/identifier allocation into
+owned leaves and backup request preparation behind opaque one-use submissions.
+Late preparation drains through cancellation, replacement and shutdown; raw
+passwords remain outside actor snapshots. The latest pre-merge full unit run
+passed 1,916 tests.
+
+PR #65's production recovery fixes are now incorporated from merged main,
+including the fresh-proof Jazz patch, automatic workspace selection and usable
+partial bank discovery. Their v6 regression suites pass 57 tests, including the
+real native proof checks. Two browser flows verify automatic multi-workspace
+sign-in and mixed-result discovery after the merge.
+
+CI exposed a live-array ownership error: readiness passed a Jazz subscription's
+workspace array into immutable actor context, freezing the SDK's mutable delta
+target in development. The integration now supplies `observeRows` copies.
+All 55 workspace browser tests pass, including admin/member/viewer rename and
+switch-back cases, older archives, and password/plain export and restoration of
+521 transactions. Application types report zero errors/warnings. These checks
+used a disposable server; no production deployment or localization generation
+was involved.
 
 The bounded storage/broker bridge, correlated independent host drain, account
 operation charts and bounded AccountStore owner/facade are foundations. They are

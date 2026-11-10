@@ -1,3 +1,4 @@
+import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '../../schema.js'
 import {
@@ -24,6 +25,14 @@ type Context = Input & {
 	destination: string | undefined
 	replace: boolean
 	transaction: { organizationId: string } | null
+	preferredWorkspaceId: string | null
+}
+function defaultWorkspaceHref(context: Context, workspaceId: string | null) {
+	const route =
+		context.facts.pathname === '/settings/workspace'
+			? (context.emptyEntry ?? context.facts)
+			: context.facts
+	return workspaceHref(workspaceId, `${route.pathname}${route.search}${route.hash}`)
 }
 type Event =
 	| { type: 'OBSERVED'; facts: WorkspaceNavigationFacts }
@@ -34,6 +43,10 @@ export function createWorkspaceNavigationMachine(
 	navigate: WorkspaceNavigate
 ) {
 	const actors = {
+		profile: createAsyncLogic({
+			run: ({ input }: { input: string }) =>
+				db.one(app.profiles.where({ userId: input }), { tier: ReadTier.LocalFirst })
+		}),
 		lookup: createAsyncLogic({
 			run: ({ input }: { input: string }) => db.one(app.transactions.where({ id: input }))
 		}),
@@ -57,6 +70,7 @@ export function createWorkspaceNavigationMachine(
 	type NativeEvent0 =
 		| import('xstate').InferEvents<typeof events0>
 		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['profile']>
 				| import('xstate').OutputFrom<(typeof actors)['lookup']>
 				| import('xstate').OutputFrom<(typeof actors)['navigate']>
 		  >
@@ -67,6 +81,7 @@ export function createWorkspaceNavigationMachine(
 			events: events0,
 			input: types<Input>(),
 			children: {
+				profile: types<import('xstate').ActorRefFrom<(typeof actors)['profile']>>(),
 				lookup: types<import('xstate').ActorRefFrom<(typeof actors)['lookup']>>(),
 				navigate: types<import('xstate').ActorRefFrom<(typeof actors)['navigate']>>()
 			}
@@ -81,7 +96,8 @@ export function createWorkspaceNavigationMachine(
 			emptyEntry: undefined,
 			destination: undefined,
 			replace: true,
-			transaction: null
+			transaction: null,
+			preferredWorkspaceId: null
 		}),
 		initial: 'assessing',
 		on: {
@@ -114,7 +130,6 @@ export function createWorkspaceNavigationMachine(
 								!origin ||
 								!facts.ready ||
 								facts.userId !== origin.userId ||
-								facts.organizations.length > 1 ||
 								workspaceRoute(facts.search).scoped ||
 								(facts.pathname !== '/settings/workspace' &&
 									`${facts.pathname}${facts.search}${facts.hash}` !==
@@ -141,26 +156,14 @@ export function createWorkspaceNavigationMachine(
 						return { target: 'waiting' }
 					}
 					if (
-						context.emptyEntry !== undefined &&
 						context.facts.pathname === '/settings/workspace' &&
-						!context.facts.loading &&
-						context.facts.error == null &&
-						context.facts.organizations.length === 1
-					) {
-						return {
-							target: 'navigating',
-							context: {
-								destination: workspaceHref(
-									context.facts.organizations[0]?.id ?? null,
-									`${context.emptyEntry?.pathname}${context.emptyEntry?.search}${context.emptyEntry?.hash}`
-								),
-								emptyEntry: undefined
-							}
-						}
-					}
-					if (context.facts.pathname === '/settings/workspace') {
+						(workspaceRoute(context.facts.search).scoped ||
+							context.facts.loading ||
+							context.facts.error != null ||
+							context.facts.organizations.length === 0)
+					)
 						return { target: 'directory' }
-					}
+
 					if (['/account', '/login'].includes(context.facts.pathname)) {
 						return { target: 'global' }
 					}
@@ -176,26 +179,87 @@ export function createWorkspaceNavigationMachine(
 					if (/^\/(expenses|income)\/(?!new$)[^/]+$/.test(context.facts.pathname)) {
 						return { target: 'resolvingLegacy' }
 					}
-					if (context.facts.organizations.length === 1) {
+					if (context.facts.organizations.length === 1)
 						return {
 							target: 'navigating',
 							context: {
-								destination: workspaceHref(
-									context.facts.organizations[0]?.id ?? null,
-									`${context.facts.pathname}${context.facts.search}${context.facts.hash}`
-								)
+								destination: defaultWorkspaceHref(
+									context,
+									context.facts.organizations[0]?.id ?? null
+								),
+								emptyEntry: undefined
 							}
 						}
-					}
+					if (context.facts.organizations.length > 1) return { target: 'resolvingDefault' }
 					return {
 						target: 'navigating',
-						context: {
-							emptyEntry: context.facts.organizations.length === 0 ? context.facts : undefined,
-							destination: '/settings/workspace'
-						}
+						context: { emptyEntry: context.facts, destination: '/settings/workspace' }
 					}
 				}
 			},
+			resolvingDefault: {
+				entry: ({ context }, enq) => {
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'waiting' }
+					})
+					return { context: { resolving: context.facts } }
+				},
+				on: {
+					REEVALUATE: ({ context }, enq) => {
+						if (
+							context.facts.pathname !== context.resolving?.pathname ||
+							context.facts.search !== context.resolving?.search ||
+							context.facts.hash !== context.resolving?.hash ||
+							context.facts.userId !== context.resolving?.userId ||
+							!context.facts.ready ||
+							context.facts.loading ||
+							context.facts.error != null
+						)
+							return { target: 'assessing' }
+						enq.sendTo(context.recipient, {
+							type: 'NAVIGATION_STATUS',
+							report: { generation: context.facts.generation, status: 'waiting' }
+						})
+						return {}
+					}
+				},
+				invoke: model.createInvoke({
+					id: 'profile',
+					src: actors.profile,
+					input: ({ context }) => {
+						if (!context.facts.userId) throw new Error('Missing workspace identity')
+						return context.facts.userId
+					},
+					onDone: ({ event }) => ({
+						target: 'choosingDefault',
+						context: { preferredWorkspaceId: event.output?.initialWorkspaceId ?? null }
+					}),
+					onError: { target: 'failed' }
+				})
+			},
+			choosingDefault: {
+				always: ({ context }) => {
+					const preferred = context.facts.organizations.some(
+						(row) => row.id === context.preferredWorkspaceId
+					)
+					if (preferred || context.facts.organizations.length > 0)
+						return {
+							target: 'navigating',
+							context: {
+								destination: defaultWorkspaceHref(
+									context,
+									preferred
+										? context.preferredWorkspaceId
+										: (context.facts.organizations.map((row) => row.id).sort()[0] ?? null)
+								),
+								emptyEntry: undefined
+							}
+						}
+					return { target: 'assessing' }
+				}
+			},
+
 			checkingScope: {
 				always: (args) => {
 					const { context } = args

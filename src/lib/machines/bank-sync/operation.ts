@@ -659,7 +659,10 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			},
 			checkingDiscovery: {
 				always: (args) => {
-					if (required(args.context.response).errors.length > 0) {
+					if (
+						required(args.context.response).errors.length > 0 &&
+						required(args.context.response).accounts.length === 0
+					) {
 						return { target: 'settlingFailure', context: { error: new Error('provider_failure') } }
 					}
 					return { target: 'discovering' }
@@ -678,7 +681,9 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 					}
 				},
-				always: { target: 'complete' }
+				always: ({ context }) => ({
+					target: required(context.response).errors.length > 0 ? 'partial' : 'complete'
+				})
 			},
 			importing: {
 				initial: 'working',

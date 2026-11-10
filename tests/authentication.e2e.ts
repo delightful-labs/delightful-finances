@@ -915,10 +915,12 @@ test(
 )
 
 test(
-	'sign-in with several workspaces clears the previous selection and opens the chooser',
+	'sign-in with several workspaces automatically selects the initial workspace',
 	{ tag: ['@identity', '@workspaces'] },
 	async ({ page }) => {
 		await createAccount(page, 'Original identity ledger')
+		const initialWorkspace = new URL(page.url()).searchParams.get('workspace')
+		if (!initialWorkspace) throw new Error('Missing initial workspace')
 		await page.goto('/account')
 		await page.getByRole('button', { name: 'Show Recovery phrase', exact: true }).click()
 		const phrase = await page.getByLabel('Your recovery phrase', { exact: true }).inputValue()
@@ -955,11 +957,17 @@ test(
 		await page.goto(`/login?workspace=${previousWorkspace}`)
 		await page.getByLabel('Recovery phrase', { exact: true }).fill(phrase)
 		await page.getByRole('button', { name: 'Login', exact: true }).click()
-		await expect(page).toHaveURL('/settings/workspace')
-		await expect(
-			page.getByRole('main').getByRole('heading', { name: 'Workspaces', exact: true })
-		).toBeVisible()
+		await expect(page).toHaveURL(
+			(url) => url.pathname === '/' && url.searchParams.get('workspace') === initialWorkspace
+		)
 		await prepareSidebar(page)
-		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue('')
+		await expect(page.getByLabel('Current Workspace', { exact: true })).toHaveValue(
+			initialWorkspace
+		)
+		await navigateSidebar(page, 'Expenses')
+		await expect(page).toHaveURL(
+			(url) =>
+				url.pathname === '/expenses' && url.searchParams.get('workspace') === initialWorkspace
+		)
 	}
 )

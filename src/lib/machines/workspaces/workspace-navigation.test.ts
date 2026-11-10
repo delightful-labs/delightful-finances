@@ -28,8 +28,14 @@ const facts: WorkspaceNavigationFacts = {
 	access: 'ready',
 	organizations: records().organizations
 }
-function fixture(input: WorkspaceNavigationFacts = facts) {
-	const one = vi.fn().mockResolvedValue(null)
+function fixture(input: WorkspaceNavigationFacts = facts, preferredWorkspaceId?: string) {
+	const one = vi
+		.fn()
+		.mockResolvedValue(
+			preferredWorkspaceId
+				? { ...records().profiles[0], initialWorkspaceId: preferredWorkspaceId }
+				: null
+		)
 	const navigate = vi.fn(
 		async (_url: string, _signal: AbortSignal, _href: string, _replace: boolean) => {}
 	)
@@ -66,7 +72,7 @@ describe('workspace navigation public contract', () => {
 			true
 		)
 	})
-	it('sends ambiguous workspace-less entry to the sole management URL', async () => {
+	it('automatically scopes multiple-workspace entry using stable workspace IDs', async () => {
 		const workspace = records().organizations[0]
 		if (!workspace) throw new Error('Missing workspace')
 		const f = fixture({
@@ -74,7 +80,7 @@ describe('workspace navigation public contract', () => {
 			organizations: [workspace, { ...workspace, id: scope.profileId }]
 		})
 		await waitFor(f.actor, (s) => s.matches('settled'))
-		expect(f.navigate.mock.calls[0]?.[0]).toBe('/settings/workspace')
+		expect(f.navigate.mock.calls[0]?.[0]).toBe(workspaceHref(scope.profileId))
 	})
 	it('resolves an automatic empty-catalog chooser when a sole workspace arrives later', async () => {
 		const origin = {
@@ -139,7 +145,7 @@ describe('workspace navigation public contract', () => {
 		await waitFor(f.actor, (s) => s.matches('settled'))
 		expect(f.navigate.mock.calls.at(-1)?.[0]).toBe(workspaceHref(scope.organizationId))
 	})
-	it.each(['identity', 'session', 'route', 'ambiguous', 'selection'])(
+	it.each(['identity', 'session', 'route', 'selection'])(
 		'discards automatic empty-entry intent after a %s change',
 		async (change) => {
 			const f = fixture({ ...facts, organizations: [] })
@@ -159,17 +165,70 @@ describe('workspace navigation public contract', () => {
 						userId: change === 'identity' ? scope.profileId : facts.userId,
 						ready: change !== 'session',
 						pathname: change === 'route' ? '/account' : directory.pathname,
-						organizations:
-							change === 'ambiguous' ? [workspace, { ...workspace, id: scope.profileId }] : []
+						organizations: []
 					}
 				})
 			}
-			const count = f.navigate.mock.calls.length
 			f.actor.send({ type: 'OBSERVED', facts: { ...facts, pathname: '/settings/workspace' } })
-			expect(f.actor.getSnapshot().matches('directory')).toBe(true)
-			expect(f.navigate).toHaveBeenCalledTimes(count)
+			await waitFor(f.actor, (s) => s.matches('settled'))
+			expect(f.navigate.mock.calls.at(-1)?.[0]).toBe(
+				workspaceHref(scope.organizationId, '/settings/workspace')
+			)
 		}
 	)
+	it('prefers the accessible initial workspace over the stable fallback', async () => {
+		const workspace = records().organizations[0]
+		if (!workspace) throw new Error('Missing workspace')
+		const f = fixture(
+			{
+				...facts,
+				pathname: '/expenses',
+				search: '?page=2',
+				organizations: [workspace, { ...workspace, id: scope.profileId }]
+			},
+			scope.organizationId
+		)
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls[0]?.[0]).toBe(`/expenses?page=2&workspace=${scope.organizationId}`)
+	})
+	it('falls back when the preferred workspace is no longer accessible', async () => {
+		const workspace = records().organizations[0]
+		if (!workspace) throw new Error('Missing workspace')
+		const f = fixture(
+			{ ...facts, organizations: [workspace, { ...workspace, id: scope.profileId }] },
+			scope.userId
+		)
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls[0]?.[0]).toBe(workspaceHref(scope.profileId))
+	})
+	it('resolves an unscoped chooser automatically', async () => {
+		const f = fixture({ ...facts, pathname: '/settings/workspace' })
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls[0]?.[0]).toBe(
+			workspaceHref(scope.organizationId, '/settings/workspace')
+		)
+	})
+	it('preserves empty-catalog route intent when several workspaces arrive', async () => {
+		const workspace = records().organizations[0]
+		if (!workspace) throw new Error('Missing workspace')
+		const f = fixture(
+			{ ...facts, pathname: '/expenses', search: '?page=2', organizations: [] },
+			scope.organizationId
+		)
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		f.actor.send({
+			type: 'OBSERVED',
+			facts: {
+				...facts,
+				pathname: '/settings/workspace',
+				organizations: [workspace, { ...workspace, id: scope.profileId }]
+			}
+		})
+		await waitFor(f.actor, (s) => s.matches('settled'))
+		expect(f.navigate.mock.calls.at(-1)?.[0]).toBe(
+			`/expenses?page=2&workspace=${scope.organizationId}`
+		)
+	})
 	it('never redirects a denied explicit scope to another workspace', () => {
 		const f = fixture({
 			...facts,
@@ -183,7 +242,12 @@ describe('workspace navigation public contract', () => {
 	it.each(['/settings/workspace', '/account', '/login'])(
 		'keeps %s independent of ledger selection',
 		(pathname) => {
-			const f = fixture({ ...facts, pathname, access: 'denied' })
+			const f = fixture({
+				...facts,
+				pathname,
+				search: `?workspace=${scope.organizationId}`,
+				access: 'denied'
+			})
 			expect(f.reports().at(-1)?.report.status).toBe(
 				pathname === '/settings/workspace' ? 'directory' : 'global'
 			)
