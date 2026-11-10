@@ -1,5 +1,8 @@
 # Finance application worker handoff
 
+Active execution checklist: [production-worker-cutover.md](production-worker-cutover.md).
+Production Jazz startup is the next milestone; the chronology below is supporting evidence.
+
 Status: native host custody implemented and tested; application handoff unfinished.
 This branch follows merged Finance PR #66 on main, which incorporates merged
 PR #65. The live SDK, domain machines and subscriptions still run in Window.
