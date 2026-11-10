@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { getInitialSnapshot } from 'xstate'
 import {
 	createTransactionEntryAvailability,
 	selectTransactionEntryAvailability,
@@ -9,6 +8,7 @@ import {
 } from './transaction-entry.js'
 import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 import type { Tag } from '#lib/schema.js'
+import { initialTransition } from 'xstate'
 
 const binding = {}
 const organizationId = '22222222-2222-4222-8222-222222222222'
@@ -56,10 +56,10 @@ function facts(): TransactionEntryObservation {
 
 function readiness(observation: TransactionEntryObservation) {
 	return selectTransactionEntryAvailability(
-		getInitialSnapshot(createTransactionEntryAvailability(binding), {
+		initialTransition(createTransactionEntryAvailability(binding), {
 			revision: 1,
 			facts: observation
-		})
+		})[0]
 	).readiness
 }
 

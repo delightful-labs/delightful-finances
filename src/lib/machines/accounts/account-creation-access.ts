@@ -1,7 +1,6 @@
 import type { AccountFormValues } from '#lib/validation/accounts.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { normalizedName } from '#lib/domain/names.js'
-import { assign, setup, type SnapshotFrom } from 'xstate'
 import type {
 	FormCapability,
 	FormChildEvent,
@@ -16,6 +15,9 @@ import { accountFormSchema } from '#lib/validation/accounts.js'
 import type { Account } from '#lib/schema.js'
 import { createSingleWriteFormOptions } from '../forms/scoped-form-policy.js'
 import type { OrganizationMember } from '#lib/schema.js'
+import { setup, types } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Observation = {
 	revision?: number
@@ -26,18 +28,27 @@ type Observation = {
 	loading: boolean
 	error: unknown
 }
+const events1 = {
+	OBSERVE: types<EventPayload<{ type: 'OBSERVE'; source: Observation }, 'OBSERVE'>>()
+}
+type NativeEvent1 =
+	| import('xstate').InferEvents<typeof events1>
+	| import('xstate').DoneActorEvent<never>
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
-const access = setup<
-	Observation,
-	{ type: 'OBSERVE'; source: Observation },
-	{},
-	{},
-	{},
-	{},
-	never,
-	string,
-	Observation | undefined
->({})
+const access = setup({
+	schemas: {
+		context: types<Observation>(),
+		events: events1,
+		input: types<Observation | undefined>()
+	}
+})
 
 export const accountCreationAccessMachine = access.createMachine({
 	id: 'account-creation-access',
@@ -52,41 +63,43 @@ export const accountCreationAccessMachine = access.createMachine({
 			error: null
 		},
 	on: {
-		OBSERVE: {
-			target: '.checking',
-			actions: access.assign(({ event }) => event.source)
+		OBSERVE: (args) => {
+			return { target: '.checking', context: args.event.source }
 		}
 	},
 	states: {
 		checking: {
-			always: [
-				{
-					guard: ({ context }) =>
-						!context.sessionReady || !context.organizationId || !context.userId,
-					target: 'waiting'
-				},
-				{ guard: ({ context }) => context.error != null, target: 'error' },
-				{ guard: ({ context }) => context.loading, target: 'waiting' },
-				{
-					guard: ({ context }) =>
-						!context.membership ||
-						context.membership.organizationId !== context.organizationId ||
-						context.membership.userId !== context.userId,
-					target: 'denied'
-				},
-				{
-					guard: ({ context }) =>
-						context.membership?.role === ORGANIZATION_ROLE.OWNER ||
-						context.membership?.role === ORGANIZATION_ROLE.ADMIN,
-					target: 'allowed'
-				},
-				{ target: 'denied' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (!context.sessionReady || !context.organizationId || !context.userId) {
+					return { target: 'waiting' }
+				}
+				if (context.error != null) {
+					return { target: 'error' }
+				}
+				if (context.loading) {
+					return { target: 'waiting' }
+				}
+				if (
+					!context.membership ||
+					context.membership.organizationId !== context.organizationId ||
+					context.membership.userId !== context.userId
+				) {
+					return { target: 'denied' }
+				}
+				if (
+					context.membership?.role === ORGANIZATION_ROLE.OWNER ||
+					context.membership?.role === ORGANIZATION_ROLE.ADMIN
+				) {
+					return { target: 'allowed' }
+				}
+				return { target: 'denied' }
+			}
 		},
 		waiting: {},
 		error: {},
 		denied: {},
-		allowed: { tags: 'can-create' }
+		allowed: { tags: ['can-create'] }
 	}
 })
 
@@ -112,25 +125,25 @@ export function createAccountCreationAvailability(binding: object) {
 		capability: FormCapability<AccountCreationScope, AccountCreationReason>
 	}
 	const actors = { access: accountCreationAccessMachine }
-	const machine = setup<
-		Context,
-		FormChildEvent<AccountCreationObservation>,
-		typeof actors,
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<AccountCreationObservation>
-	>({ actors })
-	const blocked = (reason: AccountCreationReason) =>
-		machine.assign({
-			capability: ({ context }) => ({
-				revision: context.observation.revision,
-				scope: accountCreationScope(context.observation.facts),
-				readiness: { kind: 'blocked', reason }
-			})
-		})
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<AccountCreationObservation>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<AccountCreationObservation>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<AccountCreationObservation>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<AccountCreationObservation>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<(typeof actors)['access']>>
+		| import('xstate').ErrorActorEvent
+	const machine = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<FormObservation<AccountCreationObservation>>(),
+			children: { access: types<import('xstate').ActorRefFrom<(typeof actors)['access']>>() }
+		},
+		actors
+	})
 	return machine.createMachine({
 		id: 'account-creation-availability',
 		initial: 'assessing',
@@ -143,48 +156,51 @@ export function createAccountCreationAvailability(binding: object) {
 			}
 		}),
 		on: {
-			OBSERVE: {
-				target: '.assessing',
-				actions: assign({ observation: ({ event }) => event.observation })
+			OBSERVE: (args) => {
+				return { target: '.assessing', context: { observation: args.event.observation } }
 			}
 		},
 		states: {
 			assessing: {
-				always: [
-					{
-						guard: ({
+				always: (args) => {
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => !facts.sessionReady || !facts.identityId || facts.binding !== binding,
-						target: 'sessionUnavailable'
-					},
-					{
-						guard: ({
+						}) => !facts.sessionReady || !facts.identityId || facts.binding !== binding)(args)
+					) {
+						return { target: 'sessionUnavailable' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => !facts.organizationId,
-						target: 'selectWorkspace'
-					},
-					{
-						guard: ({
+						}) => !facts.organizationId)(args)
+					) {
+						return { target: 'selectWorkspace' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => facts.error != null,
-						target: 'loadFailed'
-					},
-					{
-						guard: ({
+						}) => facts.error != null)(args)
+					) {
+						return { target: 'loadFailed' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => facts.loading,
-						target: 'loading'
-					},
-					{ target: 'authorizing' }
-				]
+						}) => facts.loading)(args)
+					) {
+						return { target: 'loading' }
+					}
+					return { target: 'authorizing' }
+				}
 			},
 			authorizing: {
 				invoke: {
@@ -203,33 +219,34 @@ export function createAccountCreationAvailability(binding: object) {
 						loading: facts.loading,
 						error: facts.error
 					}),
-					onSnapshot: [
-						{
-							guard: ({ context, event }) =>
-								event.snapshot.context.revision === context.observation.revision &&
-								event.snapshot.hasTag('can-create'),
-							target: 'checkingName'
-						},
-						{
-							guard: ({ context, event }) =>
-								event.snapshot.context.revision === context.observation.revision &&
-								event.snapshot.matches('denied'),
-							target: 'readOnly'
-						},
-						{
-							guard: ({ context, event }) =>
-								event.snapshot.context.revision === context.observation.revision &&
-								event.snapshot.matches('error'),
-							target: 'loadFailed'
+					onSnapshot: (args) => {
+						const { context, event } = args
+						if (
+							event.snapshot.context.revision === context.observation.revision &&
+							event.snapshot.hasTag('can-create')
+						) {
+							return { target: 'checkingName' }
 						}
-					],
-					onError: 'loadFailed'
+						if (
+							event.snapshot.context.revision === context.observation.revision &&
+							event.snapshot.matches('denied')
+						) {
+							return { target: 'readOnly' }
+						}
+						if (
+							event.snapshot.context.revision === context.observation.revision &&
+							event.snapshot.matches('error')
+						) {
+							return { target: 'loadFailed' }
+						}
+					},
+					onError: { target: 'loadFailed' }
 				}
 			},
 			checkingName: {
-				always: [
-					{
-						guard: ({
+				always: (args) => {
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
@@ -240,26 +257,104 @@ export function createAccountCreationAvailability(binding: object) {
 									account.organizationId === facts.organizationId &&
 									account.archivedAt === null &&
 									normalizedName(account.name) === normalizedName(facts.submittedName ?? '')
-							),
-						target: 'duplicateName'
-					},
-					{ target: 'ready' }
-				]
+							))(args)
+					) {
+						return { target: 'duplicateName' }
+					}
+					return { target: 'ready' }
+				}
 			},
-			duplicateName: { entry: blocked('duplicateName') },
-			sessionUnavailable: { entry: blocked('sessionUnavailable') },
-			selectWorkspace: { entry: blocked('selectWorkspace') },
-			loadFailed: { entry: blocked('loadFailed') },
-			loading: { entry: blocked('loading') },
-			readOnly: { entry: blocked('readOnly') },
+			duplicateName: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'duplicateName' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			sessionUnavailable: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'sessionUnavailable' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			selectWorkspace: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'selectWorkspace' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			loadFailed: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'loadFailed' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			loading: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'loading' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			readOnly: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'readOnly' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
 			ready: {
-				entry: assign({
-					capability: ({ context }) => ({
-						revision: context.observation.revision,
-						scope: accountCreationScope(context.observation.facts),
-						readiness: { kind: 'ready' }
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							capability: {
+								revision: context.observation.revision,
+								scope: accountCreationScope(context.observation.facts),
+								readiness: { kind: 'ready' }
+							}
+						}
+					}
+				}
 			}
 		}
 	})

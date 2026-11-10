@@ -1,4 +1,3 @@
-import { assign, fromPromise, sendParent, enqueueActions, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { createAccountImportMachine } from './import-account.js'
@@ -15,6 +14,8 @@ import {
 	type ProgressEvent,
 	type ProviderResponse
 } from './types.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Input = { work: OperationWork; response: ProviderResponse }
 type Link = schema.RowOf<typeof app.simplefinAccountLinks>
@@ -53,34 +54,48 @@ function accountReport(context: Context, result: ImportResult) {
 export function createImportMachine(dependencies: Dependencies) {
 	const { db } = dependencies
 	const actors = {
-		mappings: fromPromise(({ input }: { input: Input }) =>
-			db.all(app.simplefinAccountLinks.where({ organizationId: input.work.scope.organizationId }))
-		),
-		categories: fromPromise(({ input }: { input: Input }) =>
-			db.all(
-				app.categories.where({
-					organizationId: input.work.scope.organizationId,
-					isSystem: true,
-					archivedAt: { isNull: true }
-				})
-			)
-		),
+		mappings: createAsyncLogic({
+			run: ({ input }: { input: Input }) =>
+				db.all(app.simplefinAccountLinks.where({ organizationId: input.work.scope.organizationId }))
+		}),
+		categories: createAsyncLogic({
+			run: ({ input }: { input: Input }) =>
+				db.all(
+					app.categories.where({
+						organizationId: input.work.scope.organizationId,
+						isSystem: true,
+						archivedAt: { isNull: true }
+					})
+				)
+		}),
 		account: createAccountImportMachine(dependencies)
 	}
-	return setup<
-		Context,
-		ProgressEvent | { type: 'CANCEL' },
-		typeof actors,
-		{},
-		{},
-		{ isCancelling: undefined },
-		never,
-		string,
-		Input,
-		Output
-	>({
+	const events0 = {
+		IMPORT_PROGRESS: types<EventPayload<ProgressEvent | { type: 'CANCEL' }, 'IMPORT_PROGRESS'>>(),
+		CANCEL: types<EventPayload<ProgressEvent | { type: 'CANCEL' }, 'CANCEL'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['mappings']>
+				| import('xstate').OutputFrom<(typeof actors)['categories']>
+				| import('xstate').OutputFrom<(typeof actors)['account']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Output>(),
+			children: {
+				mappings: types<import('xstate').ActorRefFrom<(typeof actors)['mappings']>>(),
+				categories: types<import('xstate').ActorRefFrom<(typeof actors)['categories']>>(),
+				account: types<import('xstate').ActorRefFrom<(typeof actors)['account']>>()
+			}
+		},
 		actors,
-		guards: { isCancelling: stateIn({ processingAccount: 'cancelling' }) }
+		guards: {}
 	}).createMachine({
 		id: 'bank-import',
 		context: ({ input }) => ({
@@ -101,15 +116,18 @@ export function createImportMachine(dependencies: Dependencies) {
 			accountResults: context.accountResults
 		}),
 		on: {
-			CANCEL: '.cancelled',
-			IMPORT_PROGRESS: {
-				actions: [
-					assign({ accountCounts: ({ event }) => event.counts }),
-					sendParent(({ context, event }) => ({
-						type: 'IMPORT_PROGRESS',
-						counts: combinedCounts(context.counts, event.counts)
-					}))
-				]
+			CANCEL: { target: '.cancelled' },
+			IMPORT_PROGRESS: (args, enq) => {
+				let context = args.context
+				const { event } = args
+				let patch = {}
+				patch = { ...patch, accountCounts: event.counts }
+				context = { ...args.context, ...patch }
+				enq.sendTo(args.parent, {
+					type: 'IMPORT_PROGRESS',
+					counts: combinedCounts(context.counts, event.counts)
+				})
+				return { context: patch }
 			}
 		},
 		states: {
@@ -117,60 +135,62 @@ export function createImportMachine(dependencies: Dependencies) {
 				invoke: {
 					src: 'mappings',
 					input: ({ context }) => context,
-					onDone: {
-						target: 'checkingMappings',
-						actions: assign({ links: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'checkingMappings', context: { links: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			checkingMappings: {
-				always: [
-					{
-						guard: ({ context }) =>
-							context.links.some((link) =>
-								context.links.some(
-									(other) =>
-										other.accountId === link.accountId &&
-										other.simplefinAccountId !== link.simplefinAccountId
-								)
-							),
-						target: 'accountConflict'
-					},
-					{ target: 'loadingCategories' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (
+						context.links.some((link) =>
+							context.links.some(
+								(other) =>
+									other.accountId === link.accountId &&
+									other.simplefinAccountId !== link.simplefinAccountId
+							)
+						)
+					) {
+						return { target: 'accountConflict' }
+					}
+					return { target: 'loadingCategories' }
+				}
 			},
 			loadingCategories: {
 				invoke: {
 					src: 'categories',
 					input: ({ context }) => context,
-					onDone: {
-						target: 'nextAccount',
-						actions: assign({ categories: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'nextAccount', context: { categories: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			nextAccount: {
-				always: [
-					{
-						guard: ({ context }) => context.index >= context.response.accounts.length,
-						target: 'complete'
-					},
-					{ target: 'processingAccount' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.index >= context.response.accounts.length) {
+						return { target: 'complete' }
+					}
+					return { target: 'processingAccount' }
+				}
 			},
 			processingAccount: {
 				initial: 'working',
 				states: { working: {}, cancelling: { on: { CANCEL: {} } } },
 				on: {
-					CANCEL: {
-						target: '.cancelling',
-						actions: enqueueActions(({ self, enqueue }) => {
-							const child = self.getSnapshot().children.account
-							if (child?.getSnapshot().status === 'active')
-								enqueue.sendTo(child, { type: 'CANCEL' })
-						})
+					CANCEL: (args, enq) => {
+						{
+							const child = args.children.account
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.cancelling' }
 					}
 				},
 				invoke: {
@@ -182,83 +202,92 @@ export function createImportMachine(dependencies: Dependencies) {
 						links: context.links,
 						categories: context.categories
 					}),
-					onDone: [
-						{
-							guard: 'isCancelling',
-							target: 'cancelled',
-							actions: assign(({ context, event }) => accountReport(context, event.output))
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'cancelled',
-							target: 'cancelled',
-							actions: assign(({ context, event }) => accountReport(context, event.output))
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'failed',
-							target: 'failed',
-							actions: assign(({ context, event }) => accountReport(context, event.output))
-						},
-						{
-							target: 'advanceAccount',
-							actions: assign(({ context, event }) => accountReport(context, event.output))
+					onDone: (args) => {
+						const { context, event } = args
+						if (matchesState({ processingAccount: 'cancelling' }, args.value)) {
+							return { target: 'cancelled', context: accountReport(context, event.output) }
 						}
-					],
-					onError: [
-						{
-							guard: 'isCancelling',
-							target: 'cancelled',
-							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
-						},
-						{
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+						if (event.output.kind === 'cancelled') {
+							return { target: 'cancelled', context: accountReport(context, event.output) }
 						}
-					]
+						if (event.output.kind === 'failed') {
+							return { target: 'failed', context: accountReport(context, event.output) }
+						}
+						return { target: 'advanceAccount', context: accountReport(context, event.output) }
+					},
+					onError: (args) => {
+						const { event } = args
+						if (matchesState({ processingAccount: 'cancelling' }, args.value)) {
+							return {
+								target: 'cancelled',
+								context: { error: event.error, settlement: 'unresolved' }
+							}
+						}
+						return { target: 'failed', context: { error: event.error, settlement: 'unresolved' } }
+					}
 				}
 			},
 			advanceAccount: {
-				entry: [
-					sendParent(({ context }) => ({ type: 'IMPORT_PROGRESS', counts: context.counts })),
-					assign({ index: ({ context }) => context.index + 1 })
-				],
-				always: 'nextAccount'
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(args.parent, { type: 'IMPORT_PROGRESS', counts: context.counts })
+					return { context: { index: context.index + 1 } }
+				},
+				always: { target: 'nextAccount' }
 			},
 			complete: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'complete',
-						counts: combinedCounts(context.counts, context.accountCounts),
-						error: undefined,
-						settlement: 'settled'
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							result: {
+								kind: 'complete',
+								counts: combinedCounts(context.counts, context.accountCounts),
+								error: undefined,
+								settlement: 'settled'
+							}
+						}
+					}
+				}
 			},
 			cancelled: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'cancelled',
-						counts: combinedCounts(context.counts, context.accountCounts),
-						error: context.error,
-						settlement: context.settlement
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							result: {
+								kind: 'cancelled',
+								counts: combinedCounts(context.counts, context.accountCounts),
+								error: context.error,
+								settlement: context.settlement
+							}
+						}
+					}
+				}
 			},
 			accountConflict: {
-				always: 'failed',
-				entry: assign({ error: () => new Error('account_already_linked') })
+				always: { target: 'failed' },
+				entry: () => {
+					return { context: { error: new Error('account_already_linked') } }
+				}
 			},
 			failed: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'failed',
-						counts: combinedCounts(context.counts, context.accountCounts),
-						error: context.error,
-						settlement: context.settlement
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							result: {
+								kind: 'failed',
+								counts: combinedCounts(context.counts, context.accountCounts),
+								error: context.error,
+								settlement: context.settlement
+							}
+						}
+					}
+				}
 			}
 		}
 	})

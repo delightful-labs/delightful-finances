@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { waitFor } from 'xstate'
 import { app } from '../../schema.js'
 import {
 	brokenRecords,
@@ -8,6 +7,7 @@ import {
 	records,
 	scope
 } from './workspace-integrity.fixture.js'
+import { waitFor } from 'xstate'
 
 describe('workspace integrity transaction ownership', () => {
 	it('stages only the existing membership link in one local commit', async () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise } from 'xstate'
 import * as platform from '#lib/domain/image-processing.js'
 import { imageProcessingMachine } from './image-processing.js'
+import { createActor, toPromise } from 'xstate'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {

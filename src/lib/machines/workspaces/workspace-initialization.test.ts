@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { waitFor } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import { app } from '../../schema.js'
 import { stableUuid } from '../../domain/stable-uuid.js'
@@ -10,6 +9,7 @@ import {
 	userId,
 	workspace
 } from './workspace-creation.fixture.js'
+import { waitFor } from 'xstate'
 
 const profile = {
 	id: profileId,

@@ -1,84 +1,126 @@
 import { closeDevelopmentJazz } from '../src/lib/server/jazz-development.js'
-import { createActor, fromPromise, setup, assign, toPromise, stateIn } from 'xstate'
 import type { Jazz } from 'jazz-tools/backend'
 import { isRunnableDevEnvironment, type Plugin, type ViteDevServer } from 'vite'
+import { createActor, setup, toPromise, types, matchesState, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../src/lib/contracts/event-payload.js'
 
 type Context = { server: ViteDevServer; backend?: Jazz; failed: boolean }
 const actors = {
-	load: fromPromise<Jazz, ViteDevServer>(async ({ input }) => {
-		// Use the same SSR module graph as hooks and routes, so local requests
-		// share one SDK-owned backend rather than independent memory stores.
-		const environment = input.environments.ssr
-		if (!isRunnableDevEnvironment(environment))
-			throw new Error('Jazz requires the SSR module runner')
-		const module = await environment.runner.import('/src/lib/server/jazz.ts')
-		return module.jazz
+	load: createAsyncLogic<Jazz, ViteDevServer>({
+		run: async ({ input }) => {
+			// Use the same SSR module graph as hooks and routes, so local requests
+			// share one SDK-owned backend rather than independent memory stores.
+			const environment = input.environments.ssr
+			if (!isRunnableDevEnvironment(environment))
+				throw new Error('Jazz requires the SSR module runner')
+			const module = await environment.runner.import('/src/lib/server/jazz.ts')
+			return module.jazz
+		}
 	}),
-	attach: fromPromise(({ input }: { input: Context }) => {
-		if (!input.backend || !input.server.httpServer) throw new Error('Jazz dev backend unavailable')
-		return input.backend.attach(input.server.httpServer)
+	attach: createAsyncLogic({
+		run: ({ input }: { input: Context }) => {
+			if (!input.backend || !input.server.httpServer)
+				throw new Error('Jazz dev backend unavailable')
+			return input.backend.attach(input.server.httpServer)
+		}
 	}),
-	close: fromPromise(({ input }: { input: Jazz }) => closeDevelopmentJazz(input))
+	close: createAsyncLogic({ run: ({ input }: { input: Jazz }) => closeDevelopmentJazz(input) })
 }
-const lifecycle = setup<
-	Context,
-	{ type: 'CLOSE' } | { type: 'LISTEN' },
-	typeof actors,
-	{},
-	{},
-	{ loadingCancelled: undefined; attachingCancelled: undefined; startupFailed: undefined },
-	never,
-	string,
-	ViteDevServer
->({
+const events0 = {
+	CLOSE: types<EventPayload<{ type: 'CLOSE' } | { type: 'LISTEN' }, 'CLOSE'>>(),
+	LISTEN: types<EventPayload<{ type: 'CLOSE' } | { type: 'LISTEN' }, 'LISTEN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<(typeof actors)['load']>
+			| import('xstate').OutputFrom<(typeof actors)['attach']>
+			| import('xstate').OutputFrom<(typeof actors)['close']>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
+const lifecycle = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<ViteDevServer>(),
+		children: {
+			load: types<import('xstate').ActorRefFrom<(typeof actors)['load']>>(),
+			attach: types<import('xstate').ActorRefFrom<(typeof actors)['attach']>>(),
+			close: types<import('xstate').ActorRefFrom<(typeof actors)['close']>>()
+		}
+	},
 	actors,
 	guards: {
-		loadingCancelled: stateIn('#finance-jazz-dev.loading.stopping'),
-		attachingCancelled: stateIn('#finance-jazz-dev.attaching.stopping'),
-		startupFailed: ({ context }) => context.failed
+		loadingCancelled: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ loading: 'stopping' }, args.value),
+		attachingCancelled: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ attaching: 'stopping' }, args.value),
+		startupFailed: ({ context }: { context: Context }) => context.failed
 	}
 }).createMachine({
 	id: 'finance-jazz-dev',
 	context: ({ input }) => ({ server: input, failed: false }),
 	initial: 'waiting',
 	states: {
-		waiting: { on: { LISTEN: 'loading', CLOSE: 'closed' } },
+		waiting: { on: { LISTEN: { target: 'loading' }, CLOSE: { target: 'closed' } } },
 		loading: {
 			initial: 'active',
 			states: { active: {}, stopping: {} },
-			on: { CLOSE: '.stopping' },
+			on: { CLOSE: { target: '.stopping' } },
 			invoke: {
 				src: 'load',
 				input: ({ context }) => context.server,
-				onDone: [
-					{
-						guard: 'loadingCancelled',
-						target: 'closing',
-						actions: assign({ backend: ({ event }) => event.output })
-					},
-					{ target: 'attaching', actions: assign({ backend: ({ event }) => event.output }) }
-				],
-				onError: 'failed'
+				onDone: (args) => {
+					if (args.guards.loadingCancelled(args)) {
+						return {
+							target: 'closing',
+							context: ((args) => ({ backend: (({ event }) => event.output)(args) }))(args)
+						}
+					}
+					return {
+						target: 'attaching',
+						context: ((args) => ({ backend: (({ event }) => event.output)(args) }))(args)
+					}
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		attaching: {
 			initial: 'active',
 			states: { active: {}, stopping: {} },
-			on: { CLOSE: '.stopping' },
+			on: { CLOSE: { target: '.stopping' } },
 			invoke: {
 				src: 'attach',
 				input: ({ context }) => context,
-				onDone: [{ guard: 'attachingCancelled', target: 'closing' }, { target: 'active' }],
-				onError: { target: 'closing', actions: assign({ failed: true }) }
+				onDone: (args) => {
+					if (args.guards.attachingCancelled(args)) {
+						return { target: 'closing' }
+					}
+					return { target: 'active' }
+				},
+				onError: (args) => {
+					return { target: 'closing', context: ((args) => ({ failed: true }))(args) }
+				}
 			}
 		},
-		active: { on: { CLOSE: 'closing' } },
+		active: { on: { CLOSE: { target: 'closing' } } },
 		closing: {
 			invoke: {
 				src: 'close',
 				input: ({ context }) => context.backend!,
-				onDone: [{ guard: 'startupFailed', target: 'failed' }, { target: 'closed' }],
-				onError: 'failed'
+				onDone: (args) => {
+					if (args.guards.startupFailed(args)) {
+						return { target: 'failed' }
+					}
+					return { target: 'closed' }
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		closed: { type: 'final' },

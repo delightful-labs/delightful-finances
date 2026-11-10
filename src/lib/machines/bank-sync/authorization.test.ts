@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise } from 'xstate'
 import { createAuthorizationMachine } from './authorization.js'
 import { createPreparationMachine } from './preparation.js'
 import { connection, dependencies, id, observation, source } from './test-fixtures.js'
 import type { OrganizationMember } from '#lib/schema.js'
 import type { AuthorizationRequest, Observation } from './types.js'
+import { createActor, toPromise, createAsyncLogic } from 'xstate'
 
 const request: AuthorizationRequest = {
 	scope: { ownerId: id(1), organizationId: id(2), connectionId: id(3) },
@@ -14,10 +14,17 @@ const request: AuthorizationRequest = {
 function authorization(observe = () => observation) {
 	return createAuthorizationMachine(dependencies(observe)).provide({
 		actors: {
-			membership: fromPromise(async () => (source.membership ? [source.membership] : [])),
-			demoId: fromPromise(async () => id(99)),
-			connections: fromPromise(async () => [connection]),
-			connection: fromPromise(async () => [connection])
+			membership: createAsyncLogic({
+				run: async (_args: { input: AuthorizationRequest }) =>
+					source.membership ? [source.membership] : []
+			}),
+			demoId: createAsyncLogic({ run: async (_args: { input: AuthorizationRequest }) => id(99) }),
+			connections: createAsyncLogic({
+				run: async (_args: { input: AuthorizationRequest }) => [connection]
+			}),
+			connection: createAsyncLogic({
+				run: async (_args: { input: AuthorizationRequest }) => [connection]
+			})
 		}
 	})
 }
@@ -39,7 +46,7 @@ describe('bank authorization statecharts', () => {
 	])('rejects stale identity/scope before database authorization', async (current) => {
 		const membership = vi.fn<() => Promise<OrganizationMember[]>>(async () => [])
 		const machine = authorization(() => current).provide({
-			actors: { membership: fromPromise(membership) }
+			actors: { membership: createAsyncLogic({ run: membership }) }
 		})
 		const actor = createActor(machine, { input: request }).start()
 		await expect(toPromise(actor)).resolves.toEqual({ error: new Error('unauthorized') })
@@ -52,9 +59,11 @@ describe('bank authorization statecharts', () => {
 		const actor = createActor(
 			authorization().provide({
 				actors: {
-					membership: fromPromise<OrganizationMember[], AuthorizationRequest>(async () => [
-						{ ...membership, role: 'viewer' }
-					])
+					membership: createAsyncLogic<OrganizationMember[], AuthorizationRequest>({
+						run: async (_args: { input: AuthorizationRequest }) => [
+							{ ...membership, role: 'viewer' }
+						]
+					})
 				}
 			}),
 			{ input: request }
@@ -86,8 +95,10 @@ describe('bank authorization statecharts', () => {
 		const error = new Error('database-failure')
 		const machine = authorization().provide({
 			actors: {
-				membership: fromPromise<OrganizationMember[], AuthorizationRequest>(async () => {
-					throw error
+				membership: createAsyncLogic<OrganizationMember[], AuthorizationRequest>({
+					run: async (_args: { input: AuthorizationRequest }) => {
+						throw error
+					}
 				})
 			}
 		})
@@ -120,7 +131,11 @@ describe('bank authorization statecharts', () => {
 			.mockReturnValueOnce(current)
 			.mockReturnValue({ ...current, userId: id(8) })
 		const machine = createPreparationMachine(dependencies(observe)).provide({
-			actors: { connectionId: fromPromise(async () => id(9)) }
+			actors: {
+				connectionId: createAsyncLogic({
+					run: async (_args: { input: { ownerId: string; organizationId: string } }) => id(9)
+				})
+			}
 		})
 		const actor = createActor(machine, {
 			input: { identity: { userId: id(1), organizationId: id(2) }, requireConnection: false }

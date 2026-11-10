@@ -1,6 +1,5 @@
 import { afterEach, vi } from 'vitest'
 import { Transaction, type schema } from 'jazz-tools'
-import { createActor, fromCallback, fromPromise, type InputFrom } from 'xstate'
 import { app, type Account } from '#lib/schema.js'
 import { createAccountWriteMachine, type AccountWrite } from './account-write.js'
 import { accountWriteTransaction } from './account-write-transaction.js'
@@ -12,6 +11,8 @@ import { createBankOperationMachine } from './operation.js'
 import { account, connection, dependencies, id, observation, source } from './test-fixtures.js'
 import type { BankCommand, LockEvent, OperationWork } from './types.js'
 import type { bankLock } from './lock.js'
+import { createActor, createCallbackLogic, createAsyncLogic } from 'xstate'
+import type { InputFrom } from 'xstate'
 
 type Link = schema.RowOf<typeof app.simplefinAccountLinks>
 export const provider = {
@@ -83,7 +84,16 @@ export function mappingFixture() {
 			.mockResolvedValueOnce(current ? [current] : [])
 	}
 	records()
-	function transaction(input = request, machine = accountWriteTransaction) {
+	function transaction(
+		input = request,
+		machine: import('xstate').ActorLogic<
+			import('xstate').SnapshotFrom<typeof accountWriteTransaction>,
+			import('xstate').EventFromLogic<typeof accountWriteTransaction>,
+			import('xstate').InputFrom<typeof accountWriteTransaction>,
+			import('xstate').AnyActorSystem,
+			import('xstate').EmittedFrom<typeof accountWriteTransaction>
+		> = accountWriteTransaction
+	) {
 		const actor = createActor(machine, { input: { db, request: input, linkId: link.id } })
 		cleanups.push(() => actor.stop())
 		return actor.start()
@@ -92,39 +102,41 @@ export function mappingFixture() {
 	const deps = dependencies(observe)
 	const authorize = createAuthorizationMachine(deps).provide({
 		actors: {
-			membership: fromPromise(async () => (source.membership ? [source.membership] : [])),
-			connections: fromPromise(async () => [connection]),
-			connection: fromPromise(async () => [connection])
+			membership: createAsyncLogic({
+				run: async () => (source.membership ? [source.membership] : [])
+			}),
+			connections: createAsyncLogic({ run: async () => [connection] }),
+			connection: createAsyncLogic({ run: async () => [connection] })
 		}
 	})
 	// Compose the real chain. Only storage/platform leaves are replaced.
 	const transactionMachine = accountWriteTransaction.provide({
 		actors: {
-			open: fromPromise(async () => beginTransaction())
+			open: createAsyncLogic({ run: async () => beginTransaction() })
 		}
 	})
 	const write = createAccountWriteMachine(deps).provide({
 		actors: {
-			providerLinks: fromPromise(async (): Promise<Link[]> => []),
-			account: fromPromise(async () => [account]),
-			destinationLinks: fromPromise(async (): Promise<Link[]> => []),
-			linkId: fromPromise(async () => link.id),
+			providerLinks: createAsyncLogic({ run: async (): Promise<Link[]> => [] }),
+			account: createAsyncLogic({ run: async () => [account] }),
+			destinationLinks: createAsyncLogic({ run: async (): Promise<Link[]> => [] }),
+			linkId: createAsyncLogic({ run: async () => link.id }),
 			authorize,
 			transaction: transactionMachine
 		}
 	})
 	const create = createAccountCreationMachine(deps).provide({
 		actors: {
-			accountId: fromPromise(async () => account.id),
+			accountId: createAsyncLogic({ run: async () => account.id }),
 			write
 		}
 	})
 	const remove = vi.fn(async () => {})
 	const unlink = createAccountUnlinkMachine(deps).provide({
 		actors: {
-			links: fromPromise(async () => [link, { ...link, id: id(7) }]),
+			links: createAsyncLogic({ run: async () => [link, { ...link, id: id(7) }] }),
 			authorize,
-			remove: fromPromise(remove)
+			remove: createAsyncLogic({ run: remove })
 		}
 	})
 	const mapping = createAccountMappingMachine(deps).provide({
@@ -140,7 +152,7 @@ export function mappingFixture() {
 		actors: {
 			authorize,
 			mapAccounts: mapping,
-			lock: fromCallback<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
+			lock: createCallbackLogic<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
 				acquireLock()
 				sendBack({ type: 'LOCK_ACQUIRED' })
 				return releaseLock

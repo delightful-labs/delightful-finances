@@ -1,4 +1,3 @@
-import { assign, fromPromise, enqueueActions, setup } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { stableUuid } from '#lib/data.js'
@@ -13,6 +12,8 @@ import {
 	type ProviderSummary,
 	type Result
 } from './types.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Link = schema.RowOf<typeof app.simplefinAccountLinks>
 type Account = schema.RowOf<typeof app.accounts>
@@ -31,43 +32,69 @@ type Context = {
 export function createAccountWriteMachine(dependencies: Dependencies) {
 	const { db } = dependencies
 	const actors = {
-		providerLinks: fromPromise(({ input }: { input: AccountWrite }) =>
-			db.all(
-				app.simplefinAccountLinks.where({
-					organizationId: input.work.scope.organizationId,
-					simplefinAccountId: input.provider.id
-				})
-			)
-		),
-		account: fromPromise(({ input }: { input: AccountWrite }) =>
-			db.all(app.accounts.where({ id: input.accountId }))
-		),
-		destinationLinks: fromPromise(({ input }: { input: AccountWrite }) =>
-			db.all(
-				app.simplefinAccountLinks.where({
-					organizationId: input.work.scope.organizationId,
-					accountId: input.accountId
-				})
-			)
-		),
-		linkId: fromPromise(({ input }: { input: AccountWrite }) =>
-			stableUuid(input.work.scope.organizationId, `simplefin-link:${input.provider.id}`)
-		),
+		providerLinks: createAsyncLogic({
+			run: ({ input }: { input: AccountWrite }) =>
+				db.all(
+					app.simplefinAccountLinks.where({
+						organizationId: input.work.scope.organizationId,
+						simplefinAccountId: input.provider.id
+					})
+				)
+		}),
+		account: createAsyncLogic({
+			run: ({ input }: { input: AccountWrite }) =>
+				db.all(app.accounts.where({ id: input.accountId }))
+		}),
+		destinationLinks: createAsyncLogic({
+			run: ({ input }: { input: AccountWrite }) =>
+				db.all(
+					app.simplefinAccountLinks.where({
+						organizationId: input.work.scope.organizationId,
+						accountId: input.accountId
+					})
+				)
+		}),
+		linkId: createAsyncLogic({
+			run: ({ input }: { input: AccountWrite }) =>
+				stableUuid(input.work.scope.organizationId, `simplefin-link:${input.provider.id}`)
+		}),
 		authorize: createAuthorizationMachine(dependencies),
 		transaction: accountWriteTransaction
 	}
-	return setup<
-		Context,
-		{ type: 'WRITE' } | MappingInterruption,
-		typeof actors,
-		{},
-		{},
-		{},
-		never,
-		string,
-		AccountWrite,
-		Result<undefined>
-	>({ actors }).createMachine({
+	const events0 = {
+		WRITE: types<EventPayload<{ type: 'WRITE' } | MappingInterruption, 'WRITE'>>(),
+		CANCEL: types<EventPayload<{ type: 'WRITE' } | MappingInterruption, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<{ type: 'WRITE' } | MappingInterruption, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['providerLinks']>
+				| import('xstate').OutputFrom<(typeof actors)['account']>
+				| import('xstate').OutputFrom<(typeof actors)['destinationLinks']>
+				| import('xstate').OutputFrom<(typeof actors)['linkId']>
+				| import('xstate').OutputFrom<(typeof actors)['authorize']>
+				| import('xstate').OutputFrom<(typeof actors)['transaction']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<AccountWrite>(),
+			output: types<Result<undefined>>(),
+			children: {
+				providerLinks: types<import('xstate').ActorRefFrom<(typeof actors)['providerLinks']>>(),
+				account: types<import('xstate').ActorRefFrom<(typeof actors)['account']>>(),
+				destinationLinks:
+					types<import('xstate').ActorRefFrom<(typeof actors)['destinationLinks']>>(),
+				linkId: types<import('xstate').ActorRefFrom<(typeof actors)['linkId']>>(),
+				authorize: types<import('xstate').ActorRefFrom<(typeof actors)['authorize']>>(),
+				transaction: types<import('xstate').ActorRefFrom<(typeof actors)['transaction']>>()
+			}
+		},
+		actors
+	}).createMachine({
 		id: 'bank-account-write',
 		context: ({ input }) => ({
 			request: input,
@@ -79,8 +106,12 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 		}),
 		initial: 'loadingProviderLinks',
 		on: {
-			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
-			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+			CANCEL: () => {
+				return { target: '.failed', context: { error: new Error('disconnected') } }
+			},
+			SHUTDOWN: () => {
+				return { target: '.failed', context: { error: new Error('disconnected') } }
+			}
 		},
 		output: ({ context }) =>
 			context.error === undefined
@@ -91,164 +122,173 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 				invoke: {
 					src: 'providerLinks',
 					input: ({ context }) => context.request,
-					onDone: {
-						target: 'checkingProviderLinks',
-						actions: assign({ links: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'checkingProviderLinks', context: { links: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			checkingProviderLinks: {
-				always: [
-					{ guard: ({ context }) => context.links.length > 1, target: 'invalidMapping' },
-					{
-						guard: ({ context }) => context.request.kind === 'create',
-						target: 'checkingExistingCreation'
-					},
-					{ target: 'loadingAccount' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.links.length > 1) {
+						return { target: 'invalidMapping' }
+					}
+					if (context.request.kind === 'create') {
+						return { target: 'checkingExistingCreation' }
+					}
+					return { target: 'loadingAccount' }
+				}
 			},
 			checkingExistingCreation: {
-				always: [
-					{
-						guard: ({ context }) => context.links.length === 1,
-						target: 'authorizingExistingCreation'
-					},
-					{ target: 'loadingAccount' }
-				]
+				always: (args) => {
+					if (args.context.links.length === 1) {
+						return { target: 'authorizingExistingCreation' }
+					}
+					return { target: 'loadingAccount' }
+				}
 			},
 			authorizingExistingCreation: {
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.request.work),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'complete' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
+						}
+						return { target: 'complete' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			loadingAccount: {
 				invoke: {
 					src: 'account',
 					input: ({ context }) => context.request,
-					onDone: {
-						target: 'checkingAccountPresence',
-						actions: assign({ account: ({ event }) => event.output[0] })
+					onDone: (args) => {
+						return { target: 'checkingAccountPresence', context: { account: args.event.output[0] } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			checkingAccountPresence: {
-				always: [
-					{
-						guard: ({ context }) => Boolean(context.account),
-						target: 'checkingAccountOrganization'
-					},
-					{ guard: ({ context }) => context.request.kind === 'map', target: 'invalidMapping' },
-					{ target: 'loadingDestinationLinks' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (Boolean(context.account)) {
+						return { target: 'checkingAccountOrganization' }
+					}
+					if (context.request.kind === 'map') {
+						return { target: 'invalidMapping' }
+					}
+					return { target: 'loadingDestinationLinks' }
+				}
 			},
 			checkingAccountOrganization: {
-				always: [
-					{
-						guard: ({ context }) =>
-							context.account?.organizationId !== context.request.work.scope.organizationId,
-						target: 'invalidMapping'
-					},
-					{ target: 'checkingAccountArchive' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.account?.organizationId !== context.request.work.scope.organizationId) {
+						return { target: 'invalidMapping' }
+					}
+					return { target: 'checkingAccountArchive' }
+				}
 			},
 			checkingAccountArchive: {
-				always: [
-					{
-						guard: ({ context }) => Boolean(context.account?.archivedAt),
-						target: 'invalidMapping'
-					},
-					{
-						guard: ({ context }) => context.request.kind === 'create',
-						target: 'checkingAccountCurrency'
-					},
-					{ target: 'loadingDestinationLinks' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (Boolean(context.account?.archivedAt)) {
+						return { target: 'invalidMapping' }
+					}
+					if (context.request.kind === 'create') {
+						return { target: 'checkingAccountCurrency' }
+					}
+					return { target: 'loadingDestinationLinks' }
+				}
 			},
 			checkingAccountCurrency: {
-				always: [
-					{
-						guard: ({ context }) => context.account?.currency !== context.request.provider.currency,
-						target: 'invalidMapping'
-					},
-					{ target: 'loadingDestinationLinks' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.account?.currency !== context.request.provider.currency) {
+						return { target: 'invalidMapping' }
+					}
+					return { target: 'loadingDestinationLinks' }
+				}
 			},
 			loadingDestinationLinks: {
 				invoke: {
 					src: 'destinationLinks',
 					input: ({ context }) => context.request,
-					onDone: {
-						target: 'checkingDestinationLinks',
-						actions: assign({ destination: ({ event }) => event.output })
+					onDone: (args) => {
+						return {
+							target: 'checkingDestinationLinks',
+							context: { destination: args.event.output }
+						}
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			checkingDestinationLinks: {
-				always: [
-					{
-						guard: ({ context }) =>
-							context.destination.some(
-								(link) => link.simplefinAccountId !== context.request.provider.id
-							),
-						target: 'accountConflict'
-					},
-					{ target: 'generatingLinkId' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (
+						context.destination.some(
+							(link) => link.simplefinAccountId !== context.request.provider.id
+						)
+					) {
+						return { target: 'accountConflict' }
+					}
+					return { target: 'generatingLinkId' }
+				}
 			},
 			generatingLinkId: {
 				invoke: {
 					src: 'linkId',
 					input: ({ context }) => context.request,
-					onDone: {
-						target: 'authorizingWrite',
-						actions: assign({ linkId: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'authorizingWrite', context: { linkId: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			authorizingWrite: {
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.request.work),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'committing' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
+						}
+						return { target: 'committing' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			committing: {
 				on: {
-					CANCEL: {
-						actions: enqueueActions(({ self, enqueue }) => {
-							const child = self.getSnapshot().children.transaction
-							if (child?.getSnapshot().status === 'active')
-								enqueue.sendTo(child, { type: 'CANCEL' })
-						})
+					CANCEL: (args, enq) => {
+						{
+							const child = args.children.transaction
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
 					},
-					SHUTDOWN: {
-						actions: enqueueActions(({ self, enqueue }) => {
-							const child = self.getSnapshot().children.transaction
-							if (child?.getSnapshot().status === 'active')
-								enqueue.sendTo(child, { type: 'SHUTDOWN' })
-						})
+					SHUTDOWN: (args, enq) => {
+						{
+							const child = args.children.transaction
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'SHUTDOWN' })
+						}
 					}
 				},
 				invoke: {
@@ -259,31 +299,38 @@ export function createAccountWriteMachine(dependencies: Dependencies) {
 						request: context.request,
 						linkId: required(context.linkId)
 					}),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.outcome === 'failed',
-							target: 'failed',
-							actions: assign({
-								error: ({ event }) =>
-									event.output.outcome === 'failed' ? event.output.error : undefined
-							})
-						},
-						{
-							guard: ({ event }) =>
-								event.output.outcome === 'cancelled' || event.output.outcome === 'closed',
-							target: 'failed',
-							actions: assign({ error: () => new Error('disconnected') })
-						},
-						{ target: 'complete' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.outcome === 'failed') {
+							return {
+								target: 'failed',
+								context: {
+									error: event.output.outcome === 'failed' ? event.output.error : undefined
+								}
+							}
+						}
+						if (event.output.outcome === 'cancelled' || event.output.outcome === 'closed') {
+							return { target: 'failed', context: { error: new Error('disconnected') } }
+						}
+						return { target: 'complete' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			complete: { type: 'final' },
-			invalidMapping: { type: 'final', entry: assign({ error: () => new Error('mapping') }) },
+			invalidMapping: {
+				type: 'final',
+				entry: () => {
+					return { context: { error: new Error('mapping') } }
+				}
+			},
 			accountConflict: {
 				type: 'final',
-				entry: assign({ error: () => new Error('account_already_linked') })
+				entry: () => {
+					return { context: { error: new Error('account_already_linked') } }
+				}
 			},
 			failed: { type: 'final' }
 		}

@@ -5,7 +5,6 @@ import { EXPENSE, INCOME } from '#lib/domain/transaction-kind.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { type Account } from '#lib/schema.js'
 import type { getDb } from 'jazz-tools/svelte'
-import { assign, fromPromise, setup, stateIn, type SnapshotFrom } from 'xstate'
 import { z } from 'zod'
 import type {
 	FormCapability,
@@ -35,6 +34,9 @@ import {
 } from './internal-transfer-mutation-request.js'
 import type { InternalTransferCreateResult } from './internal-transfer-create.js'
 import type { TransferMutationResult } from './internal-transfer-mutation-owner.js'
+import { setup, types } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type CreatedTransfer = {
 	transferId: string
@@ -75,35 +77,25 @@ function createPersistence(dependencies: Dependencies) {
 	}
 	type Event = FormChildEvent<InternalTransferEntryObservation>
 	const actors = { create: createTransferMutationRequestMachine(dependencies.mutationGateway) }
-	const workflow = setup<
-		Context,
-		Event,
-		typeof actors,
-		{},
-		{},
-		{},
-		never,
-		string,
-		PersistenceInput,
-		FormOperationResult<CreatedTransfer, InternalTransferEntryReason>
-	>({
+	const events1 = {
+		INVALIDATE: types<EventPayload<Event, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>()
+	}
+	type NativeEvent1 =
+		| import('xstate').InferEvents<typeof events1>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<(typeof actors)['create']>>
+		| import('xstate').ErrorActorEvent
+	const workflow = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events1,
+			input: types<PersistenceInput>(),
+			output: types<FormOperationResult<CreatedTransfer, InternalTransferEntryReason>>(),
+			children: { create: types<import('xstate').ActorRefFrom<(typeof actors)['create']>>() }
+		},
 		actors
-	})
-	const forward = workflow.enqueueActions(({ context, event, self, enqueue }) => {
-		const child = self.getSnapshot().children.create
-		if (!child || child.getSnapshot().status !== 'active') return
-		if ('observation' in event) {
-			const previous = context.input.observation.facts
-			const next = event.observation.facts
-			if (
-				previous.identityId !== next.identityId ||
-				previous.organizationId !== next.organizationId ||
-				previous.binding !== next.binding
-			)
-				enqueue.sendTo(child, { type: 'INVALIDATE' })
-			return
-		}
-		enqueue.sendTo(child, event)
 	})
 	return workflow.createMachine({
 		id: 'internal-transfer-create-form-operation',
@@ -136,66 +128,123 @@ function createPersistence(dependencies: Dependencies) {
 							}
 						}
 					},
-					onDone: {
-						target: 'complete',
-						actions: assign({
-							result: ({
-								event
-							}): FormOperationResult<CreatedTransfer, InternalTransferEntryReason> => {
-								const result = createdResult(event.output)
-								if (result.outcome === 'succeeded')
-									return {
-										outcome: 'succeeded',
-										value: {
-											transferId: result.transferId,
-											expenseTransactionId: result.expenseTransactionId,
-											incomeTransactionId: result.incomeTransactionId
-										},
-										settlement: 'locallyPersisted'
-									}
-								if (result.outcome === 'denied')
-									return {
-										outcome: 'denied',
-										reason: 'permissionChanged',
-										settlement: 'notStarted'
-									}
-								if (result.outcome === 'incompatible')
-									return {
-										outcome: 'unavailable',
-										reason: 'incompatible',
-										settlement: 'notStarted'
-									}
-								if (
-									result.outcome === 'cancelled' ||
-									result.outcome === 'closed' ||
-									result.outcome === 'scopeChanged'
-								)
-									return { outcome: result.outcome, settlement: mapSettlement(result.settlement) }
-								if (result.settlement === 'unresolved')
-									return { outcome: 'failed', code: 'operationFailed', settlement: 'unknown' }
-								return { outcome: 'unavailable', reason: 'unavailable', settlement: 'notStarted' }
+					onDone: (args) => {
+						return {
+							target: 'complete',
+							context: {
+								result: (({
+									event
+								}): FormOperationResult<CreatedTransfer, InternalTransferEntryReason> => {
+									const result = createdResult(event.output)
+									if (result.outcome === 'succeeded')
+										return {
+											outcome: 'succeeded',
+											value: {
+												transferId: result.transferId,
+												expenseTransactionId: result.expenseTransactionId,
+												incomeTransactionId: result.incomeTransactionId
+											},
+											settlement: 'locallyPersisted'
+										}
+									if (result.outcome === 'denied')
+										return {
+											outcome: 'denied',
+											reason: 'permissionChanged',
+											settlement: 'notStarted'
+										}
+									if (result.outcome === 'incompatible')
+										return {
+											outcome: 'unavailable',
+											reason: 'incompatible',
+											settlement: 'notStarted'
+										}
+									if (
+										result.outcome === 'cancelled' ||
+										result.outcome === 'closed' ||
+										result.outcome === 'scopeChanged'
+									)
+										return { outcome: result.outcome, settlement: mapSettlement(result.settlement) }
+									if (result.settlement === 'unresolved')
+										return { outcome: 'failed', code: 'operationFailed', settlement: 'unknown' }
+									return { outcome: 'unavailable', reason: 'unavailable', settlement: 'notStarted' }
+								})(args)
 							}
-						})
+						}
 					},
-					onError: {
-						target: 'complete',
-						actions: assign({
-							result: (): FormOperationResult<CreatedTransfer, InternalTransferEntryReason> => ({
-								outcome: 'failed',
-								code: 'operationFailed',
-								settlement: 'unknown'
-							})
-						})
+					onError: () => {
+						return {
+							target: 'complete',
+							context: {
+								result: {
+									outcome: 'failed',
+									code: 'operationFailed',
+									settlement: 'unknown'
+								}
+							}
+						}
 					}
 				}
 			},
 			complete: { type: 'final' }
 		},
 		on: {
-			OBSERVE: { actions: forward },
-			CANCEL: { actions: forward },
-			INVALIDATE: { actions: forward },
-			SHUTDOWN: { actions: forward }
+			OBSERVE: (args, enq) => {
+				const { event } = args
+				{
+					const child = args.children.create
+					if (!child || child.getSnapshot().status !== 'active') {
+					} else {
+						if ('observation' in event) {
+							const previous = args.context.input.observation.facts
+							const next = event.observation.facts
+							if (
+								previous.identityId !== next.identityId ||
+								previous.organizationId !== next.organizationId ||
+								previous.binding !== next.binding
+							)
+								enq.sendTo(child, { type: 'INVALIDATE' })
+						} else {
+							enq.sendTo(child, event)
+						}
+					}
+				}
+			},
+			CANCEL: (args, enq) => {
+				const { event } = args
+				{
+					const child = args.children.create
+					if (!child || child.getSnapshot().status !== 'active') {
+					} else {
+						{
+							enq.sendTo(child, event)
+						}
+					}
+				}
+			},
+			INVALIDATE: (args, enq) => {
+				const { event } = args
+				{
+					const child = args.children.create
+					if (!child || child.getSnapshot().status !== 'active') {
+					} else {
+						{
+							enq.sendTo(child, event)
+						}
+					}
+				}
+			},
+			SHUTDOWN: (args, enq) => {
+				const { event } = args
+				{
+					const child = args.children.create
+					if (!child || child.getSnapshot().status !== 'active') {
+					} else {
+						{
+							enq.sendTo(child, event)
+						}
+					}
+				}
+			}
 		}
 	})
 }
@@ -241,25 +290,23 @@ export function createInternalTransferEntryAvailability(binding: object) {
 		capability: FormCapability<InternalTransferEntryScope, InternalTransferEntryReason>
 	}
 	type Event = FormChildEvent<InternalTransferEntryObservation>
-	const machine = setup<
-		Context,
-		Event,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<InternalTransferEntryObservation>
-	>({})
-	const blocked = (reason: InternalTransferEntryReason) =>
-		machine.assign({
-			capability: ({ context }) => ({
-				revision: context.observation.revision,
-				scope: internalTransferEntryScope(context.observation.facts),
-				readiness: { kind: 'blocked', reason }
-			})
-		})
+	const events0 = {
+		INVALIDATE: types<EventPayload<Event, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	const machine = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<FormObservation<InternalTransferEntryObservation>>()
+		}
+	})
 	return machine.createMachine({
 		id: 'internal-transfer-entry-availability',
 		initial: 'assessing',
@@ -272,77 +319,179 @@ export function createInternalTransferEntryAvailability(binding: object) {
 			}
 		}),
 		on: {
-			OBSERVE: {
-				target: '.assessing',
-				actions: assign({ observation: ({ event }) => event.observation })
+			OBSERVE: (args) => {
+				return { target: '.assessing', context: { observation: args.event.observation } }
 			}
 		},
 		states: {
 			assessing: {
-				always: [
-					{
-						guard: ({ context }) =>
-							!context.observation.facts.sessionReady ||
-							context.observation.facts.binding !== binding ||
-							!context.observation.facts.identityId,
-						target: 'sessionUnavailable'
-					},
-					{
-						guard: ({ context }) => !context.observation.facts.organizationId,
-						target: 'selectWorkspace'
-					},
-					{ guard: ({ context }) => context.observation.facts.failed, target: 'loadFailed' },
-					{ guard: ({ context }) => context.observation.facts.loading, target: 'loading' },
-					{
-						guard: ({ context }) =>
-							!context.observation.facts.accounts.some(
-								(account) =>
-									account.organizationId === context.observation.facts.organizationId &&
-									account.archivedAt === null
-							),
-						target: 'noAccounts'
-					},
-					{
-						guard: ({ context }) => writableAccounts(context.observation.facts).length === 0,
-						target: 'readOnly'
-					},
-					{
-						guard: ({ context }) => writableAccounts(context.observation.facts).length === 1,
-						target: 'insufficientAccounts'
-					},
-					{
-						guard: ({ context }) =>
-							!defaultTransactionCategory({
-								organizationId: context.observation.facts.organizationId,
-								kind: EXPENSE,
-								categories: context.observation.facts.categories
-							}) ||
-							!defaultTransactionCategory({
-								organizationId: context.observation.facts.organizationId,
-								kind: INCOME,
-								categories: context.observation.facts.categories
-							}),
-						target: 'noCategories'
-					},
-					{ target: 'ready' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (
+						!context.observation.facts.sessionReady ||
+						context.observation.facts.binding !== binding ||
+						!context.observation.facts.identityId
+					) {
+						return { target: 'sessionUnavailable' }
+					}
+					if (!context.observation.facts.organizationId) {
+						return { target: 'selectWorkspace' }
+					}
+					if (context.observation.facts.failed) {
+						return { target: 'loadFailed' }
+					}
+					if (context.observation.facts.loading) {
+						return { target: 'loading' }
+					}
+					if (
+						!context.observation.facts.accounts.some(
+							(account) =>
+								account.organizationId === context.observation.facts.organizationId &&
+								account.archivedAt === null
+						)
+					) {
+						return { target: 'noAccounts' }
+					}
+					if (writableAccounts(context.observation.facts).length === 0) {
+						return { target: 'readOnly' }
+					}
+					if (writableAccounts(context.observation.facts).length === 1) {
+						return { target: 'insufficientAccounts' }
+					}
+					if (
+						!defaultTransactionCategory({
+							organizationId: context.observation.facts.organizationId,
+							kind: EXPENSE,
+							categories: context.observation.facts.categories
+						}) ||
+						!defaultTransactionCategory({
+							organizationId: context.observation.facts.organizationId,
+							kind: INCOME,
+							categories: context.observation.facts.categories
+						})
+					) {
+						return { target: 'noCategories' }
+					}
+					return { target: 'ready' }
+				}
 			},
-			sessionUnavailable: { entry: blocked('sessionUnavailable') },
-			selectWorkspace: { entry: blocked('selectWorkspace') },
-			loadFailed: { entry: blocked('loadFailed') },
-			loading: { entry: blocked('loading') },
-			readOnly: { entry: blocked('readOnly') },
-			noAccounts: { entry: blocked('noAccounts') },
-			insufficientAccounts: { entry: blocked('insufficientAccounts') },
-			noCategories: { entry: blocked('noCategories') },
+			sessionUnavailable: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'sessionUnavailable' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			selectWorkspace: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'selectWorkspace' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			loadFailed: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'loadFailed' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			loading: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'loading' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			readOnly: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'readOnly' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			noAccounts: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'noAccounts' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			insufficientAccounts: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'insufficientAccounts' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
+			noCategories: {
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							capability: (({ context }) => ({
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'blocked', reason: 'noCategories' }
+							}))(args)
+						}))(args)
+					}
+				}
+			},
 			ready: {
-				entry: assign({
-					capability: ({ context }) => ({
-						revision: context.observation.revision,
-						scope: internalTransferEntryScope(context.observation.facts),
-						readiness: { kind: 'ready' }
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							capability: {
+								revision: context.observation.revision,
+								scope: internalTransferEntryScope(context.observation.facts),
+								readiness: { kind: 'ready' }
+							}
+						}
+					}
+				}
 			}
 		}
 	})

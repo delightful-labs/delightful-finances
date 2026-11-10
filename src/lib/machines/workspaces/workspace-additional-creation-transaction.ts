@@ -1,4 +1,3 @@
-import { assign, sendTo, setup } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { createWorkspaceCreationTransaction } from 'delightful-local-first/workspace/creation/workflow'
@@ -16,6 +15,8 @@ import type {
 	WorkspacePersistenceEvent,
 	WorkspacePersistenceResult
 } from './workspace-creation-transaction.js'
+import { setup, types } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Db = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<Db['beginTransaction']>
@@ -116,18 +117,30 @@ export function createAdditionalWorkspaceTransaction(db: Db) {
 		},
 		rollback: (resource) => resource.rollback()
 	})
-	return setup<
-		{ attempt: WorkspaceCreationAttempt; result: WorkspacePersistenceResult | undefined },
-		WorkspacePersistenceEvent,
-		{ transaction: typeof transaction },
-		{},
-		{},
-		{},
-		never,
-		string,
-		{ attempt: WorkspaceCreationAttempt },
-		WorkspacePersistenceResult
-	>({ actors: { transaction } }).createMachine({
+	const events0 = {
+		CANCEL: types<EventPayload<WorkspacePersistenceEvent, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<WorkspacePersistenceEvent, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof transaction>>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<{
+				attempt: WorkspaceCreationAttempt
+				result: WorkspacePersistenceResult | undefined
+			}>(),
+			events: events0,
+			input: types<{ attempt: WorkspaceCreationAttempt }>(),
+			output: types<WorkspacePersistenceResult>(),
+			children: {
+				transaction:
+					types<import('xstate').ActorRefFrom<{ transaction: typeof transaction }['transaction']>>()
+			}
+		},
+		actors: { transaction }
+	}).createMachine({
 		id: 'finance-additional-workspace-transaction',
 		initial: 'transacting',
 		context: ({ input }) => ({ attempt: input.attempt, result: undefined }),
@@ -138,8 +151,12 @@ export function createAdditionalWorkspaceTransaction(db: Db) {
 		states: {
 			transacting: {
 				on: {
-					CANCEL: { actions: sendTo('transaction', { type: 'CANCEL' }) },
-					SHUTDOWN: { actions: sendTo('transaction', { type: 'SHUTDOWN' }) }
+					CANCEL: (args, enq) => {
+						enq.sendTo('transaction', { type: 'CANCEL' })
+					},
+					SHUTDOWN: (args, enq) => {
+						enq.sendTo('transaction', { type: 'SHUTDOWN' })
+					}
 				},
 				invoke: {
 					id: 'transaction',
@@ -152,19 +169,20 @@ export function createAdditionalWorkspaceTransaction(db: Db) {
 							draft: context.attempt
 						}
 					}),
-					onDone: {
-						target: 'completed',
-						actions: assign({ result: ({ event }) => domainResult(event.output) })
+					onDone: (args) => {
+						return { target: 'completed', context: { result: domainResult(args.event.output) } }
 					},
-					onError: {
-						target: 'completed',
-						actions: assign({
-							result: ({ event }): WorkspacePersistenceResult => ({
-								outcome: 'failed',
-								settlement: 'unresolved',
-								error: event.error
-							})
-						})
+					onError: (args) => {
+						return {
+							target: 'completed',
+							context: {
+								result: {
+									outcome: 'failed',
+									settlement: 'unresolved',
+									error: args.event.error
+								}
+							}
+						}
 					}
 				}
 			},

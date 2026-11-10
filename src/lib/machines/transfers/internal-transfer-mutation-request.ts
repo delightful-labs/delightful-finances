@@ -1,4 +1,3 @@
-import { assign, setup } from 'xstate'
 import type { TransferMutationScope } from '../../contracts/transfer-scope-drain.js'
 import type {
 	TransferMutationRecipient,
@@ -6,6 +5,8 @@ import type {
 	TransferMutationResponse,
 	TransferMutationResult
 } from './internal-transfer-mutation-owner.js'
+import { setup, types } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type TransferMutationGateway = {
 	captureScope?: (request: TransferMutationRequestInput) => TransferMutationScope | undefined
@@ -35,24 +36,35 @@ function required<Value>(value: Value | undefined): Value {
 }
 
 export function createTransferMutationRequestMachine(gateway: TransferMutationGateway) {
-	const machine = setup<
-		Context,
-		Event,
-		{},
-		{},
-		{ submit: undefined; cancel: undefined },
-		{ matchingResponse: undefined },
-		never,
-		string,
-		TransferMutationRequestInput,
-		TransferMutationResult
-	>({
+	const events0 = {
+		TRANSFER_MUTATION_RESULT: types<EventPayload<Event, 'TRANSFER_MUTATION_RESULT'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		INVALIDATE: types<EventPayload<Event, 'INVALIDATE'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	const machine = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<TransferMutationRequestInput>(),
+			output: types<TransferMutationResult>()
+		},
 		guards: {
-			matchingResponse: ({ context, event }) =>
+			matchingResponse: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_MUTATION_RESULT' && event.requestId === context.requestId
 		},
 		actions: {
-			submit: ({ context, self }) => {
+			submit: ({
+				context,
+				self
+			}: {
+				context: Context
+				self: { id: string; send: (event: TransferMutationResponse) => void }
+			}) => {
 				const recipient: TransferMutationRecipient = {
 					send: (event) => self.send(event)
 				}
@@ -61,7 +73,7 @@ export function createTransferMutationRequestMachine(gateway: TransferMutationGa
 					request: { ...context.request, requestId: self.id, recipient }
 				})
 			},
-			cancel: ({ context }) =>
+			cancel: ({ context }: { context: Context }) =>
 				gateway.send({
 					type: 'CANCEL_TRANSFER_MUTATION',
 					requestId: context.requestId
@@ -82,24 +94,33 @@ export function createTransferMutationRequestMachine(gateway: TransferMutationGa
 		output: ({ context }) => required(context.result),
 		states: {
 			waiting: {
-				entry: 'submit',
+				entry: (args, enq) => {
+					enq(args.actions.submit, args)
+				},
 				on: {
-					TRANSFER_MUTATION_RESULT: {
-						guard: 'matchingResponse',
-						target: 'complete',
-						actions: assign({ result: ({ event }) => event.result })
+					TRANSFER_MUTATION_RESULT: (args) => {
+						if (!args.guards.matchingResponse(args)) return
+						return { target: 'complete', context: { result: args.event.result } }
 					},
-					CANCEL: { target: 'cancelling', actions: 'cancel' },
-					INVALIDATE: { target: 'cancelling', actions: 'cancel' },
-					SHUTDOWN: { target: 'cancelling', actions: 'cancel' }
+					CANCEL: (args, enq) => {
+						enq(args.actions.cancel, args)
+						return { target: 'cancelling' }
+					},
+					INVALIDATE: (args, enq) => {
+						enq(args.actions.cancel, args)
+						return { target: 'cancelling' }
+					},
+					SHUTDOWN: (args, enq) => {
+						enq(args.actions.cancel, args)
+						return { target: 'cancelling' }
+					}
 				}
 			},
 			cancelling: {
 				on: {
-					TRANSFER_MUTATION_RESULT: {
-						guard: 'matchingResponse',
-						target: 'complete',
-						actions: assign({ result: ({ event }) => event.result })
+					TRANSFER_MUTATION_RESULT: (args) => {
+						if (!args.guards.matchingResponse(args)) return
+						return { target: 'complete', context: { result: args.event.result } }
 					}
 				}
 			},

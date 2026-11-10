@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createActor, getInitialSnapshot } from 'xstate'
 import { bankAvailabilityMachine } from './availability.js'
 import { accountOptionsMachine } from './account-options.js'
 import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { collectReports, publishAvailability } from './reports.fixture.js'
 import { account, connection, id, source } from './test-fixtures.js'
 import type { BankSource } from './types.js'
+import { createActor, initialTransition } from 'xstate'
 
 describe('bank availability and presentation decisions', () => {
 	it.each([
@@ -19,7 +19,7 @@ describe('bank availability and presentation decisions', () => {
 		},
 		{ name: 'viewer', change: { membership: { ...source.membership!, role: 'viewer' } } }
 	] satisfies { name: string; change: Partial<BankSource> }[])('denies $name', ({ change }) => {
-		const state = getInitialSnapshot(bankAvailabilityMachine, { ...source, ...change })
+		const state = initialTransition(bankAvailabilityMachine, { ...source, ...change })[0]
 		expect(state.hasTag('allowed')).toBe(false)
 		expect(state.hasTag('show-sync')).toBe(false)
 		expect(state.hasTag('show-restricted')).toBe(true)
@@ -55,18 +55,18 @@ describe('bank availability and presentation decisions', () => {
 				['checking', id(7)]
 			])
 		}
-		const state = getInitialSnapshot(accountOptionsMachine, input)
+		const state = initialTransition(accountOptionsMachine, input)[0]
 		expect(state.context.mapping).toEqual({ kind: 'broken' })
 		expect(state.context.eligibleAccounts.map((row) => row.id)).toEqual([id(6)])
 		expect(state.hasTag('show-existing')).toBe(true)
 	})
 
 	it('does not offer the current linked account as an alternative', () => {
-		const state = getInitialSnapshot(accountOptionsMachine, {
+		const state = initialTransition(accountOptionsMachine, {
 			provider: { id: 'checking', name: 'Provider', currency: 'USD' },
 			accounts: [account],
 			mappings: new Map([['checking', account.id]])
-		})
+		})[0]
 		expect(state.context.mapping).toEqual({ kind: 'linked', account })
 		expect(state.hasTag('show-existing')).toBe(false)
 	})

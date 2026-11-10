@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { createActor, toPromise } from 'xstate'
 import {
 	createPolicyTestApp,
 	type PolicyTestApp,
@@ -10,6 +9,7 @@ import { app } from './schema.js'
 import permissions from './permissions.js'
 import { createSyncLogRetentionMachine } from './machines/bank-sync/log-retention.js'
 import type { RetentionScope } from './machines/bank-sync/log-retention.js'
+import { createActor, toPromise } from 'xstate'
 
 const ownerSession = {
 	user_id: 'retention-owner',

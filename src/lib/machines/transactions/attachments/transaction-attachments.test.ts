@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import * as image from '#lib/domain/image-processing.js'
 import { app } from '#lib/schema.js'
 import { createTransactionAttachmentsMachine } from './transaction-attachments.js'
+import { createActor, toPromise } from 'xstate'
 
 type AttachmentDb = Pick<ReturnType<typeof getDb>, 'all' | 'insert' | 'insertStreaming' | 'delete'>
 const transaction = {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { waitFor } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import {
 	attempt,
@@ -8,6 +7,7 @@ import {
 	profileId,
 	userId
 } from './workspace-creation.fixture.js'
+import { waitFor } from 'xstate'
 
 describe('workspace persistence composition', () => {
 	it('reconciles once before opening a transaction, then rechecks inside the transaction', async () => {

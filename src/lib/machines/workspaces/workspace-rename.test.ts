@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import type {
 	WorkspaceRenameObservation,
 	WorkspaceRenameReason
@@ -9,6 +8,7 @@ import {
 	selectWorkspaceRenameAvailability
 } from './workspace-rename.js'
 import { renameFixture } from './workspace-rename.fixture.js'
+import { createActor, waitFor } from 'xstate'
 
 const settle = { outcome: 'succeeded', value: undefined, settlement: 'locallyPersisted' }
 function settings(

@@ -1,4 +1,3 @@
-import { assign, enqueueActions, fromPromise, setup } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '#lib/schema.js'
@@ -13,6 +12,8 @@ import {
 	transactionAttachmentUploadMachine,
 	type TransactionAttachmentInput
 } from './transaction-attachment-upload.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../../contracts/event-payload.js'
 
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'insert' | 'insertStreaming' | 'delete'>
 export type TransactionAttachmentsInput = {
@@ -55,45 +56,73 @@ function result(context: Context, outcome: Output['outcome']): Output {
 
 /** Loads, stores, and links each image sequentially after the transaction has been saved. */
 export function createTransactionAttachmentsMachine() {
-	const readExisting = fromPromise(({ input }: { input: { db: Db; transactionId: string } }) =>
-		input.db.all(app.transactionAttachments.where({ transactionId: input.transactionId }), {
-			tier: ReadTier.LocalFirst
-		})
-	)
-	const model = setup<
-		Context,
-		Event,
-		{
-			imageProcessing: typeof imageProcessingMachine
-			storeAttachment: typeof transactionAttachmentUploadMachine
-			readExisting: typeof readExisting
+	const readExisting = createAsyncLogic({
+		run: ({ input }: { input: { db: Db; transactionId: string } }) =>
+			input.db.all(app.transactionAttachments.where({ transactionId: input.transactionId }), {
+				tier: ReadTier.LocalFirst
+			})
+	})
+	const patchRecordFailure = ({ context }: { context: Context }): Partial<Context> => ({
+		index: context.index + 1,
+		failed: context.failed + 1,
+		currentFile: undefined,
+		bytes: undefined
+	})
+	const events0 = {
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		INVALIDATE: types<EventPayload<Event, 'INVALIDATE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<typeof imageProcessingMachine>
+				| import('xstate').OutputFrom<typeof transactionAttachmentUploadMachine>
+				| import('xstate').OutputFrom<typeof readExisting>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<TransactionAttachmentsInput>(),
+			output: types<Output>(),
+			children: {
+				imageProcessing: types<
+					import('xstate').ActorRefFrom<
+						{
+							imageProcessing: typeof imageProcessingMachine
+							storeAttachment: typeof transactionAttachmentUploadMachine
+							readExisting: typeof readExisting
+						}['imageProcessing']
+					>
+				>(),
+				storeAttachment: types<
+					import('xstate').ActorRefFrom<
+						{
+							imageProcessing: typeof imageProcessingMachine
+							storeAttachment: typeof transactionAttachmentUploadMachine
+							readExisting: typeof readExisting
+						}['storeAttachment']
+					>
+				>(),
+				readExisting: types<
+					import('xstate').ActorRefFrom<
+						{
+							imageProcessing: typeof imageProcessingMachine
+							storeAttachment: typeof transactionAttachmentUploadMachine
+							readExisting: typeof readExisting
+						}['readExisting']
+					>
+				>()
+			}
 		},
-		{},
-		{ recordFailure: undefined; interrupt: undefined },
-		{},
-		never,
-		string,
-		TransactionAttachmentsInput,
-		Output
-	>({
 		actors: {
 			imageProcessing: imageProcessingMachine,
 			storeAttachment: transactionAttachmentUploadMachine,
 			readExisting
 		},
-		actions: {
-			recordFailure: assign({
-				index: ({ context }) => context.index + 1,
-				failed: ({ context }) => context.failed + 1,
-				currentFile: undefined,
-				bytes: undefined
-			}),
-			interrupt: enqueueActions(({ self, event, enqueue }) => {
-				const type = event.type === 'SHUTDOWN' ? 'SHUTDOWN' : 'CANCEL'
-				const child = self.getSnapshot().children.imageProcessing
-				if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type })
-			})
-		}
+		actions: {}
 	})
 	return model.createMachine({
 		id: 'transaction-attachments',
@@ -111,14 +140,29 @@ export function createTransactionAttachmentsMachine() {
 		}),
 		output: ({ context }) => context.output ?? result(context, 'complete'),
 		on: {
-			SHUTDOWN: {
-				actions: ['interrupt', assign({ interruption: () => 'closed' as const })]
+			SHUTDOWN: (args, enq) => {
+				{
+					const type = 'SHUTDOWN'
+					const child = args.children.imageProcessing
+					if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type })
+				}
+				return { context: { interruption: 'closed' } }
 			},
-			CANCEL: {
-				actions: ['interrupt', assign({ interruption: () => 'cancelled' as const })]
+			CANCEL: (args, enq) => {
+				{
+					const type = 'CANCEL'
+					const child = args.children.imageProcessing
+					if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type })
+				}
+				return { context: { interruption: 'cancelled' } }
 			},
-			INVALIDATE: {
-				actions: ['interrupt', assign({ interruption: () => 'scopeChanged' as const })]
+			INVALIDATE: (args, enq) => {
+				{
+					const type = 'CANCEL'
+					const child = args.children.imageProcessing
+					if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type })
+				}
+				return { context: { interruption: 'scopeChanged' } }
 			}
 		},
 		states: {
@@ -129,54 +173,51 @@ export function createTransactionAttachmentsMachine() {
 						db: context.db,
 						transactionId: context.transaction.id
 					}),
-					onDone: {
-						target: 'validating',
-						actions: assign({ existingCount: ({ event }) => event.output.length })
+					onDone: (args) => {
+						return { target: 'validating', context: { existingCount: args.event.output.length } }
 					},
-					onError: {
-						target: 'failed',
-						actions: assign({ output: ({ context }) => result(context, 'failed') })
+					onError: (args) => {
+						const { context } = args
+						return { target: 'failed', context: { output: result(context, 'failed') } }
 					}
 				}
 			},
 			validating: {
-				always: [
-					{
-						guard: ({ context }) =>
-							(context.existingCount ?? 0) + context.files.length > MAX_TRANSACTION_ATTACHMENTS,
-						target: 'limitReached',
-						actions: assign({ output: ({ context }) => result(context, 'limitReached') })
-					},
-					{
-						guard: ({ context }) =>
-							context.files.some(
-								(file) =>
-									!TRANSACTION_ATTACHMENT_TYPES.some((type) => type === file.type) ||
-									file.size <= 0 ||
-									file.size > MAX_TRANSACTION_ATTACHMENT_BYTES
-							),
-						target: 'invalidSelection',
-						actions: assign({ output: ({ context }) => result(context, 'invalidSelection') })
-					},
-					{ target: 'checking' }
-				]
+				always: (args) => {
+					const { context } = args
+					if ((context.existingCount ?? 0) + context.files.length > MAX_TRANSACTION_ATTACHMENTS) {
+						return { target: 'limitReached', context: { output: result(context, 'limitReached') } }
+					}
+					if (
+						context.files.some(
+							(file) =>
+								!TRANSACTION_ATTACHMENT_TYPES.some((type) => type === file.type) ||
+								file.size <= 0 ||
+								file.size > MAX_TRANSACTION_ATTACHMENT_BYTES
+						)
+					) {
+						return {
+							target: 'invalidSelection',
+							context: { output: result(context, 'invalidSelection') }
+						}
+					}
+					return { target: 'checking' }
+				}
 			},
 			checking: {
-				always: [
-					{
-						guard: ({ context }) => context.interruption !== undefined,
-						target: 'interrupted',
-						actions: assign({
-							output: ({ context }) => result(context, context.interruption ?? 'closed')
-						})
-					},
-					{
-						guard: ({ context }) => context.index >= context.files.length,
-						target: 'complete',
-						actions: assign({ output: ({ context }) => result(context, 'complete') })
-					},
-					{ target: 'uploading' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.interruption !== undefined) {
+						return {
+							target: 'interrupted',
+							context: { output: result(context, context.interruption ?? 'closed') }
+						}
+					}
+					if (context.index >= context.files.length) {
+						return { target: 'complete', context: { output: result(context, 'complete') } }
+					}
+					return { target: 'uploading' }
+				}
 			},
 			uploading: {
 				invoke: {
@@ -199,27 +240,30 @@ export function createTransactionAttachmentsMachine() {
 							}
 						}
 					},
-					onDone: [
-						{
-							guard: ({ event }) => event.output.outcome === 'processed',
-							target: 'storing',
-							actions: assign({
-								bytes: ({ event }) =>
-									event.output.outcome === 'processed' ? event.output.bytes : undefined,
-								currentFile: ({ context, event }) => {
-									const file = context.files[context.index]
-									if (!file || event.output.outcome !== 'processed') return undefined
-									return {
-										name: file.name,
-										type: event.output.blob.type,
-										size: event.output.blob.size
-									}
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.outcome === 'processed') {
+							return {
+								target: 'storing',
+								context: {
+									bytes: event.output.outcome === 'processed' ? event.output.bytes : undefined,
+									currentFile: (({ context, event }) => {
+										const file = context.files[context.index]
+										if (!file || event.output.outcome !== 'processed') return undefined
+										return {
+											name: file.name,
+											type: event.output.blob.type,
+											size: event.output.blob.size
+										}
+									})(args)
 								}
-							})
-						},
-						{ target: 'checking', actions: 'recordFailure' }
-					],
-					onError: { target: 'checking', actions: 'recordFailure' }
+							}
+						}
+						return { target: 'checking', context: patchRecordFailure(args) }
+					},
+					onError: (args) => {
+						return { target: 'checking', context: patchRecordFailure(args) }
+					}
 				}
 			},
 			storing: {
@@ -235,19 +279,22 @@ export function createTransactionAttachmentsMachine() {
 							})(),
 						bytes: context.bytes ?? new Uint8Array()
 					}),
-					onDone: {
-						target: 'checking',
-						actions: assign({
-							index: ({ context }) => context.index + 1,
-							attached: ({ context, event }) =>
-								context.attached + (event.output.outcome === 'attached' ? 1 : 0),
-							failed: ({ context, event }) =>
-								context.failed + (event.output.outcome === 'failed' ? 1 : 0),
-							currentFile: undefined,
-							bytes: undefined
-						})
+					onDone: (args) => {
+						const { context, event } = args
+						return {
+							target: 'checking',
+							context: {
+								index: context.index + 1,
+								attached: context.attached + (event.output.outcome === 'attached' ? 1 : 0),
+								failed: context.failed + (event.output.outcome === 'failed' ? 1 : 0),
+								currentFile: undefined,
+								bytes: undefined
+							}
+						}
 					},
-					onError: { target: 'checking', actions: 'recordFailure' }
+					onError: (args) => {
+						return { target: 'checking', context: patchRecordFailure(args) }
+					}
 				}
 			},
 			limitReached: { type: 'final' },

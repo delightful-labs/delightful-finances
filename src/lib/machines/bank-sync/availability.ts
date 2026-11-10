@@ -1,7 +1,8 @@
-import { assign, enqueueActions, getInitialSnapshot, raise, setup, stateIn } from 'xstate'
-import type { ActorRef, Snapshot, SnapshotFrom } from 'xstate'
 import { canManageBankCredentials } from '#lib/domain/organization-permissions.js'
 import { type BankSource, type BankAccess, type BankCredential, type Observation } from './types.js'
+import { setup, types, matchesState, initialTransition } from 'xstate'
+import type { ActorRef, Snapshot, SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type AvailabilityReport = {
 	generation: number
@@ -39,59 +40,48 @@ export function selectedBankConnection<Credential extends BankCredential>(
 	)
 	return connections.find((row) => row.status === 'active') ?? connections[0]
 }
-
-export const bankAvailabilityMachine = setup<
-	Context,
-	Event,
-	{},
-	{},
-	{ publish: { mode: AvailabilityReport['mode'] }; acceptAccess: undefined },
-	{ accessAllowed: undefined; credentialReady: undefined },
-	never,
-	string,
-	Input
->({
-	actions: {
-		acceptAccess: assign(({ event }) =>
-			event.type === 'ACCESS_CHANGED'
-				? {
-						source: {
-							organizationId: event.access.organizationId,
-							userId: event.access.userId,
-							sessionReady: event.access.kind === 'allowed',
-							membership: undefined,
-							connections: []
-						},
-						generation: event.generation,
-						connection: undefined
-					}
-				: {}
-		),
-		publish: enqueueActions(
-			({ context, check, enqueue }, params: { mode: AvailabilityReport['mode'] }) => {
-				if (!context.recipient) return
-				const allowed = check('accessAllowed')
-				const report: AvailabilityReport = {
-					generation: context.generation,
-					mode: params.mode,
-					canConnect: allowed,
-					canOperate: params.mode === 'connected'
-				}
-				if (
-					context.published?.generation === report.generation &&
-					context.published.mode === report.mode &&
-					context.published.canConnect === report.canConnect &&
-					context.published.canOperate === report.canOperate
-				)
-					return
-				enqueue.assign({ published: report })
-				enqueue.sendTo(context.recipient, { type: 'AVAILABILITY_REPORTED', report })
+const patchAcceptAccess = ({ event }: { event: Event }): Partial<Context> =>
+	event.type === 'ACCESS_CHANGED'
+		? {
+				source: {
+					organizationId: event.access.organizationId,
+					userId: event.access.userId,
+					sessionReady: event.access.kind === 'allowed',
+					membership: undefined,
+					connections: []
+				},
+				generation: event.generation,
+				connection: undefined
 			}
-		)
+		: {}
+const events0 = {
+	ACCESS_CHANGED: types<EventPayload<Event, 'ACCESS_CHANGED'>>(),
+	CONNECTION_CHANGED: types<EventPayload<Event, 'CONNECTION_CHANGED'>>(),
+	CHECK_CONTROLS: types<EventPayload<Event, 'CHECK_CONTROLS'>>(),
+	SETUP_STARTED: types<EventPayload<Event, 'SETUP_STARTED'>>(),
+	SETUP_ENDED: types<EventPayload<Event, 'SETUP_ENDED'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<never>
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
+
+export const bankAvailabilityMachine = setup({
+	schemas: { context: types<Context>(), events: events0, input: types<Input>() },
+	actions: {
+		publish: (recipient: Input['recipient'], report: AvailabilityReport) => {
+			recipient?.send({ type: 'AVAILABILITY_REPORTED', report })
+		}
 	},
 	guards: {
-		accessAllowed: stateIn({ access: 'allowed' }),
-		credentialReady: stateIn({ credential: 'ready' })
+		accessAllowed: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ access: 'allowed' }, args.value)
 	}
 }).createMachine({
 	id: 'bank-availability',
@@ -107,177 +97,383 @@ export const bankAvailabilityMachine = setup<
 		access: {
 			initial: 'checkingSession',
 			on: {
-				ACCESS_CHANGED: [
-					{
-						guard: ({ event }) => event.access.kind === 'allowed',
-						target: '.allowed',
-						actions: 'acceptAccess'
-					},
-					{ target: '.denied', actions: 'acceptAccess' }
-				]
+				ACCESS_CHANGED: (args) => {
+					if (args.event.access.kind === 'allowed') {
+						return { target: '.allowed', context: patchAcceptAccess(args) }
+					}
+					return { target: '.denied', context: patchAcceptAccess(args) }
+				}
 			},
 			states: {
 				checkingSession: {
-					always: [
-						{ guard: ({ context }) => !context.source.sessionReady, target: 'denied' },
-						{ target: 'checkingUser' }
-					]
+					always: (args) => {
+						if (!args.context.source.sessionReady) {
+							return { target: 'denied' }
+						}
+						return { target: 'checkingUser' }
+					}
 				},
 				checkingUser: {
-					always: [
-						{ guard: ({ context }) => !context.source.userId, target: 'denied' },
-						{ target: 'checkingOrganization' }
-					]
+					always: (args) => {
+						if (!args.context.source.userId) {
+							return { target: 'denied' }
+						}
+						return { target: 'checkingOrganization' }
+					}
 				},
 				checkingOrganization: {
-					always: [
-						{ guard: ({ context }) => !context.source.organizationId, target: 'denied' },
-						{ target: 'checkingMembership' }
-					]
+					always: (args) => {
+						if (!args.context.source.organizationId) {
+							return { target: 'denied' }
+						}
+						return { target: 'checkingMembership' }
+					}
 				},
 				checkingMembership: {
-					always: [
-						{ guard: ({ context }) => !context.source.membership, target: 'denied' },
-						{ target: 'checkingMembershipUser' }
-					]
+					always: (args) => {
+						if (!args.context.source.membership) {
+							return { target: 'denied' }
+						}
+						return { target: 'checkingMembershipUser' }
+					}
 				},
 				checkingMembershipUser: {
-					always: [
-						{
-							guard: ({ context }) => context.source.membership?.userId !== context.source.userId,
-							target: 'denied'
-						},
-						{ target: 'checkingMembershipOrganization' }
-					]
+					always: (args) => {
+						const { context } = args
+						if (context.source.membership?.userId !== context.source.userId) {
+							return { target: 'denied' }
+						}
+						return { target: 'checkingMembershipOrganization' }
+					}
 				},
 				checkingMembershipOrganization: {
-					always: [
-						{
-							guard: ({ context }) =>
-								context.source.membership?.organizationId !== context.source.organizationId,
-							target: 'denied'
-						},
-						{ target: 'checkingRole' }
-					]
+					always: (args) => {
+						const { context } = args
+						if (context.source.membership?.organizationId !== context.source.organizationId) {
+							return { target: 'denied' }
+						}
+						return { target: 'checkingRole' }
+					}
 				},
 				checkingRole: {
-					always: [
-						{
-							guard: ({ context }) =>
-								canManageBankCredentials(
-									context.source.membership,
-									context.source.organizationId ?? ''
-								),
-							target: 'allowed'
-						},
-						{ target: 'denied' }
-					]
+					always: (args) => {
+						const { context } = args
+						if (
+							canManageBankCredentials(
+								context.source.membership,
+								context.source.organizationId ?? ''
+							)
+						) {
+							return { target: 'allowed' }
+						}
+						return { target: 'denied' }
+					}
 				},
-				allowed: { tags: 'allowed', entry: raise({ type: 'CHECK_CONTROLS' }) },
-				denied: { entry: raise({ type: 'CHECK_CONTROLS' }) }
+				allowed: {
+					tags: ['allowed'],
+					entry: (args, enq) => {
+						enq.raise({ type: 'CHECK_CONTROLS' })
+					}
+				},
+				denied: {
+					entry: (args, enq) => {
+						enq.raise({ type: 'CHECK_CONTROLS' })
+					}
+				}
 			}
 		},
 		credential: {
 			initial: 'checkingConnection',
 			on: {
-				ACCESS_CHANGED: '.checkingConnection',
-				CONNECTION_CHANGED: {
-					target: '.checkingConnection',
-					actions: assign({
-						connection: ({ event }) => event.connection,
-						generation: ({ event }) => event.generation
-					})
+				ACCESS_CHANGED: { target: '.checkingConnection' },
+				CONNECTION_CHANGED: (args) => {
+					const { event } = args
+					return {
+						target: '.checkingConnection',
+						context: { connection: event.connection, generation: event.generation }
+					}
 				}
 			},
 			states: {
 				checkingConnection: {
-					always: [
-						{ guard: ({ context }) => !context.connection, target: 'missing' },
-						{ target: 'checkingStatus' }
-					]
+					always: (args) => {
+						if (!args.context.connection) {
+							return { target: 'missing' }
+						}
+						return { target: 'checkingStatus' }
+					}
 				},
 				checkingStatus: {
-					always: [
-						{ guard: ({ context }) => context.connection?.status !== 'active', target: 'inactive' },
-						{ target: 'checkingCiphertext' }
-					]
+					always: (args) => {
+						if (args.context.connection?.status !== 'active') {
+							return { target: 'inactive' }
+						}
+						return { target: 'checkingCiphertext' }
+					}
 				},
 				checkingCiphertext: {
-					always: [
-						{ guard: ({ context }) => !context.connection?.ciphertext, target: 'incomplete' },
-						{ target: 'checkingCredentialId' }
-					]
+					always: (args) => {
+						if (!args.context.connection?.ciphertext) {
+							return { target: 'incomplete' }
+						}
+						return { target: 'checkingCredentialId' }
+					}
 				},
 				checkingCredentialId: {
-					always: [
-						{ guard: ({ context }) => !context.connection?.credentialId, target: 'incomplete' },
-						{ target: 'checkingSalt' }
-					]
+					always: (args) => {
+						if (!args.context.connection?.credentialId) {
+							return { target: 'incomplete' }
+						}
+						return { target: 'checkingSalt' }
+					}
 				},
 				checkingSalt: {
-					always: [
-						{ guard: ({ context }) => !context.connection?.prfSalt, target: 'incomplete' },
-						{ target: 'checkingIv' }
-					]
+					always: (args) => {
+						if (!args.context.connection?.prfSalt) {
+							return { target: 'incomplete' }
+						}
+						return { target: 'checkingIv' }
+					}
 				},
 				checkingIv: {
-					always: [
-						{ guard: ({ context }) => !context.connection?.iv, target: 'incomplete' },
-						{ target: 'checkingVersion' }
-					]
+					always: (args) => {
+						if (!args.context.connection?.iv) {
+							return { target: 'incomplete' }
+						}
+						return { target: 'checkingVersion' }
+					}
 				},
 				checkingVersion: {
-					always: [
-						{
-							guard: ({ context }) => context.connection?.credentialVersion !== 1,
-							target: 'incomplete'
-						},
-						{ target: 'ready' }
-					]
+					always: (args) => {
+						if (args.context.connection?.credentialVersion !== 1) {
+							return { target: 'incomplete' }
+						}
+						return { target: 'ready' }
+					}
 				},
-				missing: { entry: raise({ type: 'CHECK_CONTROLS' }) },
-				inactive: { entry: raise({ type: 'CHECK_CONTROLS' }) },
-				incomplete: { entry: raise({ type: 'CHECK_CONTROLS' }) },
-				ready: { tags: 'credential-ready', entry: raise({ type: 'CHECK_CONTROLS' }) }
+				missing: {
+					entry: (args, enq) => {
+						enq.raise({ type: 'CHECK_CONTROLS' })
+					}
+				},
+				inactive: {
+					entry: (args, enq) => {
+						enq.raise({ type: 'CHECK_CONTROLS' })
+					}
+				},
+				incomplete: {
+					entry: (args, enq) => {
+						enq.raise({ type: 'CHECK_CONTROLS' })
+					}
+				},
+				ready: {
+					tags: ['credential-ready'],
+					entry: (args, enq) => {
+						enq.raise({ type: 'CHECK_CONTROLS' })
+					}
+				}
 			}
 		},
 		controls: {
 			initial: 'checkingAccess',
 			on: {
-				CHECK_CONTROLS: '.checkingAccess',
-				SETUP_STARTED: '.setup',
-				SETUP_ENDED: '.checkingAccess'
+				CHECK_CONTROLS: { target: '.checkingAccess' },
+				SETUP_STARTED: { target: '.setup' },
+				SETUP_ENDED: { target: '.checkingAccess' }
 			},
 			states: {
 				checkingAccess: {
-					always: [
-						{ guard: 'accessAllowed', target: 'checkingCredential' },
-						{ target: 'restricted' }
-					]
+					always: (args) => {
+						if (args.guards.accessAllowed(args)) {
+							return { target: 'checkingCredential' }
+						}
+						return { target: 'restricted' }
+					}
 				},
 				checkingCredential: {
-					always: [{ guard: 'credentialReady', target: 'connected' }, { target: 'needsSetup' }]
+					always: (args) => {
+						if (matchesState({ credential: 'ready' }, args.value)) {
+							return { target: 'connected' }
+						}
+						return { target: 'needsSetup' }
+					}
 				},
 				restricted: {
-					tags: 'show-restricted',
-					entry: { type: 'publish', params: { mode: 'restricted' } }
+					tags: ['show-restricted'],
+					entry: (args, enq) => {
+						let context = args.context
+						let patch = {}
+						{
+							const contextBefore = args.context
+							const params: { mode: AvailabilityReport['mode'] } = { mode: 'restricted' }
+							if (!contextBefore.recipient) {
+							} else {
+								const allowed = params.mode !== 'restricted'
+								const report: AvailabilityReport = {
+									generation: contextBefore.generation,
+									mode: params.mode,
+									canConnect: allowed,
+									canOperate: params.mode === 'connected'
+								}
+								if (
+									contextBefore.published?.generation === report.generation &&
+									contextBefore.published.mode === report.mode &&
+									contextBefore.published.canConnect === report.canConnect &&
+									contextBefore.published.canOperate === report.canOperate
+								) {
+								} else {
+									patch = { ...patch, published: report }
+									context = { ...args.context, ...patch }
+									enq(args.actions.publish, contextBefore.recipient, report)
+								}
+							}
+						}
+						return { context: patch }
+					}
 				},
 				connected: {
 					tags: ['show-sync', 'show-connected', 'show-recovery'],
-					entry: { type: 'publish', params: { mode: 'connected' } }
+					entry: (args, enq) => {
+						let context = args.context
+						let patch = {}
+						{
+							const contextBefore = args.context
+							const params: { mode: AvailabilityReport['mode'] } = { mode: 'connected' }
+							if (!contextBefore.recipient) {
+							} else {
+								const allowed = params.mode !== 'restricted'
+								const report: AvailabilityReport = {
+									generation: contextBefore.generation,
+									mode: params.mode,
+									canConnect: allowed,
+									canOperate: params.mode === 'connected'
+								}
+								if (
+									contextBefore.published?.generation === report.generation &&
+									contextBefore.published.mode === report.mode &&
+									contextBefore.published.canConnect === report.canConnect &&
+									contextBefore.published.canOperate === report.canOperate
+								) {
+								} else {
+									patch = { ...patch, published: report }
+									context = { ...args.context, ...patch }
+									enq(args.actions.publish, contextBefore.recipient, report)
+								}
+							}
+						}
+						return { context: patch }
+					}
 				},
-				needsSetup: { tags: 'show-setup', entry: { type: 'publish', params: { mode: 'setup' } } },
+				needsSetup: {
+					tags: ['show-setup'],
+					entry: (args, enq) => {
+						let context = args.context
+						let patch = {}
+						{
+							const contextBefore = args.context
+							const params: { mode: AvailabilityReport['mode'] } = { mode: 'setup' }
+							if (!contextBefore.recipient) {
+							} else {
+								const allowed = params.mode !== 'restricted'
+								const report: AvailabilityReport = {
+									generation: contextBefore.generation,
+									mode: params.mode,
+									canConnect: allowed,
+									canOperate: params.mode === 'connected'
+								}
+								if (
+									contextBefore.published?.generation === report.generation &&
+									contextBefore.published.mode === report.mode &&
+									contextBefore.published.canConnect === report.canConnect &&
+									contextBefore.published.canOperate === report.canOperate
+								) {
+								} else {
+									patch = { ...patch, published: report }
+									context = { ...args.context, ...patch }
+									enq(args.actions.publish, contextBefore.recipient, report)
+								}
+							}
+						}
+						return { context: patch }
+					}
+				},
 				setup: {
 					initial: 'checkingAccess',
-					on: { CHECK_CONTROLS: '.checkingAccess' },
+					on: { CHECK_CONTROLS: { target: '.checkingAccess' } },
 					states: {
 						checkingAccess: {
-							always: [{ guard: 'accessAllowed', target: 'active' }, { target: 'restricted' }]
+							always: (args) => {
+								if (args.guards.accessAllowed(args)) {
+									return { target: 'active' }
+								}
+								return { target: 'restricted' }
+							}
 						},
-						active: { tags: 'show-setup', entry: { type: 'publish', params: { mode: 'setup' } } },
+						active: {
+							tags: ['show-setup'],
+							entry: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								{
+									const contextBefore = args.context
+									const params: { mode: AvailabilityReport['mode'] } = { mode: 'setup' }
+									if (!contextBefore.recipient) {
+									} else {
+										const allowed = params.mode !== 'restricted'
+										const report: AvailabilityReport = {
+											generation: contextBefore.generation,
+											mode: params.mode,
+											canConnect: allowed,
+											canOperate: params.mode === 'connected'
+										}
+										if (
+											contextBefore.published?.generation === report.generation &&
+											contextBefore.published.mode === report.mode &&
+											contextBefore.published.canConnect === report.canConnect &&
+											contextBefore.published.canOperate === report.canOperate
+										) {
+										} else {
+											patch = { ...patch, published: report }
+											context = { ...args.context, ...patch }
+											enq(args.actions.publish, contextBefore.recipient, report)
+										}
+									}
+								}
+								return { context: patch }
+							}
+						},
 						restricted: {
-							tags: 'show-restricted',
-							entry: { type: 'publish', params: { mode: 'restricted' } }
+							tags: ['show-restricted'],
+							entry: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								{
+									const contextBefore = args.context
+									const params: { mode: AvailabilityReport['mode'] } = { mode: 'restricted' }
+									if (!contextBefore.recipient) {
+									} else {
+										const allowed = params.mode !== 'restricted'
+										const report: AvailabilityReport = {
+											generation: contextBefore.generation,
+											mode: params.mode,
+											canConnect: allowed,
+											canOperate: params.mode === 'connected'
+										}
+										if (
+											contextBefore.published?.generation === report.generation &&
+											contextBefore.published.mode === report.mode &&
+											contextBefore.published.canConnect === report.canConnect &&
+											contextBefore.published.canOperate === report.canOperate
+										) {
+										} else {
+											patch = { ...patch, published: report }
+											context = { ...args.context, ...patch }
+											enq(args.actions.publish, contextBefore.recipient, report)
+										}
+									}
+								}
+								return { context: patch }
+							}
 						}
 					}
 				}
@@ -302,7 +498,7 @@ export function availabilityObservation(
 // Reuse guarded states when an operation needs a fresh synchronous authorization observation.
 export function bankObservation(source: BankSource): Observation {
 	return {
-		...availabilityObservation(getInitialSnapshot(bankAvailabilityMachine, source)),
+		...availabilityObservation(initialTransition(bankAvailabilityMachine, source)[0]),
 		connection: selectedBankConnection(source)
 	}
 }

@@ -1,4 +1,3 @@
-import type { Snapshot } from 'xstate'
 import type { z } from 'zod'
 import {
 	createScopedFormMachine as createSharedForm,
@@ -6,6 +5,8 @@ import {
 } from 'delightful-local-first/forms/workflow'
 import type { FormOperationResult } from '#lib/contracts/form-contract.js'
 import { formDependencies } from '#lib/forms/form-dependencies.js'
+import type { Snapshot } from 'xstate'
+
 export { selectScopedFormView } from 'delightful-local-first/forms/workflow'
 export type ScopedFormOptions<
 	Values,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { assign, createActor, createMachine, fromPromise, setup } from 'xstate'
+import { createActor, createMachine, setup, createAsyncLogic } from 'xstate'
 
 const environment = vi.hoisted(() => ({ PUBLIC_DEBUG: 'true' }))
 vi.mock('$app/env/public', () => environment)
@@ -26,9 +26,15 @@ it('logs handled failures once, preserves context facts, and logs again after re
 			},
 			initial: 'ready',
 			states: {
-				ready: { on: { FAIL: 'failed' } },
+				ready: { on: { FAIL: { target: 'failed' } } },
 				failed: {
-					on: { TICK: {}, RETRY: 'ready', CHANGE: { actions: assign({ attemptCount: 3 }) } }
+					on: {
+						TICK: {},
+						RETRY: { target: 'ready' },
+						CHANGE: () => {
+							return { context: { attemptCount: 3 } }
+						}
+					}
 				}
 			}
 		}),
@@ -70,8 +76,10 @@ it('observes rejected child actors and their handled parent error', async () => 
 	})
 	const machine = setup({
 		actors: {
-			fetch: fromPromise(async () => {
-				throw failure
+			fetch: createAsyncLogic({
+				run: async () => {
+					throw failure
+				}
 			})
 		}
 	}).createMachine({
@@ -81,7 +89,9 @@ it('observes rejected child actors and their handled parent error', async () => 
 			loading: {
 				invoke: {
 					src: 'fetch',
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			failed: {}
@@ -180,8 +190,8 @@ it.each([false, true])(
 		const recipient = collectReports<import('../machines/bank-sync/history.js').HistoryEvent>()
 		const machine = crash
 			? bankHistoryMachine.provide({
-					actions: {
-						summarize: () => {
+					guards: {
+						currentRevision: () => {
 							throw new Error('History projection crashed')
 						}
 					}
@@ -194,7 +204,9 @@ it.each([false, true])(
 					id: 'history',
 					src: machine,
 					input: { revision: 0, recipient },
-					onError: { actions: () => {} }
+					onError: (args, enq) => {
+						enq(() => {})
+					}
 				}
 			}),
 			{

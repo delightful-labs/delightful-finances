@@ -1,4 +1,4 @@
-import { fromPromise } from 'xstate'
+import { createAsyncLogic } from 'xstate'
 
 type Transaction<Write> = {
 	commit(): Write
@@ -10,9 +10,13 @@ export function createJazzTransactionActors<Db, Tx extends Transaction<Write>, W
 	begin: (db: Db) => Tx,
 	settleWrite: (write: Write) => Promise<unknown>
 ) {
-	const open = fromPromise(({ input }: { input: Db }) => Promise.resolve(begin(input)))
-	const commit = fromPromise(({ input }: { input: Tx }) => Promise.resolve(input.commit()))
-	const settle = fromPromise(({ input }: { input: Write }) => settleWrite(input))
-	const rollback = fromPromise(({ input }: { input: Tx }) => input.rollback())
+	const open = createAsyncLogic({
+		run: ({ input }: { input: Db }) => Promise.resolve(begin(input))
+	})
+	const commit = createAsyncLogic({
+		run: ({ input }: { input: Tx }) => Promise.resolve(input.commit())
+	})
+	const settle = createAsyncLogic({ run: ({ input }: { input: Write }) => settleWrite(input) })
+	const rollback = createAsyncLogic({ run: ({ input }: { input: Tx }) => input.rollback() })
 	return { open, commit, settle, rollback }
 }

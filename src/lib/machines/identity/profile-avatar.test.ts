@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise, waitFor, type SnapshotFrom } from 'xstate'
 import * as platform from '#lib/domain/image-processing.js'
 import { MAX_AVATAR_BYTES, profileAvatarFormSchema } from '#lib/validation/identity.js'
 import { createProfileFormOptions, profileScope } from './profile.js'
@@ -9,6 +8,9 @@ import type {
 	ProfileReason,
 	ProfileScope
 } from '#lib/contracts/profile-contract.js'
+import { createActor, toPromise, waitFor } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+
 const cleanups: (() => void)[] = []
 afterEach(() => {
 	for (const cleanup of cleanups.splice(0)) cleanup()

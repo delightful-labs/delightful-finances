@@ -1,19 +1,3 @@
-import {
-	assign,
-	enqueueActions,
-	and,
-	not,
-	or,
-	raise,
-	sendParent,
-	sendTo,
-	setup,
-	stateIn,
-	type SnapshotFrom,
-	type ActorRefFrom,
-	type DoneActorEvent,
-	type ErrorActorEvent
-} from 'xstate'
 import { createWorkspaceStartupMachine } from '../workspaces/workspace-startup.js'
 import {
 	createWorkspaceCreationMachine,
@@ -72,6 +56,9 @@ import type {
 	BankSource,
 	BankSyncDependencies
 } from '../bank-sync/types.js'
+import { setup, types, matchesState, matchesState as matchesState1 } from 'xstate'
+import type { SnapshotFrom, ActorRefFrom, DoneActorEvent, ErrorActorEvent } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type ReadinessObservation = {
 	source: Pick<BankSource, 'organizationId' | 'userId' | 'membership'>
@@ -106,7 +93,12 @@ type Context = ReadinessObservation & {
 	integrityReport: IntegrityReport | undefined
 	creationActor: ActorRefFrom<ReturnType<typeof createWorkspaceCreationMachine>> | undefined
 	initialization: { userId: string; profileId: string } | undefined
-	resourceActor: ActorRefFrom<ReturnType<typeof createWorkspaceSelectedResources>> | undefined
+	resourceActor:
+		| import('xstate').ActorRef<
+				SnapshotFrom<ReturnType<typeof createWorkspaceSelectedResources>>,
+				import('../../contracts/workspace-selected-resources.js').SelectedResourceCommand
+		  >
+		| undefined
 	resourceLease: WorkspaceLease | undefined
 	resourceUserId: string | undefined
 	selectionLease: WorkspaceLease | undefined
@@ -164,227 +156,144 @@ export function createWorkspaceReadinessMachine({
 		startup: createWorkspaceStartupMachine(dependencies.db),
 		creation: createWorkspaceCreationMachine(dependencies.db)
 	}
-	return setup<
-		Context,
-		Event,
-		typeof actors,
-		{},
-		{
-			publishBank: undefined
-			startResources: undefined
-			shutDownResources: undefined
-			releaseResources: undefined
-			failResources: undefined
+	const events0 = {
+		SELECTION: types<EventPayload<Event, 'SELECTION'>>(),
+		SELECTED_RESOURCES_STOPPING: types<EventPayload<Event, 'SELECTED_RESOURCES_STOPPING'>>(),
+		SELECTED_INTEGRITY_STATUS: types<EventPayload<Event, 'SELECTED_INTEGRITY_STATUS'>>(),
+		SELECTED_RESOURCE_DRAIN_REJECTED:
+			types<EventPayload<Event, 'SELECTED_RESOURCE_DRAIN_REJECTED'>>(),
+		INITIALIZATION_STATUS: types<EventPayload<Event, 'INITIALIZATION_STATUS'>>(),
+		NAVIGATION_STATUS: types<EventPayload<Event, 'NAVIGATION_STATUS'>>(),
+		INITIALIZATION_PENDING: types<EventPayload<Event, 'INITIALIZATION_PENDING'>>(),
+		OBSERVE_STARTUP: types<EventPayload<Event, 'OBSERVE_STARTUP'>>(),
+		STARTUP_REQUESTED: types<EventPayload<Event, 'STARTUP_REQUESTED'>>(),
+		OBSERVE_NAVIGATION: types<EventPayload<Event, 'OBSERVE_NAVIGATION'>>(),
+		OBSERVE_BANK: types<EventPayload<Event, 'OBSERVE_BANK'>>(),
+		BANK_OBSERVED: types<EventPayload<Event, 'BANK_OBSERVED'>>(),
+		NAVIGATION_REQUESTED: types<EventPayload<Event, 'NAVIGATION_REQUESTED'>>(),
+		SELECT_WORKSPACE: types<EventPayload<Event, 'SELECT_WORKSPACE'>>(),
+		RETRY_NAVIGATION: types<EventPayload<Event, 'RETRY_NAVIGATION'>>(),
+		CREATION: types<EventPayload<Event, 'CREATION'>>(),
+		NAVIGATION_STOPPED: types<EventPayload<Event, 'NAVIGATION_STOPPED'>>(),
+		OBSERVE_INTEGRITY: types<EventPayload<Event, 'OBSERVE_INTEGRITY'>>(),
+		INTEGRITY_REQUESTED: types<EventPayload<Event, 'INTEGRITY_REQUESTED'>>(),
+		OBSERVED: types<EventPayload<Event, 'OBSERVED'>>(),
+		REEVALUATE: types<EventPayload<Event, 'REEVALUATE'>>(),
+		BANK: types<EventPayload<Event, 'BANK'>>(),
+		BANK_NETWORK: types<EventPayload<Event, 'BANK_NETWORK'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		RETRY: types<EventPayload<Event, 'RETRY'>>(),
+		STARTUP_STOPPED: types<EventPayload<Event, 'STARTUP_STOPPED'>>(),
+		RESOURCES_STOPPED: types<EventPayload<Event, 'RESOURCES_STOPPED'>>(),
+		RETRY_INTEGRITY: types<EventPayload<Event, 'RETRY_INTEGRITY'>>(),
+		CREATION_STOPPED: types<EventPayload<Event, 'CREATION_STOPPED'>>(),
+		OBSERVE_CREATION: types<EventPayload<Event, 'OBSERVE_CREATION'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['navigation']>
+				| import('xstate').OutputFrom<(typeof actors)['startup']>
+				| import('xstate').OutputFrom<(typeof actors)['creation']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<undefined>(),
+			output: types<{ selectedResources: WorkspaceResourceRelease }>(),
+			children: {
+				navigation: types<import('xstate').ActorRefFrom<(typeof actors)['navigation']>>(),
+				startup: types<import('xstate').ActorRefFrom<(typeof actors)['startup']>>(),
+				creation: types<import('xstate').ActorRefFrom<(typeof actors)['creation']>>(),
+				selectedResources:
+					types<
+						import('xstate').ActorRefFrom<ReturnType<typeof createWorkspaceSelectedResources>>
+					>()
+			}
 		},
-		{
-			bankAccessAllowed: undefined
-			navigationAlive: undefined
-			navigationReady: undefined
-			navigationCanUseWorkspace: undefined
-			awaitingInitialWorkspace: undefined
-			navigationFailed: undefined
-			navigationDenied: undefined
-			invalidSelection: undefined
-			canUseWorkspace: undefined
-			workspaceReady: undefined
-			closingDrain: undefined
-			resourceBound: undefined
-			resourceMatches: undefined
-			resourceEligible: undefined
-			nativeAssessmentSettled: undefined
-			startupAlive: undefined
-			canObserveIntegrity: undefined
-			canObserveCreation: undefined
-			creationAlive: undefined
-		},
-		never,
-		string,
-		unknown,
-		{ selectedResources: WorkspaceResourceRelease }
-	>({
 		actors,
-		actions: {
-			startResources: assign(({ context, self, spawn }) => {
-				const resourceLease = required(context.selectionLease)
-				return {
-					resourceLease,
-					resourceUserId: context.source.userId,
-					resourceResult: undefined,
-					bankAccess: undefined,
-					integrityReport: undefined,
-					resourceActor: spawn(
-						createWorkspaceSelectedResources({
-							dependencies,
-							lease: resourceLease,
-							userId: required(context.source.userId)
-						}),
-						{
-							input: { recipient: self }
-						}
-					)
-				}
-			}),
-			shutDownResources: enqueueActions(({ context, enqueue }) => {
-				if (context.resourceActor?.getSnapshot().status === 'active')
-					enqueue.sendTo(context.resourceActor, { type: 'SHUTDOWN' })
-			}),
-			releaseResources: enqueueActions(({ context, event, enqueue }) => {
-				if (!('output' in event)) throw new Error('Missing resource completion')
-				enqueue.sendParent({ type: 'SELECTED_RESOURCES_RELEASED', result: event.output })
-				enqueue.stopChild(required(context.resourceActor))
-				enqueue.assign({
-					resourceActor: undefined,
-					resourceResult: event.output,
-					resourceRelease: retainResourceRelease(context.resourceRelease, event.output.release),
-					bankAccess: undefined,
-					integrityReport: undefined
-				})
-				enqueue.raise({ type: 'RESOURCES_STOPPED' })
-			}),
-			failResources: enqueueActions(({ context, enqueue }) => {
-				enqueue.sendParent({
-					type: 'SELECTED_RESOURCES_CRASHED',
-					lease: required(context.resourceLease)
-				})
-				enqueue.stopChild(required(context.resourceActor))
-				enqueue.assign({
-					resourceActor: undefined,
-					resourceResult: {
-						lease: required(context.resourceLease),
-						drain: undefined,
-						release: { outcome: 'unresolved' }
-					},
-					resourceRelease: { outcome: 'unresolved' },
-					bankAccess: undefined,
-					integrityReport: undefined
-				})
-				enqueue.raise({ type: 'RESOURCES_STOPPED' })
-			}),
-			publishBank: enqueueActions(({ context, check, enqueue }) => {
-				const access: BankAccess = check('bankAccessAllowed')
-					? {
-							kind: 'allowed',
-							organizationId: required(context.source.organizationId ?? undefined),
-							userId: required(context.source.userId)
-						}
-					: {
-							kind:
-								check('canUseWorkspace') || check('navigationDenied') ? 'restricted' : 'waiting',
-							organizationId: context.source.organizationId,
-							userId: context.source.userId
-						}
-				const previous = context.bankAccess
-				const authority = context.integrityRequest.binding
-				if (
-					previous &&
-					previous.access.kind === access.kind &&
-					previous.access.organizationId === access.organizationId &&
-					previous.access.userId === access.userId &&
-					sameIntegrityBinding(previous.authority, authority)
-				)
-					return
-				const revision = context.bankRevision + 1
-				enqueue.assign({ bankAccess: { revision, access, authority }, bankRevision: revision })
-				if (context.resourceActor?.getSnapshot().status === 'active' && context.resourceLease)
-					enqueue.sendTo(context.resourceActor, {
-						type: 'BANK',
-						lease: context.resourceLease,
-						event: { type: 'WORKSPACE_ACCESS_CHANGED', revision, access }
-					})
-			})
-		},
+		actions: {},
 		guards: {
-			bankAccessAllowed: and([
-				'canUseWorkspace',
-				'resourceBound',
-				({ context }) =>
-					canManageBankCredentials(context.source.membership, context.source.organizationId ?? '')
-			]),
-			navigationAlive: ({ context }) => context.navigationActor?.getSnapshot().status === 'active',
-			navigationReady: ({ context }) =>
+			bankAccessAllowed: (args: {
+				context: Context
+				event: NativeEvent0
+				value: import('xstate').StateValue
+			}) =>
+				matchesState(
+					{
+						active: {
+							workspace: 'ready',
+							session: 'ready',
+							organization: 'ready',
+							selection: 'selected'
+						}
+					},
+					args.value
+				) &&
+				matchesState({ active: { resources: 'bound' } }, args.value) &&
+				(({ context }) =>
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease))(args) &&
+				(({ context }) =>
+					canManageBankCredentials(context.source.membership, context.source.organizationId ?? ''))(
+					args
+				),
+			navigationAlive: ({ context }: { context: Context }) =>
+				context.navigationActor?.getSnapshot().status === 'active',
+			navigationReady: ({ context }: { context: Context }) =>
 				context.sessionStatus === 'ready' && Boolean(context.source.userId),
-			navigationCanUseWorkspace: stateIn({
-				active: { session: 'ready', organization: 'ready', selection: 'selected' }
-			}),
-			awaitingInitialWorkspace: and([
-				stateIn({ active: { workspace: 'waiting' } }),
-				({ context }) =>
-					context.organizations?.length === 0 &&
-					context.organizationsError == null &&
-					!workspaceRoute(context.route.search).scoped &&
-					!['/settings/workspace', '/account', '/login'].includes(context.route.pathname)
-			]),
-			navigationFailed: or([
-				stateIn({ active: { selection: 'failed' } }),
-				stateIn({ active: { organization: 'failed' } })
-			]),
-			invalidSelection: ({ context }) => {
+			invalidSelection: ({ context }: { context: Context }) => {
 				const scope = workspaceRoute(context.route.search)
 				return (
 					scope.scoped &&
 					(scope.workspaceId === null || scope.workspaceId !== context.source.organizationId)
 				)
 			},
-			navigationDenied: or([
-				stateIn({ active: { selection: 'unavailableSelection' } }),
-				stateIn({ active: { organization: 'denied' } })
-			]),
-			canUseWorkspace: stateIn({
-				active: {
-					workspace: 'ready',
-					session: 'ready',
-					organization: 'ready',
-					selection: 'selected'
-				}
-			}),
-			workspaceReady: stateIn({ active: { workspace: 'ready' } }),
-			closingDrain: stateIn({ closing: { intent: 'shutdown' } }),
-			resourceBound: and([
-				stateIn({ active: { resources: 'bound' } }),
-				({ context }) =>
+			navigationDenied: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ active: { selection: 'unavailableSelection' } }, args.value) ||
+				matchesState({ active: { organization: 'denied' } }, args.value),
+			canUseWorkspace: (args: { value: import('xstate').StateValue }) =>
+				matchesState(
+					{
+						active: {
+							workspace: 'ready',
+							session: 'ready',
+							organization: 'ready',
+							selection: 'selected'
+						}
+					},
+					args.value
+				),
+			workspaceReady: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ active: { workspace: 'ready' } }, args.value),
+			resourceBound: (args: {
+				context: Context
+				event: NativeEvent0
+				value: import('xstate').StateValue
+			}) =>
+				matchesState({ active: { resources: 'bound' } }, args.value) &&
+				(({ context }) =>
 					context.resourceActor?.getSnapshot().status === 'active' &&
 					context.selectionLease !== undefined &&
 					context.resourceLease !== undefined &&
-					sameWorkspaceLease(context.selectionLease, context.resourceLease)
-			]),
-			nativeAssessmentSettled: not(
-				or([
-					stateIn({ active: { session: 'checking' } }),
-					stateIn({ active: { selection: 'checking' } }),
-					stateIn({ active: { selection: 'checkingQuery' } }),
-					stateIn({ active: { selection: 'choosingOrganization' } }),
-					stateIn({ active: { organization: 'checking' } }),
-					stateIn({ active: { organization: 'checkingMembership' } })
-				])
-			),
-			resourceMatches: and([
-				'canUseWorkspace',
-				({ context }) =>
-					context.resourceLease !== undefined &&
-					context.selectionLease !== undefined &&
-					sameWorkspaceLease(context.resourceLease, context.selectionLease) &&
-					context.resourceLease.request.workspaceId === context.source.organizationId &&
-					context.resourceUserId === context.source.userId
-			]),
-			resourceEligible: and([
-				'canUseWorkspace',
-				({ context }) => context.selectionLease !== undefined
-			]),
-			startupAlive: ({ context }) => context.startupActor?.getSnapshot().status === 'active',
-			creationAlive: ({ context }) => context.creationActor?.getSnapshot().status === 'active',
-			canObserveCreation: and([
-				stateIn({ active: { session: 'ready', workspace: 'ready' } }),
-				({ context }) =>
+					sameWorkspaceLease(context.selectionLease, context.resourceLease))(args),
+			startupAlive: ({ context }: { context: Context }) =>
+				context.startupActor?.getSnapshot().status === 'active',
+			creationAlive: ({ context }: { context: Context }) =>
+				context.creationActor?.getSnapshot().status === 'active',
+			canObserveCreation: (args: {
+				context: Context
+				event: NativeEvent0
+				value: import('xstate').StateValue
+			}) =>
+				matchesState({ active: { session: 'ready', workspace: 'ready' } }, args.value) &&
+				(({ context }) =>
 					context.initialization !== undefined &&
-					context.initialization.userId === context.source.userId
-			]),
-			canObserveIntegrity: and([
-				'canUseWorkspace',
-				'resourceBound',
-				({ context }) =>
-					context.initialization !== undefined &&
-					context.initialization.userId === context.source.userId
-			])
+					context.initialization.userId === context.source.userId)(args)
 		}
 	}).createMachine({
 		id: 'workspace-readiness',
@@ -433,434 +342,761 @@ export function createWorkspaceReadinessMachine({
 				id: 'startup',
 				src: 'startup',
 				input: ({ context, self }) => ({ request: context.initializationRequest, recipient: self }),
-				onDone: { actions: raise({ type: 'STARTUP_STOPPED' }) },
-				onError: { actions: raise({ type: 'STARTUP_STOPPED' }) }
+				onDone: (args, enq) => {
+					enq.raise({ type: 'STARTUP_STOPPED' })
+				},
+				onError: (args, enq) => {
+					enq.raise({ type: 'STARTUP_STOPPED' })
+				}
 			},
 			{
 				id: 'navigation',
 				src: 'navigation',
 				input: ({ context, self }) => ({ facts: context.navigationFacts, recipient: self }),
-				onDone: { actions: raise({ type: 'NAVIGATION_STOPPED' }) },
-				onError: { actions: raise({ type: 'NAVIGATION_STOPPED' }) }
+				onDone: (args, enq) => {
+					enq.raise({ type: 'NAVIGATION_STOPPED' })
+				},
+				onError: (args, enq) => {
+					enq.raise({ type: 'NAVIGATION_STOPPED' })
+				}
 			},
 
 			{
 				id: 'creation',
 				src: 'creation',
-				onSnapshot: [
-					{ guard: not(stateIn('active')) },
-					{
-						guard: ({ context, event }) => {
+				onSnapshot: (args) => {
+					if (!matchesState1('active', args.value)) {
+						return {}
+					}
+					if (
+						(({ context, event }) => {
 							const { binding } = selectWorkspaceCreationReport(event.snapshot)
 							return (
 								binding !== undefined &&
 								binding.userId === context.source.userId &&
 								binding.profileId === context.initialization?.profileId
 							)
-						},
-						actions: assign({
-							creationView: ({ event }) => selectWorkspaceCreationReport(event.snapshot).view
-						})
-					},
-					{ actions: assign({ creationView: unavailableWorkspaceCreationView }) }
-				],
+						})(args)
+					) {
+						return {
+							context: ((args) => ({
+								creationView: (({ event }) => selectWorkspaceCreationReport(event.snapshot).view)(
+									args
+								)
+							}))(args)
+						}
+					}
+					return { context: ((args) => ({ creationView: unavailableWorkspaceCreationView }))(args) }
+				},
 				input: { binding: undefined },
-				onDone: { actions: raise({ type: 'CREATION_STOPPED' }) },
-				onError: { actions: raise({ type: 'CREATION_STOPPED' }) }
+				onDone: (args, enq) => {
+					enq.raise({ type: 'CREATION_STOPPED' })
+				},
+				onError: (args, enq) => {
+					enq.raise({ type: 'CREATION_STOPPED' })
+				}
 			}
 		],
 		on: {
-			'xstate.done.actor.*': {
-				guard: ({ context, event }) =>
-					context.resourceActor?.id === event.actorId &&
-					context.resourceLease !== undefined &&
-					sameWorkspaceLease(event.output.lease, context.resourceLease),
-				actions: 'releaseResources'
-			},
-			'xstate.error.actor.*': [
-				{
-					guard: ({ context, event }) => context.resourceActor?.id === event.actorId,
-					actions: 'failResources'
-				},
-				{}
-			],
-			SELECTED_RESOURCE_DRAIN_REJECTED: {},
-			BANK_NETWORK: {
-				guard: and([
-					'resourceBound',
-					({ context, event }) =>
+			'xstate.done.actor': (args, enq) => {
+				return ((args, enq) => {
+					let context = args.context
+					const { event } = args
+					if (!(
+						event.actorId === 'selectedResources' &&
 						context.resourceLease !== undefined &&
-						sameWorkspaceLease(event.lease, context.resourceLease)
-				]),
-				actions: sendTo(
-					({ context }) => required(context.resourceActor),
-					({ event }): SelectedResourceCommand => ({
-						type: 'BANK',
-						lease: event.lease,
-						event: { type: 'NETWORK_CHANGED', offline: event.offline }
-					})
-				)
+						sameWorkspaceLease(event.output.lease, context.resourceLease)
+					))
+						return
+					let patch = {}
+					{
+						const contextBefore = args.context
+						if (!('output' in event)) throw new Error('Missing resource completion')
+						enq.sendTo(args.parent, { type: 'SELECTED_RESOURCES_RELEASED', result: event.output })
+						enq.stop(required(contextBefore.resourceActor))
+						patch = {
+							...patch,
+							...((assignedArgs) => ({
+								resourceActor: undefined,
+								resourceResult: event.output,
+								resourceRelease: retainResourceRelease(
+									contextBefore.resourceRelease,
+									event.output.release
+								),
+								bankAccess: undefined,
+								integrityReport: undefined
+							}))({ ...args, context })
+						}
+						context = { ...args.context, ...patch }
+						enq.raise({ type: 'RESOURCES_STOPPED' })
+					}
+					return { context: patch }
+				})(args, enq)
 			},
-			OBSERVE_BANK: { guard: 'resourceBound', actions: 'publishBank' },
-			BANK_OBSERVED: {
-				guard: and([
-					'resourceBound',
-					({ context, event }) =>
-						context.bankAccess !== undefined &&
-						event.event.revision === context.bankAccess.revision &&
-						event.organizationId === context.bankAccess.access.organizationId &&
-						event.userId === context.bankAccess.access.userId
-				]),
-				actions: sendTo(
-					({ context }) => required(context.resourceActor),
-					({ context, event }) => ({
+			'xstate.error.actor': (args, enq) => {
+				return ((args, enq) => {
+					const { context } = args
+					if (args.event.actorId === 'selectedResources') {
+						let context = args.context
+						let patch = {}
+						{
+							const contextBefore = args.context
+							enq.sendTo(args.parent, {
+								type: 'SELECTED_RESOURCES_CRASHED',
+								lease: required(contextBefore.resourceLease)
+							})
+							enq.stop(required(contextBefore.resourceActor))
+							patch = {
+								...patch,
+								resourceActor: undefined,
+								resourceResult: {
+									lease: required(contextBefore.resourceLease),
+									drain: undefined,
+									release: { outcome: 'unresolved' }
+								},
+								resourceRelease: { outcome: 'unresolved' },
+								bankAccess: undefined,
+								integrityReport: undefined
+							}
+							context = { ...args.context, ...patch }
+							enq.raise({ type: 'RESOURCES_STOPPED' })
+						}
+						return { context: patch }
+					}
+					return undefined
+				})(args, enq)
+			},
+			SELECTED_RESOURCE_DRAIN_REJECTED: {},
+			BANK_NETWORK: (args, enq) => {
+				const { context, event } = args
+				if (!(
+					matchesState({ active: { resources: 'bound' } }, args.value) &&
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease) &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(event.lease, context.resourceLease)
+				))
+					return
+				enq.sendTo(required(context.resourceActor), {
+					type: 'BANK',
+					lease: event.lease,
+					event: { type: 'NETWORK_CHANGED', offline: event.offline }
+				})
+			},
+			OBSERVE_BANK: (args, enq) => {
+				let context = args.context
+				if (!args.guards.resourceBound(args)) return
+				let patch = {}
+				{
+					const contextBefore = args.context
+					const access: BankAccess = args.guards.bankAccessAllowed({
+						...args,
+						context: contextBefore
+					})
+						? {
+								kind: 'allowed',
+								organizationId: required(contextBefore.source.organizationId ?? undefined),
+								userId: required(contextBefore.source.userId)
+							}
+						: {
+								kind:
+									args.guards.canUseWorkspace({ ...args }) ||
+									args.guards.navigationDenied({ ...args })
+										? 'restricted'
+										: 'waiting',
+								organizationId: contextBefore.source.organizationId,
+								userId: contextBefore.source.userId
+							}
+					const previous = contextBefore.bankAccess
+					const authority = contextBefore.integrityRequest.binding
+					if (
+						previous &&
+						previous.access.kind === access.kind &&
+						previous.access.organizationId === access.organizationId &&
+						previous.access.userId === access.userId &&
+						sameIntegrityBinding(previous.authority, authority)
+					) {
+					} else {
+						const revision = contextBefore.bankRevision + 1
+						patch = {
+							...patch,
+							...((assignedArgs) => ({
+								bankAccess: { revision, access, authority },
+								bankRevision: revision
+							}))({ ...args, context })
+						}
+						context = { ...args.context, ...patch }
+						if (
+							contextBefore.resourceActor?.getSnapshot().status === 'active' &&
+							contextBefore.resourceLease
+						)
+							enq.sendTo(contextBefore.resourceActor, {
+								type: 'BANK',
+								lease: contextBefore.resourceLease,
+								event: { type: 'WORKSPACE_ACCESS_CHANGED', revision, access }
+							})
+					}
+				}
+				return { context: patch }
+			},
+			BANK_OBSERVED: (args, enq) => {
+				const { context, event } = args
+				if (!(
+					matchesState({ active: { resources: 'bound' } }, args.value) &&
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease) &&
+					context.bankAccess !== undefined &&
+					event.event.revision === context.bankAccess.revision &&
+					event.organizationId === context.bankAccess.access.organizationId &&
+					event.userId === context.bankAccess.access.userId
+				))
+					return
+				enq.sendTo(required(context.resourceActor), {
+					type: 'BANK',
+					lease: required(context.resourceLease),
+					event: event.event
+				})
+			},
+			SHUTDOWN: { target: '.closing.intent.shutdown' },
+			RETRY: (args, enq) => {
+				if (!matchesState({ active: { workspace: 'failed' } }, args.value)) return
+				enq.raise({ type: 'OBSERVE_STARTUP', restart: true })
+			},
+			CREATION: (args, enq) => {
+				const { context } = args
+				if (!(
+					matchesState({ active: { session: 'ready', workspace: 'ready' } }, args.value) &&
+					context.initialization !== undefined &&
+					context.initialization.userId === context.source.userId
+				))
+					return
+				enq.sendTo('creation', args.event.event)
+			},
+			SELECT_WORKSPACE: (args, enq) => {
+				enq.sendTo('navigation', {
+					type: 'SELECT',
+					workspaceId: args.event.workspaceId
+				})
+			},
+			RETRY_NAVIGATION: (args, enq) => {
+				enq.sendTo('navigation', { type: 'RETRY' })
+			},
+			OBSERVE_STARTUP: (args, enq) => {
+				enq.raise({
+					type: 'STARTUP_REQUESTED',
+					restart: args.event.restart === true
+				})
+			},
+			STARTUP_REQUESTED: (args, enq) => {
+				let context = args.context
+				if (!(
+					args.event.restart ||
+					context.initializationRequest.userId !== context.source.userId ||
+					context.initializationRequest.status !== context.sessionStatus
+				))
+					return
+				let patch = {}
+				patch = {
+					...patch,
+					...((args) => ({
+						initializationRequest: (({ context }) => ({
+							generation: context.initializationRequest.generation + 1,
+							userId: context.source.userId,
+							status: context.sessionStatus
+						}))(args),
+						initialization: undefined,
+						creationView: unavailableWorkspaceCreationView
+					}))(args)
+				}
+				context = { ...args.context, ...patch }
+				enq.raise({ type: 'INITIALIZATION_PENDING' })
+				enq.sendTo('startup', {
+					type: 'OBSERVED',
+					request: context.initializationRequest
+				})
+				return { context: patch }
+			},
+			OBSERVE_NAVIGATION: (args, enq) => {
+				const { context } = args
+				if (
+					!args.guards.navigationReady(args) ||
+					(matchesState({ active: { workspace: 'waiting' } }, args.value) &&
+						context.organizations?.length === 0 &&
+						context.organizationsError == null &&
+						!workspaceRoute(context.route.search).scoped &&
+						!['/settings/workspace', '/account', '/login'].includes(context.route.pathname))
+				) {
+					enq.raise({ type: 'NAVIGATION_REQUESTED', ready: false, access: 'waiting' })
+					return {}
+				}
+				if (args.guards.invalidSelection(args)) {
+					enq.raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'denied' })
+					return {}
+				}
+				if (
+					matchesState(
+						{
+							active: { session: 'ready', organization: 'ready', selection: 'selected' }
+						},
+						args.value
+					)
+				) {
+					enq.raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'ready' })
+					return {}
+				}
+				if (
+					matchesState({ active: { selection: 'failed' } }, args.value) ||
+					matchesState({ active: { organization: 'failed' } }, args.value)
+				) {
+					enq.raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'failed' })
+					return {}
+				}
+				if (
+					matchesState({ active: { selection: 'unavailableSelection' } }, args.value) ||
+					matchesState({ active: { organization: 'denied' } }, args.value)
+				) {
+					enq.raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'denied' })
+					return {}
+				}
+				enq.raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'waiting' })
+				return {}
+			},
+			NAVIGATION_REQUESTED: (args, enq) => {
+				let context = args.context
+				const { event } = args
+				let patch = {}
+				patch = {
+					...patch,
+					navigationFacts: {
+						...context.route,
+						generation: context.navigationFacts.generation + 1,
+						userId: context.source.userId,
+						ready: event.ready,
+						loading:
+							!workspaceRoute(context.route.search).scoped &&
+							(context.organizationsLoading || context.organizations === undefined),
+						error: workspaceRoute(context.route.search).scoped
+							? undefined
+							: context.organizationsError,
+						organizations: context.organizations ?? [],
+						access: event.access
+					},
+					navigationReport: undefined
+				}
+				context = { ...args.context, ...patch }
+				enq.sendTo('navigation', {
+					type: 'OBSERVED',
+					facts: context.navigationFacts
+				})
+				return { context: patch }
+			},
+			RETRY_INTEGRITY: (args, enq) => {
+				if (!selectWorkspaceIntegrityView(args.context.integrityReport).canRetry) return
+				enq.raise({ type: 'OBSERVE_INTEGRITY', restart: true })
+			},
+			OBSERVE_CREATION: (args, enq) => {
+				if (args.guards.canObserveCreation(args)) {
+					enq.sendTo(
+						'creation',
+						(({ context }): import('xstate').SendableEventFromLogic<typeof actors.creation> => {
+							const initialized = required(context.initialization)
+							return {
+								type: 'OBSERVED',
+								binding: {
+									...initialized,
+									key: JSON.stringify([environment, initialized.userId])
+								}
+							}
+						})(args)
+					)
+					return {}
+				}
+				enq.sendTo('creation', { type: 'OBSERVED', binding: undefined })
+				return { context: ((args) => ({ creationView: unavailableWorkspaceCreationView }))(args) }
+			},
+			OBSERVE_INTEGRITY: (args, enq) => {
+				const { context } = args
+				if (
+					matchesState(
+						{
+							active: {
+								workspace: 'ready',
+								session: 'ready',
+								organization: 'ready',
+								selection: 'selected'
+							}
+						},
+						args.value
+					) &&
+					matchesState({ active: { resources: 'bound' } }, args.value) &&
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease) &&
+					context.initialization !== undefined &&
+					context.initialization.userId === context.source.userId
+				) {
+					enq.raise(
+						(({ context, event }) => {
+							const initialization = required(context.initialization)
+							const membership = required(context.source.membership)
+							return {
+								type: 'INTEGRITY_REQUESTED',
+								restart: event.restart === true,
+								binding: {
+									userId: initialization.userId,
+									profileId: initialization.profileId,
+									organizationId: required(context.source.organizationId ?? undefined),
+									membershipId: membership.id,
+									role: membership.role,
+									accountAccessMode: membership.accountAccessMode
+								}
+							}
+						})(args)
+					)
+					return {}
+				}
+				enq.raise({ type: 'INTEGRITY_REQUESTED', binding: undefined, restart: false })
+				return {}
+			},
+			INTEGRITY_REQUESTED: (args, enq) => {
+				const { context, event } = args
+				if (
+					event.restart ||
+					!sameIntegrityBinding(context.integrityRequest.binding, event.binding)
+				) {
+					let context = args.context
+					let patch = {}
+					patch = {
+						...patch,
+						integrityRequest: {
+							generation: context.integrityRequest.generation + 1,
+							binding: event.binding
+						},
+						integrityReport: undefined
+					}
+					context = { ...args.context, ...patch }
+					{
+						const contextBefore = context
+						if (
+							matchesState({ active: { resources: 'bound' } }, args.value) &&
+							(({ context }) =>
+								context.resourceActor?.getSnapshot().status === 'active' &&
+								context.selectionLease !== undefined &&
+								context.resourceLease !== undefined &&
+								sameWorkspaceLease(context.selectionLease, context.resourceLease))({
+								...args,
+								context: contextBefore
+							}) &&
+							contextBefore.resourceActor &&
+							contextBefore.resourceLease
+						)
+							enq.sendTo(contextBefore.resourceActor, {
+								type: 'INTEGRITY',
+								lease: contextBefore.resourceLease,
+								request: contextBefore.integrityRequest
+							})
+					}
+					enq.raise({ type: 'OBSERVE_BANK' })
+					return { context: patch }
+				}
+				enq.raise({ type: 'OBSERVE_BANK' })
+				return {}
+			},
+			BANK: (args, enq) => {
+				const { context, event } = args
+				if (
+					matchesState({ active: { resources: 'bound' } }, args.value) &&
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease) &&
+					event.lease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(event.lease, context.resourceLease) &&
+					(event.event.type === 'CANCEL' || event.event.type === 'RESET')
+				) {
+					enq.sendTo(required(context.resourceActor), {
 						type: 'BANK',
 						lease: required(context.resourceLease),
 						event: event.event
 					})
-				)
-			},
-			SHUTDOWN: { target: '.closing.intent.shutdown' },
-			RETRY: {
-				guard: stateIn({ active: { workspace: 'failed' } }),
-				actions: raise({ type: 'OBSERVE_STARTUP', restart: true })
-			},
-			CREATION: {
-				guard: 'canObserveCreation',
-				actions: sendTo('creation', ({ event }) => event.event)
-			},
-			SELECT_WORKSPACE: {
-				actions: sendTo('navigation', ({ event }) => ({
-					type: 'SELECT',
-					workspaceId: event.workspaceId
-				}))
-			},
-			RETRY_NAVIGATION: { actions: sendTo('navigation', { type: 'RETRY' }) },
-			OBSERVE_STARTUP: {
-				actions: raise(({ event }) => ({
-					type: 'STARTUP_REQUESTED',
-					restart: event.restart === true
-				}))
-			},
-			STARTUP_REQUESTED: {
-				guard: ({ context, event }) =>
-					event.restart ||
-					context.initializationRequest.userId !== context.source.userId ||
-					context.initializationRequest.status !== context.sessionStatus,
-				actions: [
-					assign({
-						initializationRequest: ({ context }) => ({
-							generation: context.initializationRequest.generation + 1,
-							userId: context.source.userId,
-							status: context.sessionStatus
-						}),
-						initialization: undefined,
-						creationView: unavailableWorkspaceCreationView
-					}),
-					raise({ type: 'INITIALIZATION_PENDING' }),
-					sendTo('startup', ({ context }) => ({
-						type: 'OBSERVED',
-						request: context.initializationRequest
-					}))
-				]
-			},
-			OBSERVE_NAVIGATION: [
-				{
-					guard: or([not('navigationReady'), 'awaitingInitialWorkspace']),
-					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: false, access: 'waiting' })
-				},
-				{
-					guard: 'invalidSelection',
-					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'denied' })
-				},
-				{
-					guard: 'navigationCanUseWorkspace',
-					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'ready' })
-				},
-				{
-					guard: 'navigationFailed',
-					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'failed' })
-				},
-				{
-					guard: 'navigationDenied',
-					actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'denied' })
-				},
-				{ actions: raise({ type: 'NAVIGATION_REQUESTED', ready: true, access: 'waiting' }) }
-			],
-			NAVIGATION_REQUESTED: {
-				actions: [
-					assign({
-						navigationFacts: ({ context, event }) => ({
-							...context.route,
-							generation: context.navigationFacts.generation + 1,
-							userId: context.source.userId,
-							ready: event.ready,
-							loading:
-								!workspaceRoute(context.route.search).scoped &&
-								(context.organizationsLoading || context.organizations === undefined),
-							error: workspaceRoute(context.route.search).scoped
-								? undefined
-								: context.organizationsError,
-							organizations: context.organizations ?? [],
-							access: event.access
-						}),
-						navigationReport: undefined
-					}),
-					sendTo('navigation', ({ context }) => ({
-						type: 'OBSERVED',
-						facts: context.navigationFacts
-					}))
-				]
-			},
-			RETRY_INTEGRITY: {
-				guard: ({ context }) => selectWorkspaceIntegrityView(context.integrityReport).canRetry,
-				actions: raise({ type: 'OBSERVE_INTEGRITY', restart: true })
-			},
-			OBSERVE_CREATION: [
-				{
-					guard: 'canObserveCreation',
-					actions: sendTo('creation', ({ context }) => {
-						const initialized = required(context.initialization)
-						return {
-							type: 'OBSERVED',
-							binding: {
-								...initialized,
-								key: JSON.stringify([environment, initialized.userId])
-							}
-						}
-					})
-				},
-				{
-					actions: [
-						assign({ creationView: unavailableWorkspaceCreationView }),
-						sendTo('creation', { type: 'OBSERVED', binding: undefined })
-					]
+					return {}
 				}
-			],
-			OBSERVE_INTEGRITY: [
-				{
-					guard: 'canObserveIntegrity',
-					actions: raise(({ context, event }) => {
-						const initialization = required(context.initialization)
-						const membership = required(context.source.membership)
-						return {
-							type: 'INTEGRITY_REQUESTED',
-							restart: event.restart === true,
-							binding: {
-								userId: initialization.userId,
-								profileId: initialization.profileId,
-								organizationId: required(context.source.organizationId ?? undefined),
-								membershipId: membership.id,
-								role: membership.role,
-								accountAccessMode: membership.accountAccessMode
+				if (
+					matchesState(
+						{
+							active: {
+								workspace: 'ready',
+								session: 'ready',
+								organization: 'ready',
+								selection: 'selected'
 							}
-						}
+						},
+						args.value
+					) &&
+					matchesState({ active: { resources: 'bound' } }, args.value) &&
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease) &&
+					canManageBankCredentials(
+						context.source.membership,
+						context.source.organizationId ?? ''
+					) &&
+					event.lease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(event.lease, context.resourceLease) &&
+					event.event.type === 'SYNC'
+				) {
+					enq.sendTo(required(context.resourceActor), {
+						type: 'BANK',
+						lease: required(context.resourceLease),
+						event: event.event
 					})
-				},
-				{ actions: raise({ type: 'INTEGRITY_REQUESTED', binding: undefined, restart: false }) }
-			],
-			INTEGRITY_REQUESTED: [
-				{
-					guard: ({ context, event }) =>
-						event.restart || !sameIntegrityBinding(context.integrityRequest.binding, event.binding),
-					actions: [
-						assign({
-							integrityRequest: ({ context, event }) => ({
-								generation: context.integrityRequest.generation + 1,
-								binding: event.binding
-							}),
-							integrityReport: undefined
-						}),
-						enqueueActions(({ context, check, enqueue }) => {
-							if (check('resourceBound') && context.resourceActor && context.resourceLease)
-								enqueue.sendTo(context.resourceActor, {
-									type: 'INTEGRITY',
-									lease: context.resourceLease,
-									request: context.integrityRequest
-								})
-						}),
-						raise({ type: 'OBSERVE_BANK' })
-					]
-				},
-				{ actions: raise({ type: 'OBSERVE_BANK' }) }
-			],
-			BANK: [
-				{
-					guard: and([
-						'resourceBound',
-						({ context, event }) =>
-							event.lease !== undefined &&
-							context.resourceLease !== undefined &&
-							sameWorkspaceLease(event.lease, context.resourceLease) &&
-							(event.event.type === 'CANCEL' || event.event.type === 'RESET')
-					]),
-					actions: sendTo(
-						({ context }) => required(context.resourceActor),
-						({ context, event }) => ({
-							type: 'BANK',
-							lease: required(context.resourceLease),
-							event: event.event
-						})
-					)
-				},
-				{
-					guard: and([
-						'bankAccessAllowed',
-						({ context, event }) =>
-							event.lease !== undefined &&
-							context.resourceLease !== undefined &&
-							sameWorkspaceLease(event.lease, context.resourceLease) &&
-							event.event.type === 'SYNC'
-					]),
-					actions: sendTo(
-						({ context }) => required(context.resourceActor),
-						({ context, event }) => ({
-							type: 'BANK',
-							lease: required(context.resourceLease),
-							event: event.event
-						})
-					)
-				},
-				{
-					guard: and([
-						'canUseWorkspace',
-						'resourceBound',
-						({ context, event }) =>
-							event.lease !== undefined &&
-							context.resourceLease !== undefined &&
-							sameWorkspaceLease(event.lease, context.resourceLease) &&
-							event.event.type !== 'SYNC'
-					]),
-					actions: sendTo(
-						({ context }) => required(context.resourceActor),
-						({ context, event }) => ({
-							type: 'BANK',
-							lease: required(context.resourceLease),
-							event: event.event
-						})
-					)
+					return {}
 				}
-			],
-			OBSERVED: {
-				actions: [
-					assign(({ event }) => event.observation),
-					raise({ type: 'OBSERVE_STARTUP' }),
-					raise({ type: 'REEVALUATE' }),
-					raise({ type: 'OBSERVE_INTEGRITY' }),
-					raise({ type: 'OBSERVE_CREATION' }),
-					raise({ type: 'OBSERVE_NAVIGATION' })
-				]
+				if (
+					matchesState(
+						{
+							active: {
+								workspace: 'ready',
+								session: 'ready',
+								organization: 'ready',
+								selection: 'selected'
+							}
+						},
+						args.value
+					) &&
+					matchesState({ active: { resources: 'bound' } }, args.value) &&
+					context.resourceActor?.getSnapshot().status === 'active' &&
+					context.selectionLease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(context.selectionLease, context.resourceLease) &&
+					event.lease !== undefined &&
+					context.resourceLease !== undefined &&
+					sameWorkspaceLease(event.lease, context.resourceLease) &&
+					event.event.type !== 'SYNC'
+				) {
+					enq.sendTo(required(context.resourceActor), {
+						type: 'BANK',
+						lease: required(context.resourceLease),
+						event: event.event
+					})
+					return {}
+				}
+			},
+			OBSERVED: (args, enq) => {
+				enq.raise({ type: 'OBSERVE_STARTUP' })
+				enq.raise({ type: 'REEVALUATE' })
+				enq.raise({ type: 'OBSERVE_INTEGRITY' })
+				enq.raise({ type: 'OBSERVE_CREATION' })
+				enq.raise({ type: 'OBSERVE_NAVIGATION' })
+				return { context: args.event.observation }
 			}
 		},
 		states: {
 			active: {
 				type: 'parallel',
 				on: {
-					SELECTION: {
-						actions: [
-							assign({
-								selectionLease: ({ event }) => event.lease,
-								selectionStatus: ({ event }) => event.status
-							}),
-							raise({ type: 'REEVALUATE' }),
-							raise({ type: 'OBSERVE_NAVIGATION' }),
-							raise({ type: 'OBSERVE_BANK' })
-						]
+					SELECTION: (args, enq) => {
+						const { event } = args
+						enq.raise({ type: 'REEVALUATE' })
+						enq.raise({ type: 'OBSERVE_NAVIGATION' })
+						enq.raise({ type: 'OBSERVE_BANK' })
+						return { context: { selectionLease: event.lease, selectionStatus: event.status } }
 					},
-					NAVIGATION_STATUS: {
-						guard: ({ context, event }) =>
-							context.navigationFacts.generation === event.report.generation,
-						actions: assign({ navigationReport: ({ event }) => event.report })
+					NAVIGATION_STATUS: (args) => {
+						const { event } = args
+						if (!(args.context.navigationFacts.generation === event.report.generation)) return
+						return { context: { navigationReport: event.report } }
 					},
-					SELECTED_INTEGRITY_STATUS: {
-						guard: ({ context, event }) =>
+					SELECTED_INTEGRITY_STATUS: (args) => {
+						const { context, event } = args
+						if (!(
 							context.resourceLease !== undefined &&
 							sameWorkspaceLease(event.lease, context.resourceLease) &&
-							sameIntegrityRequest(context.integrityRequest, event.report.request),
-						actions: assign({ integrityReport: ({ event }) => event.report })
+							sameIntegrityRequest(context.integrityRequest, event.report.request)
+						))
+							return
+						return { context: { integrityReport: event.report } }
 					},
-					NAVIGATION_STOPPED: '#workspace-readiness.closing.intent.failed',
-					STARTUP_STOPPED: '#workspace-readiness.closing.intent.failed',
-					CREATION_STOPPED: '#workspace-readiness.closing.intent.failed'
+					NAVIGATION_STOPPED: { target: '#workspace-readiness.closing.intent.failed' },
+					STARTUP_STOPPED: { target: '#workspace-readiness.closing.intent.failed' },
+					CREATION_STOPPED: { target: '#workspace-readiness.closing.intent.failed' }
 				},
 				states: {
 					resources: {
 						initial: 'unbound',
 						states: {
 							unbound: {
-								always: { guard: 'resourceEligible', target: 'bound', actions: 'startResources' }
+								always: (args, enq) => {
+									if (!(
+										matchesState(
+											{
+												active: {
+													workspace: 'ready',
+													session: 'ready',
+													organization: 'ready',
+													selection: 'selected'
+												}
+											},
+											args.value
+										) && args.context.selectionLease !== undefined
+									))
+										return
+									return {
+										target: 'bound',
+										context: (({ context, self, spawn }) => {
+											const resourceLease = required(context.selectionLease)
+											return {
+												resourceLease,
+												resourceUserId: context.source.userId,
+												resourceResult: undefined,
+												bankAccess: undefined,
+												integrityReport: undefined,
+												resourceActor: spawn(
+													createWorkspaceSelectedResources({
+														dependencies,
+														lease: resourceLease,
+														userId: required(context.source.userId)
+													}),
+													{
+														input: { recipient: self },
+														id: 'selectedResources'
+													}
+												)
+											}
+										})({ ...args, spawn: enq.spawn })
+									}
+								}
 							},
 							bound: {
-								entry: raise({ type: 'OBSERVE_INTEGRITY', restart: true }),
-								always: {
-									guard: and(['nativeAssessmentSettled', not('resourceMatches')]),
-									target: 'draining'
+								entry: (args, enq) => {
+									enq.raise({ type: 'OBSERVE_INTEGRITY', restart: true })
+								},
+								always: (args) => {
+									const { context } = args
+									if (!(
+										!(
+											matchesState({ active: { session: 'checking' } }, args.value) ||
+											matchesState({ active: { selection: 'checking' } }, args.value) ||
+											matchesState({ active: { selection: 'checkingQuery' } }, args.value) ||
+											matchesState({ active: { selection: 'choosingOrganization' } }, args.value) ||
+											matchesState({ active: { organization: 'checking' } }, args.value) ||
+											matchesState({ active: { organization: 'checkingMembership' } }, args.value)
+										) &&
+										!(
+											matchesState(
+												{
+													active: {
+														workspace: 'ready',
+														session: 'ready',
+														organization: 'ready',
+														selection: 'selected'
+													}
+												},
+												args.value
+											) &&
+											context.resourceLease !== undefined &&
+											context.selectionLease !== undefined &&
+											sameWorkspaceLease(context.resourceLease, context.selectionLease) &&
+											context.resourceLease.request.workspaceId === context.source.organizationId &&
+											context.resourceUserId === context.source.userId
+										)
+									))
+										return
+									return { target: 'draining' }
 								},
 								on: {
-									SELECTED_RESOURCES_STOPPING: {
-										guard: ({ context, event }) =>
+									SELECTED_RESOURCES_STOPPING: (args) => {
+										const { context } = args
+										if (!(
 											context.resourceLease !== undefined &&
-											sameWorkspaceLease(event.lease, context.resourceLease),
-										target: 'failing'
+											sameWorkspaceLease(args.event.lease, context.resourceLease)
+										))
+											return
+										return { target: 'failing' }
 									},
-									RESOURCES_STOPPED: 'unresolved'
+									RESOURCES_STOPPED: { target: 'unresolved' }
 								}
 							},
 							draining: {
-								entry: [
-									assign({ bankAccess: undefined, integrityReport: undefined }),
-									'shutDownResources'
-								],
+								entry: (args, enq) => {
+									let context = args.context
+									let patch = {}
+									patch = { ...patch, bankAccess: undefined, integrityReport: undefined }
+									context = { ...args.context, ...patch }
+									{
+										const contextBefore = context
+										if (contextBefore.resourceActor?.getSnapshot().status === 'active')
+											enq.sendTo(contextBefore.resourceActor, { type: 'SHUTDOWN' })
+									}
+									return { context: patch }
+								},
 								on: {
-									RESOURCES_STOPPED: [
-										{
-											guard: ({ context }) =>
-												context.resourceResult?.release.outcome === 'unresolved',
-											target: 'unresolved'
-										},
-										{ target: 'unbound' }
-									]
+									RESOURCES_STOPPED: (args) => {
+										if (args.context.resourceResult?.release.outcome === 'unresolved') {
+											return { target: 'unresolved' }
+										}
+										return { target: 'unbound' }
+									}
 								}
 							},
 							failing: {
-								entry: [
-									assign({ bankAccess: undefined, integrityReport: undefined }),
-									'shutDownResources'
-								],
+								entry: (args, enq) => {
+									let context = args.context
+									let patch = {}
+									patch = { ...patch, bankAccess: undefined, integrityReport: undefined }
+									context = { ...args.context, ...patch }
+									{
+										const contextBefore = context
+										if (contextBefore.resourceActor?.getSnapshot().status === 'active')
+											enq.sendTo(contextBefore.resourceActor, { type: 'SHUTDOWN' })
+									}
+									return { context: patch }
+								},
 								on: {
-									RESOURCES_STOPPED: [
-										{
-											guard: ({ context }) =>
-												context.resourceResult?.release.outcome === 'unresolved',
-											target: 'unresolved'
-										},
-										{ target: 'failed' }
-									]
+									RESOURCES_STOPPED: (args) => {
+										if (args.context.resourceResult?.release.outcome === 'unresolved') {
+											return { target: 'unresolved' }
+										}
+										return { target: 'failed' }
+									}
 								}
 							},
-							failed: { tags: 'workspace-error' },
-							unresolved: { tags: 'workspace-error' }
+							failed: { tags: ['workspace-error'] },
+							unresolved: { tags: ['workspace-error'] }
 						}
 					},
 					session: {
 						initial: 'checking',
-						on: { REEVALUATE: '.checking' },
+						on: { REEVALUATE: { target: '.checking' } },
 						states: {
 							checking: {
-								always: [
-									{ guard: ({ context }) => context.sessionStatus === 'error', target: 'failed' },
-									{ guard: ({ context }) => context.sessionStatus === 'closed', target: 'closed' },
-									{
-										guard: ({ context }) => context.sessionStatus === 'signed-out',
-										target: 'signedOut'
-									},
-									{
-										guard: ({ context }) => context.sessionStatus === 'transitioning',
-										target: 'transitioning'
-									},
-									{ guard: 'navigationReady', target: 'ready' },
-									{ target: 'signedOut' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (context.sessionStatus === 'error') {
+										return { target: 'failed' }
+									}
+									if (context.sessionStatus === 'closed') {
+										return { target: 'closed' }
+									}
+									if (context.sessionStatus === 'signed-out') {
+										return { target: 'signedOut' }
+									}
+									if (context.sessionStatus === 'transitioning') {
+										return { target: 'transitioning' }
+									}
+									if (args.guards.navigationReady(args)) {
+										return { target: 'ready' }
+									}
+									return { target: 'signedOut' }
+								}
 							},
 							ready: {},
 							transitioning: {},
@@ -872,107 +1108,108 @@ export function createWorkspaceReadinessMachine({
 					workspace: {
 						initial: 'waiting',
 						on: {
-							INITIALIZATION_PENDING: '.waiting',
-							INITIALIZATION_STATUS: [
-								{
-									guard: ({ context, event }) =>
-										sameInitializationRequest(
-											context.initializationRequest,
-											event.report.request
-										) && event.report.status.kind === 'ready',
-									target: '.ready',
-									actions: assign({
-										initialization: ({ event }) => {
-											if (event.report.status.kind !== 'ready' || !event.report.request.userId)
-												throw new Error('Expected ready initialization report')
-											return {
-												userId: event.report.request.userId,
-												profileId: event.report.status.profileId
-											}
+							INITIALIZATION_PENDING: { target: '.waiting' },
+							INITIALIZATION_STATUS: (args) => {
+								const { context, event } = args
+								if (
+									sameInitializationRequest(context.initializationRequest, event.report.request) &&
+									event.report.status.kind === 'ready'
+								) {
+									return {
+										target: '.ready',
+										context: {
+											initialization: (({ event }) => {
+												if (event.report.status.kind !== 'ready' || !event.report.request.userId)
+													throw new Error('Expected ready initialization report')
+												return {
+													userId: event.report.request.userId,
+													profileId: event.report.status.profileId
+												}
+											})(args)
 										}
-									})
-								},
-								{
-									guard: ({ context, event }) =>
-										sameInitializationRequest(
-											context.initializationRequest,
-											event.report.request
-										) && event.report.status.kind === 'failed',
-									target: '.failed'
-								},
-								{
-									guard: ({ context, event }) =>
-										sameInitializationRequest(context.initializationRequest, event.report.request),
-									target: '.waiting'
+									}
 								}
-							]
+								if (
+									sameInitializationRequest(context.initializationRequest, event.report.request) &&
+									event.report.status.kind === 'failed'
+								) {
+									return { target: '.failed' }
+								}
+								if (
+									sameInitializationRequest(context.initializationRequest, event.report.request)
+								) {
+									return { target: '.waiting' }
+								}
+							}
 						},
 						states: {
 							waiting: {
-								entry: [
-									assign({ initialization: undefined }),
-									raise({ type: 'OBSERVE_INTEGRITY' }),
-									raise({ type: 'OBSERVE_CREATION' }),
-									raise({ type: 'OBSERVE_NAVIGATION' })
-								]
+								entry: (args, enq) => {
+									enq.raise({ type: 'OBSERVE_INTEGRITY' })
+									enq.raise({ type: 'OBSERVE_CREATION' })
+									enq.raise({ type: 'OBSERVE_NAVIGATION' })
+									return { context: { initialization: undefined } }
+								}
 							},
 							ready: {
-								tags: 'workspace-ready',
-								entry: [
-									raise({ type: 'REEVALUATE' }),
-									raise({ type: 'OBSERVE_INTEGRITY' }),
-									raise({ type: 'OBSERVE_CREATION' }),
-									raise({ type: 'OBSERVE_NAVIGATION' })
-								]
+								tags: ['workspace-ready'],
+								entry: (args, enq) => {
+									enq.raise({ type: 'REEVALUATE' })
+									enq.raise({ type: 'OBSERVE_INTEGRITY' })
+									enq.raise({ type: 'OBSERVE_CREATION' })
+									enq.raise({ type: 'OBSERVE_NAVIGATION' })
+								}
 							},
 							failed: {
 								tags: ['workspace-error', 'workspace-retryable'],
-								entry: [
-									assign({ initialization: undefined }),
-									raise({ type: 'OBSERVE_INTEGRITY' }),
-									raise({ type: 'OBSERVE_CREATION' }),
-									raise({ type: 'OBSERVE_NAVIGATION' })
-								]
+								entry: (args, enq) => {
+									enq.raise({ type: 'OBSERVE_INTEGRITY' })
+									enq.raise({ type: 'OBSERVE_CREATION' })
+									enq.raise({ type: 'OBSERVE_NAVIGATION' })
+									return { context: { initialization: undefined } }
+								}
 							}
 						}
 					},
 					selection: {
 						initial: 'checking',
-						on: { REEVALUATE: '.checking' },
+						on: { REEVALUATE: { target: '.checking' } },
 						states: {
 							checking: {
-								always: [
-									{ guard: 'navigationReady', target: 'checkingQuery' },
-									{ target: 'waiting' }
-								]
+								always: (args) => {
+									if (args.guards.navigationReady(args)) {
+										return { target: 'checkingQuery' }
+									}
+									return { target: 'waiting' }
+								}
 							},
-							checkingQuery: { always: 'choosingOrganization' },
+							checkingQuery: { always: { target: 'choosingOrganization' } },
 							choosingOrganization: {
-								always: [
-									{
-										guard: ({ context }) =>
-											context.selectionStatus === 'selected' &&
-											context.selectionLease?.request.workspaceId === context.source.organizationId,
-										target: 'selected'
-									},
-									{
-										guard: ({ context }) =>
-											context.selectionStatus === 'failed' ||
-											context.selectionStatus === 'drainFailed',
-										target: 'failed'
-									},
-									{
-										guard: ({ context }) =>
-											context.selectionStatus === 'denied' ||
-											context.selectionStatus === 'unavailable',
-										target: 'unavailableSelection'
-									},
-									{
-										guard: ({ context }) => context.source.organizationId == null,
-										target: 'unselected'
-									},
-									{ target: 'waiting' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (
+										context.selectionStatus === 'selected' &&
+										context.selectionLease?.request.workspaceId === context.source.organizationId
+									) {
+										return { target: 'selected' }
+									}
+									if (
+										context.selectionStatus === 'failed' ||
+										context.selectionStatus === 'drainFailed'
+									) {
+										return { target: 'failed' }
+									}
+									if (
+										context.selectionStatus === 'denied' ||
+										context.selectionStatus === 'unavailable'
+									) {
+										return { target: 'unavailableSelection' }
+									}
+									if (context.source.organizationId == null) {
+										return { target: 'unselected' }
+									}
+									return { target: 'waiting' }
+								}
 							},
 							unselected: {},
 							unavailableSelection: {},
@@ -983,38 +1220,40 @@ export function createWorkspaceReadinessMachine({
 					},
 					organization: {
 						initial: 'checking',
-						on: { REEVALUATE: '.checking' },
+						on: { REEVALUATE: { target: '.checking' } },
 						states: {
 							checking: {
-								always: [
-									{
-										guard: ({ context }) => context.sessionStatus !== 'ready',
-										target: 'unavailable'
-									},
-									{ guard: ({ context }) => !context.source.organizationId, target: 'unselected' },
-									{ guard: ({ context }) => context.membershipError != null, target: 'failed' },
-									{
-										guard: ({ context }) => context.membershipLoading,
-										target: 'loadingMembership'
-									},
-									{ target: 'checkingMembership' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (context.sessionStatus !== 'ready') {
+										return { target: 'unavailable' }
+									}
+									if (!context.source.organizationId) {
+										return { target: 'unselected' }
+									}
+									if (context.membershipError != null) {
+										return { target: 'failed' }
+									}
+									if (context.membershipLoading) {
+										return { target: 'loadingMembership' }
+									}
+									return { target: 'checkingMembership' }
+								}
 							},
 							checkingMembership: {
-								always: [
-									{ guard: ({ context }) => !context.source.membership, target: 'denied' },
-									{
-										guard: ({ context }) =>
-											context.source.membership?.userId !== context.source.userId,
-										target: 'denied'
-									},
-									{
-										guard: ({ context }) =>
-											context.source.membership?.organizationId !== context.source.organizationId,
-										target: 'denied'
-									},
-									{ target: 'ready' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (!context.source.membership) {
+										return { target: 'denied' }
+									}
+									if (context.source.membership?.userId !== context.source.userId) {
+										return { target: 'denied' }
+									}
+									if (context.source.membership?.organizationId !== context.source.organizationId) {
+										return { target: 'denied' }
+									}
+									return { target: 'ready' }
+								}
 							},
 							unavailable: {},
 							unselected: {},
@@ -1028,14 +1267,18 @@ export function createWorkspaceReadinessMachine({
 			},
 			closing: {
 				type: 'parallel',
-				entry: assign({
-					integrityReport: undefined,
-					navigationReport: undefined,
-					creationView: unavailableWorkspaceCreationView,
-					navigationActor: ({ self }) => self.getSnapshot().children.navigation,
-					startupActor: ({ self }) => self.getSnapshot().children.startup,
-					creationActor: ({ self }) => self.getSnapshot().children.creation
-				}),
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							integrityReport: undefined,
+							navigationReport: undefined,
+							creationView: unavailableWorkspaceCreationView,
+							navigationActor: args.children.navigation,
+							startupActor: args.children.startup,
+							creationActor: args.children.creation
+						}))(args)
+					}
+				},
 				on: {
 					CREATION: {},
 					SELECT_WORKSPACE: {},
@@ -1055,7 +1298,7 @@ export function createWorkspaceReadinessMachine({
 					INTEGRITY_REQUESTED: {},
 					OBSERVE_CREATION: {},
 
-					SHUTDOWN: '.intent.shutdown'
+					SHUTDOWN: { target: '.intent.shutdown' }
 				},
 				states: {
 					intent: {
@@ -1066,11 +1309,18 @@ export function createWorkspaceReadinessMachine({
 						initial: 'checking',
 						states: {
 							checking: {
-								always: [{ guard: 'navigationAlive', target: 'stopping' }, { target: 'stopped' }]
+								always: (args) => {
+									if (args.guards.navigationAlive(args)) {
+										return { target: 'stopping' }
+									}
+									return { target: 'stopped' }
+								}
 							},
 							stopping: {
-								entry: sendTo('navigation', { type: 'SHUTDOWN' }),
-								on: { NAVIGATION_STOPPED: 'stopped' }
+								entry: (args, enq) => {
+									enq.sendTo('navigation', { type: 'SHUTDOWN' })
+								},
+								on: { NAVIGATION_STOPPED: { target: 'stopped' } }
 							},
 							stopped: { type: 'final' }
 						}
@@ -1079,15 +1329,21 @@ export function createWorkspaceReadinessMachine({
 						initial: 'checking',
 						states: {
 							checking: {
-								always: [
-									{
-										guard: ({ context }) => context.resourceActor !== undefined,
-										target: 'stopping'
-									},
-									{ target: 'stopped' }
-								]
+								always: (args) => {
+									if (args.context.resourceActor !== undefined) {
+										return { target: 'stopping' }
+									}
+									return { target: 'stopped' }
+								}
 							},
-							stopping: { entry: 'shutDownResources', on: { RESOURCES_STOPPED: 'stopped' } },
+							stopping: {
+								entry: (args, enq) => {
+									const { context } = args
+									if (context.resourceActor?.getSnapshot().status === 'active')
+										enq.sendTo(context.resourceActor, { type: 'SHUTDOWN' })
+								},
+								on: { RESOURCES_STOPPED: { target: 'stopped' } }
+							},
 							stopped: { type: 'final' }
 						}
 					},
@@ -1095,11 +1351,18 @@ export function createWorkspaceReadinessMachine({
 						initial: 'checking',
 						states: {
 							checking: {
-								always: [{ guard: 'creationAlive', target: 'stopping' }, { target: 'stopped' }]
+								always: (args) => {
+									if (args.guards.creationAlive(args)) {
+										return { target: 'stopping' }
+									}
+									return { target: 'stopped' }
+								}
 							},
 							stopping: {
-								entry: sendTo('creation', { type: 'SHUTDOWN' }),
-								on: { CREATION_STOPPED: 'stopped' }
+								entry: (args, enq) => {
+									enq.sendTo('creation', { type: 'SHUTDOWN' })
+								},
+								on: { CREATION_STOPPED: { target: 'stopped' } }
 							},
 							stopped: { type: 'final' }
 						}
@@ -1109,20 +1372,32 @@ export function createWorkspaceReadinessMachine({
 						initial: 'checking',
 						states: {
 							checking: {
-								always: [{ guard: 'startupAlive', target: 'stopping' }, { target: 'stopped' }]
+								always: (args) => {
+									if (args.guards.startupAlive(args)) {
+										return { target: 'stopping' }
+									}
+									return { target: 'stopped' }
+								}
 							},
 							stopping: {
-								entry: sendTo('startup', { type: 'SHUTDOWN' }),
-								on: { STARTUP_STOPPED: 'stopped' }
+								entry: (args, enq) => {
+									enq.sendTo('startup', { type: 'SHUTDOWN' })
+								},
+								on: { STARTUP_STOPPED: { target: 'stopped' } }
 							},
 							stopped: { type: 'final' }
 						}
 					}
 				},
-				onDone: [{ guard: 'closingDrain', target: 'closed' }, { target: 'failed' }]
+				onDone: (args) => {
+					if (matchesState({ closing: { intent: 'shutdown' } }, args.value)) {
+						return { target: 'closed' }
+					}
+					return { target: 'failed' }
+				}
 			},
 			failed: {
-				tags: 'workspace-error',
+				tags: ['workspace-error'],
 				on: {
 					CREATION: {},
 					SELECT_WORKSPACE: {},
@@ -1133,7 +1408,7 @@ export function createWorkspaceReadinessMachine({
 					NAVIGATION_REQUESTED: {},
 					INITIALIZATION_STATUS: {},
 					INITIALIZATION_PENDING: {},
-					SHUTDOWN: 'closed',
+					SHUTDOWN: { target: 'closed' },
 					BANK: {},
 					OBSERVED: {},
 					REEVALUATE: {},
@@ -1146,7 +1421,10 @@ export function createWorkspaceReadinessMachine({
 			},
 			closed: {
 				type: 'final',
-				entry: sendParent(({ self }) => ({ type: 'WORKSPACE_CLOSED', actor: self }))
+				entry: (args, enq) => {
+					const { self } = args
+					enq.sendTo(args.parent, { type: 'WORKSPACE_CLOSED', actor: self })
+				}
 			}
 		}
 	})

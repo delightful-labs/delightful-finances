@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { photoCropperMachine } from './machine.js'
+import { createActor, waitFor } from 'xstate'
 
 const cleanups: (() => void)[] = []
 

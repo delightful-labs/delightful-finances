@@ -1,4 +1,3 @@
-import { assign, enqueueActions, setup, type SnapshotFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import type {
 	FormChildEvent,
@@ -17,6 +16,9 @@ import {
 	type TransactionSaveDb,
 	type TransactionSaveResult
 } from './transaction-save.js'
+import { setup, types } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type TransactionAttachmentDb = Pick<
 	ReturnType<typeof getDb>,
@@ -90,27 +92,32 @@ export function createTransactionSubmissionMachine(
 	const save = createTransactionSaveMachine(db, observe)
 	const attachments = createTransactionAttachmentsMachine()
 	const actors = { save, attachments }
-	const model = setup<
-		Context,
-		Event,
-		typeof actors,
-		{},
-		{ forward: undefined },
-		{},
-		never,
-		string,
-		Input,
-		Result
-	>({
+	const events0 = {
+		INVALIDATE: types<EventPayload<Event, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['save']>
+				| import('xstate').OutputFrom<(typeof actors)['attachments']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Result>(),
+			children: {
+				save: types<import('xstate').ActorRefFrom<(typeof actors)['save']>>(),
+				attachments: types<import('xstate').ActorRefFrom<(typeof actors)['attachments']>>()
+			}
+		},
 		actors,
-		actions: {
-			forward: enqueueActions(({ self, event, enqueue }) => {
-				const children = self.getSnapshot().children
-				if (children.save?.getSnapshot().status === 'active') enqueue.sendTo(children.save, event)
-				if (children.attachments?.getSnapshot().status === 'active' && event.type !== 'OBSERVE')
-					enqueue.sendTo(children.attachments, event)
-			})
-		}
+		actions: {}
 	})
 	return model.createMachine({
 		id: 'transaction-submission',
@@ -125,10 +132,40 @@ export function createTransactionSubmissionMachine(
 		}),
 		output: ({ context }) => required(context.result),
 		on: {
-			OBSERVE: { actions: 'forward' },
-			INVALIDATE: { actions: 'forward' },
-			CANCEL: { actions: 'forward' },
-			SHUTDOWN: { actions: 'forward' }
+			OBSERVE: (args, enq) => {
+				const { event } = args
+				{
+					const children = args.children
+					if (children.save?.getSnapshot().status === 'active') enq.sendTo(children.save, event)
+				}
+			},
+			INVALIDATE: (args, enq) => {
+				const { event } = args
+				{
+					const children = args.children
+					if (children.save?.getSnapshot().status === 'active') enq.sendTo(children.save, event)
+					if (children.attachments?.getSnapshot().status === 'active')
+						enq.sendTo(children.attachments, event)
+				}
+			},
+			CANCEL: (args, enq) => {
+				const { event } = args
+				{
+					const children = args.children
+					if (children.save?.getSnapshot().status === 'active') enq.sendTo(children.save, event)
+					if (children.attachments?.getSnapshot().status === 'active')
+						enq.sendTo(children.attachments, event)
+				}
+			},
+			SHUTDOWN: (args, enq) => {
+				const { event } = args
+				{
+					const children = args.children
+					if (children.save?.getSnapshot().status === 'active') enq.sendTo(children.save, event)
+					if (children.attachments?.getSnapshot().status === 'active')
+						enq.sendTo(children.attachments, event)
+				}
+			}
 		},
 		states: {
 			saving: {
@@ -139,40 +176,40 @@ export function createTransactionSubmissionMachine(
 						const input = required(context.input)
 						return input
 					},
-					onDone: [
-						{
-							guard: ({ event }) =>
-								(event.output.outcome === 'succeeded' || event.output.outcome === 'partial') &&
-								event.output.transactionId !== undefined,
-							target: 'checkingAttachments',
-							actions: assign({ saved: ({ event }) => event.output })
-						},
-						{ target: 'completed', actions: assign({ result: ({ event }) => event.output }) }
-					],
-					onError: {
-						target: 'completed',
-						actions: assign({
-							result: () => ({ outcome: 'failed', code: 'operationFailed', settlement: 'unknown' })
-						})
+					onDone: (args) => {
+						const { event } = args
+						if (
+							(event.output.outcome === 'succeeded' || event.output.outcome === 'partial') &&
+							event.output.transactionId !== undefined
+						) {
+							return { target: 'checkingAttachments', context: { saved: event.output } }
+						}
+						return { target: 'completed', context: { result: event.output } }
+					},
+					onError: () => {
+						return {
+							target: 'completed',
+							context: {
+								result: { outcome: 'failed', code: 'operationFailed', settlement: 'unknown' }
+							}
+						}
 					}
 				}
 			},
 			checkingAttachments: {
-				always: [
-					{
-						guard: ({ context }) => context.files.length > 0 && context.attachmentDb !== undefined,
-						target: 'attaching'
-					},
-					{
-						guard: ({ context }) => context.files.length > 0,
-						target: 'completed',
-						actions: assign({ result: ({ context }) => attachmentFailure(required(context.saved)) })
-					},
-					{
-						target: 'completed',
-						actions: assign({ result: ({ context }) => required(context.saved) })
+				always: (args) => {
+					const { context } = args
+					if (context.files.length > 0 && context.attachmentDb !== undefined) {
+						return { target: 'attaching' }
 					}
-				]
+					if (context.files.length > 0) {
+						return {
+							target: 'completed',
+							context: { result: attachmentFailure(required(context.saved)) }
+						}
+					}
+					return { target: 'completed', context: { result: required(context.saved) } }
+				}
 			},
 			attaching: {
 				invoke: {
@@ -192,49 +229,56 @@ export function createTransactionSubmissionMachine(
 							files: context.files
 						}
 					},
-					onDone: {
-						target: 'completingAttachments',
-						actions: assign({ attachmentResult: ({ event }) => event.output })
+					onDone: (args) => {
+						return {
+							target: 'completingAttachments',
+							context: { attachmentResult: args.event.output }
+						}
 					},
-					onError: {
-						target: 'completed',
-						actions: assign({ result: ({ context }) => attachmentFailure(required(context.saved)) })
+					onError: (args) => {
+						return {
+							target: 'completed',
+							context: { result: attachmentFailure(required(args.context.saved)) }
+						}
 					}
 				}
 			},
 			completingAttachments: {
-				always: [
-					{
-						guard: ({ context }) => {
+				always: (args) => {
+					const { context } = args
+					if (
+						(({ context }) => {
 							const result = required(context.attachmentResult)
 							return (
 								result.outcome === 'closed' ||
 								result.outcome === 'cancelled' ||
 								result.outcome === 'scopeChanged'
 							)
-						},
-						target: 'completed',
-						actions: assign({
-							result: ({ context }) =>
-								interruption(
+						})(args)
+					) {
+						return {
+							target: 'completed',
+							context: {
+								result: interruption(
 									required(context.saved),
 									required(context.attachmentResult).outcome as
 										'closed' | 'cancelled' | 'scopeChanged'
 								)
-						})
-					},
-					{
-						guard: ({ context }) => {
+							}
+						}
+					}
+					if (
+						(({ context }) => {
 							const result = required(context.attachmentResult)
 							return result.outcome === 'complete' && result.failed === 0
-						},
+						})(args)
+					) {
+						return { target: 'completed', context: { result: required(context.saved) } }
+					}
+					return {
 						target: 'completed',
-						actions: assign({ result: ({ context }) => required(context.saved) })
-					},
-					{
-						target: 'completed',
-						actions: assign({
-							result: ({ context }): Result => ({
+						context: {
+							result: {
 								...required(context.saved),
 								outcome: 'partial',
 								value: undefined,
@@ -243,10 +287,10 @@ export function createTransactionSubmissionMachine(
 									required(context.saved).settlement === 'confirmed'
 										? 'confirmed'
 										: 'locallyPersisted'
-							})
-						})
+							}
+						}
 					}
-				]
+				}
 			},
 			completed: { type: 'final' }
 		}

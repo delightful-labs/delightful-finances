@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createActor, fromCallback } from 'xstate'
 import type {
 	WorkspaceDrainRequest,
 	WorkspaceLease
@@ -19,6 +18,7 @@ import {
 	createWorkspaceSelectionDrainMachine,
 	transferScopeForWorkspaceLease
 } from './workspace-selection-drain.js'
+import { createActor, createCallbackLogic } from 'xstate'
 
 const actors = new Set<{ stop: () => void }>()
 afterEach(() => {
@@ -40,12 +40,12 @@ function fixture(options: { absent?: boolean; immediateTransfer?: boolean } = {}
 	const resourceCommands: SelectedResourceCommand[] = []
 	const transferCommands: TransferMutationOwnerEvent[] = []
 	const resources = createActor(
-		fromCallback<SelectedResourceCommand>(({ receive }) => {
+		createCallbackLogic<SelectedResourceCommand>(({ receive }) => {
 			receive((event) => resourceCommands.push(event))
 		})
 	).start()
 	const transfers = createActor(
-		fromCallback<TransferMutationOwnerEvent>(({ receive }) => {
+		createCallbackLogic<TransferMutationOwnerEvent>(({ receive }) => {
 			receive((event) => {
 				transferCommands.push(event)
 				if (options.immediateTransfer && event.type === 'DRAIN_TRANSFER_SCOPE') {

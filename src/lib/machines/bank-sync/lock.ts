@@ -1,7 +1,7 @@
-import { fromCallback } from 'xstate'
 import type { LockEvent } from './types.js'
+import { createCallbackLogic } from 'xstate'
 
-export const bankLock = fromCallback<
+export const bankLock = createCallbackLogic<
 	LockEvent,
 	{ ownerId: string | undefined; organizationId: string | null }
 >(({ input, sendBack }) => {

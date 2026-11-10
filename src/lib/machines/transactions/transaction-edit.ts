@@ -11,17 +11,6 @@ import type {
 	TransactionEntryView
 } from '#lib/contracts/transaction-entry-contract.js'
 import type { FormObservation } from '#lib/contracts/form-contract.js'
-import {
-	and,
-	assign,
-	enqueueActions,
-	or,
-	raise,
-	setup,
-	stateIn,
-	type EventFrom,
-	type SnapshotFrom
-} from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { createScopedFormMachine, selectScopedFormView } from '../forms/scoped-form.js'
 import {
@@ -45,6 +34,9 @@ import {
 } from '../transfers/internal-transfer-mutation-request.js'
 import { createTransferMutationRequestMachine } from '../transfers/internal-transfer-mutation-request.js'
 import type { TransferMutationResult } from '../transfers/internal-transfer-mutation-owner.js'
+import { setup, types, matchesState } from 'xstate'
+import type { EventFrom, SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type TransactionEditOptions = ReturnType<typeof createTransactionEditFormOptions>
 export type TransactionEditTransferState =
@@ -117,7 +109,7 @@ export function createTransactionEditMachine(
 	mutationGateway: TransferMutationGateway
 ) {
 	const formMachine = createScopedFormMachine(options)
-	type FormEvent = EventFrom<typeof formMachine>
+	type FormEvent = import('xstate').SendableEventFromLogic<typeof formMachine>
 	type LinkActorInput = InternalTransferLinkInput
 	type UnlinkActorInput = InternalTransferUnlinkInput
 	type Context = {
@@ -158,86 +150,89 @@ export function createTransactionEditMachine(
 		unlinkOperation: mutationRequest,
 		deleteOperation: mutationRequest
 	}
-	const workflow = setup<
-		Context,
-		Event,
-		typeof actors,
-		{
-			scopedForm: 'form'
-			linkOperation: 'linkOperation'
-			unlinkOperation: 'unlinkOperation'
-			deleteOperation: 'deleteOperation'
+	const events0 = {
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>(),
+		FORM: types<EventPayload<Event, 'FORM'>>(),
+		ENABLE_SEARCH: types<EventPayload<Event, 'ENABLE_SEARCH'>>(),
+		DISABLE_SEARCH: types<EventPayload<Event, 'DISABLE_SEARCH'>>(),
+		TRANSFER_OBSERVATION: types<EventPayload<Event, 'TRANSFER_OBSERVATION'>>(),
+		SELECT_COUNTERPART: types<EventPayload<Event, 'SELECT_COUNTERPART'>>(),
+		LINK_COUNTERPART: types<EventPayload<Event, 'LINK_COUNTERPART'>>(),
+		UNLINK_TRANSFER: types<EventPayload<Event, 'UNLINK_TRANSFER'>>(),
+		DELETE_LINKED_TRANSFER: types<EventPayload<Event, 'DELETE_LINKED_TRANSFER'>>(),
+		SCOPE_CHANGED: types<EventPayload<Event, 'SCOPE_CHANGED'>>(),
+		LINK_SUCCEEDED: types<EventPayload<Event, 'LINK_SUCCEEDED'>>(),
+		UNLINK_SUCCEEDED: types<EventPayload<Event, 'UNLINK_SUCCEEDED'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['form']>
+				| import('xstate').OutputFrom<(typeof actors)['linkOperation']>
+				| import('xstate').OutputFrom<(typeof actors)['unlinkOperation']>
+				| import('xstate').OutputFrom<(typeof actors)['deleteOperation']>
+				| import('xstate').OutputFrom<(typeof actors)['form']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const workflow = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<TransactionEntryObservation>(),
+			children: {
+				form: types<import('xstate').ActorRefFrom<(typeof actors)['form']>>(),
+				linkOperation: types<import('xstate').ActorRefFrom<(typeof actors)['linkOperation']>>(),
+				unlinkOperation: types<import('xstate').ActorRefFrom<(typeof actors)['unlinkOperation']>>(),
+				deleteOperation: types<import('xstate').ActorRefFrom<(typeof actors)['deleteOperation']>>(),
+				scopedForm: types<import('xstate').ActorRefFrom<(typeof actors)['form']>>()
+			},
+			meta: types<{
+				transferStatus?: TransferStatusLabel
+				priority?: number
+				deleteFeedback?: TransferDeleteFeedback
+			}>()
 		},
-		{},
-		{
-			conflictedObservation: undefined
-			linkedObservation: undefined
-			searchDisabledObservation: undefined
-			searchLoading: undefined
-			searchFailed: undefined
-			currentTransferObservation: undefined
-			workflowActive: undefined
-			transferSearchActive: undefined
-			canDisableSearch: undefined
-			canForwardForm: undefined
-			formSubmit: undefined
-			hasCandidates: undefined
-			canLink: undefined
-			canUnlink: undefined
-			canDelete: undefined
-			selectCounterpart: undefined
-			transferMatches: undefined
-			transferLinked: undefined
-			linkIsClosing: undefined
-			linkIsReplacing: undefined
-			unlinkIsClosing: undefined
-			unlinkIsReplacing: undefined
-			deleteIsClosing: undefined
-			deleteIsReplacing: undefined
-		},
-		never,
-		string,
-		TransactionEntryObservation
-	>({
 		actors,
 		guards: {
-			conflictedObservation: ({ event }) =>
+			conflictedObservation: ({ event }: { event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' && event.observation.conflicted,
-			linkedObservation: ({ context, event }) =>
+			linkedObservation: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' && event.observation.linked,
-			searchDisabledObservation: ({ event }) =>
+			searchDisabledObservation: ({ event }: { event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' && !event.observation.searchEnabled,
-			searchLoading: ({ event }) =>
+			searchLoading: ({ event }: { event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' && event.observation.loading,
-			searchFailed: ({ event }) =>
+			searchFailed: ({ event }: { event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' && event.observation.failed,
-			currentTransferObservation: ({ context, event }) =>
+			currentTransferObservation: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' &&
 				sameTransactionEntryScope(
 					transactionEntryScope(context.observation.facts),
 					event.observation.scope
 				) &&
 				context.scopeGeneration === event.observation.scopeGeneration,
-			workflowActive: stateIn({ running: { lifecycle: 'active' } }),
-			transferSearchActive: or([
-				stateIn({ running: { transfer: 'searching' } }),
-				stateIn({ running: { transfer: 'matches' } }),
-				stateIn({ running: { transfer: 'empty' } }),
-				stateIn({ running: { transfer: 'failed' } })
-			]),
-			canDisableSearch: ({ context }) =>
+			workflowActive: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { lifecycle: 'active' } }, args.value),
+			transferSearchActive: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { transfer: 'searching' } }, args.value) ||
+				matchesState({ running: { transfer: 'matches' } }, args.value) ||
+				matchesState({ running: { transfer: 'empty' } }, args.value) ||
+				matchesState({ running: { transfer: 'failed' } }, args.value),
+			canDisableSearch: ({ context }: { context: Context }) =>
 				context.linkInput === undefined &&
 				context.unlinkInput === undefined &&
 				context.deleteInput === undefined,
-			canForwardForm: ({ context }) =>
+			canForwardForm: ({ context }: { context: Context }) =>
 				context.linkInput === undefined &&
 				context.unlinkInput === undefined &&
 				context.deleteInput === undefined,
-			formSubmit: ({ event }) => event.type === 'FORM' && event.event.type === 'SUBMIT',
-			hasCandidates: ({ context, event }) =>
+			formSubmit: ({ event }: { event: NativeEvent0 }) =>
+				event.type === 'FORM' && event.event.type === 'SUBMIT',
+			hasCandidates: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'TRANSFER_OBSERVATION' &&
 				transferCandidates(context.observation.facts, event.observation).length > 0,
-			canLink: ({ context, event }) =>
+			canLink: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'LINK_COUNTERPART' &&
 				context.selectedCandidateId === event.candidateId &&
 				context.candidates.some(({ id }) => id === event.candidateId) &&
@@ -247,7 +242,7 @@ export function createTransactionEditMachine(
 				Boolean(context.observation.facts.organizationId) &&
 				Boolean(context.observation.facts.binding) &&
 				!context.observation.facts.transaction?.internalTransferId,
-			canUnlink: ({ context }) =>
+			canUnlink: ({ context }: { context: Context }) =>
 				Boolean(
 					context.linkedTransfer &&
 					context.unlinkWritable &&
@@ -259,7 +254,7 @@ export function createTransactionEditMachine(
 					context.observation.facts.organizationId &&
 					context.observation.facts.binding
 				),
-			canDelete: ({ context, event }) =>
+			canDelete: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'DELETE_LINKED_TRANSFER' &&
 				Boolean(
 					context.linkedTransfer &&
@@ -278,167 +273,17 @@ export function createTransactionEditMachine(
 					context.linkInput === undefined &&
 					context.unlinkInput === undefined
 				),
-			selectCounterpart: ({ context, event }) =>
+			selectCounterpart: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'SELECT_COUNTERPART' &&
 				context.candidates.some(({ id }) => id === event.candidateId) &&
 				context.linkInput === undefined &&
 				context.unlinkInput === undefined &&
 				context.deleteInput === undefined,
-			transferMatches: stateIn({ running: { transfer: 'matches' } }),
-			transferLinked: stateIn({ running: { transfer: 'linked' } }),
-			linkIsClosing: stateIn({ running: { link: { operating: 'closing' } } }),
-			linkIsReplacing: stateIn({ running: { link: { operating: 'replacing' } } }),
-			unlinkIsClosing: stateIn({ running: { unlink: { operating: 'closing' } } }),
-			unlinkIsReplacing: stateIn({ running: { unlink: { operating: 'replacing' } } }),
-			deleteIsClosing: stateIn({ running: { deletion: { operating: 'closing' } } }),
-			deleteIsReplacing: stateIn({ running: { deletion: { operating: 'replacing' } } })
+			transferMatches: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { transfer: 'matches' } }, args.value),
+			transferLinked: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { transfer: 'linked' } }, args.value)
 		}
-	})
-	const updateTransferObservation = workflow.assign(({ context, event }) => {
-		if (event.type !== 'TRANSFER_OBSERVATION') return {}
-		const candidates = transferCandidates(context.observation.facts, event.observation)
-		return {
-			transferObservation: event.observation,
-			candidates,
-			selectedCandidateId: candidates.some(({ id }) => id === context.selectedCandidateId)
-				? context.selectedCandidateId
-				: (candidates[0]?.id ?? null),
-			linkedTransfer: event.observation.linkedTransfer,
-			unlinkResult: event.observation.pendingUnlink
-				? {
-						outcome: 'recoveryRequired',
-						transferId: required(event.observation.linkedTransfer?.id),
-						settlement: 'locallyPersisted'
-					}
-				: !event.observation.linked && context.unlinkResult?.outcome === 'recoveryRequired'
-					? null
-					: event.observation.linked && context.unlinkResult?.outcome === 'succeeded'
-						? null
-						: context.unlinkResult,
-			writableCandidateIds: writableCandidates(context.observation.facts, candidates),
-			unlinkWritable: writableLinkedTransfer(
-				context.observation.facts,
-				event.observation.linkedTransfer
-			)
-		}
-	})
-	const clearTransferResults = workflow.assign({
-		transferObservation: undefined,
-		candidates: [],
-		selectedCandidateId: null,
-		writableCandidateIds: new Set<string>(),
-		linkedTransfer: null,
-		unlinkWritable: false,
-		linkResult: null,
-		unlinkResult: null,
-		deleteInput: undefined,
-		deleteResult: null
-	})
-	const storeObservation = workflow.enqueueActions(({ context, event, enqueue }) => {
-		if (event.type !== 'OBSERVE') return
-		const changed = !sameTransactionEntryScope(
-			transactionEntryScope(context.observation.facts),
-			transactionEntryScope(event.observation)
-		)
-		enqueue.assign(({ context }) => {
-			const transferObservation = changed ? undefined : context.transferObservation
-			const candidates = transferObservation
-				? transferCandidates(event.observation, transferObservation)
-				: []
-			return {
-				observation: {
-					revision: context.observation.revision + 1,
-					facts: event.observation
-				},
-				scopeGeneration: context.scopeGeneration + (changed ? 1 : 0),
-				transferObservation,
-				candidates,
-				selectedCandidateId: candidates.some(({ id }) => id === context.selectedCandidateId)
-					? context.selectedCandidateId
-					: (candidates[0]?.id ?? null),
-				writableCandidateIds: writableCandidates(event.observation, candidates),
-				linkedTransfer: transferObservation?.linkedTransfer ?? null,
-				unlinkWritable: writableLinkedTransfer(
-					event.observation,
-					transferObservation?.linkedTransfer ?? null
-				),
-				...(changed ? { linkResult: null, unlinkResult: null, deleteResult: null } : {})
-			}
-		})
-		enqueue.sendTo('scopedForm', { type: 'OBSERVE', observation: event.observation })
-		if (changed) enqueue.raise({ type: 'SCOPE_CHANGED' })
-	})
-	const resetLinkRequest = workflow.assign(({ context, event }) => {
-		if (event.type !== 'LINK_COUNTERPART') return {}
-		const source = context.observation.facts.transaction
-		const candidate = context.candidates.find(({ id }) => id === context.selectedCandidateId)
-		const identityId = context.observation.facts.identityId
-		const organizationId = context.observation.facts.organizationId
-		if (!source || !candidate || !identityId || !organizationId) return {}
-		return {
-			linkInput: {
-				db,
-				identityId,
-				organizationId,
-				expenseTransactionId: source.kind === 'expense' ? source.id : candidate.id,
-				incomeTransactionId: source.kind === 'income' ? source.id : candidate.id,
-				trackWrite: trackTransferWrite
-			},
-			linkResult: null
-		}
-	})
-	const resetUnlinkRequest = workflow.assign(({ context, event }) => {
-		if (event.type !== 'UNLINK_TRANSFER' || !context.linkedTransfer) return {}
-		const identityId = context.observation.facts.identityId
-		const organizationId = context.observation.facts.organizationId
-		if (!identityId || !organizationId) return {}
-		return {
-			unlinkInput: {
-				db,
-				identityId,
-				organizationId,
-				transferId: context.linkedTransfer.id,
-				expenseTransactionId: context.linkedTransfer.expenseTransactionId,
-				incomeTransactionId: context.linkedTransfer.incomeTransactionId,
-				trackWrite: trackTransferWrite
-			},
-			unlinkResult: null
-		}
-	})
-	const resetDeleteRequest = workflow.assign(({ context, event }) => {
-		if (event.type !== 'DELETE_LINKED_TRANSFER' || !context.linkedTransfer) return {}
-		const identityId = context.observation.facts.identityId
-		const organizationId = context.observation.facts.organizationId
-		if (!identityId || !organizationId) return {}
-		return {
-			deleteInput: {
-				db,
-				identityId,
-				organizationId,
-				transferId: context.linkedTransfer.id,
-				expenseTransactionId: context.linkedTransfer.expenseTransactionId,
-				incomeTransactionId: context.linkedTransfer.incomeTransactionId,
-				choice: event.choice,
-				trackWrite: trackTransferWrite
-			},
-			deleteResult: null
-		}
-	})
-	const stopForm = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot().children.scopedForm
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
-	})
-	const stopLinkOperation = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot().children.linkOperation
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
-	})
-	const stopUnlinkOperation = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot().children.unlinkOperation
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
-	})
-	const stopDeleteOperation = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot().children.deleteOperation
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'SHUTDOWN' })
 	})
 	const logic = workflow.createMachine({
 		id: 'transaction-edit-form',
@@ -464,34 +309,102 @@ export function createTransactionEditMachine(
 			closed: { type: 'final' },
 			running: {
 				type: 'parallel',
-				onDone: '#transaction-edit-form.closed',
+				onDone: { target: '#transaction-edit-form.closed' },
 				on: {
-					OBSERVE: { guard: 'workflowActive', actions: storeObservation },
-					SELECT_COUNTERPART: {
-						guard: and(['workflowActive', 'transferSearchActive', 'selectCounterpart']),
-						actions: assign({ selectedCandidateId: ({ event }) => event.candidateId })
-					},
-					FORM: [
+					OBSERVE: (args, enq) => {
+						let context = args.context
+						if (!args.guards.workflowActive(args)) return
+						const { event } = args
+						let patch = {}
 						{
-							guard: and(['workflowActive', 'formSubmit', 'canForwardForm']),
-							actions: workflow.enqueueActions(({ event, enqueue }) => {
-								if (event.type === 'FORM') enqueue.sendTo('scopedForm', event.event)
-							})
-						},
-						{ guard: and(['workflowActive', 'formSubmit']) },
-						{
-							guard: and(['workflowActive', 'canForwardForm']),
-							actions: workflow.enqueueActions(({ event, enqueue }) => {
-								if (event.type === 'FORM') enqueue.sendTo('scopedForm', event.event)
-							})
+							const contextBefore = args.context
+							if (event.type !== 'OBSERVE') {
+							} else {
+								const changed = !sameTransactionEntryScope(
+									transactionEntryScope(contextBefore.observation.facts),
+									transactionEntryScope(event.observation)
+								)
+								patch = {
+									...patch,
+									...(({ context }) => {
+										const transferObservation = changed ? undefined : context.transferObservation
+										const candidates = transferObservation
+											? transferCandidates(event.observation, transferObservation)
+											: []
+										return {
+											observation: {
+												revision: context.observation.revision + 1,
+												facts: event.observation
+											},
+											scopeGeneration: context.scopeGeneration + (changed ? 1 : 0),
+											transferObservation,
+											candidates,
+											selectedCandidateId: candidates.some(
+												({ id }) => id === context.selectedCandidateId
+											)
+												? context.selectedCandidateId
+												: (candidates[0]?.id ?? null),
+											writableCandidateIds: writableCandidates(event.observation, candidates),
+											linkedTransfer: transferObservation?.linkedTransfer ?? null,
+											unlinkWritable: writableLinkedTransfer(
+												event.observation,
+												transferObservation?.linkedTransfer ?? null
+											),
+											...(changed
+												? { linkResult: null, unlinkResult: null, deleteResult: null }
+												: {})
+										}
+									})({ ...args, context })
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo('scopedForm', { type: 'OBSERVE', observation: event.observation })
+								if (changed) enq.raise({ type: 'SCOPE_CHANGED' })
+							}
 						}
-					]
+						return { context: patch }
+					},
+					SELECT_COUNTERPART: (args) => {
+						if (!(
+							matchesState({ running: { lifecycle: 'active' } }, args.value) &&
+							(matchesState({ running: { transfer: 'searching' } }, args.value) ||
+								matchesState({ running: { transfer: 'matches' } }, args.value) ||
+								matchesState({ running: { transfer: 'empty' } }, args.value) ||
+								matchesState({ running: { transfer: 'failed' } }, args.value)) &&
+							args.guards.selectCounterpart(args)
+						))
+							return
+						return { context: { selectedCandidateId: args.event.candidateId } }
+					},
+					FORM: (args, enq) => {
+						const { event } = args
+						if (
+							matchesState({ running: { lifecycle: 'active' } }, args.value) &&
+							args.guards.formSubmit(args) &&
+							args.guards.canForwardForm(args)
+						) {
+							if (event.type === 'FORM') enq.sendTo('scopedForm', event.event)
+							return {}
+						}
+						if (
+							matchesState({ running: { lifecycle: 'active' } }, args.value) &&
+							args.guards.formSubmit(args)
+						) {
+							return {}
+						}
+						if (
+							matchesState({ running: { lifecycle: 'active' } }, args.value) &&
+							args.guards.canForwardForm(args)
+						) {
+							if (event.type === 'FORM') enq.sendTo('scopedForm', event.event)
+							return {}
+						}
+					}
 				},
 				states: {
 					lifecycle: {
 						initial: 'active',
 						states: {
-							active: { on: { SHUTDOWN: 'closed' } },
+							active: { on: { SHUTDOWN: { target: 'closed' } } },
 							closed: { type: 'final' }
 						}
 					},
@@ -503,18 +416,25 @@ export function createTransactionEditMachine(
 									id: 'scopedForm',
 									src: 'form',
 									input: ({ context }) => context.observation.facts,
-									onSnapshot: {
-										actions: assign({
-											formView: ({ event }) => selectScopedFormView(event.snapshot, options)
-										})
+									onSnapshot: (args) => {
+										return {
+											context: { formView: selectScopedFormView(args.event.snapshot, options) }
+										}
 									},
-									onDone: 'formClosed',
-									onError: {
-										target: 'formClosed',
-										actions: assign({ formView: failedFormView })
+									onDone: { target: 'formClosed' },
+									onError: () => {
+										return { target: 'formClosed', context: { formView: failedFormView } }
 									}
 								},
-								on: { SHUTDOWN: { actions: stopForm } }
+								on: {
+									SHUTDOWN: (args, enq) => {
+										{
+											const child = args.children.scopedForm
+											if (child?.getSnapshot().status === 'active')
+												enq.sendTo(child, { type: 'SHUTDOWN' })
+										}
+									}
+								}
 							},
 							formClosed: { type: 'final' }
 						}
@@ -522,62 +442,356 @@ export function createTransactionEditMachine(
 					transfer: {
 						initial: 'unselected',
 						on: {
-							SHUTDOWN: '.transferClosed',
-							SCOPE_CHANGED: { target: '.unselected', actions: clearTransferResults },
-							TRANSFER_OBSERVATION: [
-								{
-									guard: and(['currentTransferObservation', 'conflictedObservation']),
-									target: '.conflicted',
-									actions: updateTransferObservation
-								},
-								{
-									guard: and(['currentTransferObservation', 'linkedObservation']),
-									target: '.linked',
-									actions: updateTransferObservation
-								},
-								{
-									guard: and([
-										'currentTransferObservation',
-										'transferSearchActive',
-										'searchLoading'
-									]),
-									target: '.searching',
-									actions: updateTransferObservation
-								},
-								{
-									guard: and([
-										'currentTransferObservation',
-										'transferSearchActive',
-										'searchFailed'
-									]),
-									target: '.failed',
-									actions: updateTransferObservation
-								},
-								{
-									guard: and([
-										'currentTransferObservation',
-										'transferSearchActive',
-										'hasCandidates'
-									]),
-									target: '.matches',
-									actions: updateTransferObservation
-								},
-								{
-									guard: and(['currentTransferObservation', 'transferSearchActive']),
-									target: '.empty',
-									actions: updateTransferObservation
-								},
-								{
-									guard: and(['currentTransferObservation', 'searchDisabledObservation']),
+							SHUTDOWN: { target: '.transferClosed' },
+							SCOPE_CHANGED: (args) => {
+								return {
 									target: '.unselected',
-									actions: updateTransferObservation
+									context: ((args) => ({
+										transferObservation: undefined,
+										candidates: [],
+										selectedCandidateId: null,
+										writableCandidateIds: new Set<string>(),
+										linkedTransfer: null,
+										unlinkWritable: false,
+										linkResult: null,
+										unlinkResult: null,
+										deleteInput: undefined,
+										deleteResult: null
+									}))(args)
 								}
-							],
+							},
+							TRANSFER_OBSERVATION: (args) => {
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.conflictedObservation(args)
+								) {
+									return {
+										target: '.conflicted',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.linkedObservation(args)
+								) {
+									return {
+										target: '.linked',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.transferSearchActive(args) &&
+									args.guards.searchLoading(args)
+								) {
+									return {
+										target: '.searching',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.transferSearchActive(args) &&
+									args.guards.searchFailed(args)
+								) {
+									return {
+										target: '.failed',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.transferSearchActive(args) &&
+									args.guards.hasCandidates(args)
+								) {
+									return {
+										target: '.matches',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.transferSearchActive(args)
+								) {
+									return {
+										target: '.empty',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+								if (
+									args.guards.currentTransferObservation(args) &&
+									args.guards.searchDisabledObservation(args)
+								) {
+									return {
+										target: '.unselected',
+										context: (({ context, event }) => {
+											if (event.type !== 'TRANSFER_OBSERVATION') return {}
+											const candidates = transferCandidates(
+												context.observation.facts,
+												event.observation
+											)
+											return {
+												transferObservation: event.observation,
+												candidates,
+												selectedCandidateId: candidates.some(
+													({ id }) => id === context.selectedCandidateId
+												)
+													? context.selectedCandidateId
+													: (candidates[0]?.id ?? null),
+												linkedTransfer: event.observation.linkedTransfer,
+												unlinkResult: event.observation.pendingUnlink
+													? {
+															outcome: 'recoveryRequired',
+															transferId: required(event.observation.linkedTransfer?.id),
+															settlement: 'locallyPersisted'
+														}
+													: !event.observation.linked &&
+														  context.unlinkResult?.outcome === 'recoveryRequired'
+														? null
+														: event.observation.linked &&
+															  context.unlinkResult?.outcome === 'succeeded'
+															? null
+															: context.unlinkResult,
+												writableCandidateIds: writableCandidates(
+													context.observation.facts,
+													candidates
+												),
+												unlinkWritable: writableLinkedTransfer(
+													context.observation.facts,
+													event.observation.linkedTransfer
+												)
+											}
+										})(args)
+									}
+								}
+							},
 							LINK_SUCCEEDED: { target: '.linked' },
 							UNLINK_SUCCEEDED: { target: '.matches' }
 						},
 						states: {
-							unselected: { on: { ENABLE_SEARCH: 'searching' } },
+							unselected: { on: { ENABLE_SEARCH: { target: 'searching' } } },
 							conflicted: {},
 							searching: {
 								meta: {
@@ -585,13 +799,28 @@ export function createTransactionEditMachine(
 										m['status.loading_subject']({ subject: m['nouns.transaction']({ count: 2 }) }),
 									priority: 3
 								},
-								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
+								on: {
+									DISABLE_SEARCH: (args) => {
+										if (!args.guards.canDisableSearch(args)) return
+										return { target: 'unselected' }
+									}
+								}
 							},
 							matches: {
-								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
+								on: {
+									DISABLE_SEARCH: (args) => {
+										if (!args.guards.canDisableSearch(args)) return
+										return { target: 'unselected' }
+									}
+								}
 							},
 							empty: {
-								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
+								on: {
+									DISABLE_SEARCH: (args) => {
+										if (!args.guards.canDisableSearch(args)) return
+										return { target: 'unselected' }
+									}
+								}
 							},
 							failed: {
 								meta: {
@@ -599,7 +828,12 @@ export function createTransactionEditMachine(
 										m['errors.load_subject']({ subject: m['nouns.transaction']({ count: 2 }) }),
 									priority: 3
 								},
-								on: { DISABLE_SEARCH: { guard: 'canDisableSearch', target: 'unselected' } }
+								on: {
+									DISABLE_SEARCH: (args) => {
+										if (!args.guards.canDisableSearch(args)) return
+										return { target: 'unselected' }
+									}
+								}
 							},
 							linked: {},
 							transferClosed: { type: 'final' }
@@ -610,13 +844,52 @@ export function createTransactionEditMachine(
 						states: {
 							idle: {
 								on: {
-									LINK_COUNTERPART: {
-										guard: and(['canLink', 'transferMatches']),
-										target: 'operating.active',
-										actions: resetLinkRequest
+									LINK_COUNTERPART: (args) => {
+										if (!(args.guards.canLink(args) && args.guards.transferMatches(args))) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'LINK_COUNTERPART') return {}
+												const source = context.observation.facts.transaction
+												const candidate = context.candidates.find(
+													({ id }) => id === context.selectedCandidateId
+												)
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!source || !candidate || !identityId || !organizationId) return {}
+												return {
+													linkInput: {
+														db,
+														identityId,
+														organizationId,
+														expenseTransactionId:
+															source.kind === 'expense' ? source.id : candidate.id,
+														incomeTransactionId:
+															source.kind === 'income' ? source.id : candidate.id,
+														trackWrite: trackTransferWrite
+													},
+													linkResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { actions: clearTransferResults },
-									SHUTDOWN: 'linkClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'linkClosed' }
 								}
 							},
 							operating: {
@@ -632,76 +905,92 @@ export function createTransactionEditMachine(
 										operation: 'link',
 										input: required(context.linkInput)
 									}),
-									onDone: [
-										{
-											guard: 'linkIsClosing',
-											target: '#transaction-edit-form.running.link.linkClosed'
-										},
-										{
-											guard: 'linkIsReplacing',
-											target: '#transaction-edit-form.running.link.idle',
-											actions: assign({ linkInput: undefined, linkResult: null })
-										},
-										{
-											guard: ({ event }) =>
-												event.output.operation === 'link' &&
-												event.output.result.outcome === 'succeeded',
-											target: '#transaction-edit-form.running.link.succeeded',
-											actions: [
-												assign({
-													linkResult: ({ event }) => linkResult(event.output),
-													linkInput: undefined
-												}),
-												raise({ type: 'LINK_SUCCEEDED' })
-											]
-										},
-										{
-											target: '#transaction-edit-form.running.link.rejected',
-											actions: assign({
-												linkResult: ({ event }) => linkResult(event.output),
-												linkInput: undefined
-											})
+									onDone: (args, enq) => {
+										const { event } = args
+										if (matchesState({ running: { link: { operating: 'closing' } } }, args.value)) {
+											return { target: '#transaction-edit-form.running.link.linkClosed' }
 										}
-									],
-									onError: [
-										{
-											guard: 'linkIsClosing',
-											target: '#transaction-edit-form.running.link.linkClosed'
-										},
-										{
-											guard: 'linkIsReplacing',
-											target: '#transaction-edit-form.running.link.idle',
-											actions: assign({ linkInput: undefined, linkResult: null })
-										},
-										{
+										if (
+											matchesState({ running: { link: { operating: 'replacing' } } }, args.value)
+										) {
+											return {
+												target: '#transaction-edit-form.running.link.idle',
+												context: { linkInput: undefined, linkResult: null }
+											}
+										}
+										if (
+											event.output.operation === 'link' &&
+											event.output.result.outcome === 'succeeded'
+										) {
+											enq.raise({ type: 'LINK_SUCCEEDED' })
+											return {
+												target: '#transaction-edit-form.running.link.succeeded',
+												context: { linkResult: linkResult(event.output), linkInput: undefined }
+											}
+										}
+										return {
 											target: '#transaction-edit-form.running.link.rejected',
-											actions: assign({
-												linkResult: ({ event }): InternalTransferLinkResult => ({
+											context: { linkResult: linkResult(event.output), linkInput: undefined }
+										}
+									},
+									onError: (args) => {
+										if (matchesState({ running: { link: { operating: 'closing' } } }, args.value)) {
+											return { target: '#transaction-edit-form.running.link.linkClosed' }
+										}
+										if (
+											matchesState({ running: { link: { operating: 'replacing' } } }, args.value)
+										) {
+											return {
+												target: '#transaction-edit-form.running.link.idle',
+												context: { linkInput: undefined, linkResult: null }
+											}
+										}
+										return {
+											target: '#transaction-edit-form.running.link.rejected',
+											context: {
+												linkResult: {
 													outcome: 'unavailable',
 													settlement: 'unresolved',
-													error: event.error
-												}),
+													error: args.event.error
+												},
 												linkInput: undefined
-											})
+											}
 										}
-									]
+									}
 								},
 								states: {
 									active: {
 										on: {
-											SCOPE_CHANGED: {
-												target: 'replacing',
-												actions: stopLinkOperation
+											SCOPE_CHANGED: (args, enq) => {
+												{
+													const child = args.children.linkOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'replacing' }
 											},
-											SHUTDOWN: {
-												target: 'closing',
-												actions: stopLinkOperation
+											SHUTDOWN: (args, enq) => {
+												{
+													const child = args.children.linkOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'closing' }
 											}
 										}
 									},
 									closing: {},
 									replacing: {
-										on: { SHUTDOWN: { target: 'closing', actions: stopLinkOperation } }
+										on: {
+											SHUTDOWN: (args, enq) => {
+												{
+													const child = args.children.linkOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'closing' }
+											}
+										}
 									}
 								}
 							},
@@ -712,29 +1001,69 @@ export function createTransactionEditMachine(
 									priority: 1
 								},
 								on: {
-									LINK_COUNTERPART: {
-										guard: and(['canLink', 'transferMatches']),
-										target: 'operating.active',
-										actions: resetLinkRequest
+									LINK_COUNTERPART: (args) => {
+										if (!(args.guards.canLink(args) && args.guards.transferMatches(args))) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'LINK_COUNTERPART') return {}
+												const source = context.observation.facts.transaction
+												const candidate = context.candidates.find(
+													({ id }) => id === context.selectedCandidateId
+												)
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!source || !candidate || !identityId || !organizationId) return {}
+												return {
+													linkInput: {
+														db,
+														identityId,
+														organizationId,
+														expenseTransactionId:
+															source.kind === 'expense' ? source.id : candidate.id,
+														incomeTransactionId:
+															source.kind === 'income' ? source.id : candidate.id,
+														trackWrite: trackTransferWrite
+													},
+													linkResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
-									SHUTDOWN: 'linkClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											target: 'idle',
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'linkClosed' }
 								}
 							},
 							rejected: {
 								initial: 'classifying',
 								states: {
 									classifying: {
-										always: [
-											{
-												guard: ({ context }) =>
-													context.linkResult?.outcome === 'cancelled' ||
-													context.linkResult?.outcome === 'closed',
-												target: 'cancelled'
-											},
-
-											{ target: 'failed' }
-										]
+										always: (args) => {
+											const { context } = args
+											if (
+												context.linkResult?.outcome === 'cancelled' ||
+												context.linkResult?.outcome === 'closed'
+											) {
+												return { target: 'cancelled' }
+											}
+											return { target: 'failed' }
+										}
 									},
 									cancelled: {
 										meta: { transferStatus: () => m['status.cancelled'](), priority: 1 }
@@ -748,13 +1077,53 @@ export function createTransactionEditMachine(
 									}
 								},
 								on: {
-									LINK_COUNTERPART: {
-										guard: and(['canLink', 'transferMatches']),
-										target: 'operating.active',
-										actions: resetLinkRequest
+									LINK_COUNTERPART: (args) => {
+										if (!(args.guards.canLink(args) && args.guards.transferMatches(args))) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'LINK_COUNTERPART') return {}
+												const source = context.observation.facts.transaction
+												const candidate = context.candidates.find(
+													({ id }) => id === context.selectedCandidateId
+												)
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!source || !candidate || !identityId || !organizationId) return {}
+												return {
+													linkInput: {
+														db,
+														identityId,
+														organizationId,
+														expenseTransactionId:
+															source.kind === 'expense' ? source.id : candidate.id,
+														incomeTransactionId:
+															source.kind === 'income' ? source.id : candidate.id,
+														trackWrite: trackTransferWrite
+													},
+													linkResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
-									SHUTDOWN: 'linkClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											target: 'idle',
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'linkClosed' }
 								}
 							},
 							linkClosed: { type: 'final' }
@@ -765,13 +1134,47 @@ export function createTransactionEditMachine(
 						states: {
 							idle: {
 								on: {
-									UNLINK_TRANSFER: {
-										guard: and(['canUnlink', 'transferLinked']),
-										target: 'operating.active',
-										actions: resetUnlinkRequest
+									UNLINK_TRANSFER: (args) => {
+										if (!(args.guards.canUnlink(args) && args.guards.transferLinked(args))) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'UNLINK_TRANSFER' || !context.linkedTransfer) return {}
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!identityId || !organizationId) return {}
+												return {
+													unlinkInput: {
+														db,
+														identityId,
+														organizationId,
+														transferId: context.linkedTransfer.id,
+														expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+														incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+														trackWrite: trackTransferWrite
+													},
+													unlinkResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { actions: clearTransferResults },
-									SHUTDOWN: 'unlinkClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'unlinkClosed' }
 								}
 							},
 							operating: {
@@ -787,76 +1190,99 @@ export function createTransactionEditMachine(
 										operation: 'unlink',
 										input: required(context.unlinkInput)
 									}),
-									onDone: [
-										{
-											guard: 'unlinkIsClosing',
-											target: '#transaction-edit-form.running.unlink.unlinkClosed'
-										},
-										{
-											guard: 'unlinkIsReplacing',
-											target: '#transaction-edit-form.running.unlink.idle',
-											actions: assign({ unlinkInput: undefined, unlinkResult: null })
-										},
-										{
-											guard: ({ event }) =>
-												event.output.operation === 'unlink' &&
-												event.output.result.outcome === 'succeeded',
-											target: '#transaction-edit-form.running.unlink.succeeded',
-											actions: [
-												assign({
-													unlinkResult: ({ event }) => unlinkResult(event.output),
-													unlinkInput: undefined
-												}),
-												raise({ type: 'UNLINK_SUCCEEDED' })
-											]
-										},
-										{
-											target: '#transaction-edit-form.running.unlink.rejected',
-											actions: assign({
-												unlinkResult: ({ event }) => unlinkResult(event.output),
-												unlinkInput: undefined
-											})
+									onDone: (args, enq) => {
+										const { event } = args
+										if (
+											matchesState({ running: { unlink: { operating: 'closing' } } }, args.value)
+										) {
+											return { target: '#transaction-edit-form.running.unlink.unlinkClosed' }
 										}
-									],
-									onError: [
-										{
-											guard: 'unlinkIsClosing',
-											target: '#transaction-edit-form.running.unlink.unlinkClosed'
-										},
-										{
-											guard: 'unlinkIsReplacing',
-											target: '#transaction-edit-form.running.unlink.idle',
-											actions: assign({ unlinkInput: undefined, unlinkResult: null })
-										},
-										{
+										if (
+											matchesState({ running: { unlink: { operating: 'replacing' } } }, args.value)
+										) {
+											return {
+												target: '#transaction-edit-form.running.unlink.idle',
+												context: { unlinkInput: undefined, unlinkResult: null }
+											}
+										}
+										if (
+											event.output.operation === 'unlink' &&
+											event.output.result.outcome === 'succeeded'
+										) {
+											enq.raise({ type: 'UNLINK_SUCCEEDED' })
+											return {
+												target: '#transaction-edit-form.running.unlink.succeeded',
+												context: {
+													unlinkResult: unlinkResult(event.output),
+													unlinkInput: undefined
+												}
+											}
+										}
+										return {
 											target: '#transaction-edit-form.running.unlink.rejected',
-											actions: assign({
-												unlinkResult: ({ event }): InternalTransferUnlinkResult => ({
+											context: { unlinkResult: unlinkResult(event.output), unlinkInput: undefined }
+										}
+									},
+									onError: (args) => {
+										if (
+											matchesState({ running: { unlink: { operating: 'closing' } } }, args.value)
+										) {
+											return { target: '#transaction-edit-form.running.unlink.unlinkClosed' }
+										}
+										if (
+											matchesState({ running: { unlink: { operating: 'replacing' } } }, args.value)
+										) {
+											return {
+												target: '#transaction-edit-form.running.unlink.idle',
+												context: { unlinkInput: undefined, unlinkResult: null }
+											}
+										}
+										return {
+											target: '#transaction-edit-form.running.unlink.rejected',
+											context: {
+												unlinkResult: {
 													outcome: 'unavailable',
 													settlement: 'unresolved',
-													error: event.error
-												}),
+													error: args.event.error
+												},
 												unlinkInput: undefined
-											})
+											}
 										}
-									]
+									}
 								},
 								states: {
 									active: {
 										on: {
-											SCOPE_CHANGED: {
-												target: 'replacing',
-												actions: stopUnlinkOperation
+											SCOPE_CHANGED: (args, enq) => {
+												{
+													const child = args.children.unlinkOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'replacing' }
 											},
-											SHUTDOWN: {
-												target: 'closing',
-												actions: stopUnlinkOperation
+											SHUTDOWN: (args, enq) => {
+												{
+													const child = args.children.unlinkOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'closing' }
 											}
 										}
 									},
 									closing: {},
 									replacing: {
-										on: { SHUTDOWN: { target: 'closing', actions: stopUnlinkOperation } }
+										on: {
+											SHUTDOWN: (args, enq) => {
+												{
+													const child = args.children.unlinkOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'closing' }
+											}
+										}
 									}
 								}
 							},
@@ -867,33 +1293,67 @@ export function createTransactionEditMachine(
 									priority: 2
 								},
 								on: {
-									UNLINK_TRANSFER: {
-										guard: and(['canUnlink', 'transferLinked']),
-										target: 'operating.active',
-										actions: resetUnlinkRequest
+									UNLINK_TRANSFER: (args) => {
+										if (!(args.guards.canUnlink(args) && args.guards.transferLinked(args))) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'UNLINK_TRANSFER' || !context.linkedTransfer) return {}
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!identityId || !organizationId) return {}
+												return {
+													unlinkInput: {
+														db,
+														identityId,
+														organizationId,
+														transferId: context.linkedTransfer.id,
+														expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+														incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+														trackWrite: trackTransferWrite
+													},
+													unlinkResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
-									SHUTDOWN: 'unlinkClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											target: 'idle',
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'unlinkClosed' }
 								}
 							},
 							rejected: {
 								initial: 'classifying',
 								states: {
 									classifying: {
-										always: [
-											{
-												guard: ({ context }) =>
-													context.unlinkResult?.outcome === 'cancelled' ||
-													context.unlinkResult?.outcome === 'closed',
-												target: 'cancelled'
-											},
-											{
-												guard: ({ context }) =>
-													context.unlinkResult?.outcome === 'recoveryRequired',
-												target: 'recoveryRequired'
-											},
-											{ target: 'failed' }
-										]
+										always: (args) => {
+											const { context } = args
+											if (
+												context.unlinkResult?.outcome === 'cancelled' ||
+												context.unlinkResult?.outcome === 'closed'
+											) {
+												return { target: 'cancelled' }
+											}
+											if (context.unlinkResult?.outcome === 'recoveryRequired') {
+												return { target: 'recoveryRequired' }
+											}
+											return { target: 'failed' }
+										}
 									},
 									cancelled: {
 										meta: { transferStatus: () => m['status.cancelled'](), priority: 2 }
@@ -910,13 +1370,48 @@ export function createTransactionEditMachine(
 									}
 								},
 								on: {
-									UNLINK_TRANSFER: {
-										guard: and(['canUnlink', 'transferLinked']),
-										target: 'operating.active',
-										actions: resetUnlinkRequest
+									UNLINK_TRANSFER: (args) => {
+										if (!(args.guards.canUnlink(args) && args.guards.transferLinked(args))) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'UNLINK_TRANSFER' || !context.linkedTransfer) return {}
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!identityId || !organizationId) return {}
+												return {
+													unlinkInput: {
+														db,
+														identityId,
+														organizationId,
+														transferId: context.linkedTransfer.id,
+														expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+														incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+														trackWrite: trackTransferWrite
+													},
+													unlinkResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
-									SHUTDOWN: 'unlinkClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											target: 'idle',
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'unlinkClosed' }
 								}
 							},
 							unlinkClosed: { type: 'final' }
@@ -927,13 +1422,49 @@ export function createTransactionEditMachine(
 						states: {
 							idle: {
 								on: {
-									DELETE_LINKED_TRANSFER: {
-										guard: 'canDelete',
-										target: 'operating.active',
-										actions: resetDeleteRequest
+									DELETE_LINKED_TRANSFER: (args) => {
+										if (!args.guards.canDelete(args)) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'DELETE_LINKED_TRANSFER' || !context.linkedTransfer)
+													return {}
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!identityId || !organizationId) return {}
+												return {
+													deleteInput: {
+														db,
+														identityId,
+														organizationId,
+														transferId: context.linkedTransfer.id,
+														expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+														incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+														choice: event.choice,
+														trackWrite: trackTransferWrite
+													},
+													deleteResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { actions: clearTransferResults },
-									SHUTDOWN: 'deletionClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'deletionClosed' }
 								}
 							},
 							operating: {
@@ -951,67 +1482,104 @@ export function createTransactionEditMachine(
 										operation: 'delete',
 										input: required(context.deleteInput)
 									}),
-									onDone: [
-										{
-											guard: 'deleteIsClosing',
-											target: '#transaction-edit-form.running.deletion.deletionClosed'
-										},
-										{
-											guard: 'deleteIsReplacing',
-											target: '#transaction-edit-form.running.deletion.idle',
-											actions: assign({ deleteInput: undefined, deleteResult: null })
-										},
-										{
-											guard: ({ event }) =>
-												event.output.operation === 'delete' &&
-												event.output.result.outcome === 'succeeded',
-											target: '#transaction-edit-form.running.deletion.succeeded',
-											actions: assign({
-												deleteResult: ({ event }) => deleteResult(event.output),
-												deleteInput: undefined
-											})
-										},
-										{
-											target: '#transaction-edit-form.running.deletion.rejected',
-											actions: assign({
-												deleteResult: ({ event }) => deleteResult(event.output),
-												deleteInput: undefined
-											})
+									onDone: (args) => {
+										const { event } = args
+										if (
+											matchesState({ running: { deletion: { operating: 'closing' } } }, args.value)
+										) {
+											return { target: '#transaction-edit-form.running.deletion.deletionClosed' }
 										}
-									],
-									onError: [
-										{
-											guard: 'deleteIsClosing',
-											target: '#transaction-edit-form.running.deletion.deletionClosed'
-										},
-										{
-											guard: 'deleteIsReplacing',
-											target: '#transaction-edit-form.running.deletion.idle',
-											actions: assign({ deleteInput: undefined, deleteResult: null })
-										},
-										{
+										if (
+											matchesState(
+												{ running: { deletion: { operating: 'replacing' } } },
+												args.value
+											)
+										) {
+											return {
+												target: '#transaction-edit-form.running.deletion.idle',
+												context: { deleteInput: undefined, deleteResult: null }
+											}
+										}
+										if (
+											event.output.operation === 'delete' &&
+											event.output.result.outcome === 'succeeded'
+										) {
+											return {
+												target: '#transaction-edit-form.running.deletion.succeeded',
+												context: {
+													deleteResult: deleteResult(event.output),
+													deleteInput: undefined
+												}
+											}
+										}
+										return {
 											target: '#transaction-edit-form.running.deletion.rejected',
-											actions: assign({
-												deleteResult: ({ event }): InternalTransferDeleteResult => ({
+											context: { deleteResult: deleteResult(event.output), deleteInput: undefined }
+										}
+									},
+									onError: (args) => {
+										if (
+											matchesState({ running: { deletion: { operating: 'closing' } } }, args.value)
+										) {
+											return { target: '#transaction-edit-form.running.deletion.deletionClosed' }
+										}
+										if (
+											matchesState(
+												{ running: { deletion: { operating: 'replacing' } } },
+												args.value
+											)
+										) {
+											return {
+												target: '#transaction-edit-form.running.deletion.idle',
+												context: { deleteInput: undefined, deleteResult: null }
+											}
+										}
+										return {
+											target: '#transaction-edit-form.running.deletion.rejected',
+											context: {
+												deleteResult: {
 													outcome: 'unavailable',
 													settlement: 'unresolved',
-													error: event.error
-												}),
+													error: args.event.error
+												},
 												deleteInput: undefined
-											})
+											}
 										}
-									]
+									}
 								},
 								states: {
 									active: {
 										on: {
-											SCOPE_CHANGED: { target: 'replacing', actions: stopDeleteOperation },
-											SHUTDOWN: { target: 'closing', actions: stopDeleteOperation }
+											SCOPE_CHANGED: (args, enq) => {
+												{
+													const child = args.children.deleteOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'replacing' }
+											},
+											SHUTDOWN: (args, enq) => {
+												{
+													const child = args.children.deleteOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'closing' }
+											}
 										}
 									},
 									closing: {},
 									replacing: {
-										on: { SHUTDOWN: { target: 'closing', actions: stopDeleteOperation } }
+										on: {
+											SHUTDOWN: (args, enq) => {
+												{
+													const child = args.children.deleteOperation
+													if (child?.getSnapshot().status === 'active')
+														enq.sendTo(child, { type: 'SHUTDOWN' })
+												}
+												return { target: 'closing' }
+											}
+										}
 									}
 								}
 							},
@@ -1019,15 +1587,16 @@ export function createTransactionEditMachine(
 								initial: 'classifying',
 								states: {
 									classifying: {
-										always: [
-											{
-												guard: ({ context }) =>
-													context.deleteResult?.outcome === 'succeeded' &&
-													context.deleteResult.choice.kind === 'both',
-												target: 'both'
-											},
-											{ target: 'selected' }
-										]
+										always: (args) => {
+											const { context } = args
+											if (
+												context.deleteResult?.outcome === 'succeeded' &&
+												context.deleteResult.choice.kind === 'both'
+											) {
+												return { target: 'both' }
+											}
+											return { target: 'selected' }
+										}
 									},
 									both: {
 										meta: {
@@ -1047,33 +1616,69 @@ export function createTransactionEditMachine(
 									}
 								},
 								on: {
-									DELETE_LINKED_TRANSFER: {
-										guard: 'canDelete',
-										target: 'operating.active',
-										actions: resetDeleteRequest
+									DELETE_LINKED_TRANSFER: (args) => {
+										if (!args.guards.canDelete(args)) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'DELETE_LINKED_TRANSFER' || !context.linkedTransfer)
+													return {}
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!identityId || !organizationId) return {}
+												return {
+													deleteInput: {
+														db,
+														identityId,
+														organizationId,
+														transferId: context.linkedTransfer.id,
+														expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+														incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+														choice: event.choice,
+														trackWrite: trackTransferWrite
+													},
+													deleteResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
-									SHUTDOWN: 'deletionClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											target: 'idle',
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'deletionClosed' }
 								}
 							},
 							rejected: {
 								initial: 'classifying',
 								states: {
 									classifying: {
-										always: [
-											{
-												guard: ({ context }) =>
-													context.deleteResult?.outcome === 'cancelled' ||
-													context.deleteResult?.outcome === 'closed',
-												target: 'cancelled'
-											},
-											{
-												guard: ({ context }) =>
-													context.deleteResult?.outcome === 'recoveryRequired',
-												target: 'recoveryRequired'
-											},
-											{ target: 'failed' }
-										]
+										always: (args) => {
+											const { context } = args
+											if (
+												context.deleteResult?.outcome === 'cancelled' ||
+												context.deleteResult?.outcome === 'closed'
+											) {
+												return { target: 'cancelled' }
+											}
+											if (context.deleteResult?.outcome === 'recoveryRequired') {
+												return { target: 'recoveryRequired' }
+											}
+											return { target: 'failed' }
+										}
 									},
 									cancelled: {},
 									recoveryRequired: {
@@ -1097,13 +1702,50 @@ export function createTransactionEditMachine(
 									}
 								},
 								on: {
-									DELETE_LINKED_TRANSFER: {
-										guard: 'canDelete',
-										target: 'operating.active',
-										actions: resetDeleteRequest
+									DELETE_LINKED_TRANSFER: (args) => {
+										if (!args.guards.canDelete(args)) return
+										return {
+											target: 'operating.active',
+											context: (({ context, event }) => {
+												if (event.type !== 'DELETE_LINKED_TRANSFER' || !context.linkedTransfer)
+													return {}
+												const identityId = context.observation.facts.identityId
+												const organizationId = context.observation.facts.organizationId
+												if (!identityId || !organizationId) return {}
+												return {
+													deleteInput: {
+														db,
+														identityId,
+														organizationId,
+														transferId: context.linkedTransfer.id,
+														expenseTransactionId: context.linkedTransfer.expenseTransactionId,
+														incomeTransactionId: context.linkedTransfer.incomeTransactionId,
+														choice: event.choice,
+														trackWrite: trackTransferWrite
+													},
+													deleteResult: null
+												}
+											})(args)
+										}
 									},
-									SCOPE_CHANGED: { target: 'idle', actions: clearTransferResults },
-									SHUTDOWN: 'deletionClosed'
+									SCOPE_CHANGED: (args) => {
+										return {
+											target: 'idle',
+											context: ((args) => ({
+												transferObservation: undefined,
+												candidates: [],
+												selectedCandidateId: null,
+												writableCandidateIds: new Set<string>(),
+												linkedTransfer: null,
+												unlinkWritable: false,
+												linkResult: null,
+												unlinkResult: null,
+												deleteInput: undefined,
+												deleteResult: null
+											}))(args)
+										}
+									},
+									SHUTDOWN: { target: 'deletionClosed' }
 								}
 							},
 							deletionClosed: { type: 'final' }

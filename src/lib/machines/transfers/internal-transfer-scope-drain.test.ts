@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, setup, waitFor } from 'xstate'
 import { Transaction } from 'jazz-tools'
 import type {
 	InternalTransferCreateInput,
@@ -23,6 +22,8 @@ import {
 	type TransferMutationRequest,
 	type TransferMutationResponse
 } from './internal-transfer-mutation-owner.js'
+import { createActor, setup, waitFor, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 // Replace only operation-machine exports at runtime; keep the real owner and its typed public protocol.
 const controls: {
@@ -70,38 +71,49 @@ function controlled<Output>() {
 	let result: Output | undefined
 	const shutdown = vi.fn()
 	const invoked = vi.fn()
-	const finish = fromPromise(() => {
-		invoked()
-		return pending.promise
+	const finish = createAsyncLogic({
+		run: () => {
+			invoked()
+			return pending.promise
+		}
 	})
-	const logic = setup<
-		{},
-		{ type: 'SHUTDOWN' },
-		{ finish: typeof finish },
-		{},
-		{},
-		{},
-		never,
-		string,
-		unknown,
-		Output
-	>({ actors: { finish } }).createMachine({
+	const events1 = { SHUTDOWN: types<EventPayload<{ type: 'SHUTDOWN' }, 'SHUTDOWN'>>() }
+	type NativeEvent1 =
+		| import('xstate').InferEvents<typeof events1>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof finish>>
+		| import('xstate').ErrorActorEvent
+	const logic = setup({
+		schemas: {
+			context: types<{}>(),
+			events: events1,
+			input: types<unknown>(),
+			output: types<Output>(),
+			children: {
+				finish: types<import('xstate').ActorRefFrom<{ finish: typeof finish }['finish']>>()
+			}
+		},
+		actors: { finish }
+	}).createMachine({
 		context: {},
 		initial: 'issued',
 		output: () => {
 			if (result === undefined) throw new Error('Missing controlled output')
 			return result
 		},
-		on: { SHUTDOWN: { actions: shutdown } },
+		on: {
+			SHUTDOWN: (_, enq) => {
+				enq(shutdown)
+			}
+		},
 		states: {
 			issued: {
 				invoke: {
 					src: 'finish',
-					onDone: 'complete',
-					onError: {
-						actions: ({ event }) => {
+					onDone: { target: 'complete' },
+					onError: (args, enq) => {
+						enq(({ event }) => {
 							throw event.error
-						}
+						}, args)
 					}
 				}
 			},
@@ -131,15 +143,33 @@ function fixture(bind = true, definition?: ReturnType<typeof createInternalTrans
 	Object.assign(controls, gates)
 	const owner = definition ?? createInternalTransferMutationOwner()
 	const closed = vi.fn()
-	const parentLogic = setup<
-		{},
-		{ type: 'TRANSFER_MUTATION_OWNER_CLOSED' },
-		{ owner: typeof owner }
-	>({ actors: { owner } }).createMachine({
+	const events0 = {
+		TRANSFER_MUTATION_OWNER_CLOSED:
+			types<
+				EventPayload<{ type: 'TRANSFER_MUTATION_OWNER_CLOSED' }, 'TRANSFER_MUTATION_OWNER_CLOSED'>
+			>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof owner>>
+		| import('xstate').ErrorActorEvent
+	const parentLogic = setup({
+		schemas: {
+			context: types<{}>(),
+			events: events0,
+			children: { owner: types<import('xstate').ActorRefFrom<{ owner: typeof owner }['owner']>>() }
+		},
+		actors: { owner }
+	}).createMachine({
+		context: {},
 		invoke: { id: 'owner', src: 'owner' },
 		initial: 'live',
 		states: { live: {} },
-		on: { TRANSFER_MUTATION_OWNER_CLOSED: { actions: closed } }
+		on: {
+			TRANSFER_MUTATION_OWNER_CLOSED: (_, enq) => {
+				enq(closed)
+			}
+		}
 	})
 	const parent = createActor(parentLogic).start()
 	actors.add(parent)

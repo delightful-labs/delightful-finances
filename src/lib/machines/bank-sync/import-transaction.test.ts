@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise, type InputFrom } from 'xstate'
 import { createTransactionImportMachine } from './import-transaction.js'
 import { createAuthorizationMachine } from './authorization.js'
 import { account, connection, dependencies, id, source } from './test-fixtures.js'
 import type { BankTrace } from '#lib/integrations/diagnostics.js'
 import type { TransactionRow } from '#lib/schema.js'
+import { createActor, toPromise, createAsyncLogic } from 'xstate'
+import type { InputFrom } from 'xstate'
 
 type Input = InputFrom<ReturnType<typeof createTransactionImportMachine>>
 const trace: BankTrace = {
@@ -57,10 +58,12 @@ const input: Input = {
 function start(current: Input = input, rows: TransactionRow[] = []) {
 	const authorize = createAuthorizationMachine(dependencies()).provide({
 		actors: {
-			membership: fromPromise(async () => (source.membership ? [source.membership] : [])),
-			demoId: fromPromise(async () => id(99)),
-			connections: fromPromise(async () => [connection]),
-			connection: fromPromise(async () => [connection])
+			membership: createAsyncLogic({
+				run: async () => (source.membership ? [source.membership] : [])
+			}),
+			demoId: createAsyncLogic({ run: async () => id(99) }),
+			connections: createAsyncLogic({ run: async () => [connection] }),
+			connection: createAsyncLogic({ run: async () => [connection] })
 		}
 	})
 	const persist = vi.fn(async () => {})
@@ -68,9 +71,9 @@ function start(current: Input = input, rows: TransactionRow[] = []) {
 	const machine = createTransactionImportMachine(dependencies()).provide({
 		actors: {
 			authorize,
-			identity: fromPromise(async () => id(8)),
-			existing: fromPromise(lookup),
-			persist: fromPromise(persist)
+			identity: createAsyncLogic({ run: async () => id(8) }),
+			existing: createAsyncLogic({ run: lookup }),
+			persist: createAsyncLogic({ run: persist })
 		}
 	})
 	return { actor: createActor(machine, { input: current }).start(), persist, lookup }

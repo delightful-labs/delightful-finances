@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { Transaction, type schema } from 'jazz-tools'
 import { app } from '../../schema.js'
 import { createWorkspaceStartupMachine } from './workspace-startup.js'
@@ -14,6 +13,7 @@ beforeEach(() => {
 })
 
 import { seedFixture } from '../samples/fake-data.fixture.js'
+import { createActor, waitFor } from 'xstate'
 
 const secondUser = '77777777-7777-4777-8777-777777777777'
 const thirdUser = '88888888-8888-4888-8888-888888888888'
@@ -204,7 +204,7 @@ describe('optional seed ownership', () => {
 		f.actor.start()
 		await waitFor(f.actor, (s) => s.matches({ ready: 'settled' }))
 		expect(f.actor.getSnapshot().hasTag('workspace-ready')).toBe(true)
-		expect(f.actor.getSnapshot().context.seedResult).toEqual({
+		expect(f.actor.getSnapshot().context.results.seedResult).toEqual({
 			outcome: 'failed',
 			settlement: 'notStarted',
 			error: failure
@@ -266,7 +266,7 @@ describe('optional seed ownership', () => {
 		confirmation.resolve()
 		await waitFor(f.actor, (s) => s.status === 'done')
 		expect(f.discover).toHaveBeenCalledTimes(calls)
-		expect(f.actor.getSnapshot().context.seedResult).toEqual({
+		expect(f.actor.getSnapshot().context.results.seedResult).toEqual({
 			outcome: 'closed',
 			settlement: 'confirmed'
 		})

@@ -1,15 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-	createActor,
-	createMachine,
-	fromCallback,
-	fromPromise,
-	toPromise,
-	waitFor,
-	type ActorRefFrom,
-	type InputFrom,
-	type OutputFrom
-} from 'xstate'
 import { unlockCredential } from '#lib/integrations/passkey.js'
 import { fetchAccounts } from '#lib/integrations/simplefin.js'
 import { createBankTrace } from '#lib/integrations/diagnostics.js'
@@ -25,6 +14,15 @@ import type {
 	OperationWork,
 	ProviderResponse
 } from './types.js'
+import {
+	createActor,
+	createMachine,
+	createCallbackLogic,
+	toPromise,
+	waitFor,
+	createAsyncLogic
+} from 'xstate'
+import type { ActorFromLogic, InputFrom, OutputFrom } from 'xstate'
 
 vi.mock('#lib/integrations/passkey.js', () => ({ unlockCredential: vi.fn() }))
 vi.mock('#lib/integrations/simplefin.js', () => ({
@@ -68,7 +66,7 @@ function success<T>(output: T, onStart: () => void = () => {}) {
 		output: () => output
 	})
 }
-type OperationActor = ActorRefFrom<ReturnType<typeof createBankOperationMachine>>
+type OperationActor = ActorFromLogic<ReturnType<typeof createBankOperationMachine>>
 type PersistenceInput = {
 	work: OperationWork
 	counts: ImportCounts
@@ -97,7 +95,7 @@ const connection: Connection = {
 	claimedAt: new Date('2026-10-17T00:00:00Z')
 }
 const response: ProviderResponse = { errors: [], accounts: [] }
-const counts = { imported: 0, existing: 0, omitted: 0 }
+let counts = { imported: 0, existing: 0, omitted: 0 }
 const failed = vi.fn()
 const releaseLock = vi.fn()
 const acquireLock = vi.fn<() => void>()
@@ -121,14 +119,14 @@ function start(type: 'DISCOVER' | 'SYNC'): OperationActor {
 		passkeyName: () => 'Test'
 	}).provide({
 		actors: {
-			lock: fromCallback<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
+			lock: createCallbackLogic<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
 				acquireLock()
 				sendBack({ type: 'LOCK_ACQUIRED' })
 				return releaseLock
 			}),
-			persistOutcome: fromPromise<void, PersistenceInput>(({ input, signal }) =>
-				persist(input, signal)
-			)
+			persistOutcome: createAsyncLogic<void, PersistenceInput>({
+				run: ({ input, signal }) => persist(input, signal)
+			})
 		}
 	})
 	const command: BankCommand = { type }
@@ -139,7 +137,7 @@ function start(type: 'DISCOVER' | 'SYNC'): OperationActor {
 
 beforeEach(() => {
 	vi.resetAllMocks()
-	Object.assign(counts, { imported: 0, existing: 0, omitted: 0 })
+	counts = { imported: 0, existing: 0, omitted: 0 }
 	vi.mocked(createBankTrace).mockReturnValue({
 		id: 'trace',
 		log: vi.fn(),
@@ -196,7 +194,7 @@ describe('operation actor failure boundaries', () => {
 	it.each(['omissions', 'provider errors'])(
 		'persists the same partial outcome it returns for %s',
 		async (reason) => {
-			Object.assign(counts, { imported: 2, existing: 1, omitted: reason === 'omissions' ? 1 : 0 })
+			counts = { imported: 2, existing: 1, omitted: reason === 'omissions' ? 1 : 0 }
 			if (reason === 'provider errors')
 				vi.mocked(fetchAccounts).mockResolvedValueOnce({
 					errors: ['Synthetic provider warning'],

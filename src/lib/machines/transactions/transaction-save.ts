@@ -1,6 +1,5 @@
 import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
 import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
-import { assign, enqueueActions, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Check } from '#lib/schema.js'
@@ -28,6 +27,9 @@ import type {
 } from '#lib/contracts/transaction-entry-contract.js'
 import { createCheckCreationMachine } from './check-create-persistence.js'
 import { createIndependentTransactionPersistenceMachine } from './independent-transaction-persistence.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type TransactionSaveDb = Pick<ReturnType<typeof getDb>, 'beginTransaction' | 'all'>
 type Input = FormOperationInput<
@@ -54,13 +56,15 @@ function required<T>(value: T | undefined): T {
 	return value
 }
 function makeReadLedger(db: TransactionSaveDb) {
-	return fromPromise(({ input }: { input: string }) => {
-		return db.all(
-			app.transactions.where({ id: input }).include({ tags: { tag: true }, check: true }),
-			{
-				tier: ReadTier.Remote
-			}
-		)
+	return createAsyncLogic({
+		run: ({ input }: { input: string }) => {
+			return db.all(
+				app.transactions.where({ id: input }).include({ tags: { tag: true }, check: true }),
+				{
+					tier: ReadTier.Remote
+				}
+			)
+		}
 	})
 }
 function matchingLedger(context: Context) {
@@ -173,13 +177,14 @@ export function createTransactionSaveMachine(
 	observe: () => TransactionEntryObservation
 ) {
 	const actors = {
-		validate: fromPromise(({ input }: { input: Input }) =>
-			Promise.resolve(
-				parseSaveRequest(input.request.values, input.request.checkpoint, input.request.scope)
-			)
-		),
-		allocate: fromPromise(
-			({
+		validate: createAsyncLogic({
+			run: ({ input }: { input: Input }) =>
+				Promise.resolve(
+					parseSaveRequest(input.request.values, input.request.checkpoint, input.request.scope)
+				)
+		}),
+		allocate: createAsyncLogic({
+			run: ({
 				input
 			}: {
 				input: { values: TransactionSaveValues; scope: TransactionEntryScope }
@@ -200,60 +205,64 @@ export function createTransactionSaveMachine(
 					checkSettlement: 'notStarted',
 					transactionSettlement: 'notStarted'
 				})
-		),
-		observe: fromPromise(() => Promise.resolve(observe())),
+		}),
+		observe: createAsyncLogic({ run: () => Promise.resolve(observe()) }),
 		readLedger: makeReadLedger(db),
-		readCheck: fromPromise(({ input }: { input: { id: string; uncertain: boolean } }) => {
-			return db.all(app.checks.where({ id: input.id }), {
-				tier: input.uncertain ? ReadTier.Remote : ReadTier.LocalFirst
-			})
+		readCheck: createAsyncLogic({
+			run: ({ input }: { input: { id: string; uncertain: boolean } }) => {
+				return db.all(app.checks.where({ id: input.id }), {
+					tier: input.uncertain ? ReadTier.Remote : ReadTier.LocalFirst
+				})
+			}
 		}),
 		checkWrite: createCheckCreationMachine(db),
 		ledgerWrite: createIndependentTransactionPersistenceMachine(db)
 	}
-	const model = setup<
-		Context,
-		FormChildEvent<TransactionEntryObservation>,
-		typeof actors,
-		{},
-		{ forward: undefined },
-		{
-			interrupted: undefined
-			closing: undefined
-			invalidated: undefined
-			cancelling: undefined
-			transferChangeRequiresUnlink: undefined
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['validate']>
+				| import('xstate').OutputFrom<(typeof actors)['allocate']>
+				| import('xstate').OutputFrom<(typeof actors)['observe']>
+				| import('xstate').OutputFrom<(typeof actors)['readLedger']>
+				| import('xstate').OutputFrom<(typeof actors)['readCheck']>
+				| import('xstate').OutputFrom<(typeof actors)['checkWrite']>
+				| import('xstate').OutputFrom<(typeof actors)['ledgerWrite']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Result>(),
+			children: {
+				validate: types<import('xstate').ActorRefFrom<(typeof actors)['validate']>>(),
+				allocate: types<import('xstate').ActorRefFrom<(typeof actors)['allocate']>>(),
+				observe: types<import('xstate').ActorRefFrom<(typeof actors)['observe']>>(),
+				readLedger: types<import('xstate').ActorRefFrom<(typeof actors)['readLedger']>>(),
+				readCheck: types<import('xstate').ActorRefFrom<(typeof actors)['readCheck']>>(),
+				checkWrite: types<import('xstate').ActorRefFrom<(typeof actors)['checkWrite']>>(),
+				ledgerWrite: types<import('xstate').ActorRefFrom<(typeof actors)['ledgerWrite']>>()
+			}
 		},
-		never,
-		string,
-		Input,
-		Result
-	>({
 		actors,
-		actions: {
-			forward: enqueueActions(({ self, event, enqueue }) => {
-				if (event.type === 'OBSERVE') return
-				for (const id of ['checkWrite', 'ledgerWrite']) {
-					const child = self.getSnapshot().children[id]
-					if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, event)
-				}
-			})
-		},
+		actions: {},
 		guards: {
-			interrupted: stateIn({ running: { control: 'interrupted' } }),
-			closing: stateIn({ running: { control: { interrupted: 'closed' } } }),
-			invalidated: stateIn({ running: { control: { interrupted: 'scopeChanged' } } }),
-			cancelling: stateIn({ running: { control: { interrupted: 'cancelled' } } }),
-			transferChangeRequiresUnlink: ({ context }) =>
+			interrupted: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'interrupted' } }, args.value),
+			transferChangeRequiresUnlink: ({ context }: { context: Context }) =>
 				context.facts !== undefined &&
 				context.values !== undefined &&
 				transferEditRequiresUnlink(context.facts.transaction, context.values)
 		}
 	})
-	const patch = (field: 'checkSettlement' | 'transactionSettlement', value: FormSettlement) =>
-		model.assign({
-			checkpoint: ({ context }) => ({ ...required(context.checkpoint), [field]: value })
-		})
 	const terminal = (
 		outcome:
 			| 'succeeded'
@@ -267,54 +276,60 @@ export function createTransactionSaveMachine(
 	) =>
 		model.createStateConfig({
 			type: 'final',
-			entry: assign({
-				result: ({ context }): Result => {
-					const checkpoint = context.checkpoint
-					const recovery = checkpoint ? { checkpoint } : {}
-					const settlement = checkpoint?.transactionSettlement ?? 'notStarted'
-					let result: FormOperationResult<void, TransactionEntryReason>
-					if (outcome === 'transferChangeRequiresUnlink')
-						result = {
-							outcome: 'unavailable',
-							reason: 'linkedTransferRequiresUnlink',
-							settlement: 'notStarted',
-							...recovery
-						}
-					else if (outcome === 'succeeded')
-						result = {
-							outcome,
-							value: undefined,
-							settlement: settlement === 'confirmed' ? 'confirmed' : 'locallyPersisted',
-							...recovery
-						}
-					else if (outcome === 'partial')
-						result = {
-							outcome,
-							value: undefined,
-							reason: 'checkRetained',
-							settlement:
-								checkpoint?.checkSettlement === 'locallyPersisted' ? 'locallyPersisted' : 'unknown',
-							...recovery
-						}
-					else if (outcome === 'unresolved')
-						result = {
-							outcome: 'partial',
-							value: undefined,
-							reason: 'saveUnresolved',
-							settlement: 'unknown',
-							...recovery
-						}
-					else if (outcome === 'failed')
-						result = { outcome, code: 'operationFailed', settlement, ...recovery }
-					else result = { outcome, settlement, ...recovery }
-					return checkpoint ? { ...result, transactionId: checkpoint.transactionId } : result
-				},
-				input: undefined,
-				values: undefined,
-				facts: undefined,
-				check: undefined,
-				observed: undefined
-			})
+			entry: (args: { context: Context }) => {
+				return {
+					context: {
+						result: (({ context }): Result => {
+							const checkpoint = context.checkpoint
+							const recovery = checkpoint ? { checkpoint } : {}
+							const settlement = checkpoint?.transactionSettlement ?? 'notStarted'
+							let result: FormOperationResult<void, TransactionEntryReason>
+							if (outcome === 'transferChangeRequiresUnlink')
+								result = {
+									outcome: 'unavailable',
+									reason: 'linkedTransferRequiresUnlink',
+									settlement: 'notStarted',
+									...recovery
+								}
+							else if (outcome === 'succeeded')
+								result = {
+									outcome,
+									value: undefined,
+									settlement: settlement === 'confirmed' ? 'confirmed' : 'locallyPersisted',
+									...recovery
+								}
+							else if (outcome === 'partial')
+								result = {
+									outcome,
+									value: undefined,
+									reason: 'checkRetained',
+									settlement:
+										checkpoint?.checkSettlement === 'locallyPersisted'
+											? 'locallyPersisted'
+											: 'unknown',
+									...recovery
+								}
+							else if (outcome === 'unresolved')
+								result = {
+									outcome: 'partial',
+									value: undefined,
+									reason: 'saveUnresolved',
+									settlement: 'unknown',
+									...recovery
+								}
+							else if (outcome === 'failed')
+								result = { outcome, code: 'operationFailed', settlement, ...recovery }
+							else result = { outcome, settlement, ...recovery }
+							return checkpoint ? { ...result, transactionId: checkpoint.transactionId } : result
+						})(args),
+						input: undefined,
+						values: undefined,
+						facts: undefined,
+						check: undefined,
+						observed: undefined
+					}
+				}
+			}
 		})
 	return model.createMachine({
 		id: 'transaction-save',
@@ -337,9 +352,27 @@ export function createTransactionSaveMachine(
 					control: {
 						initial: 'active',
 						on: {
-							CANCEL: { target: '.interrupted.cancelled', actions: 'forward' },
-							INVALIDATE: { target: '.interrupted.scopeChanged', actions: 'forward' },
-							SHUTDOWN: { target: '.interrupted.closed', actions: 'forward' }
+							CANCEL: (args, enq) => {
+								const { event } = args
+								for (const child of [args.children.checkWrite, args.children.ledgerWrite]) {
+									if (child?.getSnapshot().status === 'active') enq.sendTo(child, event)
+								}
+								return { target: '.interrupted.cancelled' }
+							},
+							INVALIDATE: (args, enq) => {
+								const { event } = args
+								for (const child of [args.children.checkWrite, args.children.ledgerWrite]) {
+									if (child?.getSnapshot().status === 'active') enq.sendTo(child, event)
+								}
+								return { target: '.interrupted.scopeChanged' }
+							},
+							SHUTDOWN: (args, enq) => {
+								const { event } = args
+								for (const child of [args.children.checkWrite, args.children.ledgerWrite]) {
+									if (child?.getSnapshot().status === 'active') enq.sendTo(child, event)
+								}
+								return { target: '.interrupted.closed' }
+							}
 						},
 						states: {
 							active: {},
@@ -360,22 +393,26 @@ export function createTransactionSaveMachine(
 								invoke: {
 									src: 'validate',
 									input: ({ context }) => required(context.input),
-									onDone: {
-										target: 'checkingCheckpoint',
-										actions: assign({
-											values: ({ event }) => event.output.values,
-											checkpoint: ({ event }) => event.output.checkpoint
-										})
+									onDone: (args) => {
+										const { event } = args
+										return {
+											target: 'checkingCheckpoint',
+											context: { values: event.output.values, checkpoint: event.output.checkpoint }
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							checkingCheckpoint: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => context.checkpoint !== undefined, target: 'observing' },
-									{ target: 'allocating' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (args.context.checkpoint !== undefined) {
+										return { target: 'observing' }
+									}
+									return { target: 'allocating' }
+								}
 							},
 							allocating: {
 								invoke: {
@@ -384,90 +421,104 @@ export function createTransactionSaveMachine(
 										values: required(context.values),
 										scope: required(context.input).request.scope
 									}),
-									onDone: [
-										{
-											guard: 'interrupted',
-											target: 'finishing',
-											actions: assign({ checkpoint: ({ event }) => event.output })
-										},
-										{
-											target: 'observing',
-											actions: assign({ checkpoint: ({ event }) => event.output })
+									onDone: (args) => {
+										const { event } = args
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'finishing', context: { checkpoint: event.output } }
 										}
-									],
-									onError: 'finishing'
+										return { target: 'observing', context: { checkpoint: event.output } }
+									},
+									onError: { target: 'finishing' }
 								}
 							},
 							observing: {
-								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
+								on: {
+									CANCEL: { target: 'finishing' },
+									INVALIDATE: { target: 'finishing' },
+									SHUTDOWN: { target: 'finishing' }
+								},
 								invoke: {
 									src: 'observe',
-									onDone: {
-										target: 'assessing',
-										actions: assign({ facts: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'assessing', context: { facts: args.event.output } }
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							assessing: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{
-										guard: ({ context }) =>
-											['locallyPersisted', 'confirmed'].includes(
-												context.checkpoint?.transactionSettlement ?? ''
-											),
-										target: 'finishing'
-									},
-									{ guard: ({ context }) => !available(context), target: 'finishing' },
-									{
-										guard: 'transferChangeRequiresUnlink',
-										target: '#transaction-save.transferChangeRequiresUnlink'
-									},
-									{
-										guard: ({ context }) => context.checkpoint?.transactionSettlement === 'unknown',
-										target: 'reconcilingLedger'
-									},
-									{ target: 'assessingCheck' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (
+										['locallyPersisted', 'confirmed'].includes(
+											context.checkpoint?.transactionSettlement ?? ''
+										)
+									) {
+										return { target: 'finishing' }
+									}
+									if (!available(context)) {
+										return { target: 'finishing' }
+									}
+									if (args.guards.transferChangeRequiresUnlink(args)) {
+										return { target: '#transaction-save.transferChangeRequiresUnlink' }
+									}
+									if (context.checkpoint?.transactionSettlement === 'unknown') {
+										return { target: 'reconcilingLedger' }
+									}
+									return { target: 'assessingCheck' }
+								}
 							},
 							reconcilingLedger: {
-								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
+								on: {
+									CANCEL: { target: 'finishing' },
+									INVALIDATE: { target: 'finishing' },
+									SHUTDOWN: { target: 'finishing' }
+								},
 								invoke: {
 									src: 'readLedger',
 									input: ({ context }) => required(context.checkpoint).transactionId,
-									onDone: {
-										target: 'checkingLedger',
-										actions: assign({ observed: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'checkingLedger', context: { observed: args.event.output } }
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							checkingLedger: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{
-										guard: ({ context }) => matchingLedger(context),
-										target: 'finishing',
-										actions: patch('transactionSettlement', 'confirmed')
-									},
-									{ target: 'finishing' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (args.guards.interrupted(args)) {
+										return { target: 'finishing' }
+									}
+									if (matchingLedger(context)) {
+										return {
+											target: 'finishing',
+											context: ((args) => ({
+												checkpoint: (({ context }) => ({
+													...required(context.checkpoint),
+													['transactionSettlement']: 'confirmed'
+												}))(args)
+											}))(args)
+										}
+									}
+									return { target: 'finishing' }
+								}
 							},
 							assessingCheck: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{
-										guard: ({ context }) =>
-											required(context.values).paymentMethod !== PAYMENT_METHOD.CHECK,
-										target: 'reobserving'
-									},
-									{
-										guard: ({ context }) => required(context.checkpoint).checkId === null,
-										target: 'allocatingCheck'
-									},
-									{
-										guard: ({ context }) => {
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (required(context.values).paymentMethod !== PAYMENT_METHOD.CHECK) {
+										return { target: 'reobserving' }
+									}
+									if (required(context.checkpoint).checkId === null) {
+										return { target: 'allocatingCheck' }
+									}
+									if (
+										(({ context }) => {
 											const v = required(context.values)
 											return (
 												v.paymentMethod === PAYMENT_METHOD.CHECK &&
@@ -476,11 +527,12 @@ export function createTransactionSaveMachine(
 													required(context.checkpoint).checkSettlement
 												)
 											)
-										},
-										target: 'creatingCheck'
-									},
-									{ target: 'readingCheck' }
-								]
+										})(args)
+									) {
+										return { target: 'creatingCheck' }
+									}
+									return { target: 'readingCheck' }
+								}
 							},
 							allocatingCheck: {
 								invoke: {
@@ -489,197 +541,289 @@ export function createTransactionSaveMachine(
 										values: required(context.values),
 										scope: required(context.input).request.scope
 									}),
-									onDone: {
-										target: 'assessingCheck',
-										actions: assign({
-											checkpoint: ({ context, event }) => ({
-												...required(context.checkpoint),
-												checkId: event.output.checkId,
-												checkIntent: event.output.checkIntent
-											})
-										})
+									onDone: (args) => {
+										const { event } = args
+										return {
+											target: 'assessingCheck',
+											context: {
+												checkpoint: {
+													...required(args.context.checkpoint),
+													checkId: event.output.checkId,
+													checkIntent: event.output.checkIntent
+												}
+											}
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							readingCheck: {
-								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
+								on: {
+									CANCEL: { target: 'finishing' },
+									INVALIDATE: { target: 'finishing' },
+									SHUTDOWN: { target: 'finishing' }
+								},
 								invoke: {
 									src: 'readCheck',
 									input: ({ context }) => ({
 										id: required(required(context.checkpoint).checkId ?? undefined),
 										uncertain: context.checkpoint?.checkSettlement === 'unknown'
 									}),
-									onDone: {
-										target: 'checkingCheck',
-										actions: assign({ check: ({ event }) => event.output[0] })
+									onDone: (args) => {
+										return { target: 'checkingCheck', context: { check: args.event.output[0] } }
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							checkingCheck: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => !checkCompatible(context), target: 'finishing' },
-									{
-										guard: ({ context }) =>
-											required(context.checkpoint).checkSettlement === 'unknown' &&
-											!checkMatches(context),
-										target: 'finishing'
-									},
-									{
-										target: 'assessingMetadata',
-										actions: patch('checkSettlement', 'locallyPersisted')
+								always: (args) => {
+									const { context } = args
+									if (args.guards.interrupted(args)) {
+										return { target: 'finishing' }
 									}
-								]
+									if (!checkCompatible(context)) {
+										return { target: 'finishing' }
+									}
+									if (
+										required(context.checkpoint).checkSettlement === 'unknown' &&
+										!checkMatches(context)
+									) {
+										return { target: 'finishing' }
+									}
+									return {
+										target: 'assessingMetadata',
+										context: ((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												['checkSettlement']: 'locallyPersisted'
+											}))(args)
+										}))(args)
+									}
+								}
 							},
 							assessingMetadata: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{
-										guard: ({ context }) => {
+								always: (args) => {
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (
+										(({ context }) => {
 											const desired = requestedCheck(context)
 											return desired !== undefined && !checkMatches(context, desired)
-										},
-										target: 'updatingCheck'
-									},
-									{ target: 'reobserving' }
-								]
+										})(args)
+									) {
+										return { target: 'updatingCheck' }
+									}
+									return { target: 'reobserving' }
+								}
 							},
 							creatingCheck: {
-								entry: [
-									assign({
-										checkpoint: ({ context }) => ({
-											...required(context.checkpoint),
-											checkValues: requestedCheck(context)
-										})
-									}),
-									patch('checkSettlement', 'unknown')
-								],
+								entry: (args) => {
+									let context = args.context
+									let patch = {}
+									patch = {
+										...patch,
+										...((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												checkValues: requestedCheck(context)
+											}))(args)
+										}))(args)
+									}
+									context = { ...args.context, ...patch }
+									patch = {
+										...patch,
+										...((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												['checkSettlement']: 'unknown'
+											}))(args)
+										}))({ ...args, context })
+									}
+									context = { ...args.context, ...patch }
+									return { context: patch }
+								},
 								invoke: {
 									id: 'checkWrite',
 									src: 'checkWrite',
 									input: ({ context }) => ({
 										id: required(required(context.checkpoint).checkId ?? undefined),
-										values: required(required(context.checkpoint).checkValues),
+										values: required(requestedCheck(context)),
 										mode: 'create'
 									}),
-									onDone: {
-										target: 'afterCheckWrite',
-										actions: assign({
-											checkpoint: ({ context, event }) => ({
-												...required(context.checkpoint),
-												checkSettlement: event.output.settlement
-											})
-										})
+									onDone: (args) => {
+										return {
+											target: 'afterCheckWrite',
+											context: {
+												checkpoint: {
+													...required(args.context.checkpoint),
+													checkSettlement: args.event.output.settlement
+												}
+											}
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							updatingCheck: {
-								entry: [
-									assign({
-										checkpoint: ({ context }) => ({
-											...required(context.checkpoint),
-											checkValues: requestedCheck(context)
-										})
-									}),
-									patch('checkSettlement', 'unknown')
-								],
+								entry: (args) => {
+									let context = args.context
+									let patch = {}
+									patch = {
+										...patch,
+										...((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												checkValues: requestedCheck(context)
+											}))(args)
+										}))(args)
+									}
+									context = { ...args.context, ...patch }
+									patch = {
+										...patch,
+										...((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												['checkSettlement']: 'unknown'
+											}))(args)
+										}))({ ...args, context })
+									}
+									context = { ...args.context, ...patch }
+									return { context: patch }
+								},
 								invoke: {
 									id: 'checkWrite',
 									src: 'checkWrite',
 									input: ({ context }) => ({
 										id: required(required(context.checkpoint).checkId ?? undefined),
-										values: required(required(context.checkpoint).checkValues),
+										values: required(requestedCheck(context)),
 										mode: 'edit'
 									}),
-									onDone: {
-										target: 'afterCheckWrite',
-										actions: assign({
-											checkpoint: ({ context, event }) => ({
-												...required(context.checkpoint),
-												checkSettlement: event.output.settlement
-											})
-										})
+									onDone: (args) => {
+										return {
+											target: 'afterCheckWrite',
+											context: {
+												checkpoint: {
+													...required(args.context.checkpoint),
+													checkSettlement: args.event.output.settlement
+												}
+											}
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							afterCheckWrite: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{
-										guard: ({ context }) =>
-											required(context.checkpoint).checkSettlement === 'locallyPersisted',
-										target: 'verifyingCheck'
-									},
-									{ target: 'finishing' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (required(args.context.checkpoint).checkSettlement === 'locallyPersisted') {
+										return { target: 'verifyingCheck' }
+									}
+									return { target: 'finishing' }
+								}
 							},
 							verifyingCheck: {
-								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
+								on: {
+									CANCEL: { target: 'finishing' },
+									INVALIDATE: { target: 'finishing' },
+									SHUTDOWN: { target: 'finishing' }
+								},
 								invoke: {
 									src: 'readCheck',
 									input: ({ context }) => ({
 										id: required(required(context.checkpoint).checkId ?? undefined),
 										uncertain: false
 									}),
-									onDone: {
-										target: 'checkingSavedCheck',
-										actions: assign({ check: ({ event }) => event.output[0] })
+									onDone: (args) => {
+										return {
+											target: 'checkingSavedCheck',
+											context: { check: args.event.output[0] }
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							checkingSavedCheck: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => checkMatches(context), target: 'reobserving' },
-									{ target: 'finishing' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (checkMatches(context)) {
+										return { target: 'reobserving' }
+									}
+									return { target: 'finishing' }
+								}
 							},
 							reobserving: {
-								on: { CANCEL: 'finishing', INVALIDATE: 'finishing', SHUTDOWN: 'finishing' },
+								on: {
+									CANCEL: { target: 'finishing' },
+									INVALIDATE: { target: 'finishing' },
+									SHUTDOWN: { target: 'finishing' }
+								},
 								invoke: {
 									src: 'observe',
-									onDone: {
-										target: 'reassessing',
-										actions: assign({ facts: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'reassessing', context: { facts: args.event.output } }
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							reassessing: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ context }) => !available(context), target: 'finishing' },
-									{
-										guard: 'transferChangeRequiresUnlink',
-										target: '#transaction-save.transferChangeRequiresUnlink'
-									},
-									{ target: 'savingLedger' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (!available(context)) {
+										return { target: 'finishing' }
+									}
+									if (args.guards.transferChangeRequiresUnlink(args)) {
+										return { target: '#transaction-save.transferChangeRequiresUnlink' }
+									}
+									return { target: 'savingLedger' }
+								}
 							},
 							savingLedger: {
-								entry: [
-									assign({
-										checkpoint: ({ context }) => ({
-											...required(context.checkpoint),
-											submitted: ledgerValues(
-												required(context.values),
-												required(context.checkpoint).checkId
-											)
-										})
-									}),
-									patch('transactionSettlement', 'unknown')
-								],
+								entry: (args) => {
+									let context = args.context
+									let patch = {}
+									patch = {
+										...patch,
+										...((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												submitted: ledgerValues(
+													required(context.values),
+													required(context.checkpoint).checkId
+												)
+											}))(args)
+										}))(args)
+									}
+									context = { ...args.context, ...patch }
+									patch = {
+										...patch,
+										...((args) => ({
+											checkpoint: (({ context }) => ({
+												...required(context.checkpoint),
+												['transactionSettlement']: 'unknown'
+											}))(args)
+										}))({ ...args, context })
+									}
+									context = { ...args.context, ...patch }
+									return { context: patch }
+								},
 								invoke: {
 									id: 'ledgerWrite',
 									src: 'ledgerWrite',
 									input: ({ context }) => ({
 										transactionId: required(context.checkpoint).transactionId,
-										values: required(required(context.checkpoint).submitted),
+										values: ledgerValues(
+											required(context.values),
+											required(context.checkpoint).checkId
+										),
 										mode: context.input?.request.scope.transactionId ? 'edit' : 'create',
 										...(context.values?.paymentMethod === PAYMENT_METHOD.CHECK &&
 										context.check &&
@@ -687,50 +831,66 @@ export function createTransactionSaveMachine(
 											? { moveCheckFromAccountId: context.check.accountId }
 											: {})
 									}),
-									onDone: {
-										target: 'finishing',
-										actions: assign({
-											checkpoint: ({ context, event }) => ({
-												...required(context.checkpoint),
-												transactionSettlement: event.output.settlement
-											}),
-											transferChangeBlocked: ({ event }) =>
-												event.output.outcome === 'failed' &&
-												event.output.reason === 'linkedTransferRequiresUnlink'
-										})
+									onDone: (args) => {
+										const { event } = args
+										return {
+											target: 'finishing',
+											context: {
+												checkpoint: {
+													...required(args.context.checkpoint),
+													transactionSettlement: event.output.settlement
+												},
+												transferChangeBlocked:
+													event.output.outcome === 'failed' &&
+													event.output.reason === 'linkedTransferRequiresUnlink'
+											}
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							finishing: {
-								always: [
-									{ guard: 'closing', target: '#transaction-save.closed' },
-									{ guard: 'invalidated', target: '#transaction-save.scopeChanged' },
-									{ guard: 'cancelling', target: '#transaction-save.cancelled' },
-									{
-										guard: ({ context }) => context.transferChangeBlocked,
-										target: '#transaction-save.transferChangeRequiresUnlink'
-									},
-									{
-										guard: ({ context }) =>
-											['locallyPersisted', 'confirmed'].includes(
-												context.checkpoint?.transactionSettlement ?? ''
-											),
-										target: '#transaction-save.succeeded'
-									},
-									{
-										guard: ({ context }) =>
-											context.checkpoint?.transactionSettlement === 'unknown' ||
-											context.checkpoint?.checkSettlement === 'unknown',
-										target: '#transaction-save.unresolved'
-									},
-									{
-										guard: ({ context }) =>
-											context.checkpoint?.checkSettlement === 'locallyPersisted',
-										target: '#transaction-save.partial'
-									},
-									{ target: '#transaction-save.failed' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (
+										matchesState({ running: { control: { interrupted: 'closed' } } }, args.value)
+									) {
+										return { target: '#transaction-save.closed' }
+									}
+									if (
+										matchesState(
+											{ running: { control: { interrupted: 'scopeChanged' } } },
+											args.value
+										)
+									) {
+										return { target: '#transaction-save.scopeChanged' }
+									}
+									if (
+										matchesState({ running: { control: { interrupted: 'cancelled' } } }, args.value)
+									) {
+										return { target: '#transaction-save.cancelled' }
+									}
+									if (context.transferChangeBlocked) {
+										return { target: '#transaction-save.transferChangeRequiresUnlink' }
+									}
+									if (
+										['locallyPersisted', 'confirmed'].includes(
+											context.checkpoint?.transactionSettlement ?? ''
+										)
+									) {
+										return { target: '#transaction-save.succeeded' }
+									}
+									if (
+										context.checkpoint?.transactionSettlement === 'unknown' ||
+										context.checkpoint?.checkSettlement === 'unknown'
+									) {
+										return { target: '#transaction-save.unresolved' }
+									}
+									if (context.checkpoint?.checkSettlement === 'locallyPersisted') {
+										return { target: '#transaction-save.partial' }
+									}
+									return { target: '#transaction-save.failed' }
+								}
 							}
 						}
 					}

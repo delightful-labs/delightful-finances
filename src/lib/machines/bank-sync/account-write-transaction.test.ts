@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { fromPromise, toPromise, waitFor } from 'xstate'
 import { app } from '#lib/schema.js'
 import { accountWriteTransaction } from './account-write-transaction.js'
 import { mappingFixture, link, request, provider } from './mapping.fixture.js'
 import { account, id } from './test-fixtures.js'
 import type { AccountWrite } from './account-write.js'
+import { toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 const map: AccountWrite = { kind: 'map', work: request.work, provider, accountId: account.id }
 
@@ -283,9 +283,11 @@ describe('mapping transaction interruption', () => {
 		f.wait.mockReturnValue(pending.promise)
 		const machine = accountWriteTransaction.provide({
 			actors: {
-				commit: fromPromise(async () => {
-					await gate.promise
-					return f.tx.commit()
+				commit: createAsyncLogic({
+					run: async () => {
+						await gate.promise
+						return f.tx.commit()
+					}
 				})
 			}
 		})

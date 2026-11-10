@@ -1,11 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createActor, setup, toPromise, type AnyActorRef } from 'xstate'
 import { setImmediate } from 'node:timers/promises'
 import { createAccountImportMachine } from './import-account.js'
 import { connection, dependencies, id } from './test-fixtures.js'
 import type { OperationWork } from './types.js'
+import { createActor, setup, toPromise, types } from 'xstate'
+import type { AnyActorRef } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
-const actors: AnyActorRef[] = []
+const actors: { stop: () => void }[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
 	vi.restoreAllMocks()
@@ -24,26 +26,44 @@ function startYield() {
 	)
 	const continued = Promise.withResolvers<void>()
 	const events: string[] = []
-	const logic = createAccountImportMachine(dependencies()).implementations.actors?.yieldControl
-	if (!logic || !('getInitialSnapshot' in logic)) throw new Error('Missing yield actor')
+	const logic = createAccountImportMachine(dependencies()).sources.actors?.yieldControl
+	if (!logic || !('initialTransition' in logic)) throw new Error('Missing yield actor')
 	const implementations = { yieldControl: logic }
-	const machine = setup<{}, { type: 'CONTINUE' } | { type: 'CANCEL' }, typeof implementations>({
+	const events0 = {
+		CONTINUE: types<EventPayload<{ type: 'CONTINUE' } | { type: 'CANCEL' }, 'CONTINUE'>>(),
+		CANCEL: types<EventPayload<{ type: 'CONTINUE' } | { type: 'CANCEL' }, 'CANCEL'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				import('xstate').OutputFrom<(typeof implementations)['yieldControl']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const machine = setup({
+		schemas: {
+			context: types<{}>(),
+			events: events0,
+			children: {
+				yieldControl:
+					types<import('xstate').ActorRefFrom<(typeof implementations)['yieldControl']>>()
+			}
+		},
 		actors: implementations
 	}).createMachine({
 		initial: 'yielding',
 		context: {},
 		states: {
 			yielding: {
-				invoke: { src: 'yieldControl' },
+				invoke: { id: 'yieldControl', src: 'yieldControl', input: undefined },
 				on: {
-					CONTINUE: {
-						target: 'closed',
-						actions: () => {
+					CONTINUE: (args, enq) => {
+						enq(() => {
 							events.push('CONTINUE')
 							continued.resolve()
-						}
+						})
+						return { target: 'closed' }
 					},
-					CANCEL: 'closed'
+					CANCEL: { target: 'closed' }
 				}
 			},
 			closed: { type: 'final' }
@@ -90,8 +110,8 @@ it('the real snapshot leaf acquires no tracing resource even when its database c
 			}
 		}
 	}
-	const logic = createAccountImportMachine(dependencies()).implementations.actors?.existing
-	if (!logic || !('getInitialSnapshot' in logic)) throw new Error('Missing snapshot actor')
+	const logic = createAccountImportMachine(dependencies()).sources.actors?.existing
+	if (!logic || !('initialTransition' in logic)) throw new Error('Missing snapshot actor')
 	// The fixture has no DB implementation, so this exercises the production leaf's error path.
 	const actor = createActor(logic, { input: { organizationId: id(2), accountId: id(4), work } })
 	actors.push(actor)

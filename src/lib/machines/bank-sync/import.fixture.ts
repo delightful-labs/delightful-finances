@@ -1,12 +1,5 @@
 import { publishBankSource } from './reports.fixture.js'
 import { afterEach, vi } from 'vitest'
-import {
-	createActor,
-	fromCallback,
-	fromPromise,
-	type InputFrom,
-	type CallbackActorLogic
-} from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app, type TransactionRow } from '#lib/schema.js'
 import { providerAccountIdentity } from '#lib/integrations/simplefin.js'
@@ -26,16 +19,13 @@ import type {
 	ProviderResponse
 } from './types.js'
 import type { bankLock } from './lock.js'
+import { createActor, createCallbackLogic, createAsyncLogic } from 'xstate'
+import type { InputFrom, CallbackActorLogic } from 'xstate'
 
 type TransactionMachine = ReturnType<typeof createTransactionImportMachine>
 type YieldLogic = CallbackActorLogic<{ type: 'CONTINUE' }>
-type PersistInput = InputFrom<
-	NonNullable<NonNullable<TransactionMachine['implementations']['actors']>['persist']>
->
-type OperationMachine = ReturnType<typeof createBankOperationMachine>
-type OutcomeInput = InputFrom<
-	NonNullable<NonNullable<OperationMachine['implementations']['actors']>['persistOutcome']>
->
+type PersistInput = import('./import-transaction.js').TransactionPersistInput
+type OutcomeInput = import('./operation.js').OperationOutcomeInput
 export const accounts = [account, { ...account, id: id(14), name: 'Savings' }]
 export const categories: schema.RowOf<typeof app.categories>[] = [
 	{
@@ -116,9 +106,15 @@ export function importFixture(
 	const membership = vi.fn(async () => (source.membership ? [source.membership] : []))
 	const authorize = createAuthorizationMachine(deps).provide({
 		actors: {
-			membership: fromPromise(membership),
-			connections: fromPromise(async () => [connection]),
-			connection: fromPromise(async () => [connection])
+			membership: createAsyncLogic({
+				run: (_args: { input: import('./types.js').AuthorizationRequest }) => membership()
+			}),
+			connections: createAsyncLogic({
+				run: async (_args: { input: import('./types.js').AuthorizationRequest }) => [connection]
+			}),
+			connection: createAsyncLogic({
+				run: async (_args: { input: import('./types.js').AuthorizationRequest }) => [connection]
+			})
 		}
 	})
 	const stored = new Map<string, TransactionRow>()
@@ -134,6 +130,8 @@ export function importFixture(
 				memo: null,
 				paymentMethod: null,
 				batchId: null,
+				checkId: null,
+				internalTransferId: null,
 				checkDetailsId: null
 			})
 		}
@@ -142,8 +140,13 @@ export function importFixture(
 		delays: { readDeadline: options.readDeadline ?? 20000 },
 		actors: {
 			authorize,
-			existing: fromPromise(({ input }) => lookup(input)),
-			persist: fromPromise(({ input, signal }) => persist(input, signal))
+			existing: createAsyncLogic({
+				run: ({ input }: { input: Parameters<typeof lookup>[0] }) => lookup(input)
+			}),
+			persist: createAsyncLogic({
+				run: ({ input, signal }: { input: Parameters<typeof persist>[0]; signal: AbortSignal }) =>
+					persist(input, signal)
+			})
 		}
 	})
 	const loadAccount = vi.fn(async ({ accountId }: { accountId: string; organizationId: string }) =>
@@ -155,25 +158,40 @@ export function importFixture(
 	const existingIds = vi.fn(async ({ accountId }: { accountId: string }) =>
 		[...stored.values()].filter((row) => row.accountId === accountId).map(({ id }) => ({ id }))
 	)
-	const accountImport = createAccountImportMachine(deps).provide({
+	const accountImportBase = createAccountImportMachine(deps).provide({
 		delays: {
 			existingReadDeadline: options.existingReadDeadline ?? 5000
 		},
 		actors: {
-			...(options.yieldControl ? { yieldControl: options.yieldControl } : {}),
-			existing: fromPromise(({ input }) => existingIds(input)),
+			existing: createAsyncLogic({
+				run: ({ input }: { input: { accountId: string; organizationId: string } }) =>
+					existingIds(input)
+			}),
 			transaction,
-			account: fromPromise(({ input }) => loadAccount(input)),
-			saveBalanceSnapshot: fromPromise(({ input }) => saveBalanceSnapshot(input))
+			account: createAsyncLogic({
+				run: ({ input }: { input: Parameters<typeof loadAccount>[0] }) => loadAccount(input)
+			}),
+			saveBalanceSnapshot: createAsyncLogic({
+				run: ({ input }: { input: Parameters<typeof saveBalanceSnapshot>[0] }) =>
+					saveBalanceSnapshot(input)
+			})
 		}
 	})
+	const accountImport = options.yieldControl
+		? accountImportBase.provide({ actors: { yieldControl: options.yieldControl } })
+		: accountImportBase
 	const mappings = vi.fn(async () => links)
 	const loadCategories = vi.fn(async () => categories)
 	const imports = createImportMachine(deps).provide({
 		actors: {
 			account: accountImport,
-			mappings: fromPromise(mappings),
-			categories: fromPromise(loadCategories)
+			mappings: createAsyncLogic({
+				run: (_args: { input: InputFrom<ReturnType<typeof createImportMachine>> }) => mappings()
+			}),
+			categories: createAsyncLogic({
+				run: (_args: { input: InputFrom<ReturnType<typeof createImportMachine>> }) =>
+					loadCategories()
+			})
 		}
 	})
 	const unlock = vi.fn(async () => 'synthetic-access-url')
@@ -188,20 +206,34 @@ export function importFixture(
 		actors: {
 			authorize,
 			importTransactions: imports,
-			unlock: fromPromise(unlock),
-			fetchProvider: fromPromise(fetch),
-			persistOutcome: fromPromise(({ input, signal }) => outcome(input, signal)),
-			disconnect: fromPromise(({ input, signal }) => disconnect(input, signal)),
-			lock: fromCallback<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
+			unlock: createAsyncLogic<string, OperationWork>({ run: unlock }),
+			fetchProvider: createAsyncLogic<ProviderResponse, { work: OperationWork; accessUrl: string }>(
+				{ run: fetch }
+			),
+			persistOutcome: createAsyncLogic({
+				run: ({ input, signal }: { input: Parameters<typeof outcome>[0]; signal: AbortSignal }) =>
+					outcome(input, signal)
+			}),
+			disconnect: createAsyncLogic({
+				run: ({
+					input,
+					signal
+				}: {
+					input: Parameters<typeof disconnect>[0]
+					signal: AbortSignal
+				}) => disconnect(input, signal)
+			}),
+			lock: createCallbackLogic<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
 				acquire()
 				sendBack({ type: 'LOCK_ACQUIRED' })
 				return release
 			})
 		}
 	})
-	const bank = createBankSyncMachine({ db: deps.db, read, passkeyName: deps.passkeyName }).provide({
-		actors: { operation }
-	})
+	const bank = createBankSyncMachine(
+		{ db: deps.db, read, passkeyName: deps.passkeyName },
+		operation
+	)
 	function start(command: BankCommand = { type: 'SYNC' }, machine = bank) {
 		const actor = createActor(machine).start()
 		cleanups.push(() => actor.stop())

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createActor, fromTransition, waitFor } from 'xstate'
 import type { FormSubmissionProgressEvent } from '#lib/contracts/form-contract.js'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
 import { fixture, ready, schema, success } from './scoped-form.fixture.js'
+import { createActor, waitFor, createStepLogic } from 'xstate'
+import { collectEvents } from '../report-collector.fixture.js'
 
 const cleanup: (() => void)[] = []
 afterEach(() => {
@@ -26,15 +27,7 @@ function submission() {
 			await validation.promise
 		})
 	})
-	const recipient = createActor(
-		fromTransition(
-			(events: FormSubmissionProgressEvent[], event: FormSubmissionProgressEvent) => [
-				...events,
-				event
-			],
-			[]
-		)
-	).start()
+	const recipient = collectEvents<FormSubmissionProgressEvent>()
 	const actor = createActor(createScopedFormSubmissionMachine(f.config), {
 		input: {
 			request: { id: 9, scope: ready.scope, scopeRevision: 4, values: { name: ' Private draft ' } },

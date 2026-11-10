@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
-import { createActor, toPromise } from 'xstate'
 import { prepareArchiveOpen } from 'delightful-local-first/backup/envelope'
 import { createArchiveEnvelopeMachine } from 'delightful-local-first/backup/envelope/workflow'
 import { parseArchivePayload } from 'delightful-local-first/backup/archive'
@@ -10,6 +9,7 @@ import {
 	prepareFinanceRestorePlan
 } from '../../src/lib/machines/workspaces/workspace-restore-plan.js'
 import { installWorkspaceSettingsTest, start as startWorkspace } from '../helpers/workspace.js'
+import { createActor, toPromise } from 'xstate'
 
 function business(row: Record<string, unknown>, translate: (value: unknown) => unknown) {
 	return Object.fromEntries(

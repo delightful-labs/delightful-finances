@@ -1,10 +1,12 @@
-import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
 import { app } from '#lib/schema.js'
 import { appCheckSchema } from '#lib/validation/checks.js'
 import type { FormInterruption, FormSettlement } from '#lib/contracts/form-contract.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type CheckCreationDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 const requestSchema = z.strictObject({
@@ -24,14 +26,14 @@ function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error('Missing Check creation resource')
 	return value
 }
-const validate = fromPromise(({ input }: { input: CheckCreationInput }) =>
-	Promise.resolve(requestSchema.safeParse(input))
-)
-const open = fromPromise(({ input }: { input: CheckCreationDb }) =>
-	Promise.resolve(input.beginTransaction())
-)
-const stage = fromPromise(
-	({ input }: { input: { tx: Transaction; request: CheckCreationInput } }) => {
+const validate = createAsyncLogic({
+	run: ({ input }: { input: CheckCreationInput }) => Promise.resolve(requestSchema.safeParse(input))
+})
+const open = createAsyncLogic({
+	run: ({ input }: { input: CheckCreationDb }) => Promise.resolve(input.beginTransaction())
+})
+const stage = createAsyncLogic({
+	run: ({ input }: { input: { tx: Transaction; request: CheckCreationInput } }) => {
 		input.tx.insert(
 			app.checks,
 			{
@@ -44,9 +46,9 @@ const stage = fromPromise(
 		)
 		return Promise.resolve()
 	}
-)
-const update = fromPromise(
-	({ input }: { input: { tx: Transaction; request: CheckCreationInput } }) => {
+})
+const update = createAsyncLogic({
+	run: ({ input }: { input: { tx: Transaction; request: CheckCreationInput } }) => {
 		input.tx.update(app.checks, input.request.id, {
 			...input.request.values,
 			payerName: input.request.values.payerName ?? null,
@@ -55,12 +57,14 @@ const update = fromPromise(
 		})
 		return Promise.resolve()
 	}
-)
-const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
-const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
-	input.wait({ tier: 'local' })
-)
-const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
+})
+const commit = createAsyncLogic({
+	run: ({ input }: { input: Transaction }) => Promise.resolve(input.commit())
+})
+const settle = createAsyncLogic({
+	run: ({ input }: { input: OutputFrom<typeof commit> }) => input.wait({ tier: 'local' })
+})
+const rollback = createAsyncLogic({ run: ({ input }: { input: Transaction }) => input.rollback() })
 type Context = {
 	request: CheckCreationInput
 	tx: Transaction | undefined
@@ -72,38 +76,62 @@ type Context = {
 /** One attempt with a caller-owned stable ID; the staged save owner reconciles unknown results. */
 export function createCheckCreationMachine(db: CheckCreationDb) {
 	const actors = { validate, open, stage, update, commit, settle, rollback }
-	const model = setup<
-		Context,
-		CheckCreationEvent,
-		typeof actors,
-		{},
-		{},
-		{ interrupted: undefined; closing: undefined; invalidated: undefined; cancelling: undefined },
-		never,
-		string,
-		CheckCreationInput,
-		CheckCreationResult
-	>({
+	const events0 = {
+		CANCEL: types<EventPayload<CheckCreationEvent, 'CANCEL'>>(),
+		INVALIDATE: types<EventPayload<CheckCreationEvent, 'INVALIDATE'>>(),
+		SHUTDOWN: types<EventPayload<CheckCreationEvent, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['validate']>
+				| import('xstate').OutputFrom<(typeof actors)['open']>
+				| import('xstate').OutputFrom<(typeof actors)['stage']>
+				| import('xstate').OutputFrom<(typeof actors)['update']>
+				| import('xstate').OutputFrom<(typeof actors)['commit']>
+				| import('xstate').OutputFrom<(typeof actors)['settle']>
+				| import('xstate').OutputFrom<(typeof actors)['rollback']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<CheckCreationInput>(),
+			output: types<CheckCreationResult>(),
+			children: {
+				validate: types<import('xstate').ActorRefFrom<(typeof actors)['validate']>>(),
+				open: types<import('xstate').ActorRefFrom<(typeof actors)['open']>>(),
+				stage: types<import('xstate').ActorRefFrom<(typeof actors)['stage']>>(),
+				update: types<import('xstate').ActorRefFrom<(typeof actors)['update']>>(),
+				commit: types<import('xstate').ActorRefFrom<(typeof actors)['commit']>>(),
+				settle: types<import('xstate').ActorRefFrom<(typeof actors)['settle']>>(),
+				rollback: types<import('xstate').ActorRefFrom<(typeof actors)['rollback']>>()
+			}
+		},
 		actors,
 		guards: {
-			interrupted: stateIn({ running: { control: 'interrupted' } }),
-			closing: stateIn({ running: { control: { interrupted: 'closed' } } }),
-			invalidated: stateIn({ running: { control: { interrupted: 'scopeChanged' } } }),
-			cancelling: stateIn({ running: { control: { interrupted: 'cancelled' } } })
+			interrupted: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'interrupted' } }, args.value)
 		}
 	})
 	const terminal = (outcome: CheckCreationResult['outcome']) =>
 		model.createStateConfig({
 			type: 'final',
-			entry: assign({
-				result: ({ context }): CheckCreationResult => ({
-					outcome,
-					checkId: context.request.id,
-					settlement: context.settlement
-				}),
-				tx: undefined,
-				handle: undefined
-			})
+			entry: (args: { context: Context }) => {
+				const { context } = args
+				return {
+					context: {
+						result: {
+							outcome,
+							checkId: context.request.id,
+							settlement: context.settlement
+						},
+						tx: undefined,
+						handle: undefined
+					}
+				}
+			}
 		})
 	return model.createMachine({
 		id: 'check-create-persistence',
@@ -123,9 +151,9 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 					control: {
 						initial: 'active',
 						on: {
-							CANCEL: '.interrupted.cancelled',
-							INVALIDATE: '.interrupted.scopeChanged',
-							SHUTDOWN: '.interrupted.closed'
+							CANCEL: { target: '.interrupted.cancelled' },
+							INVALIDATE: { target: '.interrupted.scopeChanged' },
+							SHUTDOWN: { target: '.interrupted.closed' }
 						},
 						states: {
 							active: {},
@@ -146,139 +174,154 @@ export function createCheckCreationMachine(db: CheckCreationDb) {
 								invoke: {
 									src: 'validate',
 									input: ({ context }) => context.request,
-									onDone: [
-										{ guard: 'interrupted', target: 'finishing' },
-										{
-											guard: ({ event }) => event.output.success,
-											target: 'opening',
-											actions: assign({
-												request: ({ context, event }) =>
-													event.output.success ? event.output.data : context.request
-											})
-										},
-										{ target: 'finishing' }
-									],
-									onError: 'finishing'
+									onDone: (args) => {
+										const { event } = args
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'finishing' }
+										}
+										if (event.output.success) {
+											return {
+												target: 'opening',
+												context: {
+													request: event.output.success ? event.output.data : args.context.request
+												}
+											}
+										}
+										return { target: 'finishing' }
+									},
+									onError: { target: 'finishing' }
 								}
 							},
 							opening: {
 								invoke: {
 									src: 'open',
 									input: () => db,
-									onDone: [
-										{
-											guard: 'interrupted',
-											target: 'rollingBack',
-											actions: assign({ tx: ({ event }) => event.output })
-										},
-										{
-											guard: ({ context }) => context.request.mode === 'edit',
-											target: 'updating',
-											actions: assign({ tx: ({ event }) => event.output })
-										},
-										{
-											target: 'staging',
-											actions: assign({ tx: ({ event }) => event.output })
+									onDone: (args) => {
+										const { event } = args
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack', context: { tx: event.output } }
 										}
-									],
-									onError: 'finishing'
+										if (args.context.request.mode === 'edit') {
+											return { target: 'updating', context: { tx: event.output } }
+										}
+										return { target: 'staging', context: { tx: event.output } }
+									},
+									onError: { target: 'finishing' }
 								}
 							},
 							staging: {
 								invoke: {
 									src: 'stage',
 									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-									onDone: [
-										{ guard: 'interrupted', target: 'rollingBack' },
-										{ target: 'committing' }
-									],
-									onError: 'rollingBack'
+									onDone: (args) => {
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack' }
+										}
+										return { target: 'committing' }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							updating: {
 								invoke: {
 									src: 'update',
 									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-									onDone: [
-										{ guard: 'interrupted', target: 'rollingBack' },
-										{ target: 'committing' }
-									],
-									onError: 'rollingBack'
+									onDone: (args) => {
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack' }
+										}
+										return { target: 'committing' }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							committing: {
-								entry: assign({ settlement: 'unknown' }),
+								entry: () => {
+									return { context: { settlement: 'unknown' } }
+								},
 								invoke: {
 									src: 'commit',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'settling',
-										actions: assign({ handle: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'settling', context: { handle: args.event.output } }
 									},
-									onError: [
-										{
-											guard: ({ event }) => event.error instanceof PersistedWriteRejectedError,
-											target: 'rollingBack',
-											actions: assign({ settlement: 'rejected' })
-										},
-										{ target: 'rollingBack' }
-									]
+									onError: (args) => {
+										if (args.event.error instanceof PersistedWriteRejectedError) {
+											return { target: 'rollingBack', context: { settlement: 'rejected' } }
+										}
+										return { target: 'rollingBack' }
+									}
 								}
 							},
 							settling: {
 								invoke: {
 									src: 'settle',
 									input: ({ context }) => required(context.handle),
-									onDone: {
-										target: 'finishing',
-										actions: assign({ settlement: 'locallyPersisted' })
+									onDone: () => {
+										return { target: 'finishing', context: { settlement: 'locallyPersisted' } }
 									},
-									onError: [
-										{
-											guard: ({ event }) => event.error instanceof PersistedWriteRejectedError,
-											target: 'rollingBack',
-											actions: assign({ settlement: 'rejected' })
-										},
-										{ target: 'rollingBack' }
-									]
+									onError: (args) => {
+										if (args.event.error instanceof PersistedWriteRejectedError) {
+											return { target: 'rollingBack', context: { settlement: 'rejected' } }
+										}
+										return { target: 'rollingBack' }
+									}
 								}
 							},
 							rollingBack: {
 								invoke: {
 									src: 'rollback',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'finishing',
-										actions: assign({
-											settlement: ({ context, event }) =>
-												context.settlement === 'rejected' ||
-												(event.output && context.settlement === 'notStarted')
-													? 'rejected'
-													: context.settlement === 'notStarted'
-														? 'unknown'
-														: context.settlement
-										})
+									onDone: (args) => {
+										const { context } = args
+										return {
+											target: 'finishing',
+											context: {
+												settlement:
+													context.settlement === 'rejected' ||
+													(args.event.output && context.settlement === 'notStarted')
+														? 'rejected'
+														: context.settlement === 'notStarted'
+															? 'unknown'
+															: context.settlement
+											}
+										}
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											settlement: ({ context }) =>
-												context.settlement === 'rejected' ? 'rejected' : 'unknown'
-										})
+									onError: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												settlement: args.context.settlement === 'rejected' ? 'rejected' : 'unknown'
+											}
+										}
 									}
 								}
 							},
 							finishing: {
-								always: [
-									{ guard: 'closing', target: '#check-create-persistence.closed' },
-									{ guard: 'invalidated', target: '#check-create-persistence.scopeChanged' },
-									{ guard: 'cancelling', target: '#check-create-persistence.cancelled' },
-									{
-										guard: ({ context }) => context.settlement === 'locallyPersisted',
-										target: '#check-create-persistence.succeeded'
-									},
-									{ target: '#check-create-persistence.failed' }
-								]
+								always: (args) => {
+									if (
+										matchesState({ running: { control: { interrupted: 'closed' } } }, args.value)
+									) {
+										return { target: '#check-create-persistence.closed' }
+									}
+									if (
+										matchesState(
+											{ running: { control: { interrupted: 'scopeChanged' } } },
+											args.value
+										)
+									) {
+										return { target: '#check-create-persistence.scopeChanged' }
+									}
+									if (
+										matchesState({ running: { control: { interrupted: 'cancelled' } } }, args.value)
+									) {
+										return { target: '#check-create-persistence.cancelled' }
+									}
+									if (args.context.settlement === 'locallyPersisted') {
+										return { target: '#check-create-persistence.succeeded' }
+									}
+									return { target: '#check-create-persistence.failed' }
+								}
 							}
 						}
 					}

@@ -1,4 +1,3 @@
-import { assign, fromPromise, setup, stateIn, or, type OutputFrom } from 'xstate'
 import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '#lib/schema.js'
@@ -6,6 +5,9 @@ import {
 	MAX_TRANSACTION_ATTACHMENT_BYTES,
 	isTransactionAttachmentType
 } from '#lib/domain/transaction-attachments.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../../contracts/event-payload.js'
 
 type Db = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<Db['beginTransaction']>
@@ -25,9 +27,9 @@ function required<Value>(value: Value | undefined): Value {
 	if (value === undefined) throw new Error('Missing attachment replacement resource')
 	return value
 }
-const open = fromPromise(async ({ input }: { input: Db }) => input.beginTransaction())
-const read = fromPromise(
-	async ({ input }: { input: { tx: Transaction; request: AttachmentReplacementInput } }) => {
+const open = createAsyncLogic({ run: async ({ input }: { input: Db }) => input.beginTransaction() })
+const read = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; request: AttachmentReplacementInput } }) => {
 		const { tx, request } = input
 		const [attachment, transaction, file] = await Promise.all([
 			tx.one(
@@ -42,9 +44,9 @@ const read = fromPromise(
 		])
 		return { attachment, transaction, file }
 	}
-)
-const stage = fromPromise(
-	async ({ input }: { input: { tx: Transaction; request: AttachmentReplacementInput } }) => {
+})
+const stage = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; request: AttachmentReplacementInput } }) => {
 		const { tx, request } = input
 		const file = tx.insert(app.files, {
 			transactionId: request.transaction.id,
@@ -65,12 +67,14 @@ const stage = fromPromise(
 		tx.update(app.transactionAttachments, request.attachment.id, { fileId: file.id })
 		return file.id
 	}
-)
-const commit = fromPromise(async ({ input }: { input: Transaction }) => input.commit())
-const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
-	input.wait({ tier: 'local' })
-)
-const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
+})
+const commit = createAsyncLogic({
+	run: async ({ input }: { input: Transaction }) => input.commit()
+})
+const settle = createAsyncLogic({
+	run: ({ input }: { input: OutputFrom<typeof commit> }) => input.wait({ tier: 'local' })
+})
+const rollback = createAsyncLogic({ run: ({ input }: { input: Transaction }) => input.rollback() })
 type Context = {
 	request: AttachmentReplacementInput
 	tx: Transaction | undefined
@@ -83,33 +87,112 @@ type Context = {
 function settlement(context: Context): AttachmentReplacementOutput['settlement'] {
 	return context.settlement === 'rejected' ? 'notStarted' : context.settlement
 }
+const events0 = {
+	CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof open>
+			| import('xstate').OutputFrom<typeof read>
+			| import('xstate').OutputFrom<typeof stage>
+			| import('xstate').OutputFrom<typeof commit>
+			| import('xstate').OutputFrom<typeof settle>
+			| import('xstate').OutputFrom<typeof rollback>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** Atomically stages replacement bytes and the existing attachment link, retaining old files. */
-export const transactionAttachmentReplacementMachine = setup<
-	Context,
-	Event,
-	{
-		open: typeof open
-		read: typeof read
-		stage: typeof stage
-		commit: typeof commit
-		settle: typeof settle
-		rollback: typeof rollback
+export const transactionAttachmentReplacementMachine = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<AttachmentReplacementInput>(),
+		output: types<AttachmentReplacementOutput>(),
+		children: {
+			open: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						stage: typeof stage
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['open']
+				>
+			>(),
+			read: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						stage: typeof stage
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['read']
+				>
+			>(),
+			stage: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						stage: typeof stage
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['stage']
+				>
+			>(),
+			commit: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						stage: typeof stage
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['commit']
+				>
+			>(),
+			settle: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						stage: typeof stage
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['settle']
+				>
+			>(),
+			rollback: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						stage: typeof stage
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['rollback']
+				>
+			>()
+		}
 	},
-	{},
-	{},
-	{ closing: undefined; cancelling: undefined; interrupted: undefined },
-	never,
-	string,
-	AttachmentReplacementInput,
-	AttachmentReplacementOutput
->({
 	actors: { open, read, stage, commit, settle, rollback },
-	guards: {
-		closing: stateIn({ running: { control: 'closed' } }),
-		cancelling: stateIn({ running: { control: 'cancelled' } }),
-		interrupted: or(['closing', 'cancelling'])
-	}
+	guards: {}
 }).createMachine({
 	id: 'attachment-replacement',
 	initial: 'validating',
@@ -125,17 +208,18 @@ export const transactionAttachmentReplacementMachine = setup<
 	output: ({ context }) => context.result ?? { outcome: 'failed', settlement: settlement(context) },
 	states: {
 		validating: {
-			always: [
-				{
-					guard: ({ context }) =>
-						isTransactionAttachmentType(context.request.file.type) &&
-						context.request.bytes.byteLength > 0 &&
-						context.request.bytes.byteLength <= MAX_TRANSACTION_ATTACHMENT_BYTES &&
-						context.request.bytes.byteLength === context.request.file.size,
-					target: 'running'
-				},
-				{ target: 'failed' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (
+					isTransactionAttachmentType(context.request.file.type) &&
+					context.request.bytes.byteLength > 0 &&
+					context.request.bytes.byteLength <= MAX_TRANSACTION_ATTACHMENT_BYTES &&
+					context.request.bytes.byteLength === context.request.file.size
+				) {
+					return { target: 'running' }
+				}
+				return { target: 'failed' }
+			}
 		},
 		running: {
 			type: 'parallel',
@@ -143,8 +227,8 @@ export const transactionAttachmentReplacementMachine = setup<
 				control: {
 					initial: 'active',
 					states: {
-						active: { on: { CANCEL: 'cancelled', SHUTDOWN: 'closed' } },
-						cancelled: { on: { CANCEL: {}, SHUTDOWN: 'closed' } },
+						active: { on: { CANCEL: { target: 'cancelled' }, SHUTDOWN: { target: 'closed' } } },
+						cancelled: { on: { CANCEL: {}, SHUTDOWN: { target: 'closed' } } },
 						closed: { on: { CANCEL: {}, SHUTDOWN: {} } }
 					}
 				},
@@ -155,33 +239,43 @@ export const transactionAttachmentReplacementMachine = setup<
 							invoke: {
 								src: 'open',
 								input: ({ context }) => context.request.db,
-								onDone: [
-									{
-										guard: 'interrupted',
-										target: 'rollingBack',
-										actions: assign({ tx: ({ event }) => event.output })
-									},
-									{ target: 'reading', actions: assign({ tx: ({ event }) => event.output }) }
-								],
-								onError: { target: 'finishing', actions: assign({ problem: () => 'failed' }) }
+								onDone: (args) => {
+									const { event } = args
+									if (
+										matchesState({ running: { control: 'closed' } }, args.value) ||
+										matchesState({ running: { control: 'cancelled' } }, args.value)
+									) {
+										return { target: 'rollingBack', context: { tx: event.output } }
+									}
+									return { target: 'reading', context: { tx: event.output } }
+								},
+								onError: () => {
+									return { target: 'finishing', context: { problem: 'failed' } }
+								}
 							}
 						},
 						reading: {
 							invoke: {
 								src: 'read',
 								input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-								onDone: {
-									target: 'checking',
-									actions: assign({ records: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checking', context: { records: args.event.output } }
 								},
-								onError: { target: 'rollingBack', actions: assign({ problem: () => 'failed' }) }
+								onError: () => {
+									return { target: 'rollingBack', context: { problem: 'failed' } }
+								}
 							}
 						},
 						checking: {
-							always: [
-								{ guard: 'interrupted', target: 'rollingBack' },
-								{
-									guard: ({ context }) => {
+							always: (args) => {
+								if (
+									matchesState({ running: { control: 'closed' } }, args.value) ||
+									matchesState({ running: { control: 'cancelled' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								if (
+									(({ context }) => {
 										const { request, records } = context
 										return (
 											records?.attachment?.fileId === request.attachment.fileId &&
@@ -190,38 +284,52 @@ export const transactionAttachmentReplacementMachine = setup<
 											records.file?.fileName === request.file.name &&
 											records.file.mimeType === request.file.type
 										)
-									},
-									target: 'staging'
-								},
-								{ target: 'rollingBack', actions: assign({ problem: () => 'conflict' }) }
-							]
+									})(args)
+								) {
+									return { target: 'staging' }
+								}
+								return { target: 'rollingBack', context: { problem: 'conflict' } }
+							}
 						},
 						staging: {
 							invoke: {
 								src: 'stage',
 								input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-								onDone: [{ guard: 'interrupted', target: 'rollingBack' }, { target: 'committing' }],
-								onError: { target: 'rollingBack', actions: assign({ problem: () => 'failed' }) }
+								onDone: (args) => {
+									if (
+										matchesState({ running: { control: 'closed' } }, args.value) ||
+										matchesState({ running: { control: 'cancelled' } }, args.value)
+									) {
+										return { target: 'rollingBack' }
+									}
+									return { target: 'committing' }
+								},
+								onError: () => {
+									return { target: 'rollingBack', context: { problem: 'failed' } }
+								}
 							}
 						},
 						committing: {
-							entry: assign({ settlement: () => 'unresolved' }),
+							entry: () => {
+								return { context: { settlement: 'unresolved' } }
+							},
 							invoke: {
 								src: 'commit',
 								input: ({ context }) => required(context.tx),
-								onDone: {
-									target: 'settling',
-									actions: assign({ write: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'settling', context: { write: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										problem: () => 'failed',
-										settlement: ({ context, event }) =>
-											event.error instanceof PersistedWriteRejectedError
-												? 'rejected'
-												: context.settlement
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											problem: 'failed',
+											settlement:
+												args.event.error instanceof PersistedWriteRejectedError
+													? 'rejected'
+													: args.context.settlement
+										}
+									}
 								}
 							}
 						},
@@ -229,19 +337,20 @@ export const transactionAttachmentReplacementMachine = setup<
 							invoke: {
 								src: 'settle',
 								input: ({ context }) => required(context.write),
-								onDone: {
-									target: 'finishing',
-									actions: assign({ settlement: () => 'locallyPersisted' })
+								onDone: () => {
+									return { target: 'finishing', context: { settlement: 'locallyPersisted' } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										problem: () => 'failed',
-										settlement: ({ context, event }) =>
-											event.error instanceof PersistedWriteRejectedError
-												? 'rejected'
-												: context.settlement
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											problem: 'failed',
+											settlement:
+												args.event.error instanceof PersistedWriteRejectedError
+													? 'rejected'
+													: args.context.settlement
+										}
+									}
 								}
 							}
 						},
@@ -249,75 +358,84 @@ export const transactionAttachmentReplacementMachine = setup<
 							invoke: {
 								src: 'rollback',
 								input: ({ context }) => required(context.tx),
-								onDone: {
-									target: 'finishing',
-									actions: assign({
-										settlement: ({ context, event }) =>
-											context.settlement === 'rejected' ||
-											(event.output && context.settlement === 'notStarted')
-												? 'rejected'
-												: 'unresolved'
-									})
+								onDone: (args) => {
+									const { context } = args
+									return {
+										target: 'finishing',
+										context: {
+											settlement:
+												context.settlement === 'rejected' ||
+												(args.event.output && context.settlement === 'notStarted')
+													? 'rejected'
+													: 'unresolved'
+										}
+									}
 								},
-								onError: {
-									target: 'finishing',
-									actions: assign({ settlement: () => 'unresolved', problem: () => 'failed' })
+								onError: () => {
+									return {
+										target: 'finishing',
+										context: { settlement: 'unresolved', problem: 'failed' }
+									}
 								}
 							}
 						},
 						finishing: {
-							always: [
-								{
-									guard: 'closing',
-									target: '#attachment-replacement.closed',
-									actions: assign({
-										result: ({ context }): AttachmentReplacementOutput => ({
-											outcome: 'closed',
-											settlement: settlement(context)
-										})
-									})
-								},
-								{
-									guard: 'cancelling',
-									target: '#attachment-replacement.cancelled',
-									actions: assign({
-										result: ({ context }): AttachmentReplacementOutput => ({
-											outcome: 'cancelled',
-											settlement: settlement(context)
-										})
-									})
-								},
-								{
-									guard: ({ context }) => context.settlement === 'locallyPersisted',
-									target: '#attachment-replacement.replaced',
-									actions: assign({
-										result: (): AttachmentReplacementOutput => ({
-											outcome: 'replaced',
-											settlement: 'locallyPersisted'
-										})
-									})
-								},
-								{
-									guard: ({ context }) =>
-										context.problem === 'conflict' && settlement(context) === 'notStarted',
-									target: '#attachment-replacement.conflict',
-									actions: assign({
-										result: (): AttachmentReplacementOutput => ({
-											outcome: 'conflict',
-											settlement: 'notStarted'
-										})
-									})
-								},
-								{
+							always: (args) => {
+								const { context } = args
+								if (matchesState({ running: { control: 'closed' } }, args.value)) {
+									return {
+										target: '#attachment-replacement.closed',
+										context: {
+											result: {
+												outcome: 'closed',
+												settlement: settlement(context)
+											}
+										}
+									}
+								}
+								if (matchesState({ running: { control: 'cancelled' } }, args.value)) {
+									return {
+										target: '#attachment-replacement.cancelled',
+										context: {
+											result: {
+												outcome: 'cancelled',
+												settlement: settlement(context)
+											}
+										}
+									}
+								}
+								if (context.settlement === 'locallyPersisted') {
+									return {
+										target: '#attachment-replacement.replaced',
+										context: {
+											result: {
+												outcome: 'replaced',
+												settlement: 'locallyPersisted'
+											}
+										}
+									}
+								}
+								if (context.problem === 'conflict' && settlement(context) === 'notStarted') {
+									return {
+										target: '#attachment-replacement.conflict',
+										context: {
+											result: {
+												outcome: 'conflict',
+												settlement: 'notStarted'
+											}
+										}
+									}
+								}
+								return {
 									target: '#attachment-replacement.failed',
-									actions: assign({
-										result: ({ context }): AttachmentReplacementOutput => ({
+									context: {
+										result: {
 											outcome: 'failed',
 											settlement: settlement(context)
-										})
-									})
+										}
+									}
 								}
-							]
+							}
 						}
 					}
 				}

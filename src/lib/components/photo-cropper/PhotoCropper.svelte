@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import { Button } from 'delightful-ui'
-	import { createActor, type SnapshotFrom, type ActorRefFrom } from 'xstate'
+	import { createActor, type SnapshotFrom, type ActorFromLogic } from 'xstate'
 	import { m } from '#lib/paraglide/messages.js'
 	import { photoCropperMachine } from './machine.js'
 	import CropperHandles from './CropperHandles.svelte'
@@ -24,7 +24,7 @@
 	let viewport = $state<HTMLElement>()
 	let dimensions = $state({ width: 1, height: 1 })
 	let snapshot = $state<SnapshotFrom<typeof photoCropperMachine>>()
-	let actor: ActorRefFrom<typeof photoCropperMachine> | undefined
+	let actor: ActorFromLogic<typeof photoCropperMachine> | undefined
 	let subscription: { unsubscribe: () => void } | undefined
 	let error = $state(false)
 	let bitmap = $derived(snapshot?.context.bitmap)

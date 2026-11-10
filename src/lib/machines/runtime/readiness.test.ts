@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assign, createActor, createMachine, fromCallback, setup, sendTo, waitFor } from 'xstate'
-import type { InspectionEvent, ActorRefFrom } from 'xstate'
 import type {
 	InitializationRequest,
 	InitializationStatusEvent,
@@ -35,6 +33,9 @@ import type { SelectedResourceOutput } from '../../contracts/workspace-selected-
 import type { WorkspaceResourceRelease } from '../../contracts/workspace-resource-release.js'
 import type { BankEvent } from '../bank-sync/types.js'
 import { scope, membership, records } from '../workspaces/workspace-integrity.fixture.js'
+import { createActor, createMachine, createCallbackLogic, setup, waitFor, types } from 'xstate'
+import type { InspectionEvent, ActorRefFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type ControlEvent = { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' }
 type ResourceControl = {
@@ -84,8 +85,8 @@ vi.mock('./workspace-selected-resources.js', async (original) => {
 			const logic = actual.createWorkspaceSelectedResources(input)
 			return ownerFailure.shutdown
 				? logic.provide({
-						actions: {
-							shutDownChildren: () => {
+						guards: {
+							active: () => {
 								throw new Error('controlled owner crash')
 							}
 						}
@@ -102,75 +103,115 @@ const { bankStart, bankObservation, startupObservation } = vi.hoisted(() => ({
 vi.mock('../workspaces/workspace-startup.js', () => ({
 	createWorkspaceStartupMachine: () => {
 		type Input = { request: InitializationRequest; recipient: InitializationRecipient }
-		return setup<
-			Input,
-			| { type: 'OBSERVED'; request: InitializationRequest }
-			| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
-			{},
-			{},
-			{},
-			{},
-			never,
-			string,
-			Input
-		>({}).createMachine({
+		const events3 = {
+			OBSERVED:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: InitializationRequest }
+						| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
+						'OBSERVED'
+					>
+				>(),
+			SHUTDOWN:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: InitializationRequest }
+						| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
+						'SHUTDOWN'
+					>
+				>(),
+			FINISH:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: InitializationRequest }
+						| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
+						'FINISH'
+					>
+				>(),
+			FAIL: types<
+				EventPayload<
+					| { type: 'OBSERVED'; request: InitializationRequest }
+					| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
+					'FAIL'
+				>
+			>(),
+			HOLD: types<
+				EventPayload<
+					| { type: 'OBSERVED'; request: InitializationRequest }
+					| { type: 'SHUTDOWN' | 'FINISH' | 'FAIL' | 'HOLD' },
+					'HOLD'
+				>
+			>()
+		}
+		type NativeEvent3 =
+			| import('xstate').InferEvents<typeof events3>
+			| import('xstate').DoneActorEvent<never>
+			| import('xstate').ErrorActorEvent
+		return setup({
+			schemas: { context: types<Input>(), events: events3, input: types<Input>() }
+		}).createMachine({
 			context: ({ input }) => input,
 			initial: 'checking',
-			entry: ({ self }) =>
-				startupControls.set(self, {
-					actor: self,
-					send: (event) => self.send(event),
-					getSnapshot: () => ({
-						status: self.getSnapshot().status,
-						matches: (state) => self.getSnapshot().value === state
+			entry: ({ self }, enq) => {
+				enq(() => {
+					startupControls.set(self, {
+						actor: self,
+						send: (event) => self.send(event),
+						getSnapshot: () => ({
+							status: self.getSnapshot().status,
+							matches: (state) => self.getSnapshot().value === state
+						})
 					})
-				}),
+				})
+			},
 			on: {
-				OBSERVED: {
-					target: '.checking',
-					actions: [assign({ request: ({ event }) => event.request }), startupObservation]
+				OBSERVED: ({ event }, enq) => {
+					enq(startupObservation)
+					return { target: '.checking', context: { request: event.request } }
 				},
-				SHUTDOWN: '.closing'
+				SHUTDOWN: { target: '.closing' }
 			},
 			states: {
 				checking: {
-					always: [
-						{ guard: ({ context }) => context.request.status === 'ready', target: 'ready' },
-						{ target: 'waiting' }
-					]
+					always: (args) => {
+						if (args.context.request.status === 'ready') {
+							return { target: 'ready' }
+						}
+						return { target: 'waiting' }
+					}
 				},
 				ready: {
-					entry: sendTo(
-						({ context }) => context.recipient,
-						({ context }): InitializationStatusEvent => ({
+					entry: (args, enq) => {
+						const { context } = args
+						enq.sendTo(context.recipient, {
 							type: 'INITIALIZATION_STATUS',
 							report: {
 								request: context.request,
 								status: { kind: 'ready', profileId: '22222222-2222-4222-8222-222222222222' }
 							}
 						})
-					),
-					on: { FAIL: 'failed', HOLD: 'waiting' }
+					},
+					on: { FAIL: { target: 'failed' }, HOLD: { target: 'waiting' } }
 				},
 				waiting: {
-					entry: sendTo(
-						({ context }) => context.recipient,
-						({ context }): InitializationStatusEvent => ({
+					entry: (args, enq) => {
+						const { context } = args
+						enq.sendTo(context.recipient, {
 							type: 'INITIALIZATION_STATUS',
 							report: { request: context.request, status: { kind: 'waiting' } }
 						})
-					)
+					}
 				},
 				failed: {
-					entry: sendTo(
-						({ context }) => context.recipient,
-						({ context }): InitializationStatusEvent => ({
+					entry: (args, enq) => {
+						const { context } = args
+						enq.sendTo(context.recipient, {
 							type: 'INITIALIZATION_STATUS',
 							report: { request: context.request, status: { kind: 'failed' } }
 						})
-					)
+					}
 				},
-				closing: { on: { FINISH: 'closed', OBSERVED: {}, SHUTDOWN: {} } },
+				closing: { on: { FINISH: { target: 'closed' }, OBSERVED: {}, SHUTDOWN: {} } },
 				closed: { type: 'final' }
 			}
 		})
@@ -180,39 +221,53 @@ vi.mock('../bank-sync/index.js', () => ({
 	createBankSyncMachine: () =>
 		createMachine({
 			initial: 'working',
-			entry: [({ self }) => bankControls.set(self, controlFor(self)), bankStart],
+			entry: (args, enq) => {
+				enq(() => {
+					const { self } = args
+					bankControls.set(self, controlFor(self))
+				})
+				enq(bankStart)
+			},
 			output: ({ self }): WorkspaceResourceRelease =>
 				resourceResults.get(self) ?? { outcome: 'released' },
 			on: {
-				WORKSPACE_ACCESS_CHANGED: { actions: bankObservation },
-				CONNECTIONS_CHANGED: { actions: bankObservation },
-				MAPPING_DATA_CHANGED: { actions: bankObservation },
-				HISTORY_CHANGED: { actions: bankObservation }
+				WORKSPACE_ACCESS_CHANGED: ({ event }, enq) => {
+					enq(bankObservation, event)
+				},
+				CONNECTIONS_CHANGED: ({ event }, enq) => {
+					enq(bankObservation, event)
+				},
+				MAPPING_DATA_CHANGED: ({ event }, enq) => {
+					enq(bankObservation, event)
+				},
+				HISTORY_CHANGED: ({ event }, enq) => {
+					enq(bankObservation, event)
+				}
 			},
 			states: {
 				working: {
 					on: {
-						SHUTDOWN: 'closed',
-						RESET: 'closed',
-						HOLD: 'held',
-						CRASH: {
-							actions: () => {
+						SHUTDOWN: { target: 'closed' },
+						RESET: { target: 'closed' },
+						HOLD: { target: 'held' },
+						CRASH: (args, enq) => {
+							enq(() => {
 								throw new Error('controlled bank crash')
-							}
+							})
 						}
 					}
 				},
 				held: {
 					on: {
-						SHUTDOWN: 'closing',
-						CRASH: {
-							actions: () => {
+						SHUTDOWN: { target: 'closing' },
+						CRASH: (args, enq) => {
+							enq(() => {
 								throw new Error('controlled bank crash')
-							}
+							})
 						}
 					}
 				},
-				closing: { on: { FINISH: 'closed', SHUTDOWN: {} } },
+				closing: { on: { FINISH: { target: 'closed' }, SHUTDOWN: {} } },
 				closed: { type: 'final' }
 			}
 		})
@@ -220,81 +275,177 @@ vi.mock('../bank-sync/index.js', () => ({
 vi.mock('../workspaces/workspace-integrity-owner.js', () => ({
 	createWorkspaceIntegrityOwner: () => {
 		type Input = { request: IntegrityRequest; recipient: IntegrityRecipient }
-		return setup<
-			Input,
-			| { type: 'OBSERVED'; request: IntegrityRequest }
-			| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
-			{},
-			{},
-			{},
-			{},
-			never,
-			string,
-			Input,
-			WorkspaceResourceRelease
-		>({}).createMachine({
+		const events2 = {
+			OBSERVED:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: IntegrityRequest }
+						| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
+						'OBSERVED'
+					>
+				>(),
+			HOLD: types<
+				EventPayload<
+					| { type: 'OBSERVED'; request: IntegrityRequest }
+					| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
+					'HOLD'
+				>
+			>(),
+			FINISH:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: IntegrityRequest }
+						| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
+						'FINISH'
+					>
+				>(),
+			SHUTDOWN:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: IntegrityRequest }
+						| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
+						'SHUTDOWN'
+					>
+				>(),
+			RESET:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: IntegrityRequest }
+						| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
+						'RESET'
+					>
+				>(),
+			CRASH:
+				types<
+					EventPayload<
+						| { type: 'OBSERVED'; request: IntegrityRequest }
+						| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' | 'RESET' | 'CRASH' },
+						'CRASH'
+					>
+				>()
+		}
+		type NativeEvent2 =
+			| import('xstate').InferEvents<typeof events2>
+			| import('xstate').DoneActorEvent<never>
+			| import('xstate').ErrorActorEvent
+		return setup({
+			schemas: {
+				context: types<Input>(),
+				events: events2,
+				input: types<Input>(),
+				output: types<WorkspaceResourceRelease>()
+			}
+		}).createMachine({
 			context: ({ input }) => input,
-			entry: ({ self }) => integrityControls.set(self, controlFor(self)),
+			entry: ({ self }, enq) => {
+				enq(() => {
+					integrityControls.set(self, controlFor(self))
+				})
+			},
 			output: ({ self }) => resourceResults.get(self) ?? { outcome: 'released' },
 			initial: 'active',
-			on: { OBSERVED: { actions: assign({ request: ({ event }) => event.request }) } },
+			on: {
+				OBSERVED: (args) => {
+					return { context: { request: args.event.request } }
+				}
+			},
 			states: {
 				active: {
 					on: {
-						SHUTDOWN: 'closed',
-						HOLD: 'held',
-						CRASH: {
-							actions: () => {
+						SHUTDOWN: { target: 'closed' },
+						HOLD: { target: 'held' },
+						CRASH: (args, enq) => {
+							enq(() => {
 								throw new Error('controlled integrity crash')
-							}
+							})
 						}
 					}
 				},
-				held: { on: { SHUTDOWN: 'draining' } },
-				draining: { on: { FINISH: 'closed' } },
+				held: { on: { SHUTDOWN: { target: 'draining' } } },
+				draining: { on: { FINISH: { target: 'closed' } } },
 				closed: { type: 'final' }
 			}
 		})
 	}
 }))
 vi.mock('../workspaces/workspace-creation.js', async () => {
+	const { types, setup } = await import('xstate')
 	const actual = await vi.importActual<typeof import('../workspaces/workspace-creation.js')>(
 		'../workspaces/workspace-creation.js'
 	)
+	const events1 = {
+		OBSERVED:
+			types<
+				EventPayload<
+					| { type: 'OBSERVED'; binding: CreationBinding | undefined }
+					| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' },
+					'OBSERVED'
+				>
+			>(),
+		HOLD: types<
+			EventPayload<
+				| { type: 'OBSERVED'; binding: CreationBinding | undefined }
+				| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' },
+				'HOLD'
+			>
+		>(),
+		FINISH:
+			types<
+				EventPayload<
+					| { type: 'OBSERVED'; binding: CreationBinding | undefined }
+					| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' },
+					'FINISH'
+				>
+			>(),
+		SHUTDOWN:
+			types<
+				EventPayload<
+					| { type: 'OBSERVED'; binding: CreationBinding | undefined }
+					| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' },
+					'SHUTDOWN'
+				>
+			>()
+	}
+	type NativeEvent1 =
+		| import('xstate').InferEvents<typeof events1>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
 	return {
 		...actual,
 		selectWorkspaceCreationReport: (snapshot: {
 			context: { binding: CreationBinding | undefined }
 		}) => ({ binding: snapshot.context.binding, view: actual.unavailableWorkspaceCreationView }),
 		createWorkspaceCreationMachine: () =>
-			setup<
-				{ binding: CreationBinding | undefined },
-				| { type: 'OBSERVED'; binding: CreationBinding | undefined }
-				| { type: 'HOLD' | 'FINISH' | 'SHUTDOWN' },
-				{},
-				{},
-				{},
-				{},
-				never,
-				string,
-				{ binding: CreationBinding | undefined }
-			>({}).createMachine({
+			setup({
+				schemas: {
+					context: types<{ binding: CreationBinding | undefined }>(),
+					events: events1,
+					input: types<{ binding: CreationBinding | undefined }>()
+				}
+			}).createMachine({
 				context: ({ input }) => input,
 				initial: 'active',
-				entry: ({ self }) =>
-					creationControls.set(self, {
-						actor: self,
-						send: (event) => self.send(event),
-						getSnapshot: () => ({
-							status: self.getSnapshot().status,
-							matches: (state) => self.getSnapshot().value === state
+				entry: ({ self }, enq) => {
+					enq(() => {
+						creationControls.set(self, {
+							actor: self,
+							send: (event) => self.send(event),
+							getSnapshot: () => ({
+								status: self.getSnapshot().status,
+								matches: (state) => self.getSnapshot().value === state
+							})
 						})
-					}),
-				on: { OBSERVED: { actions: assign({ binding: ({ event }) => event.binding }) } },
+					})
+				},
+				on: {
+					OBSERVED: (args) => {
+						return { context: { binding: args.event.binding } }
+					}
+				},
 				states: {
-					active: { on: { SHUTDOWN: 'closed', HOLD: 'held' } },
-					held: { on: { SHUTDOWN: 'draining' } },
-					draining: { on: { FINISH: 'closed' } },
+					active: { on: { SHUTDOWN: { target: 'closed' }, HOLD: { target: 'held' } } },
+					held: { on: { SHUTDOWN: { target: 'draining' } } },
+					draining: { on: { FINISH: { target: 'closed' } } },
 					closed: { type: 'final' }
 				}
 			})
@@ -344,7 +495,8 @@ function start(inspect: (event: InspectionEvent) => void = () => {}) {
 		read: () => current,
 		navigate
 	}
-	let selection: ActorRefFrom<ReturnType<typeof createWorkspaceSelectionMachine>> | undefined
+	let selection:
+		import('xstate').ActorFromLogic<ReturnType<typeof createWorkspaceSelectionMachine>> | undefined
 	let pendingDrain: WorkspaceDrainRequest | undefined
 	const selectionScope = { binding: {}, attachment: {} }
 	let request: WorkspaceSelectionRequest | undefined
@@ -368,19 +520,44 @@ function start(inspect: (event: InspectionEvent) => void = () => {}) {
 	type ParentEvent =
 		| { type: 'SELECTED_RESOURCES_RELEASED'; result: SelectedResourceOutput }
 		| { type: 'SELECTED_RESOURCES_CRASHED'; lease: WorkspaceLease }
+	const events0 = {
+		SELECTED_RESOURCES_RELEASED: types<EventPayload<ParentEvent, 'SELECTED_RESOURCES_RELEASED'>>(),
+		SELECTED_RESOURCES_CRASHED: types<EventPayload<ParentEvent, 'SELECTED_RESOURCES_CRASHED'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				import('xstate').OutputFrom<ReturnType<typeof createWorkspaceReadinessMachine>>
+		  >
+		| import('xstate').ErrorActorEvent
 	const parent = createActor(
-		setup<{}, ParentEvent, { workspace: ReturnType<typeof createWorkspaceReadinessMachine> }>({
+		setup({
+			schemas: {
+				context: types<{}>(),
+				events: events0,
+				children: {
+					workspace:
+						types<
+							import('xstate').ActorRefFrom<
+								{ workspace: ReturnType<typeof createWorkspaceReadinessMachine> }['workspace']
+							>
+						>()
+				}
+			},
 			actors: { workspace: createWorkspaceReadinessMachine(attachment) }
 		}).createMachine({
+			context: {},
 			invoke: { id: 'workspace', src: 'workspace' },
 			on: {
-				SELECTED_RESOURCES_RELEASED: {
-					actions: ({ event }) => {
+				SELECTED_RESOURCES_RELEASED: (args, enq) => {
+					enq(({ event }) => {
 						if (pendingDrain && event.result.lease.epoch === pendingDrain.lease.epoch)
 							acknowledge(event.result.release)
-					}
+					}, args)
 				},
-				SELECTED_RESOURCES_CRASHED: { actions: () => acknowledge({ outcome: 'unresolved' }) }
+				SELECTED_RESOURCES_CRASHED: (args, enq) => {
+					enq(() => acknowledge({ outcome: 'unresolved' }))
+				}
 			}
 		}),
 		{ inspect }
@@ -389,7 +566,7 @@ function start(inspect: (event: InspectionEvent) => void = () => {}) {
 	if (!candidate) throw new Error('Missing coordinator')
 	const actor = candidate
 	const recipient = createActor(
-		fromCallback<WorkspaceSelectionReport>(({ receive }) => {
+		createCallbackLogic<WorkspaceSelectionReport>(({ receive }) => {
 			receive((report) => {
 				if (report.type === 'WORKSPACE_SELECTION') {
 					suspended = report.status === 'suspended'
@@ -577,11 +754,13 @@ describe('workspace readiness supervision', () => {
 	})
 	it('does not wait for an already failed startup owner', () => {
 		const f = start()
-		startupObservation.mockImplementationOnce(() => {
+		startupObservation.mockImplementation(() => {
 			throw new Error('startup owner failed')
 		})
 		f.observe({ ...f.observation, sessionStatus: 'transitioning' })
-		expect(f.actor.getSnapshot().matches('failed')).toBe(true)
+		expect(startupObservation).toHaveBeenCalled()
+		expect(f.startup.getSnapshot().status).toBe('error')
+		expect(f.actor.getSnapshot().value).toBe('failed')
 		f.actor.send({ type: 'SHUTDOWN' })
 		expect(f.actor.getSnapshot().status).toBe('done')
 	})
@@ -839,7 +1018,7 @@ describe('scoped bank observations', () => {
 			event
 		})
 		expect(bankObservation).toHaveBeenCalledOnce()
-		expect(bankObservation).toHaveBeenLastCalledWith(expect.objectContaining({ event }), undefined)
+		expect(bankObservation).toHaveBeenLastCalledWith(event)
 		f.actor.send({ type: 'SHUTDOWN' })
 		f.actor.send({
 			type: 'BANK_OBSERVED',
@@ -904,16 +1083,6 @@ describe('selected resource migration', () => {
 		expect(f.actor.getSnapshot().context.bankRevision).toBeGreaterThan(beforeRevision)
 		expect(bankStart).toHaveBeenCalledTimes(2)
 		f.actor.send({ type: 'BANK', lease: oldLease, event: { type: 'RESET' } })
-		f.actor.send({
-			type: `xstate.done.actor.${oldOwner.id}`,
-			actorId: oldOwner.id,
-			output: { lease: oldLease, drain: undefined, release: { outcome: 'unresolved' } }
-		})
-		f.actor.send({
-			type: `xstate.error.actor.${oldOwner.id}`,
-			actorId: oldOwner.id,
-			error: new Error('stale owner')
-		})
 		expect(f.actor.getSnapshot().context.resourceActor).toBe(next)
 		expect(f.canSync()).toBe(true)
 		expect(f.actor.getSnapshot().context.resourceRelease).toEqual({ outcome: 'released' })
@@ -994,7 +1163,7 @@ it('does not forward integrity observations after an old owner has synchronously
 	const late: string[] = []
 	const f = start((event) => {
 		if (
-			event.type === '@xstate.event' &&
+			event.type === '@xstate.transition' &&
 			event.actorRef === oldOwner &&
 			event.event.type === 'INTEGRITY' &&
 			event.actorRef.getSnapshot().status !== 'active'

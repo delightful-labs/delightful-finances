@@ -1,9 +1,9 @@
 import { publishBankSource } from './reports.fixture.js'
 import { describe, expect, it, vi } from 'vitest'
-import { toPromise, waitFor } from 'xstate'
 import { importFixture, response, raw, accounts } from './import.fixture.js'
 import { id } from './test-fixtures.js'
 import type { BankCommand } from './types.js'
+import { toPromise, waitFor } from 'xstate'
 
 const counts = (imported = 0, existing = 0, omitted = 0) => ({ imported, existing, omitted })
 

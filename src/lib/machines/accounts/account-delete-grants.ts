@@ -1,6 +1,8 @@
-import { assign, fromPromise, setup, stateIn, type SnapshotFrom } from 'xstate'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import type { Account, AccountMembership, OrganizationMember } from '#lib/schema.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type DeleteGrantObservation = {
 	identityId: string | null
@@ -74,29 +76,29 @@ export function createAccountDeleteGrantMachine(
 	persist: (write: GrantWrite) => Promise<unknown>,
 	observe: () => DeleteGrantObservation
 ) {
-	const actors = { writer: fromPromise<unknown, GrantWrite>(({ input }) => persist(input)) }
-	const workflow = setup<Context, Event, typeof actors, {}, {}, { closing: undefined }>({
+	const actors = {
+		writer: createAsyncLogic<unknown, GrantWrite>({ run: ({ input }) => persist(input) })
+	}
+	const events0 = {
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>(),
+		SET_DELETE: types<EventPayload<Event, 'SET_DELETE'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<(typeof actors)['writer']>>
+		| import('xstate').ErrorActorEvent
+	const workflow = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			children: { writer: types<import('xstate').ActorRefFrom<(typeof actors)['writer']>>() }
+		},
 		actors,
-		guards: { closing: stateIn({ operating: 'closing' }) }
-	})
-	const update = workflow.assign({
-		observation: ({ context, event }) =>
-			event.type === 'OBSERVE' ? event.observation : context.observation
-	})
-	const requestGrant = workflow.assign({
-		request: ({ context, event }) =>
-			event.type === 'SET_DELETE'
-				? {
-						identityId: context.observation.identityId ?? '',
-						organizationId: context.observation.organizationId ?? '',
-						binding: context.observation.binding ?? {},
-						accountId: event.accountId,
-						userId: event.userId,
-						canDelete: event.canDelete
-					}
-				: context.request,
-		result: undefined,
-		write: undefined
+		guards: {
+			closing: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ operating: 'closing' }, args.value)
+		}
 	})
 	return workflow.createMachine({
 		id: 'account-delete-grants',
@@ -108,44 +110,70 @@ export function createAccountDeleteGrantMachine(
 			result: undefined
 		}),
 		on: {
-			OBSERVE: { actions: update },
-			SHUTDOWN: '.closed'
+			OBSERVE: (args) => {
+				return {
+					context: ((args) => ({
+						observation: (({ context, event }) =>
+							event.type === 'OBSERVE' ? event.observation : context.observation)(args)
+					}))(args)
+				}
+			},
+			SHUTDOWN: { target: '.closed' }
 		},
 		states: {
 			idle: {
 				on: {
-					SET_DELETE: { target: 'assessing', actions: requestGrant }
+					SET_DELETE: (args) => {
+						return {
+							target: 'assessing',
+							context: ((args) => ({
+								request: (({ context, event }) =>
+									event.type === 'SET_DELETE'
+										? {
+												identityId: context.observation.identityId ?? '',
+												organizationId: context.observation.organizationId ?? '',
+												binding: context.observation.binding ?? {},
+												accountId: event.accountId,
+												userId: event.userId,
+												canDelete: event.canDelete
+											}
+										: context.request)(args),
+								result: undefined,
+								write: undefined
+							}))(args)
+						}
+					}
 				}
 			},
 			assessing: {
-				always: [
-					{
-						guard: ({ context }) =>
-							!context.request || !canManage(context.observation, context.request),
-						target: 'denied',
-						actions: workflow.assign({
-							result: ({ context }) => ({
-								outcome: 'denied',
-								request: context.request
-							})
-						})
-					},
-					{
-						guard: ({ context }) =>
-							!context.request?.canDelete &&
-							!context.observation.grants.some(
-								(grant) =>
-									grant.organizationId === context.request?.organizationId &&
-									grant.accountId === context.request?.accountId &&
-									grant.userId === context.request?.userId
-							),
-						target: 'idle',
-						actions: workflow.assign({ request: undefined })
-					},
-					{
+				always: (args) => {
+					const { context } = args
+					if (!context.request || !canManage(context.observation, context.request)) {
+						return {
+							target: 'denied',
+							context: {
+								result: {
+									outcome: 'denied',
+									request: context.request
+								}
+							}
+						}
+					}
+					if (
+						!context.request?.canDelete &&
+						!context.observation.grants.some(
+							(grant) =>
+								grant.organizationId === context.request?.organizationId &&
+								grant.accountId === context.request?.accountId &&
+								grant.userId === context.request?.userId
+						)
+					) {
+						return { target: 'idle', context: { request: undefined } }
+					}
+					return {
 						target: 'operating',
-						actions: workflow.assign({
-							write: ({ context }) => {
+						context: {
+							write: (({ context }) => {
 								const request = context.request
 								if (!request) throw new Error('Missing delete grant request')
 								const grant = context.observation.grants.find(
@@ -163,57 +191,129 @@ export function createAccountDeleteGrantMachine(
 											userId: request.userId,
 											canDelete: request.canDelete
 										}
-							}
-						})
+							})(args)
+						}
 					}
-				]
+				}
 			},
 			operating: {
 				initial: 'writing',
 				invoke: {
 					src: 'writer',
 					input: ({ context }) => required(context.write),
-					onDone: [
-						{
-							guard: 'closing',
-							target: '#account-delete-grants.closed',
-							actions: assign({ request: undefined, write: undefined })
-						},
-						{
+					onDone: (args) => {
+						if (matchesState({ operating: 'closing' }, args.value)) {
+							return {
+								target: '#account-delete-grants.closed',
+								context: { request: undefined, write: undefined }
+							}
+						}
+						return {
 							target: '#account-delete-grants.succeeded',
-							actions: assign({
-								result: ({ context }) => ({
+							context: {
+								result: {
 									outcome: 'succeeded',
-									request: required(context.request)
-								}),
+									request: required(args.context.request)
+								},
 								request: undefined,
 								write: undefined,
-								observation: () => observe()
-							})
+								observation: observe()
+							}
 						}
-					],
-					onError: [
-						{ guard: 'closing', target: '#account-delete-grants.closed' },
-						{
+					},
+					onError: (args) => {
+						if (matchesState({ operating: 'closing' }, args.value)) {
+							return { target: '#account-delete-grants.closed' }
+						}
+						return {
 							target: '#account-delete-grants.failed',
-							actions: assign({
-								result: ({ context }) => ({
+							context: {
+								result: {
 									outcome: 'failed',
-									request: required(context.request)
-								}),
+									request: required(args.context.request)
+								},
 								request: undefined,
 								write: undefined,
-								observation: () => observe()
-							})
+								observation: observe()
+							}
 						}
-					]
+					}
 				},
 				on: { SHUTDOWN: { target: '.closing' } },
 				states: { writing: {}, closing: {} }
 			},
-			succeeded: { on: { SET_DELETE: { target: 'assessing', actions: requestGrant } } },
-			denied: { on: { SET_DELETE: { target: 'assessing', actions: requestGrant } } },
-			failed: { on: { SET_DELETE: { target: 'assessing', actions: requestGrant } } },
+			succeeded: {
+				on: {
+					SET_DELETE: (args) => {
+						return {
+							target: 'assessing',
+							context: ((args) => ({
+								request: (({ context, event }) =>
+									event.type === 'SET_DELETE'
+										? {
+												identityId: context.observation.identityId ?? '',
+												organizationId: context.observation.organizationId ?? '',
+												binding: context.observation.binding ?? {},
+												accountId: event.accountId,
+												userId: event.userId,
+												canDelete: event.canDelete
+											}
+										: context.request)(args),
+								result: undefined,
+								write: undefined
+							}))(args)
+						}
+					}
+				}
+			},
+			denied: {
+				on: {
+					SET_DELETE: (args) => {
+						return {
+							target: 'assessing',
+							context: ((args) => ({
+								request: (({ context, event }) =>
+									event.type === 'SET_DELETE'
+										? {
+												identityId: context.observation.identityId ?? '',
+												organizationId: context.observation.organizationId ?? '',
+												binding: context.observation.binding ?? {},
+												accountId: event.accountId,
+												userId: event.userId,
+												canDelete: event.canDelete
+											}
+										: context.request)(args),
+								result: undefined,
+								write: undefined
+							}))(args)
+						}
+					}
+				}
+			},
+			failed: {
+				on: {
+					SET_DELETE: (args) => {
+						return {
+							target: 'assessing',
+							context: ((args) => ({
+								request: (({ context, event }) =>
+									event.type === 'SET_DELETE'
+										? {
+												identityId: context.observation.identityId ?? '',
+												organizationId: context.observation.organizationId ?? '',
+												binding: context.observation.binding ?? {},
+												accountId: event.accountId,
+												userId: event.userId,
+												canDelete: event.canDelete
+											}
+										: context.request)(args),
+								result: undefined,
+								write: undefined
+							}))(args)
+						}
+					}
+				}
+			},
 			closed: { type: 'final' }
 		}
 	})

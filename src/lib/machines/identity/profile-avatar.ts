@@ -1,4 +1,3 @@
-import type { ActorLogic, Snapshot, SnapshotFrom } from 'xstate'
 import { createProfileAvatarMachine as createSharedAvatar } from 'delightful-local-first/profile/avatar'
 import type { z } from 'zod'
 import { profileAvatarValuesSchema } from '#lib/validation/identity.js'
@@ -13,6 +12,7 @@ import type {
 	ProfileReason,
 	ProfileScope
 } from '#lib/contracts/profile-contract.js'
+import type { ActorLogic, Snapshot, SnapshotFrom } from 'xstate'
 
 type Values = z.output<typeof profileAvatarValuesSchema>
 type Result = FormOperationResult<void, ProfileReason>

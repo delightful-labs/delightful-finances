@@ -1,10 +1,12 @@
 import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
-import { assign, fromPromise, setup } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Organization } from '../../schema.js'
 import type { WorkspaceCreationAttempt } from '../../domain/workspace-creation.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
+
 type Input = {
 	db: Pick<ReturnType<typeof getDb>, 'all'>
 	attempt: WorkspaceCreationAttempt
@@ -12,42 +14,53 @@ type Input = {
 export type ReconciliationResult =
 	| { outcome: 'absent' | 'conflict' | 'profileUnavailable' }
 	| { outcome: 'matching'; workspace: Organization }
-const read = fromPromise(async ({ input }: { input: Input }) => {
-	const { db, attempt } = input
-	const options = { tier: ReadTier.LocalFirst }
-	const [profiles, organizations, memberships, categories] = await Promise.all([
-		db.all(
-			app.profiles.where({ id: attempt.profileId, userId: attempt.workspace.ownerId }),
-			options
-		),
-		db.all(app.organizations.where({ id: attempt.organizationId }), options),
-		db.all(
-			app.organizationMembers.where({
-				organizationId: attempt.organizationId,
-				userId: attempt.workspace.ownerId
-			}),
-			options
-		),
-		db.all(app.categories.where({ organizationId: attempt.organizationId }), options)
-	])
-	return { profiles, organizations, memberships, categories }
+const read = createAsyncLogic({
+	run: async ({ input }: { input: Input }) => {
+		const { db, attempt } = input
+		const options = { tier: ReadTier.LocalFirst }
+		const [profiles, organizations, memberships, categories] = await Promise.all([
+			db.all(
+				app.profiles.where({ id: attempt.profileId, userId: attempt.workspace.ownerId }),
+				options
+			),
+			db.all(app.organizations.where({ id: attempt.organizationId }), options),
+			db.all(
+				app.organizationMembers.where({
+					organizationId: attempt.organizationId,
+					userId: attempt.workspace.ownerId
+				}),
+				options
+			),
+			db.all(app.categories.where({ organizationId: attempt.organizationId }), options)
+		])
+		return { profiles, organizations, memberships, categories }
+	}
 })
 type Context = Input & {
 	records: import('xstate').OutputFrom<typeof read> | undefined
 	result: ReconciliationResult | undefined
 }
-export const workspaceCreationReconciliation = setup<
-	Context,
-	{ type: 'CHECK' },
-	{ read: typeof read },
-	{},
-	{},
-	{},
-	never,
-	string,
-	Input,
-	ReconciliationResult
->({ actors: { read } }).createMachine({
+const events0 = { CHECK: types<EventPayload<{ type: 'CHECK' }, 'CHECK'>>() }
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof read>>
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
+export const workspaceCreationReconciliation = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<ReconciliationResult>(),
+		children: { read: types<import('xstate').ActorRefFrom<{ read: typeof read }['read']>>() }
+	},
+	actors: { read }
+}).createMachine({
 	initial: 'reading',
 	context: ({ input }) => ({ ...input, records: undefined, result: undefined }),
 	output: ({ context }) => {
@@ -59,39 +72,39 @@ export const workspaceCreationReconciliation = setup<
 			invoke: {
 				src: 'read',
 				input: ({ context }) => context,
-				onDone: {
-					target: 'checkingProfile',
-					actions: assign({ records: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'checkingProfile', context: { records: args.event.output } }
 				}
 			}
 		},
 		checkingProfile: {
-			always: [
-				{
-					guard: ({ context }) =>
-						context.records?.profiles.length === 1 &&
-						context.records.profiles[0]?.id === context.attempt.profileId &&
-						context.records.profiles[0]?.userId === context.attempt.workspace.ownerId,
-					target: 'checkingRecords'
-				},
-				{
-					target: 'profileUnavailable',
-					actions: assign({ result: { outcome: 'profileUnavailable' } })
+			always: (args) => {
+				const { context } = args
+				if (
+					context.records?.profiles.length === 1 &&
+					context.records.profiles[0]?.id === context.attempt.profileId &&
+					context.records.profiles[0]?.userId === context.attempt.workspace.ownerId
+				) {
+					return { target: 'checkingRecords' }
 				}
-			]
+				return {
+					target: 'profileUnavailable',
+					context: { result: { outcome: 'profileUnavailable' } }
+				}
+			}
 		},
 		checkingRecords: {
-			always: [
-				{
-					guard: ({ context }) =>
-						context.records?.organizations.length === 0 &&
-						context.records.memberships.length === 0 &&
-						context.records.categories.length === 0,
-					target: 'absent',
-					actions: assign({ result: { outcome: 'absent' } })
-				},
-				{
-					guard: ({ context }) => {
+			always: (args) => {
+				const { context } = args
+				if (
+					context.records?.organizations.length === 0 &&
+					context.records.memberships.length === 0 &&
+					context.records.categories.length === 0
+				) {
+					return { target: 'absent', context: { result: { outcome: 'absent' } } }
+				}
+				if (
+					(({ context }) => {
 						const rows = context.records
 						const attempt = context.attempt
 						const organization = rows?.organizations[0]
@@ -130,18 +143,21 @@ export const workspaceCreationReconciliation = setup<
 									) || !row.isSystem
 							)
 						)
-					},
-					target: 'matching',
-					actions: assign({
-						result: ({ context }): ReconciliationResult => {
-							const workspace = context.records?.organizations[0]
-							if (!workspace) throw new Error('Missing matched workspace')
-							return { outcome: 'matching', workspace }
+					})(args)
+				) {
+					return {
+						target: 'matching',
+						context: {
+							result: (({ context }): ReconciliationResult => {
+								const workspace = context.records?.organizations[0]
+								if (!workspace) throw new Error('Missing matched workspace')
+								return { outcome: 'matching', workspace }
+							})(args)
 						}
-					})
-				},
-				{ target: 'conflict', actions: assign({ result: { outcome: 'conflict' } }) }
-			]
+					}
+				}
+				return { target: 'conflict', context: { result: { outcome: 'conflict' } } }
+			}
 		},
 		absent: { type: 'final' },
 		matching: { type: 'final' },

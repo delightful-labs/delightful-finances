@@ -1,17 +1,11 @@
-import {
-	and,
-	stateIn,
-	assign,
-	enqueueActions,
-	setup,
-	type ActorRefFrom,
-	type SnapshotFrom
-} from 'xstate'
 import { imageEditorMachine } from '../../images/image-editor.js'
 import {
 	MAX_TRANSACTION_ATTACHMENT_BYTES,
 	isTransactionAttachmentType
 } from '#lib/domain/transaction-attachments.js'
+import { setup, types, matchesState } from 'xstate'
+import type { ActorRefFrom, SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../../contracts/event-payload.js'
 
 type Input = { editable: boolean }
 type Event =
@@ -36,60 +30,74 @@ function requiredFile(file: File | undefined): File {
 	if (!file) throw new Error('Missing transaction image selection')
 	return file
 }
+const events0 = {
+	SELECT: types<EventPayload<Event, 'SELECT'>>(),
+	EDIT: types<EventPayload<Event, 'EDIT'>>(),
+	SET_EDITABLE: types<EventPayload<Event, 'SET_EDITABLE'>>(),
+	CLOSE: types<EventPayload<Event, 'CLOSE'>>(),
+	SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof imageEditorMachine>>
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** Draft selection owns one invoked editor, retained while cancellation drains its resources. */
-export const transactionImageSelectionMachine = setup<
-	Context,
-	Event,
-	{ editor: typeof imageEditorMachine },
-	{},
-	{ interrupt: { command: 'CANCEL' | 'SHUTDOWN' } },
-	{ editorOpen: undefined; editorShuttingDown: undefined },
-	never,
-	string,
-	Input,
-	{ kind: 'closed' }
->({
-	actors: { editor: imageEditorMachine },
-	guards: {
-		editorOpen: stateIn({ editing: 'open' }),
-		editorShuttingDown: stateIn({ editing: 'shuttingDown' })
+export const transactionImageSelectionMachine = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<{ kind: 'closed' }>(),
+		children: {
+			editor:
+				types<import('xstate').ActorRefFrom<{ editor: typeof imageEditorMachine }['editor']>>()
+		}
 	},
-	actions: {
-		interrupt: enqueueActions(({ self, enqueue }, { command }) => {
-			const child = self.getSnapshot().children.editor
-			if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: command })
-		})
-	}
+	actors: { editor: imageEditorMachine },
+	guards: {},
+	actions: {}
 }).createMachine({
 	id: 'transaction-image-selection',
 	initial: 'checkingReadiness',
 	context: ({ input }) => ({ files: [], target: undefined, editable: input.editable, error: null }),
 	output: () => ({ kind: 'closed' }),
 	on: {
-		SET_EDITABLE: {
-			target: '.checkingReadiness',
-			actions: assign({ editable: ({ event }) => event.editable })
+		SET_EDITABLE: (args) => {
+			return { target: '.checkingReadiness', context: { editable: args.event.editable } }
 		},
 		SHUTDOWN: { target: '.closed' }
 	},
 	states: {
 		checkingReadiness: {
-			entry: assign({ target: undefined }),
-			always: [{ guard: ({ context }) => context.editable, target: 'ready' }, { target: 'locked' }]
+			entry: () => {
+				return { context: { target: undefined } }
+			},
+			always: (args) => {
+				if (args.context.editable) {
+					return { target: 'ready' }
+				}
+				return { target: 'locked' }
+			}
 		},
 		ready: {
 			on: {
-				SELECT: { actions: assign({ files: ({ event }) => [...event.files], error: null }) },
-				EDIT: [
-					{
-						guard: ({ context, event }) =>
-							context.files.includes(event.file) && editableImage(event.file),
-						target: 'editing',
-						actions: assign({ target: ({ event }) => event.file, error: null })
-					},
-					{ actions: assign({ error: () => 'invalidSelection' }) }
-				]
+				SELECT: (args) => {
+					return { context: { files: [...args.event.files], error: null } }
+				},
+				EDIT: (args) => {
+					const { event } = args
+					if (args.context.files.includes(event.file) && editableImage(event.file)) {
+						return { target: 'editing', context: { target: event.file, error: null } }
+					}
+					return { context: { error: 'invalidSelection' } }
+				}
 			}
 		},
 		locked: {},
@@ -99,81 +107,97 @@ export const transactionImageSelectionMachine = setup<
 				id: 'editor',
 				src: 'editor',
 				input: ({ context }) => ({ file: requiredFile(context.target), mode: 'perspective' }),
-				onDone: [
-					{
-						guard: 'editorShuttingDown',
-						target: 'closed'
-					},
-					{
-						guard: and([
-							'editorOpen',
-							({ context, event }) =>
-								context.editable &&
-								context.target !== undefined &&
-								context.files.includes(context.target) &&
-								event.output.kind === 'applied' &&
-								editableImage(event.output.file)
-						]),
-						target: 'checkingReadiness',
-						actions: assign({
-							files: ({ context, event }) => {
-								const output = event.output
-								return output.kind === 'applied'
-									? context.files.map((file) => (file === context.target ? output.file : file))
-									: context.files
+				onDone: (args) => {
+					const { context, event } = args
+					if (matchesState({ editing: 'shuttingDown' }, args.value)) {
+						return { target: 'closed' }
+					}
+					if (
+						matchesState({ editing: 'open' }, args.value) &&
+						context.editable &&
+						context.target !== undefined &&
+						context.files.includes(context.target) &&
+						event.output.kind === 'applied' &&
+						editableImage(event.output.file)
+					) {
+						return {
+							target: 'checkingReadiness',
+							context: {
+								files: (({ context, event }) => {
+									const output = event.output
+									return output.kind === 'applied'
+										? context.files.map((file) => (file === context.target ? output.file : file))
+										: context.files
+								})(args)
 							}
-						})
-					},
-					{
-						guard: and(['editorOpen', ({ event }) => event.output.kind === 'failed']),
-						target: 'checkingReadiness',
-						actions: assign({ error: () => 'editingFailed' })
-					},
-					{
-						guard: and([
-							'editorOpen',
-							({ event }) => event.output.kind === 'applied' && !editableImage(event.output.file)
-						]),
-						target: 'checkingReadiness',
-						actions: assign({ error: () => 'invalidSelection' })
-					},
-					{ target: 'checkingReadiness' }
-				],
-				onError: [
-					{
-						guard: 'editorShuttingDown',
-						target: 'closed'
-					},
-					{ target: 'checkingReadiness', actions: assign({ error: () => 'editingFailed' }) }
-				]
+						}
+					}
+					if (matchesState({ editing: 'open' }, args.value) && event.output.kind === 'failed') {
+						return { target: 'checkingReadiness', context: { error: 'editingFailed' } }
+					}
+					if (
+						matchesState({ editing: 'open' }, args.value) &&
+						event.output.kind === 'applied' &&
+						!editableImage(event.output.file)
+					) {
+						return { target: 'checkingReadiness', context: { error: 'invalidSelection' } }
+					}
+					return { target: 'checkingReadiness' }
+				},
+				onError: (args) => {
+					if (matchesState({ editing: 'shuttingDown' }, args.value)) {
+						return { target: 'closed' }
+					}
+					return { target: 'checkingReadiness', context: { error: 'editingFailed' } }
+				}
 			},
 			on: {
-				CLOSE: {
-					target: '.cancelling',
-					actions: { type: 'interrupt', params: { command: 'CANCEL' } }
-				},
-				SELECT: {
-					guard: ({ context }) => context.editable,
-					target: '.cancelling',
-					actions: [
-						assign({ files: ({ event }) => [...event.files], error: null }),
-						{ type: 'interrupt', params: { command: 'CANCEL' } }
-					]
-				},
-				SET_EDITABLE: [
+				CLOSE: (args, enq) => {
 					{
-						guard: ({ event }) => !event.editable,
+						const command: 'CANCEL' | 'SHUTDOWN' = 'CANCEL'
+						const child = args.children.editor
+						if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: command })
+					}
+					return { target: '.cancelling' }
+				},
+				SELECT: (args, enq) => {
+					if (!args.context.editable) return
+					{
+						const command: 'CANCEL' | 'SHUTDOWN' = 'CANCEL'
+						const child = args.children.editor
+						if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: command })
+					}
+					return {
 						target: '.cancelling',
-						actions: [
-							assign({ editable: ({ event }) => event.editable }),
-							{ type: 'interrupt', params: { command: 'CANCEL' } }
-						]
-					},
-					{ actions: assign({ editable: ({ event }) => event.editable }) }
-				],
-				SHUTDOWN: {
-					target: '.shuttingDown',
-					actions: { type: 'interrupt', params: { command: 'SHUTDOWN' } }
+						context: ((args) => ({ files: (({ event }) => [...event.files])(args), error: null }))(
+							args
+						)
+					}
+				},
+				SET_EDITABLE: (args, enq) => {
+					const { event } = args
+					if (!event.editable) {
+						{
+							const command: 'CANCEL' | 'SHUTDOWN' = 'CANCEL'
+							const child = args.children.editor
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: command })
+						}
+						return {
+							target: '.cancelling',
+							context: ((args) => ({ editable: (({ event }) => event.editable)(args) }))(args)
+						}
+					}
+					return {
+						context: ((args) => ({ editable: (({ event }) => event.editable)(args) }))(args)
+					}
+				},
+				SHUTDOWN: (args, enq) => {
+					{
+						const command: 'CANCEL' | 'SHUTDOWN' = 'SHUTDOWN'
+						const child = args.children.editor
+						if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: command })
+					}
+					return { target: '.shuttingDown' }
 				}
 			},
 			states: {

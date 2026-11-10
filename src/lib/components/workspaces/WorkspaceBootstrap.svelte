@@ -175,7 +175,10 @@
 			sessionStatus: session.current.status,
 			membershipLoading: membershipQuery.isLoading,
 			membershipError: membershipQuery.error,
-			organizations: organizationQuery.current,
+			organizations:
+				organizationQuery.current === undefined
+					? undefined
+					: observeRows(organizationQuery.current),
 			organizationsLoading: organizationQuery.isLoading,
 			organizationsError: organizationQuery.error,
 			route: {

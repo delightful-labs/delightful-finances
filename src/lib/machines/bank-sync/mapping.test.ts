@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import { appAccountSchema } from '#lib/validation/accounts.js'
 import { createAccountUnlinkMachine } from './account-unlink.js'
 import { mappingFixture, provider, work, link } from './mapping.fixture.js'
 import { account, id, observation } from './test-fixtures.js'
 import type { BankCommand } from './types.js'
+import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 const commands: BankCommand[] = [
 	work.command,
@@ -104,9 +104,11 @@ describe('bank mapping ownership chain', () => {
 		const entered = Promise.withResolvers<void>()
 		const create = f.create.provide({
 			actors: {
-				validate: fromPromise(async () => {
-					entered.resolve()
-					return validation.promise
+				validate: createAsyncLogic({
+					run: async () => {
+						entered.resolve()
+						return validation.promise
+					}
 				})
 			}
 		})
@@ -185,18 +187,20 @@ describe('unlink settlement under the mapping owner', () => {
 		const entered = Promise.withResolvers<void>()
 		const authorize = f.authorize.provide({
 			actors: {
-				connection: fromPromise(async () => {
-					entered.resolve()
-					return pending.promise
+				connection: createAsyncLogic({
+					run: async () => {
+						entered.resolve()
+						return pending.promise
+					}
 				})
 			}
 		})
 		// Only unlink's storage and authorization leaves are delayed; mapping remains real.
 		const unlink = createAccountUnlinkMachine(f.deps).provide({
 			actors: {
-				links: fromPromise(async () => [link]),
+				links: createAsyncLogic({ run: async () => [link] }),
 				authorize,
-				remove: fromPromise(f.remove)
+				remove: createAsyncLogic({ run: f.remove })
 			}
 		})
 		const mapping = f.mapping.provide({ actors: { unlinkAccount: unlink } })

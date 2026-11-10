@@ -1,4 +1,3 @@
-import { assign, sendTo, setup } from 'xstate'
 import { createWorkspaceNamingOperation } from 'delightful-local-first/workspace/naming/workflow'
 import type { WorkspaceNamingResult } from 'delightful-local-first/workspace/naming/contracts'
 import type { AccountCurrency } from '#lib/domain/account-currency.js'
@@ -12,6 +11,8 @@ import type {
 	WorkspaceRenameReason,
 	WorkspaceRenameScope
 } from '#lib/contracts/workspace-rename-contract.js'
+import { setup, types } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Values = { name: string; defaultCurrency: AccountCurrency }
 type Input = FormOperationInput<Values, WorkspaceRenameScope, WorkspaceRenameObservation>
@@ -54,18 +55,28 @@ export function createWorkspaceNamingPersistence<Write>(
 			}),
 		persistLocal: dependencies.persistLocal
 	})
-	return setup<
-		{ input: Input; result: Result | undefined },
-		FormChildEvent<WorkspaceRenameObservation>,
-		{ naming: typeof naming },
-		{},
-		{},
-		{},
-		never,
-		string,
-		Input,
-		Result
-	>({ actors: { naming } }).createMachine({
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof naming>>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<{ input: Input; result: Result | undefined }>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Result>(),
+			children: {
+				naming: types<import('xstate').ActorRefFrom<{ naming: typeof naming }['naming']>>()
+			}
+		},
+		actors: { naming }
+	}).createMachine({
 		id: 'finance-workspace-naming-persistence',
 		initial: 'running',
 		context: ({ input }) => ({ input, result: undefined }),
@@ -76,9 +87,15 @@ export function createWorkspaceNamingPersistence<Write>(
 		states: {
 			running: {
 				on: {
-					CANCEL: { actions: sendTo('naming', { type: 'CANCEL' }) },
-					INVALIDATE: { actions: sendTo('naming', { type: 'INVALIDATE' }) },
-					SHUTDOWN: { actions: sendTo('naming', { type: 'SHUTDOWN' }) }
+					CANCEL: (args, enq) => {
+						enq.sendTo('naming', { type: 'CANCEL' })
+					},
+					INVALIDATE: (args, enq) => {
+						enq.sendTo('naming', { type: 'INVALIDATE' })
+					},
+					SHUTDOWN: (args, enq) => {
+						enq.sendTo('naming', { type: 'SHUTDOWN' })
+					}
 				},
 				invoke: {
 					id: 'naming',
@@ -104,15 +121,16 @@ export function createWorkspaceNamingPersistence<Write>(
 							}
 						}
 					},
-					onDone: {
-						target: 'finished',
-						actions: assign({ result: ({ event }) => formResult(event.output) })
+					onDone: (args) => {
+						return { target: 'finished', context: { result: formResult(args.event.output) } }
 					},
-					onError: {
-						target: 'finished',
-						actions: assign({
-							result: { outcome: 'failed', code: 'operationFailed', settlement: 'unknown' }
-						})
+					onError: () => {
+						return {
+							target: 'finished',
+							context: {
+								result: { outcome: 'failed', code: 'operationFailed', settlement: 'unknown' }
+							}
+						}
 					}
 				}
 			},

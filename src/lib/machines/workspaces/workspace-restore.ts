@@ -1,18 +1,4 @@
-import {
-	and,
-	assign,
-	forwardTo,
-	fromPromise,
-	fromCallback,
-	sendTo,
-	raise,
-	setup,
-	type ActorRefFrom,
-	type SnapshotFrom,
-	type ActorLogic,
-	type EventObject,
-	type Snapshot
-} from 'xstate'
+import type { ActorFromLogic } from 'xstate'
 import { type AccountHandle, type JazzClient } from 'jazz-tools/client'
 import { createDb, type Db, type DbConfig, type Transaction, type WriteHandle } from 'jazz-tools'
 import { sameBackupBinding, type BackupBinding } from 'delightful-local-first/backup/binding'
@@ -64,6 +50,9 @@ import {
 	prepareFinanceRestorePlan,
 	financeRestorePlanningMachine
 } from './workspace-restore-plan.js'
+import { createCallbackLogic, setup, types, createAsyncLogic, isMachineSnapshot } from 'xstate'
+import type { ActorRefFrom, SnapshotFrom, ActorLogic, EventObject, Snapshot } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type RestoreClient = Pick<JazzClient, 'db' | 'shutdown'>
 /** One account-bound acquisition; the restore chart retains and drains its lifetime. */
@@ -79,15 +68,26 @@ export type FinanceRestoreComparisonInput = {
 }
 type Writer = RestoreTransactionWriter<Transaction<'mergeable'>, WriteHandle>
 type Custody = Parameters<Writer['retainDetached']>[0]
+type RestoreOperationAdapter<Logic extends import('xstate').AnyActorLogic, Input, Output> = {
+	input: (input: Input) => import('xstate').InputFrom<Logic>
+	result: (output: import('xstate').OutputFrom<Logic>) => Output
+	recipient: (actor: import('xstate').ActorRefFrom<Logic>) => {
+		send: (event: RestoreEvent) => void
+	}
+}
 export type FinanceRestoreSessionAdapter<
-	WriteSnapshot extends Snapshot<RestoreResult>,
-	WriteEvent extends EventObject,
-	ComparisonSnapshot extends Snapshot<RestoreJournalRecord | undefined>,
-	ComparisonEvent extends EventObject
+	WriteLogic extends import('xstate').AnyActorLogic,
+	ComparisonLogic extends import('xstate').AnyActorLogic
 > = {
-	machine: ActorLogic<WriteSnapshot, WriteEvent, RestoreInput>
-	comparison: ActorLogic<ComparisonSnapshot, RestoreEvent, FinanceRestoreComparisonInput>
+	machine: WriteLogic
+	comparison: ComparisonLogic
 	writer: Writer
+	operation: RestoreOperationAdapter<WriteLogic, RestoreInput, RestoreResult | undefined>
+	comparisonOperation: RestoreOperationAdapter<
+		ComparisonLogic,
+		FinanceRestoreComparisonInput,
+		RestoreJournalRecord | undefined
+	>
 }
 export type FinanceRestoreSessionResult = {
 	outcome: 'complete' | 'incomplete' | 'conflict' | 'cancelled' | 'closed' | 'invalidated'
@@ -95,6 +95,7 @@ export type FinanceRestoreSessionResult = {
 }
 type Context = FinanceRestoreSessionResult & {
 	interruption: 'cancelled' | 'closed' | 'invalidated' | undefined
+	transactionId: string | undefined
 }
 const restoreInterruption = (previous: Context['interruption'], event: { type: string }) =>
 	previous === 'closed' || event.type === 'SHUTDOWN'
@@ -143,16 +144,14 @@ export function createFinanceWorkspaceRestore(
 }
 /** One factory per operation owner. Send SHUTDOWN and await output before stopping its actor. */
 export function createFinanceRestoreSession<
-	WriteSnapshot extends Snapshot<RestoreResult>,
-	WriteEvent extends EventObject,
-	ComparisonSnapshot extends Snapshot<RestoreJournalRecord | undefined>,
-	ComparisonEvent extends EventObject
+	WriteLogic extends import('xstate').AnyActorLogic,
+	ComparisonLogic extends import('xstate').AnyActorLogic
 >(
 	issued: Options,
 	createAdapter: (
 		db: FinanceRestoreDb,
 		retain: Writer['retainDetached']
-	) => FinanceRestoreSessionAdapter<WriteSnapshot, WriteEvent, ComparisonSnapshot, ComparisonEvent>,
+	) => FinanceRestoreSessionAdapter<WriteLogic, ComparisonLogic>,
 	acquireClient: (config: DbConfig) => Promise<RestoreClient> = openRestoreClient
 ) {
 	const options = Object.freeze({ ...issued })
@@ -160,8 +159,7 @@ export function createFinanceRestoreSession<
 		intent = createRestoreJournalRecord(options.intent).intent
 	let client: RestoreClient | undefined,
 		transaction: Transaction<'mergeable'> | undefined,
-		write: WriteHandle | undefined,
-		transactionId: string | undefined
+		write: WriteHandle | undefined
 	const custody: Custody[] = []
 	const db: FinanceRestoreDb = {
 		all: (query, settings) => required(client).db.all(query, settings),
@@ -178,381 +176,591 @@ export function createFinanceRestoreSession<
 	}
 	const journalInput = { binding, databaseName: options.databaseName }
 	const actors = {
-		validate: fromPromise<void>(() =>
-			Promise.resolve().then(() => {
-				if (
-					options.account.id !== binding.identityId ||
-					intent.operation.identityId !== binding.identityId ||
-					intent.operation.applicationId !== binding.applicationId ||
-					intent.operation.environment !== binding.environment ||
-					intent.operation.operationId !== binding.operationId ||
-					intent.operation.destinationWorkspaceId !== binding.workspaceId
-				)
-					throw new Error('Restore session scope mismatch')
-			})
-		),
+		validate: createAsyncLogic<void>({
+			run: () =>
+				Promise.resolve().then(() => {
+					if (
+						options.account.id !== binding.identityId ||
+						intent.operation.identityId !== binding.identityId ||
+						intent.operation.applicationId !== binding.applicationId ||
+						intent.operation.environment !== binding.environment ||
+						intent.operation.operationId !== binding.operationId ||
+						intent.operation.destinationWorkspaceId !== binding.workspaceId
+					)
+						throw new Error('Restore session scope mismatch')
+				})
+		}),
 		journal: createRestoreJournalStepMachine(),
-		acquire: fromPromise<void>(() =>
-			acquireClient({
-				appId: binding.applicationId,
-				serverUrl: options.serverUrl,
-				account: options.account,
-				driver: { type: 'persistent', dbName: 'restore-' + binding.operationId }
-			}).then((acquired) => {
-				client = acquired
-			})
-		),
+		acquire: createAsyncLogic<void>({
+			run: () =>
+				acquireClient({
+					appId: binding.applicationId,
+					serverUrl: options.serverUrl,
+					account: options.account,
+					driver: { type: 'persistent', dbName: 'restore-' + binding.operationId }
+				}).then((acquired) => {
+					client = acquired
+				})
+		}),
 		restore: adapter.machine,
 		compare: adapter.comparison,
-		acquisition: fromPromise<void>(() =>
-			required(custody[0]).acquisition.then((acquired) => {
-				transaction = acquired
-			})
-		),
-		pending: fromPromise<unknown>(() => Promise.resolve(required(custody[0]).pending)),
-		commit: fromPromise<void>(() =>
-			required(required(custody[0]).commit).then((committed) => {
-				write = committed
-			})
-		),
-		identify: fromPromise<string>(() => adapter.writer.transactionId(required(write))),
-		settle: fromPromise<void>(() => adapter.writer.acceptRemote(required(write))),
-		rollback: fromPromise<boolean>(() => adapter.writer.rollback(required(transaction))),
-		close: fromPromise<void>(() => required(client).shutdown({ waitForSync: true })),
-		release: fromPromise<void>(() => Promise.resolve().then(() => options.releaseArtifacts()))
+		acquisition: createAsyncLogic<void>({
+			run: () =>
+				required(custody[0]).acquisition.then((acquired) => {
+					transaction = acquired
+				})
+		}),
+		pending: createAsyncLogic<unknown>({
+			run: () => Promise.resolve(required(custody[0]).pending)
+		}),
+		commit: createAsyncLogic<void>({
+			run: () =>
+				required(required(custody[0]).commit).then((committed) => {
+					write = committed
+				})
+		}),
+		identify: createAsyncLogic<string>({
+			run: () => adapter.writer.transactionId(required(write))
+		}),
+		settle: createAsyncLogic<void>({ run: () => adapter.writer.acceptRemote(required(write)) }),
+		rollback: createAsyncLogic<boolean>({
+			run: () => adapter.writer.rollback(required(transaction))
+		}),
+		close: createAsyncLogic<void>({ run: () => required(client).shutdown({ waitForSync: true }) }),
+		release: createAsyncLogic<void>({
+			run: () => Promise.resolve().then(() => options.releaseArtifacts())
+		}),
+		forgetReceipt: createAsyncLogic<void>({
+			run: () =>
+				Promise.resolve().then(() => {
+					custody.shift()
+					transaction = undefined
+					write = undefined
+				})
+		})
 	}
-	const model = setup<
-		Context,
-		RestoreEvent | { type: 'RETRY_RELEASE' },
-		typeof actors,
-		{},
-		{
-			interrupt: undefined
-			forgetReceipt: undefined
-			rememberWrite: RestoreResult | undefined
-			forwardInterrupt: undefined
+	const patchRememberWrite = (
+		args: { context: Context },
+		params: RestoreResult | undefined
+	): Partial<Context> => ({
+		record: ((_args, result: RestoreResult | undefined) => result?.record)(args, params),
+		outcome: ((_args, result: RestoreResult | undefined): Context['outcome'] =>
+			result?.outcome === 'complete'
+				? 'complete'
+				: result?.outcome === 'conflict'
+					? 'conflict'
+					: 'incomplete')(args, params)
+	})
+	const events3 = {
+		CANCEL: types<EventPayload<RestoreEvent | { type: 'RETRY_RELEASE' }, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<RestoreEvent | { type: 'RETRY_RELEASE' }, 'SHUTDOWN'>>(),
+		INVALIDATE: types<EventPayload<RestoreEvent | { type: 'RETRY_RELEASE' }, 'INVALIDATE'>>(),
+		RETRY_RELEASE: types<EventPayload<RestoreEvent | { type: 'RETRY_RELEASE' }, 'RETRY_RELEASE'>>()
+	}
+	type NativeEvent3 =
+		| import('xstate').InferEvents<typeof events3>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['validate']>
+				| import('xstate').OutputFrom<(typeof actors)['journal']>
+				| import('xstate').OutputFrom<(typeof actors)['acquire']>
+				| import('xstate').OutputFrom<(typeof actors)['restore']>
+				| import('xstate').OutputFrom<(typeof actors)['compare']>
+				| import('xstate').OutputFrom<(typeof actors)['acquisition']>
+				| import('xstate').OutputFrom<(typeof actors)['pending']>
+				| import('xstate').OutputFrom<(typeof actors)['commit']>
+				| import('xstate').OutputFrom<(typeof actors)['identify']>
+				| import('xstate').OutputFrom<(typeof actors)['settle']>
+				| import('xstate').OutputFrom<(typeof actors)['rollback']>
+				| import('xstate').OutputFrom<(typeof actors)['close']>
+				| import('xstate').OutputFrom<(typeof actors)['release']>
+				| import('xstate').OutputFrom<(typeof actors)['compare']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events3,
+			input: types<undefined>(),
+			output: types<FinanceRestoreSessionResult>(),
+			children: {
+				validate: types<import('xstate').ActorFromLogic<(typeof actors)['validate']>>(),
+				journal: types<import('xstate').ActorFromLogic<(typeof actors)['journal']>>(),
+				acquire: types<import('xstate').ActorFromLogic<(typeof actors)['acquire']>>(),
+				restore: types<import('xstate').ActorRefFrom<WriteLogic>>(),
+				compare: types<import('xstate').ActorRefFrom<ComparisonLogic>>(),
+				acquisition: types<import('xstate').ActorFromLogic<(typeof actors)['acquisition']>>(),
+				pending: types<import('xstate').ActorFromLogic<(typeof actors)['pending']>>(),
+				commit: types<import('xstate').ActorFromLogic<(typeof actors)['commit']>>(),
+				identify: types<import('xstate').ActorFromLogic<(typeof actors)['identify']>>(),
+				settle: types<import('xstate').ActorFromLogic<(typeof actors)['settle']>>(),
+				rollback: types<import('xstate').ActorFromLogic<(typeof actors)['rollback']>>(),
+				close: types<import('xstate').ActorFromLogic<(typeof actors)['close']>>(),
+				release: types<import('xstate').ActorFromLogic<(typeof actors)['release']>>(),
+				operation: types<import('xstate').ActorRefFrom<ComparisonLogic>>(),
+				forgetReceipt: types<import('xstate').ActorFromLogic<typeof actors.forgetReceipt>>()
+			}
 		},
-		{
-			interrupted: undefined
-			retained: undefined
-			clientAcquired: undefined
-			moreReceipts: undefined
-			remoteRejected: undefined
-			rollbackConfirmed: undefined
-		},
-		never,
-		string,
-		undefined,
-		FinanceRestoreSessionResult
-	>({
 		actors,
 		guards: {
-			interrupted: ({ context }) => context.interruption !== undefined,
+			interrupted: ({ context }: { context: Context }) => context.interruption !== undefined,
 			retained: () => custody.length > 0,
 			clientAcquired: () => client !== undefined,
 			moreReceipts: () => custody.length > 1,
-			remoteRejected: ({ event }) =>
+			remoteRejected: ({ context, event }: { context: Context; event: NativeEvent3 }) =>
 				'error' in event &&
-				transactionId !== undefined &&
-				adapter.writer.isRemoteRejection(event.error, transactionId),
-			rollbackConfirmed: ({ event }) => 'output' in event && event.output === true
+				context.transactionId !== undefined &&
+				adapter.writer.isRemoteRejection(event.error, context.transactionId),
+			rollbackConfirmed: ({ event }: { event: NativeEvent3 }) =>
+				'output' in event && event.output === true
 		},
-		actions: {
-			forwardInterrupt: forwardTo('operation'),
-			rememberWrite: assign({
-				record: (_args, result: RestoreResult | undefined) => result?.record,
-				outcome: (_args, result: RestoreResult | undefined): Context['outcome'] =>
-					result?.outcome === 'complete'
-						? 'complete'
-						: result?.outcome === 'conflict'
-							? 'conflict'
-							: 'incomplete'
-			}),
-			interrupt: assign({
-				interruption: ({ context, event }) => restoreInterruption(context.interruption, event)
-			}),
-			forgetReceipt: () => {
-				custody.shift()
-				transaction = undefined
-				write = undefined
-				transactionId = undefined
-			}
-		}
+		actions: {}
 	})
-	const drain = [
-		{ guard: 'retained', target: 'waitingForTransaction' },
-		{ guard: 'clientAcquired', target: 'closingClient' },
-		{ target: 'releasingArtifacts' }
-	] satisfies { guard?: 'retained' | 'clientAcquired'; target: string }[]
-	const interruptedDrain = [
-		{ guard: and(['interrupted', 'retained']), target: 'waitingForTransaction' },
-		{ guard: and(['interrupted', 'clientAcquired']), target: 'closingClient' },
-		{ guard: and(['interrupted']), target: 'releasingArtifacts' }
-	]
 	const afterPending = [
 		{ guard: () => custody[0]?.commit !== undefined, target: 'waitingForCommit' },
 		{ target: 'rollingBack' }
 	]
-	const afterReceipt = [
-		{ guard: 'moreReceipts', target: 'waitingForTransaction', actions: 'forgetReceipt' },
-		{ guard: 'clientAcquired', target: 'closingClient', actions: 'forgetReceipt' },
-		{ target: 'releasingArtifacts', actions: 'forgetReceipt' }
-	] satisfies {
-		guard?: 'moreReceipts' | 'clientAcquired'
-		target: string
-		actions: 'forgetReceipt'
-	}[]
-	const verifiedRelease = (proof: 'remoteRejected' | 'rollbackConfirmed') => [
-		{
-			guard: and([proof, 'moreReceipts']),
-			target: 'waitingForTransaction',
-			actions: { type: 'forgetReceipt' } satisfies { type: 'forgetReceipt' }
-		},
-		{
-			guard: and([proof, 'clientAcquired']),
-			target: 'closingClient',
-			actions: { type: 'forgetReceipt' } satisfies { type: 'forgetReceipt' }
-		},
-		{
-			guard: proof,
-			target: 'releasingArtifacts',
-			actions: { type: 'forgetReceipt' } satisfies { type: 'forgetReceipt' }
-		},
-		{ target: proof === 'remoteRejected' ? 'settlementBlocked' : 'rollbackBlocked' }
-	]
-	const rememberWrite = {
-		type: 'rememberWrite',
-		params: ({ event }: { event: { output: RestoreResult | undefined } }) => event.output
-	} satisfies {
-		type: 'rememberWrite'
-		params: (args: { event: { output: RestoreResult | undefined } }) => RestoreResult | undefined
-	}
-	const forwardInterrupt = {
-		CANCEL: {
-			actions: ['interrupt', 'forwardInterrupt'] satisfies ('interrupt' | 'forwardInterrupt')[]
-		},
-		SHUTDOWN: {
-			actions: ['interrupt', 'forwardInterrupt'] satisfies ('interrupt' | 'forwardInterrupt')[]
-		},
-		INVALIDATE: {
-			guard: ({ event }: { event: RestoreEvent }) =>
-				event.type === 'INVALIDATE' && sameBackupBinding(binding, event.binding),
-			actions: ['interrupt', 'forwardInterrupt'] satisfies ('interrupt' | 'forwardInterrupt')[]
-		}
-	}
 	return model.createMachine({
-		context: { outcome: 'incomplete', record: undefined, interruption: undefined },
+		context: {
+			outcome: 'incomplete',
+			record: undefined,
+			interruption: undefined,
+			transactionId: undefined
+		},
 		initial: 'validating',
 		output: ({ context }) => ({
 			outcome: context.interruption ?? context.outcome,
 			record: context.record
 		}),
 		on: {
-			CANCEL: { actions: 'interrupt' },
-			SHUTDOWN: { actions: 'interrupt' },
-			INVALIDATE: {
-				guard: ({ event }) => sameBackupBinding(binding, event.binding),
-				actions: 'interrupt'
+			CANCEL: (args) => {
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
+			},
+			SHUTDOWN: (args) => {
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
+			},
+			INVALIDATE: (args) => {
+				if (!sameBackupBinding(binding, args.event.binding)) return
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
 			}
 		},
 		states: {
 			validating: {
-				invoke: {
-					src: 'validate',
-					onDone: [...interruptedDrain, { target: 'initializingJournal' }],
-					onError: drain
-				}
+				invoke: model.createInvoke({
+					id: 'validate',
+					src: actors.validate,
+					onDone: (args) => {
+						if (args.guards.interrupted(args) && args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.interrupted(args) && args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						if (args.guards.interrupted(args)) {
+							return { target: 'releasingArtifacts' }
+						}
+						return { target: 'initializingJournal' }
+					},
+					onError: (args) => {
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					}
+				})
 			},
 			initializingJournal: {
-				invoke: {
-					src: 'journal',
+				invoke: model.createInvoke({
+					id: 'journal',
+					src: actors.journal,
 					input: { ...journalInput, command: { mode: 'initialize' } },
-					onDone: [
-						{
-							guard: ({ context, event }) =>
-								!context.interruption && event.output?.outcome === 'initialized',
-							target: 'loadingJournal'
-						},
-						...drain
-					],
-					onError: drain
-				}
+					onDone: (args) => {
+						if (!args.context.interruption && args.event.output?.outcome === 'initialized') {
+							return { target: 'loadingJournal' }
+						}
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					},
+					onError: (args) => {
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					}
+				})
 			},
 			loadingJournal: {
-				invoke: {
-					src: 'journal',
+				invoke: model.createInvoke({
+					id: 'journal',
+					src: actors.journal,
 					input: { ...journalInput, command: { mode: 'load', intent } },
-					onDone: [
-						{
-							guard: ({ context, event }) =>
-								!context.interruption &&
-								event.output?.outcome === 'loaded' &&
-								event.output?.record?.checkpoint.kind === 'complete',
-							target: 'releasingArtifacts',
-							actions: assign({ outcome: 'complete', record: ({ event }) => event.output?.record })
-						},
-						{
-							guard: ({ event }) =>
-								event.output?.outcome === 'conflict' ||
-								event.output?.record?.checkpoint.kind === 'conflict',
-							target: 'releasingArtifacts',
-							actions: assign({ outcome: 'conflict', record: ({ event }) => event.output?.record })
-						},
-						{
-							guard: ({ context, event }) =>
-								!context.interruption &&
-								((event.output?.outcome === 'loaded' && event.output?.record !== undefined) ||
-									(event.output?.outcome === 'missing' && options.mode === 'new')),
-							target: 'acquiringClient',
-							actions: assign({ record: ({ event }) => event.output?.record })
-						},
-						...drain
-					],
-					onError: drain
-				}
+					onDone: (args) => {
+						const { context, event } = args
+						if (
+							!context.interruption &&
+							event.output?.outcome === 'loaded' &&
+							event.output?.record?.checkpoint.kind === 'complete'
+						) {
+							return {
+								target: 'releasingArtifacts',
+								context: ((args) => ({
+									outcome: 'complete',
+									record: (({ event }) => event.output?.record)(args)
+								}))(args)
+							}
+						}
+						if (
+							event.output?.outcome === 'conflict' ||
+							event.output?.record?.checkpoint.kind === 'conflict'
+						) {
+							return {
+								target: 'releasingArtifacts',
+								context: ((args) => ({
+									outcome: 'conflict',
+									record: (({ event }) => event.output?.record)(args)
+								}))(args)
+							}
+						}
+						if (
+							!context.interruption &&
+							((event.output?.outcome === 'loaded' && event.output?.record !== undefined) ||
+								(event.output?.outcome === 'missing' && options.mode === 'new'))
+						) {
+							return {
+								target: 'acquiringClient',
+								context: ((args) => ({ record: (({ event }) => event.output?.record)(args) }))(args)
+							}
+						}
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					},
+					onError: (args) => {
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					}
+				})
 			},
 			acquiringClient: {
-				invoke: {
-					src: 'acquire',
-					onDone: [
-						...interruptedDrain,
-						{
-							guard: () =>
-								db.getAuthState().session?.user !== binding.identityId ||
-								db.getConfig().appId !== binding.applicationId,
-							target: 'closingClient',
-							actions: assign({ interruption: 'invalidated' })
-						},
-						{
-							guard: ({ context }) => context.record?.checkpoint.kind === 'comparing',
-							target: 'comparing'
-						},
-						{ target: 'writing' }
-					],
-					onError: drain
-				}
+				invoke: model.createInvoke({
+					id: 'acquire',
+					src: actors.acquire,
+					onDone: (args) => {
+						if (args.guards.interrupted(args) && args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.interrupted(args) && args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						if (args.guards.interrupted(args)) {
+							return { target: 'releasingArtifacts' }
+						}
+						if (
+							db.getAuthState().session?.user !== binding.identityId ||
+							db.getConfig().appId !== binding.applicationId
+						) {
+							return {
+								target: 'closingClient',
+								context: { interruption: 'invalidated' } satisfies Partial<Context>
+							}
+						}
+						if (args.context.record?.checkpoint.kind === 'comparing') {
+							return { target: 'comparing' }
+						}
+						return { target: 'writing' }
+					},
+					onError: (args) => {
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					}
+				})
 			},
 			writing: {
-				on: forwardInterrupt,
-				invoke: {
-					id: 'operation',
-					src: 'restore',
-					input: ({ context }) => ({
-						...journalInput,
-						intent,
-						writeId: checkpointWrite(context.record)
-					}),
-					onDone: [
-						...interruptedDrain.map((route) => ({ ...route, actions: rememberWrite })),
-						{
-							guard: ({ event }) =>
-								(event.output?.outcome === 'prepared' ||
-									event.output?.outcome === 'batchWritten') &&
-								event.output?.record?.checkpoint.kind === 'comparing',
-							target: 'comparing',
-							actions: assign({ record: ({ event }) => event.output?.record })
-						},
-						{
-							guard: ({ event }) =>
-								(event.output?.outcome === 'prepared' ||
-									event.output?.outcome === 'batchWritten') &&
-								event.output?.record?.checkpoint.kind === 'writing',
-							target: 'writing',
-							reenter: true,
-							actions: assign({ record: ({ event }) => event.output?.record })
-						},
-						...drain.map((route) => ({ ...route, actions: rememberWrite }))
-					],
-					onError: drain
-				}
+				on: {
+					CANCEL: ({ context, event, children }, enq) => {
+						const child = children.restore
+						if (child) enq.sendTo(adapter.operation.recipient(child), { type: 'CANCEL' })
+						return { context: { interruption: restoreInterruption(context.interruption, event) } }
+					},
+					SHUTDOWN: ({ context, event, children }, enq) => {
+						const child = children.restore
+						if (child) enq.sendTo(adapter.operation.recipient(child), { type: 'SHUTDOWN' })
+						return { context: { interruption: restoreInterruption(context.interruption, event) } }
+					},
+					INVALIDATE: ({ context, event, children }, enq) => {
+						if (!sameBackupBinding(binding, event.binding)) return {}
+						const child = children.restore
+						if (child)
+							enq.sendTo(adapter.operation.recipient(child), {
+								type: 'INVALIDATE',
+								binding: event.binding
+							})
+						return { context: { interruption: restoreInterruption(context.interruption, event) } }
+					}
+				},
+				invoke: model.createInvoke({
+					id: 'restore',
+					src: actors.restore,
+					input: ({ context }) =>
+						adapter.operation.input({
+							...journalInput,
+							intent,
+							writeId: checkpointWrite(context.record)
+						}),
+					onDone: (args) => {
+						const projectedOutput = adapter.operation.result(args.event.output)
+						const result = projectedOutput
+						const patch = patchRememberWrite(args, result)
+						if (args.guards.interrupted(args)) {
+							if (args.guards.retained()) return { target: 'waitingForTransaction', context: patch }
+							if (args.guards.clientAcquired()) return { target: 'closingClient', context: patch }
+							return { target: 'releasingArtifacts', context: patch }
+						}
+						if (
+							(result?.outcome === 'prepared' || result?.outcome === 'batchWritten') &&
+							result.record?.checkpoint.kind === 'comparing'
+						)
+							return { target: 'comparing', context: { record: result.record } }
+						if (
+							(result?.outcome === 'prepared' || result?.outcome === 'batchWritten') &&
+							result.record?.checkpoint.kind === 'writing'
+						)
+							return { target: 'writing', reenter: true, context: { record: result.record } }
+						if (args.guards.retained()) return { target: 'waitingForTransaction', context: patch }
+						if (args.guards.clientAcquired()) return { target: 'closingClient', context: patch }
+						return { target: 'releasingArtifacts', context: patch }
+					},
+					onError: (args) => {
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					}
+				})
 			},
 			comparing: {
-				on: forwardInterrupt,
-				invoke: {
-					id: 'operation',
-					src: 'compare',
-					input: ({ context }) => ({ ...journalInput, record: required(context.record) }),
-					onDone: [
-						{
-							guard: ({ context, event }) =>
-								!context.interruption && event.output?.checkpoint.kind === 'activating',
-							target: 'writing',
-							actions: assign({ record: ({ event }) => event.output })
-						},
-						...drain
-					],
-					onError: drain
-				}
+				on: {
+					CANCEL: ({ context, event, children }, enq) => {
+						const child = children.compare
+						if (child) enq.sendTo(adapter.comparisonOperation.recipient(child), { type: 'CANCEL' })
+						return { context: { interruption: restoreInterruption(context.interruption, event) } }
+					},
+					SHUTDOWN: ({ context, event, children }, enq) => {
+						const child = children.compare
+						if (child)
+							enq.sendTo(adapter.comparisonOperation.recipient(child), { type: 'SHUTDOWN' })
+						return { context: { interruption: restoreInterruption(context.interruption, event) } }
+					},
+					INVALIDATE: ({ context, event, children }, enq) => {
+						if (!sameBackupBinding(binding, event.binding)) return {}
+						const child = children.compare
+						if (child)
+							enq.sendTo(adapter.comparisonOperation.recipient(child), {
+								type: 'INVALIDATE',
+								binding: event.binding
+							})
+						return { context: { interruption: restoreInterruption(context.interruption, event) } }
+					}
+				},
+				invoke: model.createInvoke({
+					id: 'compare',
+					src: actors.compare,
+					input: (args) =>
+						adapter.comparisonOperation.input({
+							...journalInput,
+							record: required(args.context.record)
+						}),
+					onDone: (args) => {
+						const projectedOutput = adapter.comparisonOperation.result(args.event.output)
+						const { event } = args
+						if (!args.context.interruption && projectedOutput?.checkpoint.kind === 'activating') {
+							return {
+								target: 'writing',
+								context: ((args) => ({ record: (({ event }) => projectedOutput)(args) }))(args)
+							}
+						}
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					},
+					onError: (args) => {
+						if (args.guards.retained()) {
+							return { target: 'waitingForTransaction' }
+						}
+						if (args.guards.clientAcquired()) {
+							return { target: 'closingClient' }
+						}
+						return { target: 'releasingArtifacts' }
+					}
+				})
 			},
 			waitingForTransaction: {
-				invoke: { src: 'acquisition', onDone: 'waitingForPending', onError: 'restartRequired' }
+				invoke: model.createInvoke({
+					id: 'acquisition',
+					src: actors.acquisition,
+					onDone: { target: 'waitingForPending' },
+					onError: { target: 'restartRequired' }
+				})
 			},
 			waitingForPending: {
-				invoke: { src: 'pending', onDone: afterPending, onError: afterPending }
+				invoke: model.createInvoke({
+					id: 'pending',
+					src: actors.pending,
+					onDone: () => {
+						if (custody[0]?.commit !== undefined) {
+							return { target: 'waitingForCommit' }
+						}
+						return { target: 'rollingBack' }
+					},
+					onError: () => {
+						if (custody[0]?.commit !== undefined) {
+							return { target: 'waitingForCommit' }
+						}
+						return { target: 'rollingBack' }
+					}
+				})
 			},
 			waitingForCommit: {
-				invoke: { src: 'commit', onDone: 'identifyingCommit', onError: 'restartRequired' }
+				invoke: model.createInvoke({
+					id: 'commit',
+					src: actors.commit,
+					onDone: { target: 'identifyingCommit' },
+					onError: { target: 'restartRequired' }
+				})
 			},
 			identifyingCommit: {
-				invoke: {
-					src: 'identify',
-					onDone: {
+				invoke: model.createInvoke({
+					id: 'identify',
+					src: actors.identify,
+					onDone: ({ event }) => ({
 						target: 'settlingCommit',
-						actions: ({ event }) => {
-							transactionId = event.output
-						}
-					},
-					onError: 'identificationBlocked'
-				}
+						context: { transactionId: event.output }
+					}),
+					onError: { target: 'identificationBlocked' }
+				})
 			},
 			settlingCommit: {
-				invoke: {
-					src: 'settle',
-					onDone: afterReceipt,
-					onError: verifiedRelease('remoteRejected')
-				}
+				invoke: model.createInvoke({
+					id: 'settle',
+					src: actors.settle,
+					onDone: { target: 'forgettingReceipt' },
+					onError: (args) =>
+						args.guards.remoteRejected(args)
+							? { target: 'forgettingReceipt' }
+							: { target: 'settlementBlocked' }
+				})
 			},
 			rollingBack: {
-				invoke: {
-					src: 'rollback',
-					onDone: verifiedRelease('rollbackConfirmed'),
-					onError: 'rollbackBlocked'
-				}
+				invoke: model.createInvoke({
+					id: 'rollback',
+					src: actors.rollback,
+					onDone: (args) =>
+						args.guards.rollbackConfirmed(args)
+							? { target: 'forgettingReceipt' }
+							: { target: 'rollbackBlocked' },
+					onError: { target: 'rollbackBlocked' }
+				})
 			},
 			closingClient: {
-				invoke: {
-					src: 'close',
-					onDone: {
-						target: 'releasingArtifacts',
-						actions: () => {
+				invoke: model.createInvoke({
+					id: 'close',
+					src: actors.close,
+					onDone: (args, enq) => {
+						enq(() => {
 							client = undefined
-						}
+						})
+						return { target: 'releasingArtifacts' }
 					},
-					onError: 'clientBlocked'
-				}
+					onError: { target: 'clientBlocked' }
+				})
 			},
 			releasingArtifacts: {
-				invoke: { src: 'release', onDone: 'complete', onError: 'artifactsBlocked' }
+				invoke: model.createInvoke({
+					id: 'release',
+					src: actors.release,
+					onDone: { target: 'complete' },
+					onError: { target: 'artifactsBlocked' }
+				})
 			},
-			restartRequired: { tags: 'restore-restart-required' },
+			restartRequired: { tags: ['restore-restart-required'] },
 			identificationBlocked: {
-				tags: 'restore-release-blocked',
-				on: { RETRY_RELEASE: 'identifyingCommit' }
+				tags: ['restore-release-blocked'],
+				on: { RETRY_RELEASE: { target: 'identifyingCommit' } }
 			},
 			settlementBlocked: {
-				tags: 'restore-release-blocked',
-				on: { RETRY_RELEASE: 'settlingCommit' }
+				tags: ['restore-release-blocked'],
+				on: { RETRY_RELEASE: { target: 'settlingCommit' } }
 			},
 			rollbackBlocked: {
-				tags: 'restore-release-blocked',
-				on: { RETRY_RELEASE: 'rollingBack' }
+				tags: ['restore-release-blocked'],
+				on: { RETRY_RELEASE: { target: 'rollingBack' } }
 			},
-			clientBlocked: { tags: 'restore-release-blocked', on: { RETRY_RELEASE: 'closingClient' } },
+			clientBlocked: {
+				tags: ['restore-release-blocked'],
+				on: { RETRY_RELEASE: { target: 'closingClient' } }
+			},
 			artifactsBlocked: {
-				tags: 'restore-release-blocked',
-				on: { RETRY_RELEASE: 'releasingArtifacts' }
+				tags: ['restore-release-blocked'],
+				on: { RETRY_RELEASE: { target: 'releasingArtifacts' } }
 			},
-			complete: { type: 'final' }
+			complete: { type: 'final' },
+			forgettingReceipt: {
+				invoke: model.createInvoke({
+					id: 'forgetReceipt',
+					src: actors.forgetReceipt,
+					onDone: (args) => {
+						if (args.guards.retained())
+							return { target: 'waitingForTransaction', context: { transactionId: undefined } }
+						if (args.guards.clientAcquired())
+							return { target: 'closingClient', context: { transactionId: undefined } }
+						return { target: 'releasingArtifacts', context: { transactionId: undefined } }
+					},
+					onError: { target: 'settlementBlocked' }
+				})
+			}
 		}
 	})
 }
@@ -818,84 +1026,91 @@ export function createFinanceRestoreAdapter(
 	}
 	type LeafInput = Pick<Context, 'input' | 'handle'>
 	const actors = {
-		fingerprint: fromPromise<boolean, RecoveryInput>(async () => {
-			const { sha256, ...plan } = intent.plan
-			const [graphHash, planHash] = await Promise.all([digestRecovery(graph), digestRecovery(plan)])
-			return graphHash === intent.plan.expectedGraphSha256 && planHash === sha256
+		fingerprint: createAsyncLogic<boolean, RecoveryInput>({
+			run: async () => {
+				const { sha256, ...plan } = intent.plan
+				const [graphHash, planHash] = await Promise.all([
+					digestRecovery(graph),
+					digestRecovery(plan)
+				])
+				return graphHash === intent.plan.expectedGraphSha256 && planHash === sha256
+			}
 		}),
-		read: fromPromise<void, LeafInput>(async ({ input: { input, handle } }) => {
-			const observed =
-				input.operation === 'read'
-					? await restoreTransactionAccess(input).call((tx) =>
-							readRecovery(tx, queries, 'local-first')
+		read: createAsyncLogic<void, LeafInput>({
+			run: async ({ input: { input, handle } }) => {
+				const observed =
+					input.operation === 'read'
+						? await restoreTransactionAccess(input).call((tx) =>
+								readRecovery(tx, queries, 'local-first')
+							)
+						: await readRecovery(db, queries, 'remote')
+				if (observations.has(handle)) observations.set(handle, observed)
+			}
+		}),
+		stage: createAsyncLogic<void, RecoveryInput>({
+			run: ({ input }) =>
+				restoreTransactionAccess(input).call((tx) =>
+					stageRecovery(tx, sample, input.step.writeId, archive)
+				)
+		}),
+		hashSource: createAsyncLogic<void, LeafInput>({
+			run: async ({ input: { handle } }) => {
+				const observed = observations.get(handle)
+				if (!observed) throw new Error('Missing source snapshot')
+				const bytes = new Uint8Array(graph.source.file.sizeBytes)
+				try {
+					for (const part of observed[15]) {
+						if (!part.data) throw new Error('Missing source bytes')
+						bytes.set(part.data, part.partIndex * restorePartBytes)
+					}
+					const digest = await crypto.subtle.digest('SHA-256', bytes)
+					if (observations.get(handle) === observed)
+						sourceDigests.set(
+							observed,
+							[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 						)
-					: await readRecovery(db, queries, 'remote')
-			if (observations.has(handle)) observations.set(handle, observed)
-		}),
-		stage: fromPromise<void, RecoveryInput>(({ input }) =>
-			restoreTransactionAccess(input).call((tx) =>
-				stageRecovery(tx, sample, input.step.writeId, archive)
-			)
-		),
-		hashSource: fromPromise<void, LeafInput>(async ({ input: { handle } }) => {
-			const observed = observations.get(handle)
-			if (!observed) throw new Error('Missing source snapshot')
-			const bytes = new Uint8Array(graph.source.file.sizeBytes)
-			try {
-				for (const part of observed[15]) {
-					if (!part.data) throw new Error('Missing source bytes')
-					bytes.set(part.data, part.partIndex * restorePartBytes)
+				} finally {
+					bytes.fill(0)
 				}
-				const digest = await crypto.subtle.digest('SHA-256', bytes)
-				if (observations.get(handle) === observed)
-					sourceDigests.set(
-						observed,
-						[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-					)
-			} finally {
-				bytes.fill(0)
 			}
 		})
 	}
-	const model = setup<
-		Context,
-		RestoreEvent,
-		typeof actors,
-		{},
-		{ interrupt: undefined; classify: undefined },
-		{},
-		never,
-		string,
-		RecoveryInput,
-		RestoreDestinationResult
-	>({
-		actors,
-		actions: {
-			classify: assign({
-				result: ({ context }) => {
-					const observed = observations.get(context.handle)
-					return observed ? presence(observed, context.input) : 'unavailable'
-				}
-			}),
-			interrupt: assign({
-				interruption: ({ context, event }) => restoreInterruption(context.interruption, event)
-			})
-		}
+	const patchClassify = (args: { context: Context }): Partial<Context> => ({
+		result: (({ context }) => {
+			const observed = observations.get(context.handle)
+			return observed ? presence(observed, context.input) : 'unavailable'
+		})(args)
 	})
-	const readCompletion = [
-		{ guard: ({ context }) => context.interruption !== undefined, target: 'complete' },
-		{
-			guard: ({ context }) =>
-				context.input.operation === 'authority' &&
-				authority(observations.get(context.handle), context.input),
-			target: 'allowed'
+	const events2 = {
+		CANCEL: types<EventPayload<RestoreEvent, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<RestoreEvent, 'SHUTDOWN'>>(),
+		INVALIDATE: types<EventPayload<RestoreEvent, 'INVALIDATE'>>()
+	}
+	type NativeEvent2 =
+		| import('xstate').InferEvents<typeof events2>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['fingerprint']>
+				| import('xstate').OutputFrom<(typeof actors)['read']>
+				| import('xstate').OutputFrom<(typeof actors)['stage']>
+				| import('xstate').OutputFrom<(typeof actors)['hashSource']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events2,
+			input: types<RecoveryInput>(),
+			output: types<RestoreDestinationResult>(),
+			children: {
+				fingerprint: types<import('xstate').ActorFromLogic<(typeof actors)['fingerprint']>>(),
+				read: types<import('xstate').ActorFromLogic<(typeof actors)['read']>>(),
+				stage: types<import('xstate').ActorFromLogic<(typeof actors)['stage']>>(),
+				hashSource: types<import('xstate').ActorFromLogic<(typeof actors)['hashSource']>>()
+			}
 		},
-		{ target: 'complete', actions: 'classify' }
-	] satisfies {
-		target: string
-		guard?: (args: { context: Context }) => boolean
-		actions?: 'classify'
-	}[]
+		actors,
+		actions: {}
+	})
 	const destination = model.createMachine({
 		context: ({ input }) => {
 			const handle: Handle = { toJSON: () => ({ kind: 'financeRecoveryObservation' }) }
@@ -905,11 +1120,27 @@ export function createFinanceRestoreAdapter(
 		initial: 'validating',
 		output: ({ context }) => context.interruption ?? context.result,
 		on: {
-			CANCEL: { actions: 'interrupt' },
-			SHUTDOWN: { actions: 'interrupt' },
-			INVALIDATE: {
-				guard: ({ context, event }) => sameBackupBinding(context.input.binding, event.binding),
-				actions: 'interrupt'
+			CANCEL: (args) => {
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
+			},
+			SHUTDOWN: (args) => {
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
+			},
+			INVALIDATE: (args) => {
+				if (!sameBackupBinding(args.context.input.binding, args.event.binding)) return
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
 			}
 		},
 		states: {
@@ -917,45 +1148,70 @@ export function createFinanceRestoreAdapter(
 				invoke: {
 					src: 'fingerprint',
 					input: ({ context }) => context.input,
-					onDone: [
-						{
-							guard: ({ context, event }) =>
-								!event.output ||
-								db.getAuthState().session?.user !== intent.operation.identityId ||
-								canonicalRecovery(context.input.intent) !== canonicalRecovery(intent) ||
-								db.getConfig().appId !== intent.operation.applicationId ||
-								context.input.binding.workspaceId !== graph.workspace.id ||
-								context.input.binding.operationId !== intent.operation.operationId,
-							target: 'complete'
-						},
-						{ guard: ({ context }) => context.interruption !== undefined, target: 'complete' },
-						{ guard: ({ context }) => context.input.operation === 'stage', target: 'staging' },
-						{ target: 'reading' }
-					],
-					onError: 'complete'
+					onDone: (args) => {
+						const { context } = args
+						if (
+							!args.event.output ||
+							db.getAuthState().session?.user !== intent.operation.identityId ||
+							canonicalRecovery(context.input.intent) !== canonicalRecovery(intent) ||
+							db.getConfig().appId !== intent.operation.applicationId ||
+							context.input.binding.workspaceId !== graph.workspace.id ||
+							context.input.binding.operationId !== intent.operation.operationId
+						) {
+							return { target: 'complete' }
+						}
+						if (context.interruption !== undefined) {
+							return { target: 'complete' }
+						}
+						if (context.input.operation === 'stage') {
+							return { target: 'staging' }
+						}
+						return { target: 'reading' }
+					},
+					onError: { target: 'complete' }
 				}
 			},
 			reading: {
 				invoke: {
 					src: 'read',
 					input: ({ context }) => context,
-					onDone: [
-						{
-							guard: ({ context }) =>
-								!context.interruption && sourceLayout(observations.get(context.handle)),
-							target: 'hashingSource'
-						},
-						...readCompletion
-					],
-					onError: 'complete'
+					onDone: (args) => {
+						const { context } = args
+						if (!context.interruption && sourceLayout(observations.get(context.handle))) {
+							return { target: 'hashingSource' }
+						}
+						if (context.interruption !== undefined) {
+							return { target: 'complete' }
+						}
+						if (
+							context.input.operation === 'authority' &&
+							authority(observations.get(context.handle), context.input)
+						) {
+							return { target: 'allowed' }
+						}
+						return { target: 'complete', context: ((args) => patchClassify(args))(args) }
+					},
+					onError: { target: 'complete' }
 				}
 			},
 			hashingSource: {
 				invoke: {
 					src: 'hashSource',
 					input: ({ context }) => context,
-					onDone: readCompletion,
-					onError: 'complete'
+					onDone: (args) => {
+						const { context } = args
+						if (context.interruption !== undefined) {
+							return { target: 'complete' }
+						}
+						if (
+							context.input.operation === 'authority' &&
+							authority(observations.get(context.handle), context.input)
+						) {
+							return { target: 'allowed' }
+						}
+						return { target: 'complete', context: ((args) => patchClassify(args))(args) }
+					},
+					onError: { target: 'complete' }
 				}
 			},
 
@@ -963,18 +1219,34 @@ export function createFinanceRestoreAdapter(
 				invoke: {
 					src: 'stage',
 					input: ({ context }) => context.input,
-					onDone: [
-						{ guard: ({ context }) => context.interruption !== undefined, target: 'complete' },
-						{ target: 'complete', actions: assign({ result: 'staged' }) }
-					],
-					onError: 'complete'
+					onDone: (args) => {
+						if (args.context.interruption !== undefined) {
+							return { target: 'complete' }
+						}
+						return { target: 'complete', context: { result: 'staged' } }
+					},
+					onError: { target: 'complete' }
 				}
 			},
 			allowed: {
 				type: 'final',
-				entry: [assign({ result: 'allowed' }), ({ context }) => observations.delete(context.handle)]
+				entry: (args, enq) => {
+					let context = args.context
+					let patch = {}
+					patch = { ...patch, result: 'allowed' }
+					context = { ...args.context, ...patch }
+					enq(() => observations.delete(context.handle))
+					return { context: patch }
+				}
 			},
-			complete: { type: 'final', entry: ({ context }) => observations.delete(context.handle) }
+			complete: {
+				type: 'final',
+				entry: ({ context }, enq) => {
+					enq(() => {
+						observations.delete(context.handle)
+					})
+				}
+			}
 		}
 	})
 	const writer: RestoreTransactionWriter<Transaction<'mergeable'>, WriteHandle> = {
@@ -994,28 +1266,34 @@ export function createFinanceRestoreAdapter(
 		databaseName: string
 	}
 	const comparisonActors = { destination, journal: createRestoreJournalStepMachine() }
-	const comparisonModel = setup<
-		ComparisonInput & {
-			candidate: ComparisonInput['record'] | undefined
-			result: ComparisonInput['record'] | undefined
-			interruption: 'cancelled' | 'closed' | 'invalidated' | undefined
+	const events1 = {
+		CANCEL: types<EventPayload<RestoreEvent, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<RestoreEvent, 'SHUTDOWN'>>(),
+		INVALIDATE: types<EventPayload<RestoreEvent, 'INVALIDATE'>>()
+	}
+	type NativeEvent1 =
+		| import('xstate').InferEvents<typeof events1>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof comparisonActors)['destination']>
+				| import('xstate').OutputFrom<(typeof comparisonActors)['journal']>
+				| import('xstate').OutputFrom<(typeof comparisonActors)['destination']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const comparisonModel = setup({
+		schemas: {
+			context: types<
+				ComparisonInput & {
+					candidate: ComparisonInput['record'] | undefined
+					result: ComparisonInput['record'] | undefined
+					interruption: 'cancelled' | 'closed' | 'invalidated' | undefined
+				}
+			>(),
+			events: events1,
+			input: types<ComparisonInput>(),
+			output: types<ComparisonInput['record'] | undefined>()
 		},
-		RestoreEvent,
-		typeof comparisonActors,
-		{},
-		{ interrupt: undefined },
-		{},
-		never,
-		string,
-		ComparisonInput,
-		ComparisonInput['record'] | undefined
-	>({
 		actors: comparisonActors,
-		actions: {
-			interrupt: assign({
-				interruption: ({ context, event }) => restoreInterruption(context.interruption, event)
-			})
-		}
+		actions: {}
 	})
 	const comparison = comparisonModel.createMachine({
 		context: ({ input }) => ({
@@ -1027,21 +1305,56 @@ export function createFinanceRestoreAdapter(
 		initial: 'comparing',
 		output: ({ context }) => (context.interruption ? undefined : context.result),
 		on: {
-			CANCEL: { actions: 'interrupt' },
-			SHUTDOWN: { actions: 'interrupt' },
-			INVALIDATE: {
-				guard: ({ context, event }) => sameBackupBinding(context.binding, event.binding),
-				actions: 'interrupt'
+			CANCEL: (args) => {
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
+			},
+			SHUTDOWN: (args) => {
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
+			},
+			INVALIDATE: (args) => {
+				if (!sameBackupBinding(args.context.binding, args.event.binding)) return
+				return {
+					context: (({ context, event }) => ({
+						interruption: restoreInterruption(context.interruption, event)
+					}))(args)
+				}
 			}
 		},
 		states: {
 			comparing: {
 				on: {
-					CANCEL: { actions: ['interrupt', forwardTo('snapshot')] },
-					SHUTDOWN: { actions: ['interrupt', forwardTo('snapshot')] },
-					INVALIDATE: {
-						guard: ({ context, event }) => sameBackupBinding(context.binding, event.binding),
-						actions: ['interrupt', forwardTo('snapshot')]
+					CANCEL: (args, enq) => {
+						enq.sendTo('snapshot', args.event)
+						return {
+							context: (({ context, event }) => ({
+								interruption: restoreInterruption(context.interruption, event)
+							}))(args)
+						}
+					},
+					SHUTDOWN: (args, enq) => {
+						enq.sendTo('snapshot', args.event)
+						return {
+							context: (({ context, event }) => ({
+								interruption: restoreInterruption(context.interruption, event)
+							}))(args)
+						}
+					},
+					INVALIDATE: (args, enq) => {
+						if (!sameBackupBinding(args.context.binding, args.event.binding)) return
+						enq.sendTo('snapshot', args.event)
+						return {
+							context: (({ context, event }) => ({
+								interruption: restoreInterruption(context.interruption, event)
+							}))(args)
+						}
 					}
 				},
 				invoke: {
@@ -1054,40 +1367,43 @@ export function createFinanceRestoreAdapter(
 						step: intent.plan.batches[0] ?? intent.plan.preparation,
 						operation: 'remote'
 					}),
-					onDone: [
-						{
-							guard: ({ context, event }) =>
-								!context.interruption &&
-								event.output === 'match' &&
-								context.record.checkpoint.kind === 'comparing',
-							target: 'saving',
-							actions: assign({
-								candidate: ({ context }) => {
-									if (context.record.checkpoint.kind !== 'comparing')
-										throw new Error('Comparison checkpoint required')
-									return parseRestoreJournalRecord({
-										...context.record,
-										revision: context.record.revision + 1,
-										checkpoint: {
-											kind: 'activating',
-											completed: context.record.checkpoint.completed,
-											comparison: {
-												payloadSha256: intent.archive.payloadSha256,
-												graphSha256: intent.plan.expectedGraphSha256
-											},
-											current: {
-												status: 'notIssued',
-												writeId: intent.plan.activation.writeId,
-												issuance: 0
+					onDone: (args) => {
+						const { context } = args
+						if (
+							!context.interruption &&
+							args.event.output === 'match' &&
+							context.record.checkpoint.kind === 'comparing'
+						) {
+							return {
+								target: 'saving',
+								context: {
+									candidate: (({ context }) => {
+										if (context.record.checkpoint.kind !== 'comparing')
+											throw new Error('Comparison checkpoint required')
+										return parseRestoreJournalRecord({
+											...context.record,
+											revision: context.record.revision + 1,
+											checkpoint: {
+												kind: 'activating',
+												completed: context.record.checkpoint.completed,
+												comparison: {
+													payloadSha256: intent.archive.payloadSha256,
+													graphSha256: intent.plan.expectedGraphSha256
+												},
+												current: {
+													status: 'notIssued',
+													writeId: intent.plan.activation.writeId,
+													issuance: 0
+												}
 											}
-										}
-									})
+										})
+									})(args)
 								}
-							})
-						},
-						{ target: 'complete' }
-					],
-					onError: 'complete'
+							}
+						}
+						return { target: 'complete' }
+					},
+					onError: { target: 'complete' }
 				}
 			},
 			saving: {
@@ -1105,27 +1421,44 @@ export function createFinanceRestoreAdapter(
 							}
 						}
 					},
-					onDone: {
-						target: 'complete',
-						actions: assign({
-							result: ({ event }) =>
-								event.output.outcome === 'updated' || event.output.outcome === 'existing'
-									? event.output.record
-									: undefined
-						})
+					onDone: (args) => {
+						const { event } = args
+						return {
+							target: 'complete',
+							context: {
+								result:
+									event.output.outcome === 'updated' || event.output.outcome === 'existing'
+										? event.output.record
+										: undefined
+							}
+						}
 					},
-					onError: 'complete'
+					onError: { target: 'complete' }
 				}
 			},
 			complete: { type: 'final' }
 		}
 	})
-	return {
-		machine: createRestoreMachine(writer, destination),
-		comparison,
-		destination,
-		writer
+	const machine = createRestoreMachine(writer, destination)
+	const operation: RestoreOperationAdapter<
+		typeof machine,
+		RestoreInput,
+		RestoreResult | undefined
+	> = {
+		input: (input) => input,
+		result: (output) => output,
+		recipient: (actor) => actor
 	}
+	const comparisonOperation: RestoreOperationAdapter<
+		typeof comparison,
+		FinanceRestoreComparisonInput,
+		RestoreJournalRecord | undefined
+	> = {
+		input: (input) => input,
+		result: (output) => output,
+		recipient: (actor) => actor
+	}
+	return { machine, comparison, destination, writer, operation, comparisonOperation }
 }
 
 export type WorkspaceRestoreFile = { toJSON(): { kind: 'workspaceRestoreFile' }; release(): void }
@@ -1238,7 +1571,7 @@ type RestoreControllerContext = {
 	request: WorkspaceRestoreFile | undefined
 	binding: BackupBinding | undefined
 	previous: RestoreJournalRecord | undefined
-	native: ActorRefFrom<ReturnType<typeof createFinanceWorkspaceRestore>> | undefined
+	native: ActorFromLogic<ReturnType<typeof createFinanceWorkspaceRestore>> | undefined
 	interruption: 'cancelled' | 'invalidated' | undefined
 	result: 'done' | 'cancelled' | 'failed' | 'conflict' | undefined
 	name: string | undefined
@@ -1248,16 +1581,23 @@ type RestoreControllerEvent =
 	| { type: 'SUBMIT'; request: WorkspaceRestoreFile }
 	| { type: 'SCOPE_CHANGED' }
 	| {
-			type: `xstate.done.actor.${string}`
+			type: 'xstate.done.actor'
 			output: FinanceRestoreSessionResult
 			actorId: string
 	  }
-	| { type: `xstate.error.actor.${string}`; error: unknown; actorId: string }
+	| import('xstate').ErrorActorEvent
 	| {
-			type: `xstate.snapshot.${string}`
+			type: 'xstate.snapshot.actor'
+			actorId: 'nativeRestore'
 			snapshot: SnapshotFrom<ReturnType<typeof createFinanceWorkspaceRestore>>
 	  }
 /** Root-lifetime controller. Dynamic native children own each checked operation's SDK resources. */
+function controllerInterruption(
+	previous: RestoreControllerContext['interruption'],
+	type: string
+): RestoreControllerContext['interruption'] {
+	return type === 'CANCEL' ? (previous ?? 'cancelled') : 'invalidated'
+}
 export function createWorkspaceRestoreController(
 	navigate: (destination: string) => Promise<void> = async () => {
 		throw new Error('Navigation unavailable')
@@ -1265,170 +1605,230 @@ export function createWorkspaceRestoreController(
 	acquireClient: (config: DbConfig) => Promise<RestoreClient> = openRestoreClient
 ) {
 	const actors = {
-		observe: fromCallback<RestoreControllerEvent, WorkspaceRestoreFile>(({ input, sendBack }) => {
-			const scope = required(restoreFile(input).scope)
-			const observe = () => {
-				try {
-					if (!restoreScopeCurrent(scope)) sendBack({ type: 'SCOPE_CHANGED' })
-				} catch {
-					sendBack({ type: 'SCOPE_CHANGED' })
+		observe: createCallbackLogic<RestoreControllerEvent, WorkspaceRestoreFile>(
+			({ input, sendBack }) => {
+				const scope = required(restoreFile(input).scope)
+				const observe = () => {
+					try {
+						if (!restoreScopeCurrent(scope)) sendBack({ type: 'SCOPE_CHANGED' })
+					} catch {
+						sendBack({ type: 'SCOPE_CHANGED' })
+					}
 				}
+				observe()
+				return scope.session.subscribe(observe)
 			}
-			observe()
-			return scope.session.subscribe(observe)
+		),
+		readFile: createAsyncLogic<void, WorkspaceRestoreFile>({
+			run: async ({ input }) => {
+				const value = restoreFile(input)
+				if (
+					!Number.isSafeInteger(value.file.size) ||
+					value.file.size <= 0 ||
+					value.file.size > 64 * 1024 * 1024
+				)
+					throw new Error('Invalid restore file size')
+				const bytes = new Uint8Array(await value.file.arrayBuffer())
+				value.bytes = bytes
+				if (bytes.length !== value.file.size) throw new Error('Restore file changed')
+			}
 		}),
-		readFile: fromPromise<void, WorkspaceRestoreFile>(async ({ input }) => {
-			const value = restoreFile(input)
-			if (
-				!Number.isSafeInteger(value.file.size) ||
-				value.file.size <= 0 ||
-				value.file.size > 64 * 1024 * 1024
-			)
-				throw new Error('Invalid restore file size')
-			const bytes = new Uint8Array(await value.file.arrayBuffer())
-			value.bytes = bytes
-			if (bytes.length !== value.file.size) throw new Error('Restore file changed')
-		}),
-		prepareEnvelope: fromPromise<void, WorkspaceRestoreFile>(({ input }) => {
-			const value = restoreFile(input),
-				bytes = required(value.bytes)
-			value.envelope = prepareArchiveOpen(bytes, value.password)
-			value.password = undefined
-			bytes.fill(0)
-			value.bytes = undefined
-			return Promise.resolve()
+		prepareEnvelope: createAsyncLogic<void, WorkspaceRestoreFile>({
+			run: ({ input }) => {
+				const value = restoreFile(input),
+					bytes = required(value.bytes)
+				value.envelope = prepareArchiveOpen(bytes, value.password)
+				value.password = undefined
+				bytes.fill(0)
+				value.bytes = undefined
+				return Promise.resolve()
+			}
 		}),
 		open: createArchiveEnvelopeMachine(),
-		validateFile: fromPromise<string, WorkspaceRestoreFile>(({ input }) => {
-			const value = restoreFile(input),
-				archive = required(value.archive),
-				payload = archive.readPayload()
-			if (!validateFinanceBackup(payload)) throw new Error('Unsupported Finance backup')
-			const bytes = archive.copyPayloadBytes(),
-				size = bytes.length
-			bytes.fill(0)
-			const ids = new Set(
-					payload.records.filter((row) => row.type === 'files').map((row) => row.id)
-				),
-				files = payload.attachments.filter((file) => ids.has(file.id))
-			if (
-				size > payloadLimits.attachmentBytes ||
-				size + files.reduce((sum, file) => sum + file.sizeBytes, 0) >
-					payloadLimits.totalAttachmentBytes ||
-				files.length + 1 > payloadLimits.attachments ||
-				payload.records.length + 2 > payloadLimits.records
-			)
-				throw new Error('Restore exceeds backup capacity')
-			const name = payload.records.find(
-				(row) => row.type === 'organizations' && row.id === payload.source.workspaceId
-			)?.fields.name
-			if (name?.kind !== 'text') throw new Error('Missing workspace')
-			value.name = name.value
-			return Promise.resolve(name.value)
-		}),
-		deriveBinding: fromPromise<BackupBinding, WorkspaceRestoreFile>(async ({ input }) => {
-			const value = restoreFile(input),
-				archive = required(value.archive),
-				scope = required(value.scope),
-				payload = archive.readPayload()
-			const operationId = await stableUuid(
-					scope.account.id,
-					JSON.stringify([scope.appId, scope.environment, archive.payloadDigest()])
-				),
-				workspaceId = await stableUuid(
-					operationId,
-					JSON.stringify(['record', 'organizations', payload.source.workspaceId])
+		validateFile: createAsyncLogic<string, WorkspaceRestoreFile>({
+			run: ({ input }) => {
+				const value = restoreFile(input),
+					archive = required(value.archive),
+					payload = archive.readPayload()
+				if (!validateFinanceBackup(payload)) throw new Error('Unsupported Finance backup')
+				const bytes = archive.copyPayloadBytes(),
+					size = bytes.length
+				bytes.fill(0)
+				const ids = new Set(
+						payload.records.filter((row) => row.type === 'files').map((row) => row.id)
+					),
+					files = payload.attachments.filter((file) => ids.has(file.id))
+				if (
+					size > payloadLimits.attachmentBytes ||
+					size + files.reduce((sum, file) => sum + file.sizeBytes, 0) >
+						payloadLimits.totalAttachmentBytes ||
+					files.length + 1 > payloadLimits.attachments ||
+					payload.records.length + 2 > payloadLimits.records
 				)
-			const binding = {
-				applicationId: scope.appId,
-				environment: scope.environment,
-				identityId: scope.account.id,
-				operationId,
-				workspaceId,
-				generation: 0
+					throw new Error('Restore exceeds backup capacity')
+				const name = payload.records.find(
+					(row) => row.type === 'organizations' && row.id === payload.source.workspaceId
+				)?.fields.name
+				if (name?.kind !== 'text') throw new Error('Missing workspace')
+				value.name = name.value
+				return Promise.resolve(name.value)
 			}
-			value.binding = binding
-			return binding
+		}),
+		deriveBinding: createAsyncLogic<BackupBinding, WorkspaceRestoreFile>({
+			run: async ({ input }) => {
+				const value = restoreFile(input),
+					archive = required(value.archive),
+					scope = required(value.scope),
+					payload = archive.readPayload()
+				const operationId = await stableUuid(
+						scope.account.id,
+						JSON.stringify([scope.appId, scope.environment, archive.payloadDigest()])
+					),
+					workspaceId = await stableUuid(
+						operationId,
+						JSON.stringify(['record', 'organizations', payload.source.workspaceId])
+					)
+				const binding = {
+					applicationId: scope.appId,
+					environment: scope.environment,
+					identityId: scope.account.id,
+					operationId,
+					workspaceId,
+					generation: 0
+				}
+				value.binding = binding
+				return binding
+			}
 		}),
 		journal: createRestoreJournalStepMachine(),
-		preparePlan: fromPromise<void, WorkspaceRestoreFile>(({ input }) => {
-			const value = restoreFile(input),
-				binding = required(value.binding),
-				archive = required(value.archive)
-			value.plan = prepareFinanceRestorePlan(
-				archive,
-				{ ...binding, workspaceId: archive.readPayload().source.workspaceId },
-				value.previous?.intent
-			)
-			return Promise.resolve()
+		preparePlan: createAsyncLogic<
+			void,
+			{ request: WorkspaceRestoreFile; previous: RestoreJournalRecord | undefined }
+		>({
+			run: ({ input }) => {
+				const value = restoreFile(input.request),
+					binding = required(value.binding),
+					archive = required(value.archive)
+				value.previous = input.previous
+				value.plan = prepareFinanceRestorePlan(
+					archive,
+					{ ...binding, workspaceId: archive.readPayload().source.workspaceId },
+					input.previous?.intent
+				)
+				return Promise.resolve()
+			}
 		}),
 		plan: financeRestorePlanningMachine,
-		prepareNative: fromPromise<void, WorkspaceRestoreFile>(({ input }) => {
-			const value = restoreFile(input),
-				scope = required(value.scope)
-			if (!restoreScopeCurrent(scope)) throw new Error('Restore scope changed')
-			value.logic = createFinanceWorkspaceRestore(
-				{
-					account: scope.account,
-					serverUrl: scope.serverUrl,
-					binding: required(value.binding),
-					databaseName: restoreJournalName,
-					mode: value.previous ? 'resume' : 'new',
-					archive: required(value.archive),
-					plan: required(value.plan),
-					releaseFile() {
-						value.envelope?.release()
-						value.envelope = undefined
-						value.archive = undefined
-						value.plan = undefined
-					}
-				},
-				acquireClient
-			)
-			return Promise.resolve()
+		prepareNative: createAsyncLogic<void, WorkspaceRestoreFile>({
+			run: ({ input }) => {
+				const value = restoreFile(input),
+					scope = required(value.scope)
+				if (!restoreScopeCurrent(scope)) throw new Error('Restore scope changed')
+				value.logic = createFinanceWorkspaceRestore(
+					{
+						account: scope.account,
+						serverUrl: scope.serverUrl,
+						binding: required(value.binding),
+						databaseName: restoreJournalName,
+						mode: value.previous ? 'resume' : 'new',
+						archive: required(value.archive),
+						plan: required(value.plan),
+						releaseFile() {
+							value.envelope?.release()
+							value.envelope = undefined
+							value.archive = undefined
+							value.plan = undefined
+						}
+					},
+					acquireClient
+				)
+				return Promise.resolve()
+			}
 		}),
-		cleanup: fromPromise<void, WorkspaceRestoreFile | undefined>(({ input }) => {
-			input?.release()
-			return Promise.resolve()
+		cleanup: createAsyncLogic<void, WorkspaceRestoreFile | undefined>({
+			run: ({ input }) => {
+				input?.release()
+				return Promise.resolve()
+			}
 		}),
-		navigate: fromPromise<void, BackupBinding>(({ input }) =>
-			navigate('/settings/workspace?workspace=' + encodeURIComponent(input.workspaceId))
-		)
+		navigate: createAsyncLogic<void, BackupBinding>({
+			run: ({ input }) =>
+				navigate('/settings/workspace?workspace=' + encodeURIComponent(input.workspaceId))
+		})
 	}
-	const model = setup<
-		RestoreControllerContext,
-		RestoreControllerEvent,
-		typeof actors,
-		{},
-		{ interrupt: undefined; fail: undefined; rememberName: undefined; rememberBinding: undefined },
-		{},
-		never,
-		string
-	>({
+	const patchRememberBinding = ({
+		context
+	}: {
+		context: RestoreControllerContext
+	}): Partial<RestoreControllerContext> => ({
+		binding: required(restoreFile(context.request).binding)
+	})
+	const patchRememberName = ({
+		context
+	}: {
+		context: RestoreControllerContext
+	}): Partial<RestoreControllerContext> => ({ name: restoreFile(context.request).name })
+	const patchFail = (): Partial<RestoreControllerContext> => ({ result: 'failed' })
+	const events0 = {
+		CONFIRM: types<EventPayload<RestoreControllerEvent, 'CONFIRM'>>(),
+		CANCEL: types<EventPayload<RestoreControllerEvent, 'CANCEL'>>(),
+		DRAIN: types<EventPayload<RestoreControllerEvent, 'DRAIN'>>(),
+		RETRY_RELEASE: types<EventPayload<RestoreControllerEvent, 'RETRY_RELEASE'>>(),
+		DISMISS: types<EventPayload<RestoreControllerEvent, 'DISMISS'>>(),
+		OPEN: types<EventPayload<RestoreControllerEvent, 'OPEN'>>(),
+		RELOAD: types<EventPayload<RestoreControllerEvent, 'RELOAD'>>(),
+		SUBMIT: types<EventPayload<RestoreControllerEvent, 'SUBMIT'>>(),
+		SCOPE_CHANGED: types<EventPayload<RestoreControllerEvent, 'SCOPE_CHANGED'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['observe']>
+				| import('xstate').OutputFrom<(typeof actors)['readFile']>
+				| import('xstate').OutputFrom<(typeof actors)['prepareEnvelope']>
+				| import('xstate').OutputFrom<(typeof actors)['open']>
+				| import('xstate').OutputFrom<(typeof actors)['validateFile']>
+				| import('xstate').OutputFrom<(typeof actors)['deriveBinding']>
+				| import('xstate').OutputFrom<(typeof actors)['journal']>
+				| import('xstate').OutputFrom<(typeof actors)['preparePlan']>
+				| import('xstate').OutputFrom<(typeof actors)['plan']>
+				| import('xstate').OutputFrom<(typeof actors)['prepareNative']>
+				| import('xstate').OutputFrom<(typeof actors)['cleanup']>
+				| import('xstate').OutputFrom<(typeof actors)['navigate']>
+				| import('xstate').OutputFrom<(typeof actors)['plan']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<RestoreControllerContext>(),
+			events: events0,
+			children: {
+				observe: types<import('xstate').ActorFromLogic<(typeof actors)['observe']>>(),
+				readFile: types<import('xstate').ActorFromLogic<(typeof actors)['readFile']>>(),
+				prepareEnvelope:
+					types<import('xstate').ActorFromLogic<(typeof actors)['prepareEnvelope']>>(),
+				open: types<import('xstate').ActorFromLogic<(typeof actors)['open']>>(),
+				validateFile: types<import('xstate').ActorFromLogic<(typeof actors)['validateFile']>>(),
+				deriveBinding: types<import('xstate').ActorFromLogic<(typeof actors)['deriveBinding']>>(),
+				journal: types<import('xstate').ActorFromLogic<(typeof actors)['journal']>>(),
+				preparePlan: types<import('xstate').ActorFromLogic<(typeof actors)['preparePlan']>>(),
+				plan: types<import('xstate').ActorFromLogic<(typeof actors)['plan']>>(),
+				prepareNative: types<import('xstate').ActorFromLogic<(typeof actors)['prepareNative']>>(),
+				cleanup: types<import('xstate').ActorFromLogic<(typeof actors)['cleanup']>>(),
+				navigate: types<import('xstate').ActorFromLogic<(typeof actors)['navigate']>>(),
+				planner: types<import('xstate').ActorFromLogic<(typeof actors)['plan']>>(),
+				nativeRestore:
+					types<import('xstate').ActorFromLogic<ReturnType<typeof createFinanceWorkspaceRestore>>>()
+			}
+		},
 		actors,
-		actions: {
-			fail: assign({ result: 'failed' }),
-			rememberName: assign({ name: ({ context }) => restoreFile(context.request).name }),
-			rememberBinding: assign({
-				binding: ({ context }) => required(restoreFile(context.request).binding)
-			}),
-			interrupt: assign({
-				interruption: ({ context, event }) =>
-					event.type === 'CANCEL' ? (context.interruption ?? 'cancelled') : 'invalidated'
-			})
-		}
+		guards: {
+			interrupted: ({ context }: { context: RestoreControllerContext }) =>
+				context.interruption !== undefined
+		},
+		actions: {}
 	})
 	const input = ({ context }: { context: RestoreControllerContext }) => required(context.request)
-	const afterLeaf = (target: string, action?: 'rememberName' | 'rememberBinding') => [
-		{
-			guard: ({ context }: { context: RestoreControllerContext }) =>
-				context.interruption !== undefined,
-			target: 'cleaning',
-			actions: action ? [{ type: action }] : []
-		},
-		{ target, actions: action ? [{ type: action }] : [] }
-	]
-	const fail = { target: 'cleaning', actions: { type: 'fail' } satisfies { type: 'fail' } }
 	return model.createMachine({
 		id: 'workspace-restore-controller',
 		initial: 'idle',
@@ -1442,26 +1842,28 @@ export function createWorkspaceRestoreController(
 			name: undefined
 		},
 		on: {
-			SUBMIT: {
-				actions: ({ context, event }) => {
+			SUBMIT: (args, enq) => {
+				enq(({ context, event }) => {
 					if (context.request !== event.request) event.request.release()
-				}
+				}, args)
 			}
 		},
 		states: {
 			idle: {
 				on: {
-					SUBMIT: {
-						target: 'operation',
-						actions: assign({
-							request: ({ event }) => event.request,
-							binding: undefined,
-							previous: undefined,
-							native: undefined,
-							interruption: undefined,
-							result: undefined,
-							name: undefined
-						})
+					SUBMIT: (args) => {
+						return {
+							target: 'operation',
+							context: {
+								request: args.event.request,
+								binding: undefined,
+								previous: undefined,
+								native: undefined,
+								interruption: undefined,
+								result: undefined,
+								name: undefined
+							}
+						}
 					},
 					DRAIN: {},
 					DISMISS: {}
@@ -1472,25 +1874,57 @@ export function createWorkspaceRestoreController(
 				invoke: {
 					src: 'observe',
 					input,
-					onError: { actions: raise({ type: 'SCOPE_CHANGED' }) }
+					onError: (args, enq) => {
+						enq.raise({ type: 'SCOPE_CHANGED' })
+					}
 				},
 				states: {
 					reading: {
 						invoke: {
 							src: 'readFile',
 							input,
-							onDone: afterLeaf('preparingEnvelope'),
-							onError: fail
+							onDone: (args) => ({
+								target: args.guards.interrupted(args) ? 'cleaning' : 'preparingEnvelope'
+							}),
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					preparingEnvelope: {
-						invoke: { src: 'prepareEnvelope', input, onDone: afterLeaf('opening'), onError: fail }
+						invoke: {
+							src: 'prepareEnvelope',
+							input,
+							onDone: (args) => ({
+								target: args.guards.interrupted(args) ? 'cleaning' : 'opening'
+							}),
+							onError: { target: 'cleaning', context: { result: 'failed' } }
+						}
 					},
 					opening: {
 						on: {
-							CANCEL: { actions: ['interrupt', sendTo('open', { type: 'CANCEL' })] },
-							DRAIN: { actions: ['interrupt', sendTo('open', { type: 'SHUTDOWN' })] },
-							SCOPE_CHANGED: { actions: ['interrupt', sendTo('open', { type: 'SHUTDOWN' })] }
+							CANCEL: (args, enq) => {
+								enq.sendTo('open', { type: 'CANCEL' })
+								return {
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							},
+							DRAIN: (args, enq) => {
+								enq.sendTo('open', { type: 'SHUTDOWN' })
+								return {
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							},
+							SCOPE_CHANGED: (args, enq) => {
+								enq.sendTo('open', { type: 'SHUTDOWN' })
+								return {
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							}
 						},
 						invoke: {
 							id: 'open',
@@ -1498,44 +1932,44 @@ export function createWorkspaceRestoreController(
 							input: ({ context }) => ({
 								request: required(restoreFile(context.request).envelope)
 							}),
-							onDone: [
-								{
-									guard: ({ context, event }) =>
-										!context.interruption && event.output.outcome === 'integrityChecked',
-									target: 'validating',
-									actions: ({ context, event }) => {
+							onDone: (args, enq) => {
+								const { context, event } = args
+								if (!context.interruption && event.output.outcome === 'integrityChecked') {
+									enq(({ context, event }) => {
 										if (event.output.outcome === 'integrityChecked')
 											restoreFile(context.request).archive = event.output.archive
-									}
-								},
-								{
-									target: 'cleaning',
-									actions: [
-										({ context, event }) => {
-											if (event.output.outcome === 'integrityChecked')
-												restoreFile(context.request).archive = event.output.archive
-										},
-										assign({ result: 'failed' })
-									]
+									}, args)
+									return { target: 'validating' }
 								}
-							],
-							onError: fail
+								enq(({ context, event }) => {
+									if (event.output.outcome === 'integrityChecked')
+										restoreFile(context.request).archive = event.output.archive
+								}, args)
+								return { target: 'cleaning', context: { result: 'failed' } }
+							},
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					validating: {
 						invoke: {
 							src: 'validateFile',
 							input,
-							onDone: afterLeaf('deriving', 'rememberName'),
-							onError: fail
+							onDone: (args) => ({
+								target: args.guards.interrupted(args) ? 'cleaning' : 'deriving',
+								context: patchRememberName(args)
+							}),
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					deriving: {
 						invoke: {
 							src: 'deriveBinding',
 							input,
-							onDone: afterLeaf('initializingJournal', 'rememberBinding'),
-							onError: fail
+							onDone: (args) => ({
+								target: args.guards.interrupted(args) ? 'cleaning' : 'initializingJournal',
+								context: patchRememberBinding(args)
+							}),
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					initializingJournal: {
@@ -1546,15 +1980,12 @@ export function createWorkspaceRestoreController(
 								databaseName: restoreJournalName,
 								command: { mode: 'initialize' }
 							}),
-							onDone: [
-								{ guard: ({ context }) => context.interruption !== undefined, target: 'cleaning' },
-								{
-									guard: ({ event }) => event.output.outcome === 'initialized',
-									target: 'discovering'
-								},
-								fail
-							],
-							onError: fail
+							onDone: ({ context, event }) => {
+								if (context.interruption !== undefined) return { target: 'cleaning' }
+								if (event.output.outcome === 'initialized') return { target: 'discovering' }
+								return { target: 'cleaning', context: { result: 'failed' } }
+							},
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					discovering: {
@@ -1565,144 +1996,222 @@ export function createWorkspaceRestoreController(
 								databaseName: restoreJournalName,
 								command: { mode: 'discover' }
 							}),
-							onDone: [
-								{ guard: ({ context }) => context.interruption !== undefined, target: 'cleaning' },
-								{
-									guard: ({ context, event }) =>
-										event.output.outcome === 'loaded' &&
-										event.output.record !== undefined &&
-										!matchesRestoreFile(required(context.request), event.output.record),
-									...fail
-								},
-								{
-									guard: ({ event }) =>
-										event.output.outcome === 'loaded' &&
-										event.output.record?.checkpoint.kind === 'complete',
-									target: 'cleaning',
-									actions: assign({ result: 'done' })
-								},
-								{
-									guard: ({ event }) =>
-										(event.output.outcome === 'loaded' &&
-											event.output.record?.checkpoint.kind === 'conflict') ||
-										event.output.outcome === 'conflict',
-									target: 'cleaning',
-									actions: assign({ result: 'conflict' })
-								},
-								{
-									guard: ({ event }) =>
-										event.output.outcome === 'missing' || event.output.outcome === 'loaded',
-									target: 'preparingPlan',
-									actions: assign({
-										previous: ({ context, event }) => {
-											restoreFile(context.request).previous = event.output.record
-											return event.output.record
-										}
-									})
-								},
-								fail
-							],
-							onError: fail
+							onDone: ({ context, event }, enq) => {
+								if (context.interruption !== undefined) return { target: 'cleaning' }
+								const result = event.output
+								if (
+									result.outcome === 'loaded' &&
+									result.record &&
+									!matchesRestoreFile(required(context.request), result.record)
+								)
+									return { target: 'cleaning', context: { result: 'failed' } }
+								if (result.outcome === 'loaded' && result.record?.checkpoint.kind === 'complete')
+									return { target: 'cleaning', context: { result: 'done' } }
+								if (
+									result.outcome === 'conflict' ||
+									(result.outcome === 'loaded' && result.record?.checkpoint.kind === 'conflict')
+								)
+									return { target: 'cleaning', context: { result: 'conflict' } }
+								if (result.outcome === 'missing' || result.outcome === 'loaded') {
+									return { target: 'preparingPlan', context: { previous: result.record } }
+								}
+								return { target: 'cleaning', context: { result: 'failed' } }
+							},
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					preparingPlan: {
-						invoke: { src: 'preparePlan', input, onDone: afterLeaf('planning'), onError: fail }
+						invoke: {
+							src: 'preparePlan',
+							input: ({ context }) => ({
+								request: required(context.request),
+								previous: context.previous
+							}),
+							onDone: (args) => ({
+								target: args.guards.interrupted(args) ? 'cleaning' : 'planning'
+							}),
+							onError: { target: 'cleaning', context: { result: 'failed' } }
+						}
 					},
 					planning: {
 						on: {
-							CANCEL: { actions: ['interrupt', sendTo('planner', { type: 'CANCEL' })] },
-							DRAIN: { actions: ['interrupt', sendTo('planner', { type: 'SHUTDOWN' })] },
-							SCOPE_CHANGED: { actions: ['interrupt', sendTo('planner', { type: 'SHUTDOWN' })] }
+							CANCEL: (args, enq) => {
+								enq.sendTo('planner', { type: 'CANCEL' })
+								return {
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							},
+							DRAIN: (args, enq) => {
+								enq.sendTo('planner', { type: 'SHUTDOWN' })
+								return {
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							},
+							SCOPE_CHANGED: (args, enq) => {
+								enq.sendTo('planner', { type: 'SHUTDOWN' })
+								return {
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							}
 						},
 						invoke: {
 							id: 'planner',
 							src: 'plan',
 							input: ({ context }) => ({ request: required(restoreFile(context.request).plan) }),
-							onDone: [
-								{
-									guard: ({ context, event }) =>
-										!context.interruption && event.output.outcome === 'planned',
-									target: 'review'
-								},
-								fail
-							],
-							onError: fail
+							onDone: ({ context, event }) =>
+								!context.interruption && event.output.outcome === 'planned'
+									? { target: 'review' }
+									: { target: 'cleaning', context: { result: 'failed' } },
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					review: {
 						on: {
-							CONFIRM: 'preparingNative',
-							CANCEL: { target: 'cleaning', actions: 'interrupt' },
-							DRAIN: { target: 'cleaning', actions: 'interrupt' },
-							SCOPE_CHANGED: { target: 'cleaning', actions: 'interrupt' }
+							CONFIRM: { target: 'preparingNative' },
+							CANCEL: (args) => {
+								return {
+									target: 'cleaning',
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							},
+							DRAIN: (args) => {
+								return {
+									target: 'cleaning',
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							},
+							SCOPE_CHANGED: (args) => {
+								return {
+									target: 'cleaning',
+									context: (({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+							}
 						}
 					},
 					preparingNative: {
 						invoke: {
 							src: 'prepareNative',
 							input,
-							onDone: [
-								{ guard: ({ context }) => context.interruption !== undefined, target: 'cleaning' },
-								{
-									target: 'restoring',
-									actions: assign({
-										native: ({ context, spawn }) =>
-											spawn(required(restoreFile(context.request).logic), {
-												syncSnapshot: true
-											})
-									})
+							onDone: (args, enq) => {
+								const { context } = args
+								if (context.interruption !== undefined) {
+									return { target: 'cleaning' }
 								}
-							],
-							onError: fail
+								return {
+									target: 'restoring',
+									context: {
+										native: (({ context, spawn }) =>
+											spawn(required(restoreFile(context.request).logic), {
+												id: 'nativeRestore',
+												syncSnapshot: true
+											}))({ ...args, spawn: enq.spawn })
+									}
+								}
+							},
+							onError: { target: 'cleaning', context: { result: 'failed' } }
 						}
 					},
 					restoring: {
 						on: {
-							CANCEL: {
-								actions: [
-									'interrupt',
-									sendTo(({ context }) => required(context.native), { type: 'CANCEL' })
-								]
+							CANCEL: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								patch = {
+									...patch,
+									...(({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo(required(context.native), { type: 'CANCEL' })
+								return { context: patch }
 							},
-							DRAIN: {
-								actions: [
-									'interrupt',
-									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
-								]
+							DRAIN: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								patch = {
+									...patch,
+									...(({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo(required(context.native), { type: 'SHUTDOWN' })
+								return { context: patch }
 							},
-							SCOPE_CHANGED: {
-								actions: [
-									'interrupt',
-									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
-								]
+							SCOPE_CHANGED: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								patch = {
+									...patch,
+									...(({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo(required(context.native), { type: 'SHUTDOWN' })
+								return { context: patch }
 							}
 						}
 					},
 					releaseBlocked: {
 						on: {
-							RETRY_RELEASE: {
-								target: 'restoring',
-								actions: sendTo(({ context }) => required(context.native), {
+							RETRY_RELEASE: (args, enq) => {
+								enq.sendTo(required(args.context.native), {
 									type: 'RETRY_RELEASE'
 								})
+								return { target: 'restoring' }
 							},
-							CANCEL: {
-								actions: [
-									'interrupt',
-									sendTo(({ context }) => required(context.native), { type: 'CANCEL' })
-								]
+							CANCEL: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								patch = {
+									...patch,
+									...(({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo(required(context.native), { type: 'CANCEL' })
+								return { context: patch }
 							},
-							DRAIN: {
-								actions: [
-									'interrupt',
-									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
-								]
+							DRAIN: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								patch = {
+									...patch,
+									...(({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo(required(context.native), { type: 'SHUTDOWN' })
+								return { context: patch }
 							},
-							SCOPE_CHANGED: {
-								actions: [
-									'interrupt',
-									sendTo(({ context }) => required(context.native), { type: 'SHUTDOWN' })
-								]
+							SCOPE_CHANGED: (args, enq) => {
+								let context = args.context
+								let patch = {}
+								patch = {
+									...patch,
+									...(({ context, event }) => ({
+										interruption: controllerInterruption(context.interruption, event.type)
+									}))(args)
+								}
+								context = { ...args.context, ...patch }
+								enq.sendTo(required(context.native), { type: 'SHUTDOWN' })
+								return { context: patch }
 							}
 						}
 					},
@@ -1711,82 +2220,117 @@ export function createWorkspaceRestoreController(
 						invoke: {
 							src: 'cleanup',
 							input: ({ context }) => context.request,
-							onDone: '#workspace-restore-controller.finished',
-							onError: 'cleanupBlocked'
+							onDone: { target: '#workspace-restore-controller.finished' },
+							onError: { target: 'cleanupBlocked' }
 						}
 					},
-					cleanupBlocked: { on: { RETRY_RELEASE: 'cleaning' } }
+					cleanupBlocked: { on: { RETRY_RELEASE: { target: 'cleaning' } } }
 				},
 				on: {
-					CANCEL: { actions: 'interrupt' },
-					DRAIN: { actions: 'interrupt' },
-					SCOPE_CHANGED: { actions: 'interrupt' },
-					'xstate.snapshot.*': [
-						{
-							guard: ({ context, event }) =>
-								event.type === `xstate.snapshot.${context.native?.id}` &&
-								event.snapshot.hasTag('restore-restart-required'),
-							target: '.restartRequired',
-							actions: 'fail'
-						},
-						{
-							guard: ({ context, event }) =>
-								event.type === `xstate.snapshot.${context.native?.id}` &&
-								event.snapshot.hasTag('restore-release-blocked'),
-							target: '.releaseBlocked'
+					CANCEL: (args) => {
+						return {
+							context: (({ context, event }) => ({
+								interruption: controllerInterruption(context.interruption, event.type)
+							}))(args)
 						}
-					],
-					'xstate.done.actor.*': {
-						guard: ({ context, event }) => event.actorId === context.native?.id,
-						target: '.cleaning',
-						actions: [
-							model.stopChild(({ context }) => required(context.native)),
-							assign({
-								native: undefined,
-								result: ({ event }) =>
-									event.output.record?.checkpoint.kind === 'complete' ||
-									event.output.outcome === 'complete'
-										? 'done'
-										: event.output.outcome === 'conflict'
-											? 'conflict'
-											: event.output.outcome === 'cancelled'
-												? 'cancelled'
-												: 'failed'
-							})
-						]
 					},
-					'xstate.error.actor.*': {
-						guard: ({ context, event }) => event.actorId === context.native?.id,
-						target: '.restartRequired',
-						actions: assign({ result: 'failed' })
+					DRAIN: (args) => {
+						return {
+							context: (({ context, event }) => ({
+								interruption: controllerInterruption(context.interruption, event.type)
+							}))(args)
+						}
+					},
+					SCOPE_CHANGED: (args) => {
+						return {
+							context: (({ context, event }) => ({
+								interruption: controllerInterruption(context.interruption, event.type)
+							}))(args)
+						}
+					},
+					'xstate.snapshot.actor': (args, enq) => {
+						return ((args) => {
+							const { context, event } = args
+							if (
+								event.type === 'xstate.snapshot.actor' &&
+								event.actorId === 'nativeRestore' &&
+								isMachineSnapshot(event.snapshot) &&
+								event.snapshot.hasTag('restore-restart-required')
+							) {
+								return { target: '.restartRequired', context: patchFail() }
+							}
+							if (
+								event.type === 'xstate.snapshot.actor' &&
+								event.actorId === 'nativeRestore' &&
+								isMachineSnapshot(event.snapshot) &&
+								event.snapshot.hasTag('restore-release-blocked')
+							) {
+								return { target: '.releaseBlocked' }
+							}
+						})(args)
+					},
+					'xstate.done.actor': (args, enq) => {
+						return ((args, enq) => {
+							const { context, event } = args
+							if (!(event.actorId === 'nativeRestore')) return
+							enq.stop(required(context.native))
+							return {
+								target: '.cleaning',
+								context: {
+									native: undefined,
+									result:
+										event.output.record?.checkpoint.kind === 'complete' ||
+										event.output.outcome === 'complete'
+											? 'done'
+											: event.output.outcome === 'conflict'
+												? 'conflict'
+												: event.output.outcome === 'cancelled'
+													? 'cancelled'
+													: 'failed'
+								}
+							}
+						})(args, enq)
+					},
+					'xstate.error.actor': (args, enq) => {
+						return ((args) => {
+							if (!(args.event.actorId === 'nativeRestore')) return
+							return { target: '.restartRequired', context: { result: 'failed' } }
+						})(args)
 					}
 				}
 			},
 			finished: {
 				on: {
-					SUBMIT: {
-						target: 'operation',
-						actions: assign({
-							request: ({ event }) => event.request,
-							binding: undefined,
-							previous: undefined,
-							native: undefined,
-							interruption: undefined,
-							result: undefined,
-							name: undefined
-						})
+					SUBMIT: (args) => {
+						return {
+							target: 'operation',
+							context: {
+								request: args.event.request,
+								binding: undefined,
+								previous: undefined,
+								native: undefined,
+								interruption: undefined,
+								result: undefined,
+								name: undefined
+							}
+						}
 					},
-					DRAIN: {
-						target: 'idle',
-						actions: assign({ result: undefined, name: undefined, binding: undefined })
+					DRAIN: () => {
+						return {
+							target: 'idle',
+							context: { result: undefined, name: undefined, binding: undefined }
+						}
 					},
-					DISMISS: {
-						target: 'idle',
-						actions: assign({ result: undefined, name: undefined, binding: undefined })
+					DISMISS: () => {
+						return {
+							target: 'idle',
+							context: { result: undefined, name: undefined, binding: undefined }
+						}
 					},
-					OPEN: {
-						guard: ({ context }) => context.result === 'done' && context.binding !== undefined,
-						target: 'openingDestination'
+					OPEN: (args) => {
+						const { context } = args
+						if (!(context.result === 'done' && context.binding !== undefined)) return
+						return { target: 'openingDestination' }
 					}
 				}
 			},
@@ -1794,10 +2338,27 @@ export function createWorkspaceRestoreController(
 				invoke: {
 					src: 'navigate',
 					input: ({ context }) => required(context.binding),
-					onDone: 'finished',
-					onError: { target: 'finished', actions: assign({ result: 'failed' }) }
+					onDone: { target: 'finished' },
+					onError: () => {
+						return { target: 'finished', context: { result: 'failed' } }
+					}
 				},
-				on: { DRAIN: { actions: 'interrupt' }, CANCEL: { actions: 'interrupt' } }
+				on: {
+					DRAIN: (args) => {
+						return {
+							context: (({ context, event }) => ({
+								interruption: controllerInterruption(context.interruption, event.type)
+							}))(args)
+						}
+					},
+					CANCEL: (args) => {
+						return {
+							context: (({ context, event }) => ({
+								interruption: controllerInterruption(context.interruption, event.type)
+							}))(args)
+						}
+					}
+				}
 			}
 		}
 	})

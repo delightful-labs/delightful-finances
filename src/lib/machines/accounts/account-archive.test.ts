@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise, waitFor } from 'xstate'
 import { required } from '../bank-sync/identity.js'
 import { createAccountArchiveMachine, selectAccountArchiveView } from './account-archive.js'
 import {
@@ -7,6 +6,7 @@ import {
 	type ArchiveObservation,
 	type ArchiveRequest
 } from './account-archive-operation.js'
+import { createActor, toPromise, waitFor } from 'xstate'
 
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`
 function fixture() {

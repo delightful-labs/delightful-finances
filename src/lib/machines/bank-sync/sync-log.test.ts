@@ -1,12 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import {
-	createActor,
-	fromCallback,
-	fromPromise,
-	toPromise,
-	waitFor,
-	type AnyActorRef
-} from 'xstate'
 import { createSyncLogMachine } from './sync-log.js'
 import type { Dependencies } from './types.js'
 import type {
@@ -15,7 +7,19 @@ import type {
 	SyncLogStart,
 	SyncLogAccountResult
 } from '#lib/contracts/bank-sync-log.js'
-const actors: AnyActorRef[] = []
+import {
+	createActor,
+	setup,
+	types,
+	type ActorRefFrom,
+	createCallbackLogic,
+	toPromise,
+	waitFor,
+	createAsyncLogic
+} from 'xstate'
+import type { AnyActorRef } from 'xstate'
+
+const actors: { stop: () => void }[] = []
 type AccountWrite = {
 	id: string
 	values: SyncLogAccountResult & { attemptId: string; organizationId: string }
@@ -48,29 +52,52 @@ function start(
 	} = {}
 ) {
 	const events: SyncLogParentEvent[] = []
-	const parent = createActor(
-		fromCallback<SyncLogParentEvent>(({ receive }) => {
-			receive((event) => {
-				if (event.type === 'SYNC_LOG_READY') events.push(event)
-			})
-		})
-	).start()
-	actors.push(parent)
 	const db = vi.fn<() => Dependencies['db']>()()
-	const actor = createActor(
-		createSyncLogMachine({ db }).provide({
-			actors: {
-				recordAccount: fromPromise<void, AccountWrite>(
-					({ input }) => options.account?.(input) ?? Promise.resolve()
-				),
-				recordStart: fromPromise<void, SyncLogStart>(() => options.begin?.() ?? Promise.resolve()),
-				recordResult: fromPromise<void, { start: SyncLogStart; result: SyncLogCompletion }>(
-					({ input }) => options.finish?.(input.result) ?? Promise.resolve()
-				)
+	const logic = createSyncLogMachine({ db }).provide({
+		actors: {
+			recordAccount: createAsyncLogic<void, AccountWrite>({
+				run: ({ input }) => options.account?.(input) ?? Promise.resolve()
+			}),
+			recordStart: createAsyncLogic<void, SyncLogStart>({
+				run: () => options.begin?.() ?? Promise.resolve()
+			}),
+			recordResult: createAsyncLogic<void, { start: SyncLogStart; result: SyncLogCompletion }>({
+				run: ({ input }) => options.finish?.(input.result) ?? Promise.resolve()
+			})
+		}
+	})
+	const parent = createActor(
+		setup({
+			actors: { log: logic },
+			schemas: {
+				children: { log: types<ActorRefFrom<typeof logic>>() },
+				events: {
+					SYNC_LOG_READY:
+						types<Omit<Extract<SyncLogParentEvent, { type: 'SYNC_LOG_READY' }>, 'type'>>()
+				}
 			}
-		}),
-		{ input: options.input ?? input, parent }
-	).start()
+		}).createMachine({
+			invoke: { id: 'log', src: 'log', input: options.input ?? input },
+			on: {
+				SYNC_LOG_READY: ({ event }, enq) => {
+					enq(() => {
+						events.push(event)
+					})
+				}
+			}
+		})
+	)
+	const retained: { actor: ActorRefFrom<typeof logic> | undefined } = { actor: undefined }
+	const subscription = parent.subscribe((snapshot) => {
+		retained.actor ??= snapshot.children.log
+	})
+	parent.start()
+	subscription.unsubscribe()
+
+	actors.push(parent)
+	const actor = retained.actor
+	if (!actor) throw new Error('Missing supervised sync log')
+
 	return { actor, events }
 }
 it('reports readiness once and records the supplied financial result', async () => {

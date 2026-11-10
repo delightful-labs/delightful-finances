@@ -1,4 +1,3 @@
-import { assign, fromPromise, setup } from 'xstate'
 import { z } from 'zod'
 import { schema as s } from 'jazz-tools'
 import type { IntegrityCheckedArchive } from 'delightful-local-first/backup/envelope'
@@ -20,6 +19,8 @@ import {
 	type InternalTransfer
 } from '../../schema.js'
 import { stableUuid } from '../../domain/stable-uuid.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 /** Typed restore plan; no destination client, writes or access grants are acquired here. */
 export type FinanceRestoreGraph = {
@@ -530,46 +531,95 @@ function buildIntent(input: {
 	createRestoreJournalRecord(intent)
 	return intent
 }
+const events0 = {
+	CANCEL:
+		types<
+			EventPayload<
+				{ type: 'CANCEL' | 'SHUTDOWN' } | { type: 'INVALIDATE'; binding: BackupBinding },
+				'CANCEL'
+			>
+		>(),
+	SHUTDOWN:
+		types<
+			EventPayload<
+				{ type: 'CANCEL' | 'SHUTDOWN' } | { type: 'INVALIDATE'; binding: BackupBinding },
+				'SHUTDOWN'
+			>
+		>(),
+	INVALIDATE:
+		types<
+			EventPayload<
+				{ type: 'CANCEL' | 'SHUTDOWN' } | { type: 'INVALIDATE'; binding: BackupBinding },
+				'INVALIDATE'
+			>
+		>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<(typeof actors)['readSource']>
+			| import('xstate').OutputFrom<(typeof actors)['decode']>
+			| import('xstate').OutputFrom<(typeof actors)['index']>
+			| import('xstate').OutputFrom<(typeof actors)['derive']>
+			| import('xstate').OutputFrom<(typeof actors)['project']>
+			| import('xstate').OutputFrom<(typeof actors)['hashGraph']>
+			| import('xstate').OutputFrom<(typeof actors)['hashWrites']>
+			| import('xstate').OutputFrom<(typeof actors)['hashPlan']>
+			| import('xstate').OutputFrom<(typeof actors)['finish']>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 const actors = {
-	readSource: fromPromise<PrivateValue<Source>, PlanningInput>(({ input }) =>
-		Promise.resolve().then(() => {
-			const { archive } = data(input.request)
-			const bytes = archive.copyPayloadBytes()
-			try {
-				return privateValue(input.request, 'financeRestoreSource', {
-					payload: archive.readPayload(),
-					sourceSize: bytes.byteLength,
-					payloadSha256: archive.payloadDigest()
-				})
-			} finally {
-				bytes.fill(0)
-			}
-		})
-	),
-	decode: fromPromise<PrivateValue<Decoded>, PlanningInput & { source: PrivateValue<Source> }>(
-		({ input }) =>
-			Promise.resolve().then(() =>
-				privateValue(
-					input.request,
-					'financeRestoreRows',
-					decodeFinanceBackup(input.source.read().payload)
+	readSource: createAsyncLogic<PrivateValue<Source>, PlanningInput>({
+		run: ({ input }) =>
+			Promise.resolve().then(() => {
+				const { archive } = data(input.request)
+				const bytes = archive.copyPayloadBytes()
+				try {
+					return privateValue(input.request, 'financeRestoreSource', {
+						payload: archive.readPayload(),
+						sourceSize: bytes.byteLength,
+						payloadSha256: archive.payloadDigest()
+					})
+				} finally {
+					bytes.fill(0)
+				}
+			})
+	}),
+	decode: createAsyncLogic<PrivateValue<Decoded>, PlanningInput & { source: PrivateValue<Source> }>(
+		{
+			run: ({ input }) =>
+				Promise.resolve().then(() =>
+					privateValue(
+						input.request,
+						'financeRestoreRows',
+						decodeFinanceBackup(input.source.read().payload)
+					)
 				)
-			)
+		}
 	),
-	index: fromPromise<
+	index: createAsyncLogic<
 		IdentityIndex,
 		{ source: PrivateValue<Source>; decoded: PrivateValue<Decoded> }
-	>(({ input }) =>
-		Promise.resolve().then(() => indexIdentities(input.source.read(), input.decoded.read()))
-	),
-	derive: fromPromise<Map<string, string>, { operationId: string; names: string[] }>(({ input }) =>
-		Promise.all(
-			input.names.map(
-				async (name) => [name, await stableUuid(input.operationId, name)] satisfies [string, string]
-			)
-		).then((entries) => new Map(entries))
-	),
-	project: fromPromise<
+	>({
+		run: ({ input }) =>
+			Promise.resolve().then(() => indexIdentities(input.source.read(), input.decoded.read()))
+	}),
+	derive: createAsyncLogic<Map<string, string>, { operationId: string; names: string[] }>({
+		run: ({ input }) =>
+			Promise.all(
+				input.names.map(
+					async (name) =>
+						[name, await stableUuid(input.operationId, name)] satisfies [string, string]
+				)
+			).then((entries) => new Map(entries))
+	}),
+	project: createAsyncLogic<
 		PrivateValue<FinanceRestoreGraph>,
 		PlanningInput & {
 			source: PrivateValue<Source>
@@ -577,71 +627,74 @@ const actors = {
 			ids: Map<string, string>
 			binding: BackupBinding
 		}
-	>(({ input }) =>
-		Promise.resolve().then(() =>
-			privateValue(
-				input.request,
-				'financeRestoreGraph',
-				project(input.source.read(), input.decoded.read(), input.ids, input.binding),
-				(graph) => {
-					for (const part of graph.parts) part.data.fill(0)
-				}
+	>({
+		run: ({ input }) =>
+			Promise.resolve().then(() =>
+				privateValue(
+					input.request,
+					'financeRestoreGraph',
+					project(input.source.read(), input.decoded.read(), input.ids, input.binding),
+					(graph) => {
+						for (const part of graph.parts) part.data.fill(0)
+					}
+				)
 			)
-		)
-	),
-	hashGraph: fromPromise<string, PrivateValue<FinanceRestoreGraph>>(({ input }) =>
-		digestRecovery(input.read())
-	),
-	hashWrites: fromPromise<
+	}),
+	hashGraph: createAsyncLogic<string, PrivateValue<FinanceRestoreGraph>>({
+		run: ({ input }) => digestRecovery(input.read())
+	}),
+	hashWrites: createAsyncLogic<
 		[string, string, string],
 		{ graph: PrivateValue<FinanceRestoreGraph>; payloadSha256: string }
-	>(({ input }) => {
-		const graph = input.graph.read()
-		return Promise.all([
-			digestRecovery([graph.workspace, graph.source, input.payloadSha256]),
-			digestRecovery([financeGraphRows(graph), graph.source, input.payloadSha256]),
-			digestRecovery(graph.member)
-		])
+	>({
+		run: ({ input }) => {
+			const graph = input.graph.read()
+			return Promise.all([
+				digestRecovery([graph.workspace, graph.source, input.payloadSha256]),
+				digestRecovery([financeGraphRows(graph), graph.source, input.payloadSha256]),
+				digestRecovery(graph.member)
+			])
+		}
 	}),
-	hashPlan: fromPromise<string, PlanDraft>(({ input }) => digestRecovery(input)),
-	finish: fromPromise<RestoreJournalIntent, Parameters<typeof buildIntent>[0]>(({ input }) =>
-		Promise.resolve().then(() => buildIntent(input))
-	)
+	hashPlan: createAsyncLogic<string, PlanDraft>({ run: ({ input }) => digestRecovery(input) }),
+	finish: createAsyncLogic<RestoreJournalIntent, Parameters<typeof buildIntent>[0]>({
+		run: ({ input }) => Promise.resolve().then(() => buildIntent(input))
+	})
 }
-export const financeRestorePlanningMachine = setup<
-	PlanningContext,
-	{ type: 'CANCEL' | 'SHUTDOWN' } | { type: 'INVALIDATE'; binding: BackupBinding },
-	typeof actors,
-	{},
-	{},
-	{
-		sourceScopeMismatch: PrivateValue<Source>
-		savedIntentMismatch: PrivateValue<Source>
-		savedMappingsMismatch: IdentityIndex
-		hasSavedMappings: undefined
-		identitiesCollide: PrivateValue<FinanceRestoreGraph>
-		rebuiltIntentMismatch: RestoreJournalIntent
+export const financeRestorePlanningMachine = setup({
+	schemas: {
+		context: types<PlanningContext>(),
+		events: events0,
+		input: types<PlanningInput>(),
+		output: types<PlanningResult>(),
+		children: {
+			readSource: types<import('xstate').ActorRefFrom<(typeof actors)['readSource']>>(),
+			decode: types<import('xstate').ActorRefFrom<(typeof actors)['decode']>>(),
+			index: types<import('xstate').ActorRefFrom<(typeof actors)['index']>>(),
+			derive: types<import('xstate').ActorRefFrom<(typeof actors)['derive']>>(),
+			project: types<import('xstate').ActorRefFrom<(typeof actors)['project']>>(),
+			hashGraph: types<import('xstate').ActorRefFrom<(typeof actors)['hashGraph']>>(),
+			hashWrites: types<import('xstate').ActorRefFrom<(typeof actors)['hashWrites']>>(),
+			hashPlan: types<import('xstate').ActorRefFrom<(typeof actors)['hashPlan']>>(),
+			finish: types<import('xstate').ActorRefFrom<(typeof actors)['finish']>>()
+		}
 	},
-	never,
-	string,
-	PlanningInput,
-	PlanningResult
->({
 	actors,
 	guards: {
-		sourceScopeMismatch: ({ context }, source) =>
+		sourceScopeMismatch: ({ context }: { context: PlanningContext }, source) =>
 			!sourceScopeMatches(context.binding, source.read()),
-		savedIntentMismatch: ({ context }, source) =>
+		savedIntentMismatch: ({ context }: { context: PlanningContext }, source) =>
 			!savedIntentMatches(context.binding, context.previous, source.read()),
-		savedMappingsMismatch: ({ context }, index) => !savedMappingsMatch(context.previous, index),
-		hasSavedMappings: ({ context }) => context.previous !== undefined,
-		identitiesCollide: ({ context }, graph) =>
+		savedMappingsMismatch: ({ context }: { context: PlanningContext }, index) =>
+			!savedMappingsMatch(context.previous, index),
+		hasSavedMappings: ({ context }: { context: PlanningContext }) => context.previous !== undefined,
+		identitiesCollide: ({ context }: { context: PlanningContext }, graph) =>
 			!identitiesAreUnique(
 				required(context.source).read().payload,
 				required(context.mappings),
 				graph.read()
 			),
-		rebuiltIntentMismatch: ({ context }, intent) =>
+		rebuiltIntentMismatch: ({ context }: { context: PlanningContext }, intent) =>
 			context.previous !== undefined &&
 			canonicalRecovery(context.previous) !== canonicalRecovery(intent)
 	}
@@ -667,9 +720,9 @@ export const financeRestorePlanningMachine = setup<
 	on: {
 		CANCEL: { target: '.cancelled' },
 		SHUTDOWN: { target: '.cancelled' },
-		INVALIDATE: {
-			guard: ({ context, event }) => sameBackupBinding(context.binding, event.binding),
-			target: '.cancelled'
+		INVALIDATE: (args) => {
+			if (!sameBackupBinding(args.context.binding, args.event.binding)) return
+			return { target: '.cancelled' }
 		}
 	},
 	states: {
@@ -677,26 +730,27 @@ export const financeRestorePlanningMachine = setup<
 			invoke: {
 				src: 'readSource',
 				input: ({ context }) => ({ request: context.request }),
-				onDone: [
-					{
-						guard: { type: 'sourceScopeMismatch', params: ({ event }) => event.output },
-						target: 'failed'
-					},
-					{
-						guard: { type: 'savedIntentMismatch', params: ({ event }) => event.output },
-						target: 'failed'
-					},
-					{ target: 'decoding', actions: assign({ source: ({ event }) => event.output }) }
-				],
-				onError: 'failed'
+				onDone: (args) => {
+					const { event } = args
+					if (args.guards.sourceScopeMismatch(args, event.output)) {
+						return { target: 'failed' }
+					}
+					if (args.guards.savedIntentMismatch(args, event.output)) {
+						return { target: 'failed' }
+					}
+					return { target: 'decoding', context: { source: event.output } }
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		decoding: {
 			invoke: {
 				src: 'decode',
 				input: ({ context }) => ({ request: context.request, source: required(context.source) }),
-				onDone: { target: 'indexing', actions: assign({ decoded: ({ event }) => event.output }) },
-				onError: 'failed'
+				onDone: (args) => {
+					return { target: 'indexing', context: { decoded: args.event.output } }
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		indexing: {
@@ -706,14 +760,14 @@ export const financeRestorePlanningMachine = setup<
 					source: required(context.source),
 					decoded: required(context.decoded)
 				}),
-				onDone: [
-					{
-						guard: { type: 'savedMappingsMismatch', params: ({ event }) => event.output },
-						target: 'failed'
-					},
-					{ target: 'derivingIds', actions: assign({ index: ({ event }) => event.output }) }
-				],
-				onError: 'failed'
+				onDone: (args) => {
+					const { event } = args
+					if (args.guards.savedMappingsMismatch(args, event.output)) {
+						return { target: 'failed' }
+					}
+					return { target: 'derivingIds', context: { index: event.output } }
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		derivingIds: {
@@ -731,31 +785,32 @@ export const financeRestorePlanningMachine = setup<
 						]
 					}
 				},
-				onDone: [
-					{
-						guard: 'hasSavedMappings',
-						target: 'projecting',
-						actions: assign({
-							ids: ({ context, event }) =>
-								new Map([
+				onDone: (args) => {
+					const { context, event } = args
+					if (args.guards.hasSavedMappings(args)) {
+						return {
+							target: 'projecting',
+							context: {
+								ids: new Map([
 									...event.output,
 									...required(context.previous).plan.mappings.map((row): [string, string] => [
 										mappingKey(row),
 										row.destinationId
 									])
 								]),
-							mappings: ({ context }) => required(context.previous).plan.mappings
-						})
-					},
-					{
-						target: 'projecting',
-						actions: assign({
-							ids: ({ event }) => event.output,
-							mappings: ({ context, event }) => newMappings(required(context.index), event.output)
-						})
+								mappings: required(context.previous).plan.mappings
+							}
+						}
 					}
-				],
-				onError: 'failed'
+					return {
+						target: 'projecting',
+						context: {
+							ids: event.output,
+							mappings: newMappings(required(context.index), event.output)
+						}
+					}
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		projecting: {
@@ -768,25 +823,24 @@ export const financeRestorePlanningMachine = setup<
 					ids: required(context.ids),
 					binding: context.binding
 				}),
-				onDone: [
-					{
-						guard: { type: 'identitiesCollide', params: ({ event }) => event.output },
-						target: 'failed'
-					},
-					{ target: 'fingerprintingGraph', actions: assign({ graph: ({ event }) => event.output }) }
-				],
-				onError: 'failed'
+				onDone: (args) => {
+					const { event } = args
+					if (args.guards.identitiesCollide(args, event.output)) {
+						return { target: 'failed' }
+					}
+					return { target: 'fingerprintingGraph', context: { graph: event.output } }
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		fingerprintingGraph: {
 			invoke: {
 				src: 'hashGraph',
 				input: ({ context }) => required(context.graph),
-				onDone: {
-					target: 'fingerprintingWrites',
-					actions: assign({ graphHash: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'fingerprintingWrites', context: { graphHash: args.event.output } }
 				},
-				onError: 'failed'
+				onError: { target: 'failed' }
 			}
 		},
 		fingerprintingWrites: {
@@ -796,30 +850,31 @@ export const financeRestorePlanningMachine = setup<
 					graph: required(context.graph),
 					payloadSha256: required(context.source).read().payloadSha256
 				}),
-				onDone: {
-					target: 'fingerprintingPlan',
-					actions: assign({
-						draft: ({ context, event }) =>
-							draft(
+				onDone: (args) => {
+					const { context } = args
+					return {
+						target: 'fingerprintingPlan',
+						context: {
+							draft: draft(
 								context.binding,
 								required(context.mappings),
 								required(context.graphHash),
-								event.output
+								args.event.output
 							)
-					})
+						}
+					}
 				},
-				onError: 'failed'
+				onError: { target: 'failed' }
 			}
 		},
 		fingerprintingPlan: {
 			invoke: {
 				src: 'hashPlan',
 				input: ({ context }) => required(context.draft),
-				onDone: {
-					target: 'validatingIntent',
-					actions: assign({ planHash: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'validatingIntent', context: { planHash: args.event.output } }
 				},
-				onError: 'failed'
+				onError: { target: 'failed' }
 			}
 		},
 		validatingIntent: {
@@ -832,35 +887,36 @@ export const financeRestorePlanningMachine = setup<
 					draft: required(context.draft),
 					planHash: required(context.planHash)
 				}),
-				onDone: [
-					{
-						guard: { type: 'rebuiltIntentMismatch', params: ({ event }) => event.output },
-						target: 'failed'
-					},
-					{ target: 'planned', actions: assign({ intent: ({ event }) => event.output }) }
-				],
-				onError: 'failed'
+				onDone: (args) => {
+					const { event } = args
+					if (args.guards.rebuiltIntentMismatch(args, event.output)) {
+						return { target: 'failed' }
+					}
+					return { target: 'planned', context: { intent: event.output } }
+				},
+				onError: { target: 'failed' }
 			}
 		},
 		planned: {
 			type: 'final',
-			entry: [
-				({ context }) => {
+			entry: (args, enq) => {
+				const { context } = args
+				enq(({ context }) => {
 					data(context.request).plan = {
 						graph: required(context.graph).read(),
 						intent: required(context.intent)
 					}
-				},
-				assign({ result: ({ context }) => ({ outcome: 'planned', plan: context.request }) })
-			]
+				}, args)
+				return { context: { result: { outcome: 'planned', plan: context.request } } }
+			}
 		},
 		failed: { type: 'final', entry: ({ context }) => context.request.release() },
 		cancelled: {
 			type: 'final',
-			entry: [
-				({ context }) => context.request.release(),
-				assign({ result: { outcome: 'cancelled' } })
-			]
+			entry: (args, enq) => {
+				enq(({ context }) => context.request.release(), args)
+				return { context: { result: { outcome: 'cancelled' } } }
+			}
 		}
 	}
 })

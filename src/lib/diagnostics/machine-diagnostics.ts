@@ -1,5 +1,5 @@
-import type { InspectionEvent } from 'xstate'
 import { createLogger, debugEnabled, type DebugValue } from './logger.js'
+import type { InspectionEvent } from 'xstate'
 
 type Details = Record<string, DebugValue>
 const logger = createLogger('state-machine')
@@ -200,20 +200,13 @@ function statePaths(value: unknown, prefix = '', depth = 0): string[] {
 
 /** Observe only. This adapter never sends actor commands or owns workflow state. */
 export function logMachineFailure(event: InspectionEvent) {
-	if (!debugEnabled || (event.type !== '@xstate.snapshot' && event.type !== '@xstate.event')) return
+	if (!debugEnabled || (event.type !== '@xstate.transition' && event.type !== '@xstate.actor'))
+		return
 	try {
-		// A thrown child transition can report only an error event to its parent,
-		// without publishing a final snapshot inspection event of its own.
-		const actorRef =
-			event.type === '@xstate.event' &&
-			event.event.type.startsWith('xstate.error.actor.') &&
-			event.sourceRef?.getSnapshot().status === 'error'
-				? event.sourceRef
-				: event.actorRef
-		// Initial-state failures may emit only an initialization/error event,
-		// before a root actor ever publishes its first snapshot notification.
+		const actorRef = event.actorRef
 		const snapshot: unknown =
-			event.type === '@xstate.snapshot' ? event.snapshot : actorRef.getSnapshot()
+			event.type === '@xstate.transition' ? event.snapshot : actorRef.getSnapshot()
+		const eventType = event.type === '@xstate.transition' ? event.eventType : 'xstate.init'
 		if (!snapshot || typeof snapshot !== 'object') return
 		const status = field(snapshot, 'status')
 		const states = statePaths(field(snapshot, 'value'))
@@ -222,7 +215,7 @@ export function logMachineFailure(event: InspectionEvent) {
 		const outcome = field(output, 'outcome')
 		const failed =
 			status === 'error' ||
-			event.event.type.startsWith('xstate.error.actor.') ||
+			eventType === 'xstate.error.actor' ||
 			(!(tags instanceof Set && tags.has('historical-outcome')) &&
 				states.some((state) => failureState.test(state))) ||
 			(tags instanceof Set &&
@@ -235,7 +228,7 @@ export function logMachineFailure(event: InspectionEvent) {
 		const context = field(snapshot, 'context')
 		const error =
 			field(snapshot, 'error') ??
-			field(event.event, 'error') ??
+			(event.type === '@xstate.transition' ? field(event.event, 'error') : undefined) ??
 			field(context, 'error') ??
 			field(field(context, 'result'), 'error') ??
 			field(output, 'error')
@@ -246,7 +239,7 @@ export function logMachineFailure(event: InspectionEvent) {
 			rootSessionId: event.rootId,
 			status: identifier(status),
 			states,
-			event: diagnosticEventType(event.event.type),
+			event: diagnosticEventType(eventType),
 			errorAvailable: error !== undefined && error !== null,
 			error: diagnosticError(error),
 			context: diagnosticContext(context),

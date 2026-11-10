@@ -1,7 +1,6 @@
 import type { PaymentMethod } from '#lib/domain/payment-method.js'
 import { TRANSACTION_SOURCE, type TransactionSource } from '#lib/domain/transaction-source.js'
 import type { TransactionKind } from '#lib/domain/transaction-kind.js'
-import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { PersistedWriteRejectedError } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
@@ -12,6 +11,9 @@ import { independentTransactionSchema } from '#lib/validation/transactions.js'
 import type { IndependentTransaction } from '#lib/domain/transaction.js'
 import type { FormInterruption, FormSettlement } from '#lib/contracts/form-contract.js'
 import { transferEditRequiresUnlink } from '#lib/contracts/transaction-save-contract.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type TransactionDb = Pick<ReturnType<typeof getDb>, 'beginTransaction'>
 type Transaction = ReturnType<TransactionDb['beginTransaction']>
@@ -55,12 +57,13 @@ function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error('Missing transaction resource')
 	return value
 }
-const validate = fromPromise(({ input }: { input: IndependentTransactionInput }) =>
-	Promise.resolve(inputSchema.safeParse(input))
-)
-const open = fromPromise(({ input }: { input: TransactionDb }) =>
-	Promise.resolve(input.beginTransaction())
-)
+const validate = createAsyncLogic({
+	run: ({ input }: { input: IndependentTransactionInput }) =>
+		Promise.resolve(inputSchema.safeParse(input))
+})
+const open = createAsyncLogic({
+	run: ({ input }: { input: TransactionDb }) => Promise.resolve(input.beginTransaction())
+})
 function planTransaction(
 	values: IndependentTransaction,
 	tags: readonly Tag[],
@@ -138,34 +141,36 @@ function planTransaction(
 	}
 	return { row, tags: uniqueTags, remove: [] }
 }
-const read = fromPromise(
-	({ input }: { input: { tx: Transaction; values: IndependentTransaction } }) =>
+const read = createAsyncLogic({
+	run: ({ input }: { input: { tx: Transaction; values: IndependentTransaction } }) =>
 		input.tx.all(
 			app.tags.where({ organizationId: input.values.organizationId, kind: input.values.kind })
 		)
-)
-const readEdit = fromPromise(async ({ input }: { input: { tx: Transaction; id: string } }) => {
-	const results = await Promise.allSettled([
-		Promise.resolve().then(() => input.tx.all(app.transactions.where({ id: input.id }))),
-		Promise.resolve().then(() =>
-			input.tx.all(app.transactionTags.where({ transactionId: input.id }))
-		),
-		Promise.resolve().then(() =>
-			input.tx.all(app.internalTransfers.where({ expenseTransactionId: input.id }))
-		),
-		Promise.resolve().then(() =>
-			input.tx.all(app.internalTransfers.where({ incomeTransactionId: input.id }))
-		)
-	])
-	const [rows, links, expenseTransfers, incomeTransfers] = results
-	if (rows.status === 'rejected') throw rows.reason
-	if (links.status === 'rejected') throw links.reason
-	if (expenseTransfers.status === 'rejected') throw expenseTransfers.reason
-	if (incomeTransfers.status === 'rejected') throw incomeTransfers.reason
-	return {
-		existing: rows.value[0],
-		links: links.value,
-		transfers: [...expenseTransfers.value, ...incomeTransfers.value]
+})
+const readEdit = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; id: string } }) => {
+		const results = await Promise.allSettled([
+			Promise.resolve().then(() => input.tx.all(app.transactions.where({ id: input.id }))),
+			Promise.resolve().then(() =>
+				input.tx.all(app.transactionTags.where({ transactionId: input.id }))
+			),
+			Promise.resolve().then(() =>
+				input.tx.all(app.internalTransfers.where({ expenseTransactionId: input.id }))
+			),
+			Promise.resolve().then(() =>
+				input.tx.all(app.internalTransfers.where({ incomeTransactionId: input.id }))
+			)
+		])
+		const [rows, links, expenseTransfers, incomeTransfers] = results
+		if (rows.status === 'rejected') throw rows.reason
+		if (links.status === 'rejected') throw links.reason
+		if (expenseTransfers.status === 'rejected') throw expenseTransfers.reason
+		if (incomeTransfers.status === 'rejected') throw incomeTransfers.reason
+		return {
+			existing: rows.value[0],
+			links: links.value,
+			transfers: [...expenseTransfers.value, ...incomeTransfers.value]
+		}
 	}
 })
 type EditSnapshot = OutputFrom<typeof readEdit>
@@ -179,11 +184,12 @@ function editable(existing: TransactionRow | undefined, values: IndependentTrans
 			existing.externalId === values.source.externalId)
 	)
 }
-const readMoveCheck = fromPromise(({ input }: { input: { tx: Transaction; id: string } }) =>
-	input.tx.all(app.checks.where({ id: input.id }))
-)
-const prepare = fromPromise(
-	({
+const readMoveCheck = createAsyncLogic({
+	run: ({ input }: { input: { tx: Transaction; id: string } }) =>
+		input.tx.all(app.checks.where({ id: input.id }))
+})
+const prepare = createAsyncLogic({
+	run: ({
 		input
 	}: {
 		input: {
@@ -209,7 +215,7 @@ const prepare = fromPromise(
 		plan.tags = plan.tags.filter((tag) => !input.edit?.links.some((link) => link.tagId === tag.id))
 		return Promise.resolve(plan)
 	}
-)
+})
 type StageInput = {
 	tx: Transaction
 	plan: Plan
@@ -227,25 +233,31 @@ function stageTags({ tx, plan, transactionId }: StageInput) {
 		})
 	}
 }
-const stage = fromPromise(({ input }: { input: StageInput }) => {
-	input.tx.insert(app.transactions, input.plan.row, { id: input.transactionId })
-	stageTags(input)
-	return Promise.resolve()
+const stage = createAsyncLogic({
+	run: ({ input }: { input: StageInput }) => {
+		input.tx.insert(app.transactions, input.plan.row, { id: input.transactionId })
+		stageTags(input)
+		return Promise.resolve()
+	}
 })
-const update = fromPromise(({ input }: { input: StageInput }) => {
-	if (input.plan.moveCheck)
-		input.tx.update(app.checks, input.plan.moveCheck.id, {
-			accountId: input.plan.moveCheck.accountId
-		})
-	input.tx.update(app.transactions, input.transactionId, input.plan.row)
-	stageTags(input)
-	return Promise.resolve()
+const update = createAsyncLogic({
+	run: ({ input }: { input: StageInput }) => {
+		if (input.plan.moveCheck)
+			input.tx.update(app.checks, input.plan.moveCheck.id, {
+				accountId: input.plan.moveCheck.accountId
+			})
+		input.tx.update(app.transactions, input.transactionId, input.plan.row)
+		stageTags(input)
+		return Promise.resolve()
+	}
 })
-const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
-const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
-	input.wait({ tier: 'local' })
-)
-const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
+const commit = createAsyncLogic({
+	run: ({ input }: { input: Transaction }) => Promise.resolve(input.commit())
+})
+const settle = createAsyncLogic({
+	run: ({ input }: { input: OutputFrom<typeof commit> }) => input.wait({ tier: 'local' })
+})
+const rollback = createAsyncLogic({ run: ({ input }: { input: Transaction }) => input.rollback() })
 type Context = {
 	input: IndependentTransactionInput | undefined
 	transactionId: string
@@ -276,47 +288,79 @@ const actors = {
 
 /** Owns the transaction and all tag writes for one caller-identified ledger entry. */
 export function createIndependentTransactionPersistenceMachine(db: TransactionDb) {
-	const model = setup<
-		Context,
-		IndependentTransactionEvent,
-		typeof actors,
-		{},
-		{},
-		{ interrupted: undefined; closing: undefined; invalidated: undefined; cancelling: undefined },
-		never,
-		string,
-		IndependentTransactionInput,
-		IndependentTransactionResult
-	>({
+	const events0 = {
+		CANCEL: types<EventPayload<IndependentTransactionEvent, 'CANCEL'>>(),
+		INVALIDATE: types<EventPayload<IndependentTransactionEvent, 'INVALIDATE'>>(),
+		SHUTDOWN: types<EventPayload<IndependentTransactionEvent, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['validate']>
+				| import('xstate').OutputFrom<(typeof actors)['open']>
+				| import('xstate').OutputFrom<(typeof actors)['read']>
+				| import('xstate').OutputFrom<(typeof actors)['prepare']>
+				| import('xstate').OutputFrom<(typeof actors)['stage']>
+				| import('xstate').OutputFrom<(typeof actors)['commit']>
+				| import('xstate').OutputFrom<(typeof actors)['settle']>
+				| import('xstate').OutputFrom<(typeof actors)['rollback']>
+				| import('xstate').OutputFrom<(typeof actors)['readEdit']>
+				| import('xstate').OutputFrom<(typeof actors)['readMoveCheck']>
+				| import('xstate').OutputFrom<(typeof actors)['update']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<IndependentTransactionInput>(),
+			output: types<IndependentTransactionResult>(),
+			children: {
+				validate: types<import('xstate').ActorRefFrom<(typeof actors)['validate']>>(),
+				open: types<import('xstate').ActorRefFrom<(typeof actors)['open']>>(),
+				read: types<import('xstate').ActorRefFrom<(typeof actors)['read']>>(),
+				prepare: types<import('xstate').ActorRefFrom<(typeof actors)['prepare']>>(),
+				stage: types<import('xstate').ActorRefFrom<(typeof actors)['stage']>>(),
+				commit: types<import('xstate').ActorRefFrom<(typeof actors)['commit']>>(),
+				settle: types<import('xstate').ActorRefFrom<(typeof actors)['settle']>>(),
+				rollback: types<import('xstate').ActorRefFrom<(typeof actors)['rollback']>>(),
+				readEdit: types<import('xstate').ActorRefFrom<(typeof actors)['readEdit']>>(),
+				readMoveCheck: types<import('xstate').ActorRefFrom<(typeof actors)['readMoveCheck']>>(),
+				update: types<import('xstate').ActorRefFrom<(typeof actors)['update']>>()
+			}
+		},
 		actors,
 		guards: {
-			interrupted: stateIn({ running: { control: 'interrupted' } }),
-			closing: stateIn({ running: { control: { interrupted: 'closed' } } }),
-			invalidated: stateIn({ running: { control: { interrupted: 'scopeChanged' } } }),
-			cancelling: stateIn({ running: { control: { interrupted: 'cancelled' } } })
+			interrupted: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'interrupted' } }, args.value)
 		}
 	})
 	const terminal = (outcome: IndependentTransactionResult['outcome']) =>
 		model.createStateConfig({
 			type: 'final',
-			entry: assign({
-				result: ({ context }): IndependentTransactionResult => ({
-					outcome,
-					transactionId: context.transactionId,
-					settlement: context.settlement,
-					...(outcome === 'failed' && context.failureReason
-						? { reason: context.failureReason }
-						: {})
-				}),
-				input: undefined,
-				values: undefined,
-				tx: undefined,
-				tags: [],
-				edit: undefined,
-				moveCheck: undefined,
-				plan: undefined,
-				handle: undefined
-			})
+			entry: (args: { context: Context }) => {
+				const { context } = args
+				return {
+					context: {
+						result: {
+							outcome,
+							transactionId: context.transactionId,
+							settlement: context.settlement,
+							...(outcome === 'failed' && context.failureReason
+								? { reason: context.failureReason }
+								: {})
+						},
+						input: undefined,
+						values: undefined,
+						tx: undefined,
+						tags: [],
+						edit: undefined,
+						moveCheck: undefined,
+						plan: undefined,
+						handle: undefined
+					}
+				}
+			}
 		})
 	return model.createMachine({
 		id: 'independent-transaction-persistence',
@@ -343,9 +387,9 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 					control: {
 						initial: 'active',
 						on: {
-							CANCEL: '.interrupted.cancelled',
-							INVALIDATE: '.interrupted.scopeChanged',
-							SHUTDOWN: '.interrupted.closed'
+							CANCEL: { target: '.interrupted.cancelled' },
+							INVALIDATE: { target: '.interrupted.scopeChanged' },
+							SHUTDOWN: { target: '.interrupted.closed' }
 						},
 						states: {
 							active: {},
@@ -366,91 +410,89 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 								invoke: {
 									src: 'validate',
 									input: ({ context }) => required(context.input),
-									onDone: [
-										{ guard: 'interrupted', target: 'finishingFailure' },
-										{
-											guard: ({ event }) => event.output.success,
-											target: 'opening',
-											actions: assign({
-												values: ({ event }) =>
-													event.output.success ? event.output.data.values : undefined
-											})
-										},
-										{ target: 'finishingFailure' }
-									],
-									onError: 'finishingFailure'
+									onDone: (args) => {
+										const { event } = args
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'finishingFailure' }
+										}
+										if (event.output.success) {
+											return {
+												target: 'opening',
+												context: {
+													values: event.output.success ? event.output.data.values : undefined
+												}
+											}
+										}
+										return { target: 'finishingFailure' }
+									},
+									onError: { target: 'finishingFailure' }
 								}
 							},
 							opening: {
 								invoke: {
 									src: 'open',
 									input: () => db,
-									onDone: [
-										{
-											guard: 'interrupted',
-											target: 'rollingBack',
-											actions: assign({ tx: ({ event }) => event.output })
-										},
-										{
-											guard: ({ context }) => context.input?.mode === 'edit',
-											target: 'readingEdit',
-											actions: assign({ tx: ({ event }) => event.output })
-										},
-										{
-											guard: ({ context }) => Boolean(context.values?.tags?.length),
-											target: 'reading',
-											actions: assign({ tx: ({ event }) => event.output })
-										},
-										{
-											target: 'planning',
-											actions: assign({ tx: ({ event }) => event.output })
+									onDone: (args) => {
+										const { context, event } = args
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack', context: { tx: event.output } }
 										}
-									],
-									onError: 'finishingFailure'
+										if (context.input?.mode === 'edit') {
+											return { target: 'readingEdit', context: { tx: event.output } }
+										}
+										if (Boolean(context.values?.tags?.length)) {
+											return { target: 'reading', context: { tx: event.output } }
+										}
+										return { target: 'planning', context: { tx: event.output } }
+									},
+									onError: { target: 'finishingFailure' }
 								}
 							},
 							readingEdit: {
 								invoke: {
 									src: 'readEdit',
 									input: ({ context }) => ({ tx: required(context.tx), id: context.transactionId }),
-									onDone: {
-										target: 'checkingEdit',
-										actions: assign({ edit: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'checkingEdit', context: { edit: args.event.output } }
 									},
-									onError: 'rollingBack'
+									onError: { target: 'rollingBack' }
 								}
 							},
 							checkingEdit: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{
-										guard: ({ context }) =>
-											editable(context.edit?.existing, required(context.values)) &&
-											transferEditRequiresUnlink(
-												context.edit?.existing,
-												required(context.values),
-												(context.edit?.transfers.length ?? 0) > 0
-											),
-										target: 'rollingBack',
-										actions: assign({ failureReason: 'linkedTransferRequiresUnlink' })
-									},
-									{
-										guard: ({ context }) =>
-											editable(context.edit?.existing, required(context.values)),
-										target: 'assessingMove'
-									},
-									{ target: 'rollingBack' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (
+										editable(context.edit?.existing, required(context.values)) &&
+										transferEditRequiresUnlink(
+											context.edit?.existing,
+											required(context.values),
+											(context.edit?.transfers.length ?? 0) > 0
+										)
+									) {
+										return {
+											target: 'rollingBack',
+											context: { failureReason: 'linkedTransferRequiresUnlink' }
+										}
+									}
+									if (editable(context.edit?.existing, required(context.values))) {
+										return { target: 'assessingMove' }
+									}
+									return { target: 'rollingBack' }
+								}
 							},
 							assessingMove: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{
-										guard: ({ context }) => context.input?.moveCheckFromAccountId !== undefined,
-										target: 'readingMoveCheck'
-									},
-									{ target: 'reading' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (args.context.input?.moveCheckFromAccountId !== undefined) {
+										return { target: 'readingMoveCheck' }
+									}
+									return { target: 'reading' }
+								}
 							},
 							readingMoveCheck: {
 								invoke: {
@@ -459,28 +501,30 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										tx: required(context.tx),
 										id: required(required(context.values).checkId ?? undefined)
 									}),
-									onDone: {
-										target: 'checkingMove',
-										actions: assign({ moveCheck: ({ event }) => event.output[0] })
+									onDone: (args) => {
+										return { target: 'checkingMove', context: { moveCheck: args.event.output[0] } }
 									},
-									onError: 'rollingBack'
+									onError: { target: 'rollingBack' }
 								}
 							},
 							checkingMove: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{
-										guard: ({ context }) =>
-											context.moveCheck !== undefined &&
-											context.moveCheck.id === context.edit?.existing?.checkId &&
-											context.moveCheck.id === context.values?.checkId &&
-											context.moveCheck.organizationId === context.values?.organizationId &&
-											context.moveCheck.accountId === context.input?.moveCheckFromAccountId &&
-											context.moveCheck.accountId === context.edit?.existing?.accountId,
-										target: 'reading'
-									},
-									{ target: 'rollingBack' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (
+										context.moveCheck !== undefined &&
+										context.moveCheck.id === context.edit?.existing?.checkId &&
+										context.moveCheck.id === context.values?.checkId &&
+										context.moveCheck.organizationId === context.values?.organizationId &&
+										context.moveCheck.accountId === context.input?.moveCheckFromAccountId &&
+										context.moveCheck.accountId === context.edit?.existing?.accountId
+									) {
+										return { target: 'reading' }
+									}
+									return { target: 'rollingBack' }
+								}
 							},
 							reading: {
 								invoke: {
@@ -489,14 +533,13 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										tx: required(context.tx),
 										values: required(context.values)
 									}),
-									onDone: [
-										{ guard: 'interrupted', target: 'rollingBack' },
-										{
-											target: 'planning',
-											actions: assign({ tags: ({ event }) => event.output })
+									onDone: (args) => {
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack' }
 										}
-									],
-									onError: 'rollingBack'
+										return { target: 'planning', context: { tags: args.event.output } }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							planning: {
@@ -508,19 +551,17 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										edit: context.edit,
 										moveCheck: context.moveCheck
 									}),
-									onDone: [
-										{ guard: 'interrupted', target: 'rollingBack' },
-										{
-											guard: ({ context }) => context.input?.mode === 'edit',
-											target: 'updating',
-											actions: assign({ plan: ({ event }) => event.output })
-										},
-										{
-											target: 'staging',
-											actions: assign({ plan: ({ event }) => event.output })
+									onDone: (args) => {
+										const { event } = args
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack' }
 										}
-									],
-									onError: 'rollingBack'
+										if (args.context.input?.mode === 'edit') {
+											return { target: 'updating', context: { plan: event.output } }
+										}
+										return { target: 'staging', context: { plan: event.output } }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							updating: {
@@ -532,11 +573,13 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										transactionId: context.transactionId,
 										edit: context.edit
 									}),
-									onDone: [
-										{ guard: 'interrupted', target: 'rollingBack' },
-										{ target: 'committing' }
-									],
-									onError: 'rollingBack'
+									onDone: (args) => {
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack' }
+										}
+										return { target: 'committing' }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							staging: {
@@ -547,100 +590,131 @@ export function createIndependentTransactionPersistenceMachine(db: TransactionDb
 										plan: required(context.plan),
 										transactionId: context.transactionId
 									}),
-									onDone: [
-										{ guard: 'interrupted', target: 'rollingBack' },
-										{ target: 'committing' }
-									],
-									onError: 'rollingBack'
+									onDone: (args) => {
+										if (matchesState({ running: { control: 'interrupted' } }, args.value)) {
+											return { target: 'rollingBack' }
+										}
+										return { target: 'committing' }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							committing: {
-								entry: assign({ settlement: 'unknown' }),
+								entry: () => {
+									return { context: { settlement: 'unknown' } }
+								},
 								invoke: {
 									src: 'commit',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'settling',
-										actions: assign({ handle: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'settling', context: { handle: args.event.output } }
 									},
-									onError: [
-										{
-											guard: ({ event }) => event.error instanceof PersistedWriteRejectedError,
-											target: 'rollingBack',
-											actions: assign({ settlement: 'rejected' })
-										},
-										{ target: 'rollingBack' }
-									]
+									onError: (args) => {
+										if (args.event.error instanceof PersistedWriteRejectedError) {
+											return { target: 'rollingBack', context: { settlement: 'rejected' } }
+										}
+										return { target: 'rollingBack' }
+									}
 								}
 							},
 							settling: {
 								invoke: {
 									src: 'settle',
 									input: ({ context }) => required(context.handle),
-									onDone: {
-										target: 'finishingSuccess',
-										actions: assign({ settlement: 'locallyPersisted' })
+									onDone: () => {
+										return {
+											target: 'finishingSuccess',
+											context: { settlement: 'locallyPersisted' }
+										}
 									},
-									onError: [
-										{
-											guard: ({ event }) => event.error instanceof PersistedWriteRejectedError,
-											target: 'rollingBack',
-											actions: assign({ settlement: 'rejected' })
-										},
-										{ target: 'rollingBack' }
-									]
+									onError: (args) => {
+										if (args.event.error instanceof PersistedWriteRejectedError) {
+											return { target: 'rollingBack', context: { settlement: 'rejected' } }
+										}
+										return { target: 'rollingBack' }
+									}
 								}
 							},
 							rollingBack: {
-								always: [
-									{ guard: ({ context }) => context.tx === undefined, target: 'finishingFailure' },
-									{ target: 'rollbackTransaction' }
-								]
+								always: (args) => {
+									if (args.context.tx === undefined) {
+										return { target: 'finishingFailure' }
+									}
+									return { target: 'rollbackTransaction' }
+								}
 							},
 							rollbackTransaction: {
 								invoke: {
 									src: 'rollback',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'finishingFailure',
-										actions: assign({
-											settlement: ({ context, event }) =>
-												context.settlement === 'rejected' ||
-												(event.output && context.settlement === 'notStarted')
-													? 'rejected'
-													: 'unknown'
-										})
+									onDone: (args) => {
+										const { context } = args
+										return {
+											target: 'finishingFailure',
+											context: {
+												settlement:
+													context.settlement === 'rejected' ||
+													(args.event.output && context.settlement === 'notStarted')
+														? 'rejected'
+														: 'unknown'
+											}
+										}
 									},
-									onError: {
-										target: 'finishingFailure',
-										actions: assign({
-											settlement: ({ context }) =>
-												context.settlement === 'rejected' ? 'rejected' : 'unknown'
-										})
+									onError: (args) => {
+										return {
+											target: 'finishingFailure',
+											context: {
+												settlement: args.context.settlement === 'rejected' ? 'rejected' : 'unknown'
+											}
+										}
 									}
 								}
 							},
 							finishingSuccess: {
-								always: [
-									{ guard: 'closing', target: '#independent-transaction-persistence.closed' },
-									{
-										guard: 'invalidated',
-										target: '#independent-transaction-persistence.scopeChanged'
-									},
-									{ guard: 'cancelling', target: '#independent-transaction-persistence.cancelled' },
-									{ target: '#independent-transaction-persistence.succeeded' }
-								]
+								always: (args) => {
+									if (
+										matchesState({ running: { control: { interrupted: 'closed' } } }, args.value)
+									) {
+										return { target: '#independent-transaction-persistence.closed' }
+									}
+									if (
+										matchesState(
+											{ running: { control: { interrupted: 'scopeChanged' } } },
+											args.value
+										)
+									) {
+										return { target: '#independent-transaction-persistence.scopeChanged' }
+									}
+									if (
+										matchesState({ running: { control: { interrupted: 'cancelled' } } }, args.value)
+									) {
+										return { target: '#independent-transaction-persistence.cancelled' }
+									}
+									return { target: '#independent-transaction-persistence.succeeded' }
+								}
 							},
 							finishingFailure: {
-								always: [
-									{ guard: 'closing', target: '#independent-transaction-persistence.closed' },
-									{
-										guard: 'invalidated',
-										target: '#independent-transaction-persistence.scopeChanged'
-									},
-									{ guard: 'cancelling', target: '#independent-transaction-persistence.cancelled' },
-									{ target: '#independent-transaction-persistence.failed' }
-								]
+								always: (args) => {
+									if (
+										matchesState({ running: { control: { interrupted: 'closed' } } }, args.value)
+									) {
+										return { target: '#independent-transaction-persistence.closed' }
+									}
+									if (
+										matchesState(
+											{ running: { control: { interrupted: 'scopeChanged' } } },
+											args.value
+										)
+									) {
+										return { target: '#independent-transaction-persistence.scopeChanged' }
+									}
+									if (
+										matchesState({ running: { control: { interrupted: 'cancelled' } } }, args.value)
+									) {
+										return { target: '#independent-transaction-persistence.cancelled' }
+									}
+									return { target: '#independent-transaction-persistence.failed' }
+								}
 							}
 						}
 					}

@@ -1,5 +1,5 @@
-import type { ActorRef, Snapshot } from 'xstate'
 import type { Organization } from '../schema.js'
+import type { ActorRef, Snapshot } from 'xstate'
 
 export { sameInitializationRequest } from 'delightful-local-first/workspace/startup-contracts'
 export type {

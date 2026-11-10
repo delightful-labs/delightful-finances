@@ -8,7 +8,6 @@ import { createServer, type ViteDevServer } from 'vite'
 import { jazzWasmEntry } from '../tooling/jazz-wasm.js'
 import type { Plugin } from 'vite'
 import type { RecoverySample } from '../specs/016-workspace-restore/browser.js'
-import { createActor, toPromise, fromPromise } from 'xstate'
 import {
 	prepareJazzArchiveExport,
 	type JazzArchiveReaderInput,
@@ -51,6 +50,8 @@ import type { LocalJazzServerHandle } from 'jazz-tools/testing'
 import { deploy, startLocalJazzServer, allowTestBrowserOrigin } from './helpers/jazz-test-server.js'
 import { previousApp as app, app as isolationApp, type Organization } from '../src/lib/schema.js'
 import isolationPermissions, { previousPermissions as permissions } from '../src/lib/permissions.js'
+import { createActor, toPromise, createAsyncLogic } from 'xstate'
+
 function jazzRuntimeAssets(): Plugin {
 	return {
 		name: 'finance-restore-jazz-assets',
@@ -82,10 +83,12 @@ const legacyFinanceBackupProfile = {
 }
 const legacyFinanceBackupReader = financeBackupReader.provide({
 	actors: {
-		authority: fromPromise<void, JazzArchiveReaderInput>(({ input }) =>
-			readFinanceAuthority(input, app)
-		),
-		relations: fromPromise<void, JazzArchiveReaderInput>(({ input }) => readFinanceRelations(input))
+		authority: createAsyncLogic<void, JazzArchiveReaderInput>({
+			run: ({ input }) => readFinanceAuthority(input, app)
+		}),
+		relations: createAsyncLogic<void, JazzArchiveReaderInput>({
+			run: ({ input }) => readFinanceRelations(input)
+		})
 	}
 })
 
@@ -1575,7 +1578,7 @@ describe('browser replica separation', () => {
 				throw new Error('Validation cannot acquire transaction custody')
 			})
 			const destination = adapter.destination.provide({
-					actors: { fingerprint: fromPromise(() => gate.promise) }
+					actors: { fingerprint: createAsyncLogic({ run: () => gate.promise }) }
 				}),
 				operation = sample.intent.operation,
 				binding = {

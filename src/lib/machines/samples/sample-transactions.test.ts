@@ -1,4 +1,3 @@
-import { createActor, setup, toPromise, waitFor } from 'xstate'
 import { describe, expect, it, vi } from 'vitest'
 import { createSampleTransactionsMachine } from './sample-transactions.js'
 import { creationFixture } from '../transactions/transaction-create.fixture.js'
@@ -8,15 +7,22 @@ import type {
 	TransactionEntryObservation,
 	TransactionEntryReason
 } from '#lib/contracts/transaction-entry-contract.js'
+import { createActor, setup, toPromise, waitFor, types } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 describe('sample transaction batches', () => {
 	it('saves exactly 25 sequential entries and allows a new batch', async () => {
 		const f = creationFixture()
 		const indices: number[] = []
 		const actor = createActor(
-			createSampleTransactionsMachine(f.machine, (index) => {
-				indices.push(index)
-				return f.input()
+			createSampleTransactionsMachine({
+				logic: f.machine,
+				prepare: (index) => {
+					indices.push(index)
+					return f.input()
+				},
+				result: (output) => output,
+				recipient: (actor) => actor
 			})
 		).start()
 		actor.send({ type: 'ADD' })
@@ -36,10 +42,15 @@ describe('sample transaction batches', () => {
 			let fail = true
 			const indices: number[] = []
 			const actor = createActor(
-				createSampleTransactionsMachine(f.machine, (index) => {
-					indices.push(index)
-					if (fail && index === failAt) throw new Error('Invalid sample')
-					return f.input()
+				createSampleTransactionsMachine({
+					logic: f.machine,
+					prepare: (index) => {
+						indices.push(index)
+						if (fail && index === failAt) throw new Error('Invalid sample')
+						return f.input()
+					},
+					result: (output) => output,
+					recipient: (actor) => actor
 				})
 			).start()
 			actor.send({ type: 'ADD' })
@@ -59,7 +70,14 @@ describe('sample transaction batches', () => {
 			const f = creationFixture()
 			const pending = Promise.withResolvers<void>()
 			f.wait.mockReturnValue(pending.promise)
-			const actor = createActor(createSampleTransactionsMachine(f.machine, () => f.input())).start()
+			const actor = createActor(
+				createSampleTransactionsMachine({
+					logic: f.machine,
+					prepare: () => f.input(),
+					result: (output) => output,
+					recipient: (actor) => actor
+				})
+			).start()
 			actor.send({ type: 'ADD' })
 			await vi.waitFor(() => expect(f.wait).toHaveBeenCalledOnce())
 			actor.send({ type })
@@ -79,9 +97,12 @@ describe('sample transaction batches', () => {
 		const read = Promise.withResolvers<[]>()
 		f.all.mockReturnValue(read.promise)
 		const actor = createActor(
-			createSampleTransactionsMachine(f.machine, () =>
-				f.input({ ...f.input().request.values, tags: ['Garden'] })
-			)
+			createSampleTransactionsMachine({
+				logic: f.machine,
+				prepare: () => f.input({ ...f.input().request.values, tags: ['Garden'] }),
+				result: (output) => output,
+				recipient: (actor) => actor
+			})
 		).start()
 		actor.send({ type: 'ADD' })
 		await vi.waitFor(() => expect(f.all).toHaveBeenCalledOnce())
@@ -96,7 +117,14 @@ describe('sample transaction batches', () => {
 	it('retains uncertain persistence results in a failed batch', async () => {
 		const f = creationFixture()
 		f.wait.mockRejectedValue(new Error('Settlement failed'))
-		const actor = createActor(createSampleTransactionsMachine(f.machine, () => f.input())).start()
+		const actor = createActor(
+			createSampleTransactionsMachine({
+				logic: f.machine,
+				prepare: () => f.input(),
+				result: (output) => output,
+				recipient: (actor) => actor
+			})
+		).start()
 		actor.send({ type: 'ADD' })
 		await waitFor(actor, (s) => s.matches('failure'))
 		expect(actor.getSnapshot().context.lastResult).toMatchObject({
@@ -118,10 +146,15 @@ describe('sample transaction batches', () => {
 			observe: () => facts
 		}).operation
 		const actor = createActor(
-			createSampleTransactionsMachine(operation, () => ({
-				...f.input(),
-				observation: { revision: 0, facts }
-			}))
+			createSampleTransactionsMachine({
+				logic: operation,
+				prepare: () => ({
+					...f.input(),
+					observation: { revision: 0, facts }
+				}),
+				result: (output) => output,
+				recipient: (actor) => actor
+			})
 		).start()
 		actor.send({ type: 'ADD' })
 		await waitFor(actor, (s) => s.matches('partial'))
@@ -135,24 +168,38 @@ describe('sample transaction batches', () => {
 	})
 	it('supervises a crashed creation actor without waiting for an acknowledgement', async () => {
 		const f = creationFixture()
-		const broken = setup<
-			{},
-			FormChildEvent<TransactionEntryObservation>,
-			{},
-			{},
-			{},
-			{},
-			never,
-			string,
-			ReturnType<typeof f.input>,
-			FormOperationResult<void, TransactionEntryReason>
-		>({}).createMachine({
+		const events0 = {
+			INVALIDATE: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'INVALIDATE'>>(),
+			CANCEL: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'CANCEL'>>(),
+			SHUTDOWN: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'SHUTDOWN'>>(),
+			OBSERVE: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'OBSERVE'>>()
+		}
+		type NativeEvent0 =
+			| import('xstate').InferEvents<typeof events0>
+			| import('xstate').DoneActorEvent<never>
+			| import('xstate').ErrorActorEvent
+		const broken = setup({
+			schemas: {
+				context: types<{}>(),
+				events: events0,
+				input: types<ReturnType<typeof f.input>>(),
+				output: types<FormOperationResult<void, TransactionEntryReason>>()
+			}
+		}).createMachine({
+			context: {},
 			entry: () => {
 				throw new Error('Actor crashed')
 			},
 			output: () => ({ outcome: 'succeeded', value: undefined, settlement: 'locallyPersisted' })
 		})
-		const actor = createActor(createSampleTransactionsMachine(broken, () => f.input())).start()
+		const actor = createActor(
+			createSampleTransactionsMachine({
+				logic: broken,
+				prepare: () => f.input(),
+				result: (output) => output,
+				recipient: (actor) => actor
+			})
+		).start()
 		actor.send({ type: 'ADD' })
 		await waitFor(actor, (s) => s.matches('failure'))
 		expect(actor.getSnapshot().context.lastResult).toMatchObject({

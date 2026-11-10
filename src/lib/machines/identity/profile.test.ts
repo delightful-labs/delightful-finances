@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, getInitialSnapshot, waitFor, type SnapshotFrom } from 'xstate'
 import type {
 	ProfileObservation,
 	ProfileReason,
@@ -11,6 +10,9 @@ import {
 	selectProfileAvailability
 } from './profile.js'
 import { createScopedFormMachine, selectScopedFormView } from '../forms/scoped-form.js'
+import { createActor, waitFor, initialTransition } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+
 const binding = {}
 function facts(): ProfileObservation {
 	return {
@@ -40,10 +42,10 @@ describe('profile policy/editing', () => {
 	] satisfies [Partial<ProfileObservation>, ProfileReason][])('blocks %j', (patch, reason) => {
 		expect(
 			selectProfileAvailability(
-				getInitialSnapshot(createProfileAvailability(binding), {
+				initialTransition(createProfileAvailability(binding), {
 					revision: 2,
 					facts: { ...facts(), ...patch }
-				})
+				})[0]
 			).readiness
 		).toEqual({ kind: 'blocked', reason })
 	})

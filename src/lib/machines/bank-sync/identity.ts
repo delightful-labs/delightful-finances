@@ -1,5 +1,6 @@
-import { assign, setup } from 'xstate'
 import type { Dependencies, Observation, RequestIdentity } from './types.js'
+import { setup, types } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Context = { identity: RequestIdentity; current: Observation; error: unknown }
 
@@ -10,99 +11,107 @@ export function required<Value>(value: Value | null | undefined): Value {
 }
 
 export function createIdentityMachine({ observe }: Dependencies) {
-	return setup<
-		Context,
-		{ type: 'CHECK' },
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		RequestIdentity,
-		{ current: Observation; error: unknown }
-	>({}).createMachine({
+	const events0 = { CHECK: types<EventPayload<{ type: 'CHECK' }, 'CHECK'>>() }
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<RequestIdentity>(),
+			output: types<{ current: Observation; error: unknown }>()
+		}
+	}).createMachine({
 		id: 'bank-identity',
 		context: ({ input }) => ({ identity: input, current: observe(), error: undefined }),
 		initial: 'checkingSession',
 		output: ({ context }) => ({ current: context.current, error: context.error }),
 		states: {
 			checkingSession: {
-				always: [
-					{ guard: ({ context }) => context.current.sessionReady, target: 'checkingUser' },
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					if (args.context.current.sessionReady) {
+						return { target: 'checkingUser' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingUser: {
-				always: [
-					{
-						guard: ({ context }) => Boolean(context.current.userId),
-						target: 'checkingOrganization'
-					},
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					if (Boolean(args.context.current.userId)) {
+						return { target: 'checkingOrganization' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingOrganization: {
-				always: [
-					{
-						guard: ({ context }) => Boolean(context.current.organizationId),
-						target: 'checkingPermission'
-					},
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					if (Boolean(args.context.current.organizationId)) {
+						return { target: 'checkingPermission' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingPermission: {
-				always: [
-					{ guard: ({ context }) => context.current.allowed, target: 'checkingRequestedUser' },
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					if (args.context.current.allowed) {
+						return { target: 'checkingRequestedUser' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingRequestedUser: {
-				always: [
-					{
-						guard: ({ context }) => context.current.userId === context.identity.userId,
-						target: 'checkingRequestedOrganization'
-					},
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.current.userId === context.identity.userId) {
+						return { target: 'checkingRequestedOrganization' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingRequestedOrganization: {
-				always: [
-					{
-						guard: ({ context }) =>
-							context.current.organizationId === context.identity.organizationId,
-						target: 'checkingConnection'
-					},
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.current.organizationId === context.identity.organizationId) {
+						return { target: 'checkingConnection' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingConnection: {
-				always: [
-					{ guard: ({ context }) => !context.current.connection, target: 'authorized' },
-					{ target: 'checkingConnectionOwner' }
-				]
+				always: (args) => {
+					if (!args.context.current.connection) {
+						return { target: 'authorized' }
+					}
+					return { target: 'checkingConnectionOwner' }
+				}
 			},
 			checkingConnectionOwner: {
-				always: [
-					{
-						guard: ({ context }) => context.current.connection?.ownerId === context.current.userId,
-						target: 'checkingConnectionOrganization'
-					},
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.current.connection?.ownerId === context.current.userId) {
+						return { target: 'checkingConnectionOrganization' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			checkingConnectionOrganization: {
-				always: [
-					{
-						guard: ({ context }) =>
-							context.current.connection?.organizationId === context.current.organizationId,
-						target: 'authorized'
-					},
-					{ target: 'denied' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.current.connection?.organizationId === context.current.organizationId) {
+						return { target: 'authorized' }
+					}
+					return { target: 'denied' }
+				}
 			},
 			authorized: { type: 'final' },
-			denied: { type: 'final', entry: assign({ error: () => new Error('unauthorized') }) }
+			denied: {
+				type: 'final',
+				entry: () => {
+					return { context: { error: new Error('unauthorized') } }
+				}
+			}
 		}
 	})
 }

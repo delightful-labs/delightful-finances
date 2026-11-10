@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { waitFor } from 'xstate'
 import { fixture, ready, success, schema } from './scoped-form.fixture.js'
+import { waitFor } from 'xstate'
+
 describe('scoped form ownership', () => {
 	it('uses the same readiness for views and direct submissions, rejecting stale reports', () => {
 		const f = fixture()

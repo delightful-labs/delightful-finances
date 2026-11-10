@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { Transaction } from 'jazz-tools'
 import {
 	app,
@@ -16,6 +15,7 @@ import {
 	type InternalTransferUnlinkInput,
 	type TransferWriteTracking
 } from './internal-transfer.js'
+import { createActor, waitFor } from 'xstate'
 
 const organizationId = '11111111-1111-4111-8111-111111111111'
 const identityId = '22222222-2222-4222-8222-222222222222'

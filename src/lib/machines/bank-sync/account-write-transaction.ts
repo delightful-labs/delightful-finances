@@ -1,16 +1,10 @@
-import {
-	assign,
-	fromPromise,
-	or,
-	setup,
-	stateIn,
-	type ErrorActorEvent,
-	type OutputFrom
-} from 'xstate'
 import { app } from '#lib/schema.js'
 import type { AccountWrite } from './account-write.js'
 import type { Dependencies } from './types.js'
 import { required } from './identity.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { ErrorActorEvent, OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type MappingInterruption = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
 type Settlement = 'notStarted' | 'rolledBack' | 'locallyPersisted' | 'unresolved'
@@ -25,32 +19,37 @@ type Input = {
 }
 type Resource = { tx: Transaction; request: AccountWrite }
 
-const open = fromPromise(({ input }: { input: Input['db'] }) =>
-	Promise.resolve(input.beginTransaction())
-)
-const providerLinks = fromPromise(({ input }: { input: Resource }) =>
-	input.tx.all(
-		app.simplefinAccountLinks.where({
-			organizationId: input.request.work.scope.organizationId,
-			simplefinAccountId: input.request.provider.id
-		})
-	)
-)
-const destination = fromPromise(async ({ input }: { input: Resource }) => {
-	const [links, accounts] = await Promise.all([
+const open = createAsyncLogic({
+	run: ({ input }: { input: Input['db'] }) => Promise.resolve(input.beginTransaction())
+})
+const providerLinks = createAsyncLogic({
+	run: ({ input }: { input: Resource }) =>
 		input.tx.all(
 			app.simplefinAccountLinks.where({
 				organizationId: input.request.work.scope.organizationId,
-				accountId: input.request.accountId
+				simplefinAccountId: input.request.provider.id
 			})
-		),
-		input.tx.all(app.accounts.where({ id: input.request.accountId }))
-	])
-	return { links, account: accounts[0] }
+		)
+})
+const destination = createAsyncLogic({
+	run: async ({ input }: { input: Resource }) => {
+		const [links, accounts] = await Promise.all([
+			input.tx.all(
+				app.simplefinAccountLinks.where({
+					organizationId: input.request.work.scope.organizationId,
+					accountId: input.request.accountId
+				})
+			),
+			input.tx.all(app.accounts.where({ id: input.request.accountId }))
+		])
+		return { links, account: accounts[0] }
+	}
 })
 type Creation = { tx: Transaction; request: Extract<AccountWrite, { kind: 'create' }> }
-const createAccount = fromPromise(async ({ input }: { input: Creation }) => {
-	input.tx.insert(app.accounts, input.request.values, { id: input.request.accountId })
+const createAccount = createAsyncLogic({
+	run: async ({ input }: { input: Creation }) => {
+		input.tx.insert(app.accounts, input.request.values, { id: input.request.accountId })
+	}
 })
 type LinkValues = {
 	organizationId: string
@@ -61,17 +60,23 @@ type LinkValues = {
 	balanceDate?: Date
 }
 type LinkWrite = { tx: Transaction; id: string; values: LinkValues }
-const insertLink = fromPromise(async ({ input }: { input: LinkWrite }) => {
-	input.tx.insert(app.simplefinAccountLinks, input.values, { id: input.id })
+const insertLink = createAsyncLogic({
+	run: async ({ input }: { input: LinkWrite }) => {
+		input.tx.insert(app.simplefinAccountLinks, input.values, { id: input.id })
+	}
 })
-const updateLink = fromPromise(async ({ input }: { input: LinkWrite }) => {
-	input.tx.update(app.simplefinAccountLinks, input.id, input.values)
+const updateLink = createAsyncLogic({
+	run: async ({ input }: { input: LinkWrite }) => {
+		input.tx.update(app.simplefinAccountLinks, input.id, input.values)
+	}
 })
-const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
-const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
-	input.wait({ tier: 'local' })
-)
-const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
+const commit = createAsyncLogic({
+	run: ({ input }: { input: Transaction }) => Promise.resolve(input.commit())
+})
+const settle = createAsyncLogic({
+	run: ({ input }: { input: OutputFrom<typeof commit> }) => input.wait({ tier: 'local' })
+})
+const rollback = createAsyncLogic({ run: ({ input }: { input: Transaction }) => input.rollback() })
 
 type Context = {
 	input: Input
@@ -118,28 +123,59 @@ const actors = {
 	settle,
 	rollback
 }
-const workflow = setup<
-	Context,
-	MappingInterruption | ErrorActorEvent,
-	typeof actors,
-	{},
-	{},
-	{ interrupted: undefined; cancelling: undefined; closing: undefined },
-	never,
-	string,
-	Input,
-	MappingTransactionResult
->({
+const events0 = {
+	CANCEL: types<EventPayload<MappingInterruption | ErrorActorEvent, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<MappingInterruption | ErrorActorEvent, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<(typeof actors)['open']>
+			| import('xstate').OutputFrom<(typeof actors)['providerLinks']>
+			| import('xstate').OutputFrom<(typeof actors)['destination']>
+			| import('xstate').OutputFrom<(typeof actors)['createAccount']>
+			| import('xstate').OutputFrom<(typeof actors)['insertLink']>
+			| import('xstate').OutputFrom<(typeof actors)['updateLink']>
+			| import('xstate').OutputFrom<(typeof actors)['commit']>
+			| import('xstate').OutputFrom<(typeof actors)['settle']>
+			| import('xstate').OutputFrom<(typeof actors)['rollback']>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
+const workflow = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<MappingTransactionResult>(),
+		children: {
+			open: types<import('xstate').ActorRefFrom<(typeof actors)['open']>>(),
+			providerLinks: types<import('xstate').ActorRefFrom<(typeof actors)['providerLinks']>>(),
+			destination: types<import('xstate').ActorRefFrom<(typeof actors)['destination']>>(),
+			createAccount: types<import('xstate').ActorRefFrom<(typeof actors)['createAccount']>>(),
+			insertLink: types<import('xstate').ActorRefFrom<(typeof actors)['insertLink']>>(),
+			updateLink: types<import('xstate').ActorRefFrom<(typeof actors)['updateLink']>>(),
+			commit: types<import('xstate').ActorRefFrom<(typeof actors)['commit']>>(),
+			settle: types<import('xstate').ActorRefFrom<(typeof actors)['settle']>>(),
+			rollback: types<import('xstate').ActorRefFrom<(typeof actors)['rollback']>>()
+		}
+	},
 	actors,
 	guards: {
-		interrupted: or(['cancelling', 'closing']),
-		cancelling: stateIn({ running: { control: 'cancelling' } }),
-		closing: stateIn({ running: { control: 'closing' } })
+		cancelling: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'cancelling' } }, args.value),
+		closing: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'closing' } }, args.value)
 	}
 })
-const failed = workflow.assign(({ event }) => ({
+const failed = ({ event }: { event: NativeEvent0 }) => ({
 	error: 'error' in event ? (event.error ?? new Error('save_failure')) : new Error('save_failure')
-}))
+})
 
 export const accountWriteTransaction = workflow.createMachine({
 	id: 'bank-account-write-transaction',
@@ -162,8 +198,8 @@ export const accountWriteTransaction = workflow.createMachine({
 				control: {
 					initial: 'active',
 					states: {
-						active: { on: { CANCEL: 'cancelling', SHUTDOWN: 'closing' } },
-						cancelling: { on: { CANCEL: {}, SHUTDOWN: 'closing' } },
+						active: { on: { CANCEL: { target: 'cancelling' }, SHUTDOWN: { target: 'closing' } } },
+						cancelling: { on: { CANCEL: {}, SHUTDOWN: { target: 'closing' } } },
 						closing: { on: { CANCEL: {}, SHUTDOWN: {} } }
 					}
 				},
@@ -174,70 +210,94 @@ export const accountWriteTransaction = workflow.createMachine({
 							invoke: {
 								src: 'open',
 								input: ({ context }) => context.input.db,
-								onDone: {
-									target: 'checkingAfterOpen',
-									actions: assign({ tx: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingAfterOpen', context: { tx: args.event.output } }
 								},
-								onError: { target: 'finishing', actions: failed }
+								onError: (args) => {
+									return { target: 'finishing', context: failed(args) }
+								}
 							}
 						},
 						checkingAfterOpen: {
-							always: [
-								{ guard: 'interrupted', target: 'rollingBack' },
-								{ target: 'loadingProviderLinks' }
-							]
+							always: (args) => {
+								if (
+									matchesState({ running: { control: 'cancelling' } }, args.value) ||
+									matchesState({ running: { control: 'closing' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'loadingProviderLinks' }
+							}
 						},
 						loadingProviderLinks: {
 							invoke: {
 								src: 'providerLinks',
 								input: ({ context }) => resource(context),
-								onDone: {
-									target: 'checkingProviderLinks',
-									actions: assign({ links: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingProviderLinks', context: { links: args.event.output } }
 								},
-								onError: { target: 'rollingBack', actions: failed }
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						checkingProviderLinks: {
-							always: [
-								{ guard: 'interrupted', target: 'rollingBack' },
-								{ guard: ({ context }) => context.links.length > 1, target: 'invalidMapping' },
-								{
-									guard: ({ context }) =>
-										context.input.request.kind === 'create' && context.links.length === 1,
-									target: 'rollingBack'
-								},
-								{ target: 'loadingDestination' }
-							]
+							always: (args) => {
+								const { context } = args
+								if (
+									matchesState({ running: { control: 'cancelling' } }, args.value) ||
+									matchesState({ running: { control: 'closing' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								if (context.links.length > 1) {
+									return { target: 'invalidMapping' }
+								}
+								if (context.input.request.kind === 'create' && context.links.length === 1) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'loadingDestination' }
+							}
 						},
 						loadingDestination: {
 							invoke: {
 								src: 'destination',
 								input: ({ context }) => resource(context),
-								onDone: {
-									target: 'checkingDestination',
-									actions: assign({ destination: ({ event }) => event.output })
+								onDone: (args) => {
+									return {
+										target: 'checkingDestination',
+										context: { destination: args.event.output }
+									}
 								},
-								onError: { target: 'rollingBack', actions: failed }
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						checkingDestination: {
-							always: [
-								{ guard: 'interrupted', target: 'rollingBack' },
-								{
-									guard: ({ context }) =>
-										required(context.destination).links.some(
-											(link) => link.simplefinAccountId !== context.input.request.provider.id
-										),
-									target: 'accountConflict'
-								},
-								{ target: 'checkingAccount' }
-							]
+							always: (args) => {
+								const { context } = args
+								if (
+									matchesState({ running: { control: 'cancelling' } }, args.value) ||
+									matchesState({ running: { control: 'closing' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								if (
+									required(context.destination).links.some(
+										(link) => link.simplefinAccountId !== context.input.request.provider.id
+									)
+								) {
+									return { target: 'accountConflict' }
+								}
+								return { target: 'checkingAccount' }
+							}
 						},
 						checkingAccount: {
-							always: [
-								{
-									guard: ({ context }) => {
+							always: (args) => {
+								const { context } = args
+								if (
+									(({ context }) => {
 										const account = required(context.destination).account
 										const request = context.input.request
 										return (
@@ -247,27 +307,30 @@ export const accountWriteTransaction = workflow.createMachine({
 												(request.kind === 'create' &&
 													account.currency !== request.provider.currency))
 										)
-									},
-									target: 'invalidMapping'
-								},
-								{
-									guard: ({ context }) =>
-										context.input.request.kind === 'map' && !required(context.destination).account,
-									target: 'invalidMapping'
-								},
-								{ target: 'choosingAccountWrite' }
-							]
+									})(args)
+								) {
+									return { target: 'invalidMapping' }
+								}
+								if (
+									context.input.request.kind === 'map' &&
+									!required(context.destination).account
+								) {
+									return { target: 'invalidMapping' }
+								}
+								return { target: 'choosingAccountWrite' }
+							}
 						},
 						choosingAccountWrite: {
-							always: [
-								{
-									guard: ({ context }) =>
-										context.input.request.kind === 'create' &&
-										!required(context.destination).account,
-									target: 'creatingAccount'
-								},
-								{ target: 'choosingLinkWrite' }
-							]
+							always: (args) => {
+								const { context } = args
+								if (
+									context.input.request.kind === 'create' &&
+									!required(context.destination).account
+								) {
+									return { target: 'creatingAccount' }
+								}
+								return { target: 'choosingLinkWrite' }
+							}
 						},
 						creatingAccount: {
 							invoke: {
@@ -277,108 +340,140 @@ export const accountWriteTransaction = workflow.createMachine({
 									if (request.kind !== 'create') throw new Error('invalid-machine-context')
 									return { tx: required(context.tx), request }
 								},
-								onDone: 'choosingLinkWrite',
-								onError: { target: 'rollingBack', actions: failed }
+								onDone: { target: 'choosingLinkWrite' },
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						choosingLinkWrite: {
-							always: [
-								{ guard: 'interrupted', target: 'rollingBack' },
-								{ guard: ({ context }) => context.links.length === 1, target: 'updatingLink' },
-								{ target: 'insertingLink' }
-							]
+							always: (args) => {
+								if (
+									matchesState({ running: { control: 'cancelling' } }, args.value) ||
+									matchesState({ running: { control: 'closing' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								if (args.context.links.length === 1) {
+									return { target: 'updatingLink' }
+								}
+								return { target: 'insertingLink' }
+							}
 						},
 						updatingLink: {
 							invoke: {
 								src: 'updateLink',
 								input: ({ context }) => linkWrite(context, required(context.links[0]).id),
-								onDone: 'checkingBeforeCommit',
-								onError: { target: 'rollingBack', actions: failed }
+								onDone: { target: 'checkingBeforeCommit' },
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						insertingLink: {
 							invoke: {
 								src: 'insertLink',
 								input: ({ context }) => linkWrite(context, context.input.linkId),
-								onDone: 'checkingBeforeCommit',
-								onError: { target: 'rollingBack', actions: failed }
+								onDone: { target: 'checkingBeforeCommit' },
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						checkingBeforeCommit: {
-							always: [{ guard: 'interrupted', target: 'rollingBack' }, { target: 'committing' }]
+							always: (args) => {
+								if (
+									matchesState({ running: { control: 'cancelling' } }, args.value) ||
+									matchesState({ running: { control: 'closing' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'committing' }
+							}
 						},
 						committing: {
-							entry: assign({ settlement: 'unresolved' }),
+							entry: () => {
+								return { context: { settlement: 'unresolved' } }
+							},
 							invoke: {
 								src: 'commit',
 								input: ({ context }) => required(context.tx),
-								onDone: {
-									target: 'settling',
-									actions: assign({ write: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'settling', context: { write: args.event.output } }
 								},
-								onError: { target: 'rollingBack', actions: failed }
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						settling: {
 							invoke: {
 								src: 'settle',
 								input: ({ context }) => required(context.write),
-								onDone: {
-									target: 'finishing',
-									actions: assign({ settlement: 'locallyPersisted' })
+								onDone: () => {
+									return { target: 'finishing', context: { settlement: 'locallyPersisted' } }
 								},
-								onError: { target: 'rollingBack', actions: failed }
+								onError: (args) => {
+									return { target: 'rollingBack', context: failed(args) }
+								}
 							}
 						},
 						invalidMapping: {
-							entry: assign({ error: () => new Error('mapping') }),
-							always: 'rollingBack'
+							entry: () => {
+								return { context: { error: new Error('mapping') } }
+							},
+							always: { target: 'rollingBack' }
 						},
 						accountConflict: {
-							entry: assign({ error: () => new Error('account_already_linked') }),
-							always: 'rollingBack'
+							entry: () => {
+								return { context: { error: new Error('account_already_linked') } }
+							},
+							always: { target: 'rollingBack' }
 						},
 						rollingBack: {
 							invoke: {
 								src: 'rollback',
 								input: ({ context }) => required(context.tx),
-								onDone: [
-									{
-										guard: ({ event }) => event.output,
-										target: 'finishing',
-										actions: assign({ settlement: 'rolledBack' })
-									},
-									{
-										target: 'finishing',
-										actions: assign({
-											settlement: 'unresolved',
-											error: ({ context }) => context.error ?? new Error('save_failure')
-										})
+								onDone: (args) => {
+									if (args.event.output) {
+										return { target: 'finishing', context: { settlement: 'rolledBack' } }
 									}
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										settlement: 'unresolved',
-										error: ({ context }) => context.error ?? new Error('save_failure')
-									})
+									return {
+										target: 'finishing',
+										context: {
+											settlement: 'unresolved',
+											error: args.context.error ?? new Error('save_failure')
+										}
+									}
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											settlement: 'unresolved',
+											error: args.context.error ?? new Error('save_failure')
+										}
+									}
 								}
 							}
 						},
 						finishing: {
-							always: [
-								{ guard: 'closing', target: '#bank-account-write-transaction.closed' },
-								{ guard: 'cancelling', target: '#bank-account-write-transaction.cancelled' },
-								{
-									guard: ({ context }) => context.error !== undefined,
-									target: '#bank-account-write-transaction.failed'
-								},
-								{
-									guard: ({ context }) => context.settlement === 'locallyPersisted',
-									target: '#bank-account-write-transaction.succeeded'
-								},
-								{ target: '#bank-account-write-transaction.unchanged' }
-							]
+							always: (args) => {
+								const { context } = args
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: '#bank-account-write-transaction.closed' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: '#bank-account-write-transaction.cancelled' }
+								}
+								if (context.error !== undefined) {
+									return { target: '#bank-account-write-transaction.failed' }
+								}
+								if (context.settlement === 'locallyPersisted') {
+									return { target: '#bank-account-write-transaction.succeeded' }
+								}
+								return { target: '#bank-account-write-transaction.unchanged' }
+							}
 						}
 					}
 				}
@@ -386,49 +481,70 @@ export const accountWriteTransaction = workflow.createMachine({
 		},
 		succeeded: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): MappingTransactionResult => ({
-					outcome: 'succeeded',
-					settlement: context.settlement
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'succeeded',
+							settlement: args.context.settlement
+						}
+					}
+				}
+			}
 		},
 		unchanged: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): MappingTransactionResult => ({
-					outcome: 'unchanged',
-					settlement: context.settlement
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'unchanged',
+							settlement: args.context.settlement
+						}
+					}
+				}
+			}
 		},
 		cancelled: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): MappingTransactionResult => ({
-					outcome: 'cancelled',
-					settlement: context.settlement
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'cancelled',
+							settlement: args.context.settlement
+						}
+					}
+				}
+			}
 		},
 		closed: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): MappingTransactionResult => ({
-					outcome: 'closed',
-					settlement: context.settlement
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'closed',
+							settlement: args.context.settlement
+						}
+					}
+				}
+			}
 		},
 		failed: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): MappingTransactionResult => ({
-					outcome: 'failed',
-					settlement: context.settlement,
-					error: context.error
-				})
-			})
+			entry: (args) => {
+				const { context } = args
+				return {
+					context: {
+						result: {
+							outcome: 'failed',
+							settlement: context.settlement,
+							error: context.error
+						}
+					}
+				}
+			}
 		}
 	}
 })

@@ -1,5 +1,3 @@
-import { assign, sendTo, setup, stateIn } from 'xstate'
-import type { ActorRef, Snapshot } from 'xstate'
 import { createWorkspaceSelectionMachine } from 'delightful-local-first/workspace/workflow'
 import type {
 	WorkspaceSelectionEvent,
@@ -8,6 +6,9 @@ import type {
 	WorkspaceSelectionScope
 } from 'delightful-local-first/workspace/contracts'
 import { required } from '../bank-sync/identity.js'
+import { setup, types, matchesState } from 'xstate'
+import type { ActorRef, Snapshot } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type WorkspaceSelectionBinding = Readonly<{
 	scope: WorkspaceSelectionScope
@@ -65,56 +66,57 @@ function capture(binding: WorkspaceSelectionBinding): WorkspaceSelectionBinding 
 /** Owns fixed-scope selection replacement; the application owns and acknowledges resource drain. */
 export function createWorkspaceSelectionAttachmentMachine() {
 	const actors = { selection: createWorkspaceSelectionMachine() }
-	const model = setup<
-		Context,
-		WorkspaceSelectionAttachmentEvent,
-		typeof actors,
-		{},
-		{ reportReleased: undefined },
-		{ freshBinding: undefined; currentBinding: undefined; closing: undefined },
-		never,
-		string,
-		Input,
-		WorkspaceSelectionAttachmentOutput
-	>({
-		actors,
-		actions: {
-			reportReleased: sendTo(
-				({ context }) => context.reportTo,
-				({ context }): WorkspaceSelectionAttachmentReport => ({
-					type: 'WORKSPACE_SELECTION_RELEASED',
-					binding: required(context.binding)
-				})
-			)
+	const events0 = {
+		ATTACH: types<EventPayload<WorkspaceSelectionAttachmentEvent, 'ATTACH'>>(),
+		DETACH: types<EventPayload<WorkspaceSelectionAttachmentEvent, 'DETACH'>>(),
+		SELECTION_COMMAND:
+			types<EventPayload<WorkspaceSelectionAttachmentEvent, 'SELECTION_COMMAND'>>(),
+		SHUTDOWN: types<EventPayload<WorkspaceSelectionAttachmentEvent, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<(typeof actors)['selection']>>
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<WorkspaceSelectionAttachmentOutput>(),
+			children: { selection: types<import('xstate').ActorRefFrom<(typeof actors)['selection']>>() }
 		},
+		actors,
+		actions: {},
 		guards: {
-			freshBinding: ({ context, event }) =>
+			freshBinding: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'ATTACH' &&
 				Number.isSafeInteger(event.binding.revision) &&
 				event.binding.revision >= 0 &&
 				event.binding.revision > context.revision &&
 				!context.usedAttachments.has(event.binding.scope.attachment),
-			currentBinding: ({ context, event }) =>
+			currentBinding: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				(event.type === 'DETACH' || event.type === 'SELECTION_COMMAND') &&
 				sameBinding(event.binding, context.binding),
-			closing: stateIn({ holding: 'closing' })
+			closing: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ holding: 'closing' }, args.value)
 		}
-	})
-	const rememberPending = model.assign(({ event }) => {
-		if (event.type !== 'ATTACH') throw new Error('Missing selection attachment')
-		return { pending: capture(event.binding), revision: event.binding.revision }
-	})
-	const forward = model.sendTo('selection', ({ event }) => {
-		if (event.type !== 'SELECTION_COMMAND') throw new Error('Missing selection command')
-		return event.command
 	})
 	const drainCommands = model.createStateConfig({
 		on: {
-			SELECTION_COMMAND: {
-				guard: ({ context, event }) =>
-					sameBinding(event.binding, context.binding) &&
-					(event.command.type === 'DRAINED' || event.command.type === 'DRAIN_FAILED'),
-				actions: forward
+			SELECTION_COMMAND: (args, enq) => {
+				const { event } = args
+				if (!(
+					sameBinding(event.binding, args.context.binding) &&
+					(event.command.type === 'DRAINED' || event.command.type === 'DRAIN_FAILED')
+				))
+					return
+				enq.sendTo(
+					'selection',
+					(({ event }) => {
+						if (event.type !== 'SELECTION_COMMAND') throw new Error('Missing selection command')
+						return event.command
+					})(args)
+				)
 			}
 		}
 	})
@@ -135,19 +137,32 @@ export function createWorkspaceSelectionAttachmentMachine() {
 				: { outcome: 'closed' },
 		states: {
 			unbound: {
-				entry: assign({ binding: undefined, pending: undefined }),
+				entry: () => {
+					return { context: { binding: undefined, pending: undefined } }
+				},
 				on: {
-					ATTACH: { guard: 'freshBinding', target: 'installing', actions: rememberPending },
-					SHUTDOWN: 'closed'
+					ATTACH: (args) => {
+						if (!args.guards.freshBinding(args)) return
+						return {
+							target: 'installing',
+							context: (({ event }) => {
+								if (event.type !== 'ATTACH') throw new Error('Missing selection attachment')
+								return { pending: capture(event.binding), revision: event.binding.revision }
+							})(args)
+						}
+					},
+					SHUTDOWN: { target: 'closed' }
 				}
 			},
 			installing: {
-				entry: assign(({ context }) => {
+				entry: ({ context }, enq) => {
 					const binding = required(context.pending)
-					context.usedAttachments.add(binding.scope.attachment)
-					return { binding, pending: undefined }
-				}),
-				always: 'holding'
+					enq(() => {
+						context.usedAttachments.add(binding.scope.attachment)
+					})
+					return { context: { binding, pending: undefined } }
+				},
+				always: { target: 'holding' }
 			},
 			holding: {
 				initial: 'active',
@@ -155,89 +170,141 @@ export function createWorkspaceSelectionAttachmentMachine() {
 					id: 'selection',
 					src: 'selection',
 					input: ({ context }) => ({ reportTo: context.reportTo }),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.outcome === 'unresolved',
-							target: 'failed',
-							actions: assign(({ event }) => {
-								if (event.output.outcome !== 'unresolved') throw new Error('Missing failure')
-								return { failure: { reason: 'unresolved', result: event.output } satisfies Failure }
-							})
-						},
-						{ guard: 'closing', target: 'closed', actions: 'reportReleased' },
-						{
-							guard: stateIn({ holding: 'replacing' }),
-							target: 'released',
-							actions: 'reportReleased'
-						},
-						{
-							target: 'failed',
-							actions: assign({ failure: { reason: 'unexpectedClosure' } })
+					onDone: (args, enq) => {
+						const { context, event } = args
+						if (event.output.outcome === 'unresolved') {
+							return {
+								target: 'failed',
+								context: (({ event }) => {
+									if (event.output.outcome !== 'unresolved') throw new Error('Missing failure')
+									return {
+										failure: { reason: 'unresolved', result: event.output } satisfies Failure
+									}
+								})(args)
+							}
 						}
-					],
-					onError: { target: 'failed', actions: assign({ failure: { reason: 'childCrashed' } }) }
+						if (matchesState({ holding: 'closing' }, args.value)) {
+							enq.sendTo(context.reportTo, {
+								type: 'WORKSPACE_SELECTION_RELEASED',
+								binding: required(context.binding)
+							})
+							return { target: 'closed' }
+						}
+						if (matchesState({ holding: 'replacing' }, args.value)) {
+							enq.sendTo(context.reportTo, {
+								type: 'WORKSPACE_SELECTION_RELEASED',
+								binding: required(context.binding)
+							})
+							return { target: 'released' }
+						}
+						return { target: 'failed', context: { failure: { reason: 'unexpectedClosure' } } }
+					},
+					onError: () => {
+						return { target: 'failed', context: { failure: { reason: 'childCrashed' } } }
+					}
 				},
 				states: {
 					active: {
-						entry: [
-							sendTo(
-								({ context }) => context.reportTo,
-								({ context }): WorkspaceSelectionAttachmentReport => ({
-									type: 'WORKSPACE_SELECTION_ATTACHED',
-									binding: required(context.binding)
-								})
-							),
-							sendTo('selection', ({ context }) => ({
+						entry: (args, enq) => {
+							const { context } = args
+							enq.sendTo(context.reportTo, {
+								type: 'WORKSPACE_SELECTION_ATTACHED',
+								binding: required(context.binding)
+							})
+							enq.sendTo('selection', {
 								type: 'BIND',
 								scope: required(context.binding).scope
-							}))
-						],
+							})
+						},
 						on: {
-							ATTACH: { guard: 'freshBinding', target: 'replacing', actions: rememberPending },
-							DETACH: { guard: 'currentBinding', target: 'replacing' },
-							SELECTION_COMMAND: { guard: 'currentBinding', actions: forward },
-							SHUTDOWN: 'closing'
+							ATTACH: (args) => {
+								if (!args.guards.freshBinding(args)) return
+								return {
+									target: 'replacing',
+									context: (({ event }) => {
+										if (event.type !== 'ATTACH') throw new Error('Missing selection attachment')
+										return { pending: capture(event.binding), revision: event.binding.revision }
+									})(args)
+								}
+							},
+							DETACH: (args) => {
+								if (!args.guards.currentBinding(args)) return
+								return { target: 'replacing' }
+							},
+							SELECTION_COMMAND: (args, enq) => {
+								if (!args.guards.currentBinding(args)) return
+								enq.sendTo(
+									'selection',
+									(({ event }) => {
+										if (event.type !== 'SELECTION_COMMAND')
+											throw new Error('Missing selection command')
+										return event.command
+									})(args)
+								)
+							},
+							SHUTDOWN: { target: 'closing' }
 						}
 					},
 					replacing: {
 						...drainCommands,
-						entry: sendTo('selection', { type: 'SHUTDOWN' }),
+						entry: (args, enq) => {
+							enq.sendTo('selection', { type: 'SHUTDOWN' })
+						},
 						on: {
 							...drainCommands.on,
-							ATTACH: { guard: 'freshBinding', actions: rememberPending },
-							DETACH: {
-								guard: ({ context, event }) => sameBinding(event.binding, context.pending),
-								actions: assign({ pending: undefined })
+							ATTACH: (args) => {
+								if (!args.guards.freshBinding(args)) return
+								return {
+									context: (({ event }) => {
+										if (event.type !== 'ATTACH') throw new Error('Missing selection attachment')
+										return { pending: capture(event.binding), revision: event.binding.revision }
+									})(args)
+								}
 							},
-							SHUTDOWN: 'closing'
+							DETACH: (args) => {
+								if (!sameBinding(args.event.binding, args.context.pending)) return
+								return { context: { pending: undefined } }
+							},
+							SHUTDOWN: { target: 'closing' }
 						}
 					},
 					closing: {
 						...drainCommands,
-						entry: [assign({ pending: undefined }), sendTo('selection', { type: 'SHUTDOWN' })]
+						entry: (args, enq) => {
+							enq.sendTo('selection', { type: 'SHUTDOWN' })
+							return { context: { pending: undefined } }
+						}
 					}
 				}
 			},
 			released: {
-				always: [
-					{ guard: ({ context }) => context.pending !== undefined, target: 'installing' },
-					{ target: 'unbound' }
-				]
+				always: (args) => {
+					if (args.context.pending !== undefined) {
+						return { target: 'installing' }
+					}
+					return { target: 'unbound' }
+				}
 			},
-			closed: { type: 'final', entry: assign({ binding: undefined, pending: undefined }) },
+			closed: {
+				type: 'final',
+				entry: () => {
+					return { context: { binding: undefined, pending: undefined } }
+				}
+			},
 			failed: {
 				type: 'final',
-				entry: [
-					assign({ pending: undefined }),
-					sendTo(
-						({ context }) => context.reportTo,
-						({ context }): WorkspaceSelectionAttachmentReport => ({
-							type: 'WORKSPACE_SELECTION_ATTACHMENT_FAILED',
-							binding: required(context.binding),
-							failure: required(context.failure)
-						})
-					)
-				]
+				entry: (args, enq) => {
+					let context = args.context
+					let patch = {}
+					patch = { ...patch, pending: undefined }
+					context = { ...args.context, ...patch }
+					enq.sendTo(context.reportTo, {
+						type: 'WORKSPACE_SELECTION_ATTACHMENT_FAILED',
+						binding: required(context.binding),
+						failure: required(context.failure)
+					})
+					return { context: patch }
+				}
 			}
 		}
 	})

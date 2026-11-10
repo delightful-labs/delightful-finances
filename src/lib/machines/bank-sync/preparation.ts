@@ -1,9 +1,10 @@
-import { assign, fromPromise, setup } from 'xstate'
 import { stableUuid } from '#lib/data.js'
 import { simplefinDemo } from '#lib/integrations/simplefin.js'
 import type { CredentialScope } from '#lib/validation/integrations.js'
 import { createIdentityMachine, required } from './identity.js'
 import type { Connection, Dependencies, Observation, RequestIdentity, Result } from './types.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Input = { identity: RequestIdentity; requireConnection: boolean }
 export type PreparedScope = { scope: CredentialScope; connection: Connection | undefined }
@@ -16,25 +17,35 @@ type Context = Input & {
 export function createPreparationMachine(dependencies: Dependencies) {
 	const actors = {
 		identity: createIdentityMachine(dependencies),
-		connectionId: fromPromise<string, { ownerId: string; organizationId: string }>(({ input }) =>
-			stableUuid(
-				input.ownerId,
-				`${simplefinDemo ? 'simplefin-demo' : 'simplefin'}:${input.organizationId}`
-			)
-		)
+		connectionId: createAsyncLogic<string, { ownerId: string; organizationId: string }>({
+			run: ({ input }) =>
+				stableUuid(
+					input.ownerId,
+					`${simplefinDemo ? 'simplefin-demo' : 'simplefin'}:${input.organizationId}`
+				)
+		})
 	}
-	return setup<
-		Context,
-		{ type: 'PREPARE' },
-		typeof actors,
-		{},
-		{},
-		{},
-		never,
-		string,
-		Input,
-		Result<PreparedScope>
-	>({ actors }).createMachine({
+	const events0 = { PREPARE: types<EventPayload<{ type: 'PREPARE' }, 'PREPARE'>>() }
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['identity']>
+				| import('xstate').OutputFrom<(typeof actors)['connectionId']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Result<PreparedScope>>(),
+			children: {
+				identity: types<import('xstate').ActorRefFrom<(typeof actors)['identity']>>(),
+				connectionId: types<import('xstate').ActorRefFrom<(typeof actors)['connectionId']>>()
+			}
+		},
+		actors
+	}).createMachine({
 		id: 'bank-preparation',
 		context: ({ input }) => ({ ...input, current: undefined, scope: undefined, error: undefined }),
 		initial: 'checkingIdentity',
@@ -50,39 +61,44 @@ export function createPreparationMachine(dependencies: Dependencies) {
 				invoke: {
 					src: 'identity',
 					input: ({ context }) => context.identity,
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{
-							target: 'choosingConnection',
-							actions: assign({ current: ({ event }) => event.output.current })
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
 						}
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+						return { target: 'choosingConnection', context: { current: event.output.current } }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			choosingConnection: {
-				always: [
-					{
-						guard: ({ context }) => Boolean(context.current?.connection),
-						target: 'usingExistingConnection'
-					},
-					{ guard: ({ context }) => context.requireConnection, target: 'disconnected' },
-					{ target: 'generatingConnectionId' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (Boolean(context.current?.connection)) {
+						return { target: 'usingExistingConnection' }
+					}
+					if (context.requireConnection) {
+						return { target: 'disconnected' }
+					}
+					return { target: 'generatingConnectionId' }
+				}
 			},
 			usingExistingConnection: {
-				entry: assign({
-					scope: ({ context }) => ({
-						ownerId: required(context.current?.userId),
-						organizationId: required(context.current?.organizationId),
-						connectionId: required(context.current?.connection).id
-					})
-				}),
-				always: 'prepared'
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							scope: {
+								ownerId: required(context.current?.userId),
+								organizationId: required(context.current?.organizationId),
+								connectionId: required(context.current?.connection).id
+							}
+						}
+					}
+				},
+				always: { target: 'prepared' }
 			},
 			generatingConnectionId: {
 				invoke: {
@@ -91,36 +107,47 @@ export function createPreparationMachine(dependencies: Dependencies) {
 						ownerId: required(context.current?.userId),
 						organizationId: required(context.current?.organizationId)
 					}),
-					onDone: {
-						target: 'recheckingIdentity',
-						actions: assign({
-							scope: ({ context, event }) => ({
-								ownerId: required(context.current?.userId),
-								organizationId: required(context.current?.organizationId),
-								connectionId: event.output
-							})
-						})
+					onDone: (args) => {
+						const { context } = args
+						return {
+							target: 'recheckingIdentity',
+							context: {
+								scope: {
+									ownerId: required(context.current?.userId),
+									organizationId: required(context.current?.organizationId),
+									connectionId: args.event.output
+								}
+							}
+						}
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			recheckingIdentity: {
 				invoke: {
 					src: 'identity',
 					input: ({ context }) => context.identity,
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'prepared' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
+						}
+						return { target: 'prepared' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			prepared: { type: 'final' },
-			disconnected: { type: 'final', entry: assign({ error: () => new Error('disconnected') }) },
+			disconnected: {
+				type: 'final',
+				entry: () => {
+					return { context: { error: new Error('disconnected') } }
+				}
+			},
 			failed: { type: 'final' }
 		}
 	})

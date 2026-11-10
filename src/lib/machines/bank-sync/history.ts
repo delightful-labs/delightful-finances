@@ -1,11 +1,12 @@
-import type { ActorRef, Snapshot } from 'xstate'
-import { assign, enqueueActions, setup } from 'xstate'
 import { required } from './identity.js'
 import type { BankHistoryRecord, LastSync, Connection } from './types.js'
 import type { SyncAttempt, SyncAccountResult } from '#lib/schema.js'
 import type { BankMessage, BankLogPresentation } from '#lib/contracts/bank-presentation-contract.js'
 import { m } from '#lib/paraglide/messages.js'
 import { bankFailureStatuses } from './status.js'
+import { types, setup } from 'xstate'
+import type { ActorRef, Snapshot } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type HistoryEvent = {
 	type: 'HISTORY_REPORTED'
@@ -30,102 +31,171 @@ function selectedHistory(context: Context) {
 	return context.records.find((row) => row.id === context.connectionId)
 }
 type SummaryParams = { outcomeKey: LastSync['outcomeKey'] }
-
-export const bankHistoryMachine = setup<
-	Context,
-	Event,
-	{},
-	{},
-	{ summarize: SummaryParams; publish: undefined },
-	{ currentRevision: undefined },
-	never,
-	string,
-	Input
->({
-	guards: { currentRevision: ({ context, event }) => event.revision === context.revision },
-	actions: {
-		publish: enqueueActions(({ context, enqueue }) => {
-			enqueue.sendTo(context.recipient, {
-				type: 'HISTORY_REPORTED',
-				revision: context.revision,
-				connectionId: context.connectionId,
-				summary: context.summary
-			})
-		}),
-		summarize: assign(({ context }, params: SummaryParams) => {
-			const connection = required(selectedHistory(context))
-			return {
-				summary: {
-					time: required(connection.lastSyncAt),
-					outcomeKey: params.outcomeKey,
-					imported: connection.importedCount ?? 0,
-					existing: connection.existingCount ?? 0,
-					omitted: connection.omittedCount ?? 0
-				}
-			}
-		})
+const patchSummarize = (
+	{ context }: { context: Context },
+	params: SummaryParams
+): Partial<Context> => {
+	const connection = required(selectedHistory(context))
+	return {
+		summary: {
+			time: required(connection.lastSyncAt),
+			outcomeKey: params.outcomeKey,
+			imported: connection.importedCount ?? 0,
+			existing: connection.existingCount ?? 0,
+			omitted: connection.omittedCount ?? 0
+		}
 	}
+}
+const events0 = {
+	BINDING_CHANGED: types<EventPayload<Event, 'BINDING_CHANGED'>>(),
+	CONNECTION_SELECTED: types<EventPayload<Event, 'CONNECTION_SELECTED'>>(),
+	HISTORY_CHANGED: types<EventPayload<Event, 'HISTORY_CHANGED'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<never>
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
+
+export const bankHistoryMachine = setup({
+	schemas: { context: types<Context>(), events: events0, input: types<Input>() },
+	guards: {
+		currentRevision: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
+			'revision' in event && event.revision === context.revision
+	},
+	actions: {}
 }).createMachine({
 	id: 'bank-history',
-	tags: 'historical-outcome',
+	tags: ['historical-outcome'],
 	context: ({ input }) => ({ ...input, records: [], connectionId: undefined, summary: undefined }),
 	initial: 'checkingConnection',
 	on: {
-		BINDING_CHANGED: {
-			target: '.checkingConnection',
-			actions: assign({
-				revision: ({ event }) => event.revision,
-				records: [],
-				connectionId: undefined
-			})
+		BINDING_CHANGED: (args) => {
+			return {
+				target: '.checkingConnection',
+				context: { revision: args.event.revision, records: [], connectionId: undefined }
+			}
 		},
-		CONNECTION_SELECTED: {
-			guard: 'currentRevision',
-			target: '.checkingConnection',
-			actions: assign({ connectionId: ({ event }) => event.connectionId })
+		CONNECTION_SELECTED: (args) => {
+			if (!args.guards.currentRevision(args)) return
+			return { target: '.checkingConnection', context: { connectionId: args.event.connectionId } }
 		},
-		HISTORY_CHANGED: {
-			guard: 'currentRevision',
-			target: '.checkingConnection',
-			actions: assign({ records: ({ event }) => event.records })
+		HISTORY_CHANGED: (args) => {
+			if (!args.guards.currentRevision(args)) return
+			return { target: '.checkingConnection', context: { records: args.event.records } }
 		}
 	},
 	states: {
 		checkingConnection: {
-			always: [
-				{ guard: ({ context }) => !selectedHistory(context), target: 'absent' },
-				{ target: 'checkingTime' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (!selectedHistory(context)) {
+					return { target: 'absent' }
+				}
+				return { target: 'checkingTime' }
+			}
 		},
 		checkingTime: {
-			always: [
-				{ guard: ({ context }) => !selectedHistory(context)?.lastSyncAt, target: 'absent' },
-				{ target: 'checkingOutcome' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (!selectedHistory(context)?.lastSyncAt) {
+					return { target: 'absent' }
+				}
+				return { target: 'checkingOutcome' }
+			}
 		},
 		checkingOutcome: {
-			always: [
-				{
-					guard: ({ context }) => selectedHistory(context)?.lastOutcome === 'succeeded',
-					target: 'succeeded'
-				},
-				{
-					guard: ({ context }) => selectedHistory(context)?.lastOutcome === 'partial',
-					target: 'partial'
-				},
-				{
-					guard: ({ context }) => selectedHistory(context)?.lastOutcome === 'failed',
-					target: 'failed'
-				},
-				{ target: 'absent' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (selectedHistory(context)?.lastOutcome === 'succeeded') {
+					return { target: 'succeeded' }
+				}
+				if (selectedHistory(context)?.lastOutcome === 'partial') {
+					return { target: 'partial' }
+				}
+				if (selectedHistory(context)?.lastOutcome === 'failed') {
+					return { target: 'failed' }
+				}
+				return { target: 'absent' }
+			}
 		},
-		absent: { entry: [assign({ summary: undefined }), 'publish'] },
+		absent: {
+			entry: (args, enq) => {
+				let context = args.context
+				let patch = {}
+				patch = { ...patch, summary: undefined }
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					enq.sendTo(contextBefore.recipient, {
+						type: 'HISTORY_REPORTED',
+						revision: contextBefore.revision,
+						connectionId: contextBefore.connectionId,
+						summary: contextBefore.summary
+					})
+				}
+				return { context: patch }
+			}
+		},
 		succeeded: {
-			entry: [{ type: 'summarize', params: { outcomeKey: 'bank.succeeded' } }, 'publish']
+			entry: (args, enq) => {
+				let context = args.context
+				let patch = {}
+				patch = { ...patch, ...patchSummarize(args, { outcomeKey: 'bank.succeeded' }) }
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					enq.sendTo(contextBefore.recipient, {
+						type: 'HISTORY_REPORTED',
+						revision: contextBefore.revision,
+						connectionId: contextBefore.connectionId,
+						summary: contextBefore.summary
+					})
+				}
+				return { context: patch }
+			}
 		},
-		partial: { entry: [{ type: 'summarize', params: { outcomeKey: 'bank.partial' } }, 'publish'] },
-		failed: { entry: [{ type: 'summarize', params: { outcomeKey: 'bank.failed' } }, 'publish'] }
+		partial: {
+			entry: (args, enq) => {
+				let context = args.context
+				let patch = {}
+				patch = { ...patch, ...patchSummarize(args, { outcomeKey: 'bank.partial' }) }
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					enq.sendTo(contextBefore.recipient, {
+						type: 'HISTORY_REPORTED',
+						revision: contextBefore.revision,
+						connectionId: contextBefore.connectionId,
+						summary: contextBefore.summary
+					})
+				}
+				return { context: patch }
+			}
+		},
+		failed: {
+			entry: (args, enq) => {
+				let context = args.context
+				let patch = {}
+				patch = { ...patch, ...patchSummarize(args, { outcomeKey: 'bank.failed' }) }
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					enq.sendTo(contextBefore.recipient, {
+						type: 'HISTORY_REPORTED',
+						revision: contextBefore.revision,
+						connectionId: contextBefore.connectionId,
+						summary: contextBefore.summary
+					})
+				}
+				return { context: patch }
+			}
+		}
 	}
 })
 

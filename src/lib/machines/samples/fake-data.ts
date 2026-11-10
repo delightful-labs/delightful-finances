@@ -1,8 +1,10 @@
-import { assign, fromPromise, not, or, setup, stateIn, type OutputFrom } from 'xstate'
 import { ReadTier, type Db } from 'jazz-tools'
 import { app } from '../../schema.js'
 import type { FakeDataPlan } from '../../domain/fake-data.js'
 import { createJazzTransactionActors } from '../persistence/jazz-transaction-actors.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type FakeDataDb = Pick<Db, 'all' | 'beginSerializableTransaction'>
 type Transaction = ReturnType<FakeDataDb['beginSerializableTransaction']>
@@ -23,59 +25,76 @@ const transactionActors = createJazzTransactionActors(
 	(db: FakeDataDb) => db.beginSerializableTransaction(),
 	(write: ReturnType<Transaction['commit']>) => write.wait()
 )
-const readLocal = fromPromise(async ({ input }: { input: Input }) => {
-	const [accounts, transactions] = await Promise.all([
-		input.db.all(app.accounts.limit(1), { tier: ReadTier.LocalFirst }),
-		input.db.all(app.transactions.limit(1), { tier: ReadTier.LocalFirst })
-	])
-	return accounts.length > 0 || transactions.length > 0
-})
-const readAuthority = fromPromise(async ({ input }: { input: Input }) => {
-	const [accounts, transactions, organizations, categories] = await Promise.all([
-		input.db.all(app.accounts.limit(1), { tier: ReadTier.Remote }),
-		input.db.all(app.transactions.limit(1), { tier: ReadTier.Remote }),
-		input.db.all(app.organizations.where({ id: input.organizationId }), { tier: ReadTier.Remote }),
-		input.db.all(
-			app.categories.where({ organizationId: input.organizationId, archivedAt: { isNull: true } }),
-			{ tier: ReadTier.Remote }
-		)
-	])
-	return {
-		hasData: accounts.length > 0 || transactions.length > 0,
-		organization: organizations[0],
-		categories
+const readLocal = createAsyncLogic({
+	run: async ({ input }: { input: Input }) => {
+		const [accounts, transactions] = await Promise.all([
+			input.db.all(app.accounts.limit(1), { tier: ReadTier.LocalFirst }),
+			input.db.all(app.transactions.limit(1), { tier: ReadTier.LocalFirst })
+		])
+		return accounts.length > 0 || transactions.length > 0
 	}
 })
-const prepare = fromPromise(
-	async ({ input }: { input: { scope: Input; records: OutputFrom<typeof readAuthority> } }) => {
+const readAuthority = createAsyncLogic({
+	run: async ({ input }: { input: Input }) => {
+		const [accounts, transactions, organizations, categories] = await Promise.all([
+			input.db.all(app.accounts.limit(1), { tier: ReadTier.Remote }),
+			input.db.all(app.transactions.limit(1), { tier: ReadTier.Remote }),
+			input.db.all(app.organizations.where({ id: input.organizationId }), {
+				tier: ReadTier.Remote
+			}),
+			input.db.all(
+				app.categories.where({
+					organizationId: input.organizationId,
+					archivedAt: { isNull: true }
+				}),
+				{ tier: ReadTier.Remote }
+			)
+		])
+		return {
+			hasData: accounts.length > 0 || transactions.length > 0,
+			organization: organizations[0],
+			categories
+		}
+	}
+})
+const prepare = createAsyncLogic({
+	run: async ({
+		input
+	}: {
+		input: { scope: Input; records: OutputFrom<typeof readAuthority> }
+	}) => {
 		const { prepareFakeData } = await import('../../domain/fake-data.js')
 		return prepareFakeData(input.scope.organizationId, input.records.categories)
 	}
-)
-const recheck = fromPromise(async ({ input }: { input: { tx: Transaction; scope: Input } }) => {
-	const [accounts, transactions, organizations, categories] = await Promise.all([
-		input.tx.all(app.accounts.limit(1)),
-		input.tx.all(app.transactions.limit(1)),
-		input.tx.all(app.organizations.where({ id: input.scope.organizationId })),
-		input.tx.all(
-			app.categories.where({
-				organizationId: input.scope.organizationId,
-				archivedAt: { isNull: true }
-			})
-		)
-	])
-	return {
-		hasData: accounts.length > 0 || transactions.length > 0,
-		organization: organizations[0],
-		categories
+})
+const recheck = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; scope: Input } }) => {
+		const [accounts, transactions, organizations, categories] = await Promise.all([
+			input.tx.all(app.accounts.limit(1)),
+			input.tx.all(app.transactions.limit(1)),
+			input.tx.all(app.organizations.where({ id: input.scope.organizationId })),
+			input.tx.all(
+				app.categories.where({
+					organizationId: input.scope.organizationId,
+					archivedAt: { isNull: true }
+				})
+			)
+		])
+		return {
+			hasData: accounts.length > 0 || transactions.length > 0,
+			organization: organizations[0],
+			categories
+		}
 	}
 })
-const stage = fromPromise(({ input }: { input: { tx: Transaction; plan: FakeDataPlan } }) => {
-	for (const account of input.plan.accounts)
-		input.tx.insert(app.accounts, account.values, { id: account.id })
-	for (const transaction of input.plan.transactions)
-		input.tx.insert(app.transactions, transaction.values, { id: transaction.id })
-	return Promise.resolve()
+const stage = createAsyncLogic({
+	run: ({ input }: { input: { tx: Transaction; plan: FakeDataPlan } }) => {
+		for (const account of input.plan.accounts)
+			input.tx.insert(app.accounts, account.values, { id: account.id })
+		for (const transaction of input.plan.transactions)
+			input.tx.insert(app.transactions, transaction.values, { id: transaction.id })
+		return Promise.resolve()
+	}
 })
 const actors = { ...transactionActors, readLocal, readAuthority, prepare, recheck, stage }
 type Context = Input & {
@@ -85,43 +104,64 @@ type Context = Input & {
 	write: OutputFrom<typeof transactionActors.commit> | undefined
 	result: FakeDataResult | undefined
 }
+const events0 = {
+	CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<(typeof actors)['readLocal']>
+			| import('xstate').OutputFrom<(typeof actors)['readAuthority']>
+			| import('xstate').OutputFrom<(typeof actors)['prepare']>
+			| import('xstate').OutputFrom<(typeof actors)['recheck']>
+			| import('xstate').OutputFrom<(typeof actors)['stage']>
+			| import('xstate').OutputFrom<(typeof actors)['open']>
+			| import('xstate').OutputFrom<(typeof actors)['commit']>
+			| import('xstate').OutputFrom<(typeof actors)['settle']>
+			| import('xstate').OutputFrom<(typeof actors)['rollback']>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** Seed only authoritative emptiness; own the serializable transaction until confirmed or rolled back. */
-export const fakeDataSetup = setup<
-	Context,
-	Event,
-	typeof actors,
-	{},
-	{},
-	{
-		closing: undefined
-		cancelling: undefined
-		interrupted: undefined
-		hasData: undefined
-		owned: undefined
-		categoriesReady: undefined
-		planStillValid: undefined
+export const fakeDataSetup = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<FakeDataResult>(),
+		children: {
+			readLocal: types<import('xstate').ActorRefFrom<(typeof actors)['readLocal']>>(),
+			readAuthority: types<import('xstate').ActorRefFrom<(typeof actors)['readAuthority']>>(),
+			prepare: types<import('xstate').ActorRefFrom<(typeof actors)['prepare']>>(),
+			recheck: types<import('xstate').ActorRefFrom<(typeof actors)['recheck']>>(),
+			stage: types<import('xstate').ActorRefFrom<(typeof actors)['stage']>>(),
+			open: types<import('xstate').ActorRefFrom<(typeof actors)['open']>>(),
+			commit: types<import('xstate').ActorRefFrom<(typeof actors)['commit']>>(),
+			settle: types<import('xstate').ActorRefFrom<(typeof actors)['settle']>>(),
+			rollback: types<import('xstate').ActorRefFrom<(typeof actors)['rollback']>>()
+		}
 	},
-	never,
-	string,
-	Input,
-	FakeDataResult
->({
 	actors,
 	guards: {
-		closing: stateIn({ running: { control: 'closing' } }),
-		cancelling: stateIn({ running: { control: 'cancelling' } }),
-		interrupted: or([
-			stateIn({ running: { control: 'closing' } }),
-			stateIn({ running: { control: 'cancelling' } })
-		]),
-		hasData: ({ context }) => context.records?.hasData === true,
-		owned: ({ context }) => context.records?.organization?.ownerId === context.userId,
-		categoriesReady: ({ context }) =>
+		closing: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'closing' } }, args.value),
+		cancelling: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'cancelling' } }, args.value),
+		hasData: ({ context }: { context: Context }) => context.records?.hasData === true,
+		owned: ({ context }: { context: Context }) =>
+			context.records?.organization?.ownerId === context.userId,
+		categoriesReady: ({ context }: { context: Context }) =>
 			['income', 'expense'].every((kind) =>
 				context.records?.categories.some((category) => category.kind === kind)
 			),
-		planStillValid: ({ context }) =>
+		planStillValid: ({ context }: { context: Context }) =>
 			required(context.plan).transactions.every((transaction) =>
 				context.records?.categories.some(
 					(category) =>
@@ -149,8 +189,8 @@ export const fakeDataSetup = setup<
 				control: {
 					initial: 'active',
 					states: {
-						active: { on: { CANCEL: 'cancelling', SHUTDOWN: 'closing' } },
-						cancelling: { on: { CANCEL: {}, SHUTDOWN: 'closing' } },
+						active: { on: { CANCEL: { target: 'cancelling' }, SHUTDOWN: { target: 'closing' } } },
+						cancelling: { on: { CANCEL: {}, SHUTDOWN: { target: 'closing' } } },
 						closing: { on: { CANCEL: {}, SHUTDOWN: {} } }
 					}
 				},
@@ -158,84 +198,112 @@ export const fakeDataSetup = setup<
 					initial: 'readingLocal',
 					states: {
 						readingLocal: {
-							on: { CANCEL: 'finishing', SHUTDOWN: 'finishing' },
+							on: { CANCEL: { target: 'finishing' }, SHUTDOWN: { target: 'finishing' } },
 							invoke: {
 								src: 'readLocal',
 								input: ({ context }) => context,
-								onDone: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ guard: ({ event }) => event.output, target: 'skipping' },
-									{ target: 'readingAuthority' }
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onDone: (args) => {
+									if (
+										matchesState({ running: { control: 'closing' } }, args.value) ||
+										matchesState({ running: { control: 'cancelling' } }, args.value)
+									) {
+										return { target: 'finishing' }
+									}
+									if (args.event.output) {
+										return { target: 'skipping' }
+									}
+									return { target: 'readingAuthority' }
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						readingAuthority: {
-							on: { CANCEL: 'finishing', SHUTDOWN: 'finishing' },
+							on: { CANCEL: { target: 'finishing' }, SHUTDOWN: { target: 'finishing' } },
 							invoke: {
 								src: 'readAuthority',
 								input: ({ context }) => context,
-								onDone: {
-									target: 'assessing',
-									actions: assign({ records: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'assessing', context: { records: args.event.output } }
 								},
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						assessing: {
-							always: [
-								{ guard: 'interrupted', target: 'finishing' },
-								{ guard: 'hasData', target: 'skipping' },
-								{ guard: not('owned'), target: 'skipping' },
-								{ guard: 'categoriesReady', target: 'preparing' },
-								{
+							always: (args) => {
+								if (
+									matchesState({ running: { control: 'closing' } }, args.value) ||
+									matchesState({ running: { control: 'cancelling' } }, args.value)
+								) {
+									return { target: 'finishing' }
+								}
+								if (args.guards.hasData(args)) {
+									return { target: 'skipping' }
+								}
+								if (!args.guards.owned(args)) {
+									return { target: 'skipping' }
+								}
+								if (args.guards.categoriesReady(args)) {
+									return { target: 'preparing' }
+								}
+								return {
 									target: 'finishing',
-									actions: assign({
-										result: (): FakeDataResult => ({
+									context: {
+										result: {
 											outcome: 'failed',
 											settlement: 'notStarted',
 											error: new Error('Fake data requires income and expense categories')
-										})
-									})
+										}
+									}
 								}
-							]
+							}
 						},
 						preparing: {
-							on: { CANCEL: 'finishing', SHUTDOWN: 'finishing' },
+							on: { CANCEL: { target: 'finishing' }, SHUTDOWN: { target: 'finishing' } },
 							invoke: {
 								src: 'prepare',
 								input: ({ context }) => ({ scope: context, records: required(context.records) }),
-								onDone: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{ target: 'opening', actions: assign({ plan: ({ event }) => event.output }) }
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onDone: (args) => {
+									if (
+										matchesState({ running: { control: 'closing' } }, args.value) ||
+										matchesState({ running: { control: 'cancelling' } }, args.value)
+									) {
+										return { target: 'finishing' }
+									}
+									return { target: 'opening', context: { plan: args.event.output } }
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -243,23 +311,27 @@ export const fakeDataSetup = setup<
 							invoke: {
 								src: 'open',
 								input: ({ context }) => context.db,
-								onDone: [
-									{
-										guard: 'interrupted',
-										target: 'rollingBack',
-										actions: assign({ tx: ({ event }) => event.output })
-									},
-									{ target: 'rechecking', actions: assign({ tx: ({ event }) => event.output }) }
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onDone: (args) => {
+									const { event } = args
+									if (
+										matchesState({ running: { control: 'closing' } }, args.value) ||
+										matchesState({ running: { control: 'cancelling' } }, args.value)
+									) {
+										return { target: 'rollingBack', context: { tx: event.output } }
+									}
+									return { target: 'rechecking', context: { tx: event.output } }
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -267,51 +339,57 @@ export const fakeDataSetup = setup<
 							invoke: {
 								src: 'recheck',
 								input: ({ context }) => ({ tx: required(context.tx), scope: context }),
-								onDone: {
-									target: 'assessingTransaction',
-									actions: assign({ records: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'assessingTransaction', context: { records: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						assessingTransaction: {
-							always: [
-								{ guard: 'interrupted', target: 'rollingBack' },
-								{
-									guard: 'hasData',
+							always: (args) => {
+								if (
+									matchesState({ running: { control: 'closing' } }, args.value) ||
+									matchesState({ running: { control: 'cancelling' } }, args.value)
+								) {
+									return { target: 'rollingBack' }
+								}
+								if (args.guards.hasData(args)) {
+									return {
+										target: 'rollingBack',
+										context: { result: { outcome: 'skipped', settlement: 'notStarted' } }
+									}
+								}
+								if (!args.guards.owned(args)) {
+									return {
+										target: 'rollingBack',
+										context: { result: { outcome: 'skipped', settlement: 'notStarted' } }
+									}
+								}
+								if (args.guards.planStillValid(args)) {
+									return { target: 'staging' }
+								}
+								return {
 									target: 'rollingBack',
-									actions: assign({
-										result: (): FakeDataResult => ({ outcome: 'skipped', settlement: 'notStarted' })
-									})
-								},
-								{
-									guard: not('owned'),
-									target: 'rollingBack',
-									actions: assign({
-										result: (): FakeDataResult => ({ outcome: 'skipped', settlement: 'notStarted' })
-									})
-								},
-								{ guard: 'planStillValid', target: 'staging' },
-								{
-									target: 'rollingBack',
-									actions: assign({
-										result: (): FakeDataResult => ({
+									context: {
+										result: {
 											outcome: 'failed',
 											settlement: 'notStarted',
 											error: new Error('Fake-data categories changed')
-										})
-									})
+										}
+									}
 								}
-							]
+							}
 						},
 						staging: {
 							invoke: {
@@ -320,16 +398,26 @@ export const fakeDataSetup = setup<
 									tx: required(context.tx),
 									plan: required(context.plan)
 								}),
-								onDone: [{ guard: 'interrupted', target: 'rollingBack' }, { target: 'committing' }],
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onDone: (args) => {
+									if (
+										matchesState({ running: { control: 'closing' } }, args.value) ||
+										matchesState({ running: { control: 'cancelling' } }, args.value)
+									) {
+										return { target: 'rollingBack' }
+									}
+									return { target: 'committing' }
+								},
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -337,19 +425,20 @@ export const fakeDataSetup = setup<
 							invoke: {
 								src: 'commit',
 								input: ({ context }) => required(context.tx),
-								onDone: {
-									target: 'settling',
-									actions: assign({ write: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'settling', context: { write: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -357,26 +446,31 @@ export const fakeDataSetup = setup<
 							invoke: {
 								src: 'settle',
 								input: ({ context }) => required(context.write),
-								onDone: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ context }): FakeDataResult => ({
-											outcome: 'seeded',
-											settlement: 'confirmed',
-											accountCount: required(context.plan).accounts.length,
-											transactionCount: required(context.plan).transactions.length
-										})
-									})
+								onDone: (args) => {
+									const { context } = args
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'seeded',
+												settlement: 'confirmed',
+												accountCount: required(context.plan).accounts.length,
+												transactionCount: required(context.plan).transactions.length
+											}
+										}
+									}
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -384,51 +478,58 @@ export const fakeDataSetup = setup<
 							invoke: {
 								src: 'rollback',
 								input: ({ context }) => required(context.tx),
-								onDone: [
-									{ guard: ({ event }) => event.output, target: 'finishing' },
-									{
+								onDone: (args) => {
+									if (args.event.output) {
+										return { target: 'finishing' }
+									}
+									return {
 										target: 'finishing',
-										actions: assign({
-											result: (): FakeDataResult => ({
+										context: {
+											result: {
 												outcome: 'failed',
 												settlement: 'unresolved',
 												error: new Error('Fake-data rollback was not confirmed')
-											})
-										})
+											}
+										}
 									}
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): FakeDataResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						skipping: {
-							entry: assign({
-								result: (): FakeDataResult => ({ outcome: 'skipped', settlement: 'notStarted' })
-							}),
-							always: 'finishing'
+							entry: () => {
+								return { context: { result: { outcome: 'skipped', settlement: 'notStarted' } } }
+							},
+							always: { target: 'finishing' }
 						},
 						finishing: {
-							always: [
-								{ guard: 'closing', target: '#fake-data-setup.closed' },
-								{ guard: 'cancelling', target: '#fake-data-setup.cancelled' },
-								{
-									guard: ({ context }) => context.result?.outcome === 'seeded',
-									target: '#fake-data-setup.succeeded'
-								},
-								{
-									guard: ({ context }) => context.result?.outcome === 'skipped',
-									target: '#fake-data-setup.skipped'
-								},
-								{ target: '#fake-data-setup.failed' }
-							]
+							always: (args) => {
+								const { context } = args
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: '#fake-data-setup.closed' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: '#fake-data-setup.cancelled' }
+								}
+								if (context.result?.outcome === 'seeded') {
+									return { target: '#fake-data-setup.succeeded' }
+								}
+								if (context.result?.outcome === 'skipped') {
+									return { target: '#fake-data-setup.skipped' }
+								}
+								return { target: '#fake-data-setup.failed' }
+							}
 						}
 					}
 				}
@@ -436,41 +537,55 @@ export const fakeDataSetup = setup<
 		},
 		succeeded: {
 			type: 'final',
-			entry: assign({ tx: undefined, plan: undefined, records: undefined, write: undefined })
+			entry: () => {
+				return { context: { tx: undefined, plan: undefined, records: undefined, write: undefined } }
+			}
 		},
 		skipped: {
 			type: 'final',
-			entry: assign({ tx: undefined, plan: undefined, records: undefined, write: undefined })
+			entry: () => {
+				return { context: { tx: undefined, plan: undefined, records: undefined, write: undefined } }
+			}
 		},
 		failed: {
 			type: 'final',
-			entry: assign({ tx: undefined, plan: undefined, records: undefined, write: undefined })
+			entry: () => {
+				return { context: { tx: undefined, plan: undefined, records: undefined, write: undefined } }
+			}
 		},
 		cancelled: {
 			type: 'final',
-			entry: assign({
-				tx: undefined,
-				plan: undefined,
-				records: undefined,
-				write: undefined,
-				result: ({ context }): FakeDataResult => ({
-					outcome: 'cancelled',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						tx: undefined,
+						plan: undefined,
+						records: undefined,
+						write: undefined,
+						result: {
+							outcome: 'cancelled',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		},
 		closed: {
 			type: 'final',
-			entry: assign({
-				tx: undefined,
-				plan: undefined,
-				records: undefined,
-				write: undefined,
-				result: ({ context }): FakeDataResult => ({
-					outcome: 'closed',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						tx: undefined,
+						plan: undefined,
+						records: undefined,
+						write: undefined,
+						result: {
+							outcome: 'closed',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		}
 	}
 })

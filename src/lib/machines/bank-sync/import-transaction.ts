@@ -1,6 +1,5 @@
 import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
 import { INCOME, EXPENSE, type TransactionKind } from '#lib/domain/transaction-kind.js'
-import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { stableUuid } from '#lib/data.js'
@@ -16,6 +15,8 @@ import {
 	type OperationWork,
 	type ProviderResponse
 } from './types.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Category = schema.RowOf<typeof app.categories>
 type Input = {
@@ -40,6 +41,7 @@ type Values = {
 	source: typeof TRANSACTION_SOURCE.SIMPLEFIN
 	externalId: string
 }
+export type TransactionPersistInput = { id: string; values: Values }
 type Omission =
 	| 'invalidSchema'
 	| 'pending'
@@ -83,39 +85,58 @@ function externalId(context: Context) {
 export function createTransactionImportMachine(dependencies: Dependencies) {
 	const { db } = dependencies
 	const actors = {
-		identity: fromPromise(({ input }: { input: { organizationId: string; externalId: string } }) =>
-			stableUuid(input.organizationId, `simplefin-transaction:${input.externalId}`)
-		),
+		identity: createAsyncLogic({
+			run: ({ input }: { input: { organizationId: string; externalId: string } }) =>
+				stableUuid(input.organizationId, `simplefin-transaction:${input.externalId}`)
+		}),
 		authorize: createAuthorizationMachine(dependencies),
-		existing: fromPromise(({ input }: { input: string }) =>
-			db.all(app.transactions.where({ id: input }))
-		),
-		persist: fromPromise<void, { id: string; values: Values }>(async ({ input, signal }) => {
-			signal.throwIfAborted()
-			await db.insert(app.transactions, input.values, { id: input.id }).wait({ tier: 'local' })
+		existing: createAsyncLogic({
+			run: ({ input }: { input: string }) => db.all(app.transactions.where({ id: input }))
+		}),
+		persist: createAsyncLogic<void, TransactionPersistInput>({
+			run: async ({ input, signal }) => {
+				signal.throwIfAborted()
+				await db.insert(app.transactions, input.values, { id: input.id }).wait({ tier: 'local' })
+			}
 		})
 	}
-	return setup<
-		Context,
-		{ type: 'PROCESS' } | { type: 'CANCEL' },
-		typeof actors,
-		{},
-		{ readTimedOut: undefined },
-		{ isCancelling: undefined },
-		never,
-		string,
-		Input,
-		TransactionResult
-	>({
+	const patchReadTimedOut = (
+		{ context }: { context: Context },
+		enqueue: (effect: () => void) => void
+	): Partial<Context> => {
+		enqueue(() => context.work.trace.log('import.transaction.read.timeout'))
+		return { error: new Error('import-read-timeout') }
+	}
+	const events0 = {
+		PROCESS: types<EventPayload<{ type: 'PROCESS' } | { type: 'CANCEL' }, 'PROCESS'>>(),
+		CANCEL: types<EventPayload<{ type: 'PROCESS' } | { type: 'CANCEL' }, 'CANCEL'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['identity']>
+				| import('xstate').OutputFrom<(typeof actors)['authorize']>
+				| import('xstate').OutputFrom<(typeof actors)['existing']>
+				| import('xstate').OutputFrom<(typeof actors)['persist']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<TransactionResult>(),
+			children: {
+				identity: types<import('xstate').ActorRefFrom<(typeof actors)['identity']>>(),
+				authorize: types<import('xstate').ActorRefFrom<(typeof actors)['authorize']>>(),
+				existing: types<import('xstate').ActorRefFrom<(typeof actors)['existing']>>(),
+				persist: types<import('xstate').ActorRefFrom<(typeof actors)['persist']>>()
+			}
+		},
 		actors,
-		guards: { isCancelling: stateIn({ persisting: 'cancelling' }) },
+		guards: {},
 		delays: { readDeadline: 20000 },
-		actions: {
-			readTimedOut: assign(({ context }) => {
-				context.work.trace.log('import.transaction.read.timeout')
-				return { error: new Error('import-read-timeout') }
-			})
-		}
+		actions: {}
 	}).createMachine({
 		id: 'bank-import-transaction',
 		context: ({ input }) => ({
@@ -135,132 +156,164 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 		}),
 		initial: 'checkingSchema',
 		output: ({ context }) => required(context.result),
-		on: { CANCEL: '.cancelled' },
+		on: { CANCEL: { target: '.cancelled' } },
 		states: {
 			checkingSchema: {
-				always: [
-					{ guard: ({ context }) => !context.parsed.success, target: 'invalidSchema' },
-					{
-						target: 'checkingPending',
-						actions: assign({
-							transaction: ({ context }) =>
-								required(context.parsed.success ? context.parsed.data : undefined)
-						})
+				always: (args) => {
+					const { context } = args
+					if (!context.parsed.success) {
+						return { target: 'invalidSchema' }
 					}
-				]
+					return {
+						target: 'checkingPending',
+						context: {
+							transaction: required(context.parsed.success ? context.parsed.data : undefined)
+						}
+					}
+				}
 			},
 			checkingPending: {
-				always: [
-					{ guard: ({ context }) => Boolean(context.transaction?.pending), target: 'pending' },
-					{ target: 'checkingSupportedCurrency' }
-				]
+				always: (args) => {
+					if (Boolean(args.context.transaction?.pending)) {
+						return { target: 'pending' }
+					}
+					return { target: 'checkingSupportedCurrency' }
+				}
 			},
 			checkingSupportedCurrency: {
-				always: [
-					{
-						guard: ({ context }) => context.provider.currency !== 'USD',
-						target: 'unsupportedCurrency'
-					},
-					{ target: 'checkingAccountCurrency' }
-				]
+				always: (args) => {
+					if (args.context.provider.currency !== 'USD') {
+						return { target: 'unsupportedCurrency' }
+					}
+					return { target: 'checkingAccountCurrency' }
+				}
 			},
 			checkingAccountCurrency: {
-				always: [
-					{
-						guard: ({ context }) => context.account.currency !== context.provider.currency,
-						target: 'currencyMismatch'
-					},
-					{ target: 'parsingAmount' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.account.currency !== context.provider.currency) {
+						return { target: 'currencyMismatch' }
+					}
+					return { target: 'parsingAmount' }
+				}
 			},
 			parsingAmount: {
-				entry: assign({
-					amount: ({ context }) =>
-						parseAmountMinor(required(context.transaction).amount.replace(/^-/, ''))
-				}),
-				always: 'checkingAmount'
+				entry: (args) => {
+					return {
+						context: {
+							amount: parseAmountMinor(required(args.context.transaction).amount.replace(/^-/, ''))
+						}
+					}
+				},
+				always: { target: 'checkingAmount' }
 			},
 			checkingAmount: {
-				always: [
-					{ guard: ({ context }) => context.amount?.kind !== 'valid', target: 'invalidAmount' },
-					{ target: 'choosingKind' }
-				]
+				always: (args) => {
+					if (args.context.amount?.kind !== 'valid') {
+						return { target: 'invalidAmount' }
+					}
+					return { target: 'choosingKind' }
+				}
 			},
 			choosingKind: {
-				always: [
-					{
-						guard: ({ context }) => required(context.transaction).amount.startsWith('-'),
-						target: 'expense'
-					},
-					{ target: 'income' }
-				]
+				always: (args) => {
+					if (required(args.context.transaction).amount.startsWith('-')) {
+						return { target: 'expense' }
+					}
+					return { target: 'income' }
+				}
 			},
-			expense: { entry: assign({ kind: EXPENSE }), always: 'selectingCategory' },
-			income: { entry: assign({ kind: INCOME }), always: 'selectingCategory' },
+			expense: {
+				entry: (args) => {
+					return { context: ((args) => ({ kind: EXPENSE }))(args) }
+				},
+				always: { target: 'selectingCategory' }
+			},
+			income: {
+				entry: (args) => {
+					return { context: ((args) => ({ kind: INCOME }))(args) }
+				},
+				always: { target: 'selectingCategory' }
+			},
 			selectingCategory: {
-				entry: assign({
-					category: ({ context }) => context.categories.find((row) => row.kind === context.kind)
-				}),
-				always: [
-					{ guard: ({ context }) => !context.category, target: 'missingCategory' },
-					{ target: 'parsingDate' }
-				]
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: { category: context.categories.find((row) => row.kind === context.kind) }
+					}
+				},
+				always: (args) => {
+					if (!args.context.category) {
+						return { target: 'missingCategory' }
+					}
+					return { target: 'parsingDate' }
+				}
 			},
 			parsingDate: {
-				entry: assign({
-					date: ({ context }) => new Date(required(context.transaction).posted * 1000)
-				}),
-				always: [
-					{
-						guard: ({ context }) => !Number.isFinite(required(context.date).getTime()),
-						target: 'invalidDate'
-					},
-					{ target: 'validatingTransaction' }
-				]
+				entry: (args) => {
+					return { context: { date: new Date(required(args.context.transaction).posted * 1000) } }
+				},
+				always: (args) => {
+					if (!Number.isFinite(required(args.context.date).getTime())) {
+						return { target: 'invalidDate' }
+					}
+					return { target: 'validatingTransaction' }
+				}
 			},
 			validatingTransaction: {
-				entry: assign({
-					validated: ({ context }) =>
-						appTransactionSchema.safeParse({
-							organizationId: context.work.scope.organizationId,
-							accountId: context.account.id,
-							categoryId: required(context.category).id,
-							kind: context.kind,
-							bookedOn: required(context.date).toISOString().slice(0, 10),
-							money: {
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							validated: appTransactionSchema.safeParse({
+								organizationId: context.work.scope.organizationId,
+								accountId: context.account.id,
+								categoryId: required(context.category).id,
+								kind: context.kind,
+								bookedOn: required(context.date).toISOString().slice(0, 10),
+								money: {
+									amountMinor: required(
+										context.amount?.kind === 'valid' ? context.amount.amountMinor : undefined
+									),
+									currency: context.provider.currency
+								},
+								description: required(context.transaction).description,
+								source: { source: TRANSACTION_SOURCE.SIMPLEFIN, externalId: externalId(context) }
+							})
+						}
+					}
+				},
+				always: (args) => {
+					if (!args.context.validated?.success) {
+						return { target: 'invalidTransaction' }
+					}
+					return { target: 'preparingValues' }
+				}
+			},
+			preparingValues: {
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							values: {
+								organizationId: context.work.scope.organizationId,
+								accountId: context.account.id,
+								categoryId: required(context.category).id,
+								kind: context.kind,
+								bookedOn: required(context.validated?.success ? context.validated.data : undefined)
+									.bookedOn,
 								amountMinor: required(
 									context.amount?.kind === 'valid' ? context.amount.amountMinor : undefined
 								),
-								currency: context.provider.currency
-							},
-							description: required(context.transaction).description,
-							source: { source: TRANSACTION_SOURCE.SIMPLEFIN, externalId: externalId(context) }
-						})
-				}),
-				always: [
-					{ guard: ({ context }) => !context.validated?.success, target: 'invalidTransaction' },
-					{ target: 'preparingValues' }
-				]
-			},
-			preparingValues: {
-				entry: assign({
-					values: ({ context }) => ({
-						organizationId: context.work.scope.organizationId,
-						accountId: context.account.id,
-						categoryId: required(context.category).id,
-						kind: context.kind,
-						bookedOn: required(context.validated?.success ? context.validated.data : undefined)
-							.bookedOn,
-						amountMinor: required(
-							context.amount?.kind === 'valid' ? context.amount.amountMinor : undefined
-						),
-						currency: context.provider.currency,
-						description: required(context.transaction).description,
-						source: TRANSACTION_SOURCE.SIMPLEFIN,
-						externalId: externalId(context)
-					})
-				}),
-				always: 'generatingIdentity'
+								currency: context.provider.currency,
+								description: required(context.transaction).description,
+								source: TRANSACTION_SOURCE.SIMPLEFIN,
+								externalId: externalId(context)
+							}
+						}
+					}
+				},
+				always: { target: 'generatingIdentity' }
 			},
 			generatingIdentity: {
 				invoke: {
@@ -269,141 +322,194 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 						organizationId: context.work.scope.organizationId,
 						externalId: externalId(context)
 					}),
-					onDone: [
-						{
-							guard: ({ context, event }) => context.existingIds?.has(event.output) === true,
-							target: 'existing',
-							actions: assign({ id: ({ event }) => event.output })
-						},
-						{
-							target: 'authorizingLookup',
-							actions: assign({ id: ({ event }) => event.output })
+					onDone: (args) => {
+						const { event } = args
+						if (args.context.existingIds?.has(event.output) === true) {
+							return { target: 'existing', context: { id: event.output } }
 						}
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+						return { target: 'authorizingLookup', context: { id: event.output } }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			authorizingLookup: {
-				after: { readDeadline: { target: 'failed', actions: 'readTimedOut' } },
+				after: {
+					readDeadline: (args, enq) => {
+						return { target: 'failed', context: patchReadTimedOut(args, enq) }
+					}
+				},
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.work),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'findingExisting' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
+						}
+						return { target: 'findingExisting' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			findingExisting: {
-				after: { readDeadline: { target: 'failed', actions: 'readTimedOut' } },
+				after: {
+					readDeadline: (args, enq) => {
+						return { target: 'failed', context: patchReadTimedOut(args, enq) }
+					}
+				},
 				invoke: {
 					src: 'existing',
 					input: ({ context }) => required(context.id),
-					onDone: [
-						{ guard: ({ event }) => event.output.length > 0, target: 'existing' },
-						{ target: 'authorizingWrite' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						if (args.event.output.length > 0) {
+							return { target: 'existing' }
+						}
+						return { target: 'authorizingWrite' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			authorizingWrite: {
-				after: { readDeadline: { target: 'failed', actions: 'readTimedOut' } },
+				after: {
+					readDeadline: (args, enq) => {
+						return { target: 'failed', context: patchReadTimedOut(args, enq) }
+					}
+				},
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.work),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'persisting' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
+						}
+						return { target: 'persisting' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			persisting: {
 				initial: 'working',
-				entry: assign({ settlement: 'unresolved' }),
+				entry: () => {
+					return { context: { settlement: 'unresolved' } }
+				},
 				states: {
 					working: {},
 					cancelling: { on: { CANCEL: {} } }
 				},
-				on: { CANCEL: '.cancelling' },
+				on: { CANCEL: { target: '.cancelling' } },
 				invoke: {
 					src: 'persist',
 					input: ({ context }) => ({ id: required(context.id), values: required(context.values) }),
-					onDone: [
-						{
-							guard: 'isCancelling',
-							target: 'cancelled',
-							actions: assign({ settlement: 'locallyPersisted' })
-						},
-						{ target: 'imported', actions: assign({ settlement: 'locallyPersisted' }) }
-					],
-					onError: [
-						{
-							guard: 'isCancelling',
-							target: 'cancelled',
-							actions: assign({ error: ({ event }) => event.error })
-						},
-						{ target: 'unresolved', actions: assign({ error: ({ event }) => event.error }) }
-					]
+					onDone: (args) => {
+						if (matchesState({ persisting: 'cancelling' }, args.value)) {
+							return { target: 'cancelled', context: { settlement: 'locallyPersisted' } }
+						}
+						return { target: 'imported', context: { settlement: 'locallyPersisted' } }
+					},
+					onError: (args) => {
+						const { event } = args
+						if (matchesState({ persisting: 'cancelling' }, args.value)) {
+							return { target: 'cancelled', context: { error: event.error } }
+						}
+						return { target: 'unresolved', context: { error: event.error } }
+					}
 				}
 			},
 			cancelled: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'cancelled',
-						settlement: context.settlement,
-						error: context.error
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							result: {
+								kind: 'cancelled',
+								settlement: context.settlement,
+								error: context.error
+							}
+						}
+					}
+				}
 			},
 			unresolved: {
 				type: 'final',
-				entry: assign({ result: ({ context }) => ({ kind: 'unresolved', error: context.error }) })
+				entry: (args) => {
+					return { context: { result: { kind: 'unresolved', error: args.context.error } } }
+				}
 			},
 			invalidSchema: {
 				type: 'final',
-				entry: assign({ result: { kind: 'omitted', reason: 'invalidSchema' } })
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'invalidSchema' } } }
+				}
 			},
-			pending: { type: 'final', entry: assign({ result: { kind: 'omitted', reason: 'pending' } }) },
+			pending: {
+				type: 'final',
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'pending' } } }
+				}
+			},
 			unsupportedCurrency: {
 				type: 'final',
-				entry: assign({ result: { kind: 'omitted', reason: 'unsupportedCurrency' } })
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'unsupportedCurrency' } } }
+				}
 			},
 			currencyMismatch: {
 				type: 'final',
-				entry: assign({ result: { kind: 'omitted', reason: 'currencyMismatch' } })
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'currencyMismatch' } } }
+				}
 			},
 			invalidAmount: {
 				type: 'final',
-				entry: assign({ result: { kind: 'omitted', reason: 'invalidAmount' } })
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'invalidAmount' } } }
+				}
 			},
 			invalidDate: {
 				type: 'final',
-				entry: assign({ result: { kind: 'omitted', reason: 'invalidDate' } })
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'invalidDate' } } }
+				}
 			},
 			invalidTransaction: {
 				type: 'final',
-				entry: assign({ result: { kind: 'omitted', reason: 'invalidTransaction' } })
+				entry: () => {
+					return { context: { result: { kind: 'omitted', reason: 'invalidTransaction' } } }
+				}
 			},
-			existing: { type: 'final', entry: assign({ result: { kind: 'existing' } }) },
-			imported: { type: 'final', entry: assign({ result: { kind: 'imported' } }) },
+			existing: {
+				type: 'final',
+				entry: () => {
+					return { context: { result: { kind: 'existing' } } }
+				}
+			},
+			imported: {
+				type: 'final',
+				entry: () => {
+					return { context: { result: { kind: 'imported' } } }
+				}
+			},
 			missingCategory: {
 				type: 'final',
-				entry: assign({ result: { kind: 'failed', error: new Error('mapping') } })
+				entry: () => {
+					return { context: { result: { kind: 'failed', error: new Error('mapping') } } }
+				}
 			},
 			failed: {
 				type: 'final',
-				entry: assign({ result: ({ context }) => ({ kind: 'failed', error: context.error }) })
+				entry: (args) => {
+					return { context: { result: { kind: 'failed', error: args.context.error } } }
+				}
 			}
 		}
 	})

@@ -1,12 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-	createActor,
-	createMachine,
-	fromPromise,
-	waitFor,
-	type ActorRefFrom,
-	type OutputFrom
-} from 'xstate'
 import { Transaction } from 'jazz-tools'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import { createSyncLogRetentionMachine, type RetentionScope } from './log-retention.js'
@@ -18,6 +10,8 @@ import { bankAvailabilityMachine, bankObservation } from './availability.js'
 import { bankHistoryMachine } from './history.js'
 import { availabilityReport, publishBankSource } from './reports.fixture.js'
 import type { BankSource, BankSyncDependencies, Connection } from './types.js'
+import { createActor, createMachine, waitFor, createAsyncLogic } from 'xstate'
+import type { ActorFromLogic, OutputFrom } from 'xstate'
 
 const settlements = vi.hoisted(() => new WeakMap<object, () => void>())
 const operationResults = vi.hoisted(() => new WeakMap<object, LoggedOperationResult>())
@@ -37,8 +31,8 @@ function delayedSetup() {
 			settlements.set(self, () => self.send({ type: 'FINISH' }))
 		},
 		states: {
-			working: { on: { CANCEL: 'settling' } },
-			settling: { on: { CANCEL: {}, FINISH: 'complete' } },
+			working: { on: { CANCEL: { target: 'settling' } } },
+			settling: { on: { CANCEL: {}, FINISH: { target: 'complete' } } },
 			complete: { type: 'final' }
 		},
 		output: ({ self }): SetupResult => {
@@ -60,8 +54,8 @@ function delayedOperation() {
 			settlements.set(self, () => self.send({ type: 'FINISH' }))
 		},
 		states: {
-			working: { on: { CANCEL: 'settling' } },
-			settling: { on: { CANCEL: {}, FINISH: 'failed' } },
+			working: { on: { CANCEL: { target: 'settling' } } },
+			settling: { on: { CANCEL: {}, FINISH: { target: 'failed' } } },
 			failed: { type: 'final' }
 		},
 		output: ({ self }): LoggedOperationResult => {
@@ -126,15 +120,19 @@ const dependencies: BankSyncDependencies = {
 	passkeyName: () => 'Test'
 }
 const retentionDependencies = { db: dependencies.db, observe: () => bankObservation(source) }
-const actors: ActorRefFrom<ReturnType<typeof createBankSyncMachine>>[] = []
+const actors: { stop: () => void }[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
 	vi.restoreAllMocks()
 })
-function start(
-	actorsOverride: Parameters<ReturnType<typeof createBankSyncMachine>['provide']>[0] = {}
-) {
-	const actor = createActor(createBankSyncMachine(dependencies).provide(actorsOverride)).start()
+function start<
+	Owned extends import('xstate').ActorRef<
+		import('xstate').SnapshotFrom<ReturnType<typeof createBankSyncMachine>>,
+		import('xstate').SendableEventFromLogic<ReturnType<typeof createBankSyncMachine>>
+	> & { stop: () => void } = ActorFromLogic<ReturnType<typeof createBankSyncMachine>>
+>(create?: (machine: ReturnType<typeof createBankSyncMachine>) => Owned) {
+	const machine = createBankSyncMachine(dependencies)
+	const actor = create ? create(machine) : createActor(machine).start()
 	actors.push(actor)
 	if (actor.getSnapshot().status === 'active') publishBankSource(actor, source, 0)
 	return actor
@@ -145,23 +143,46 @@ function unavailable(): never {
 
 describe('bank supervisor error boundaries', () => {
 	it('closes safely if availability cannot start', () => {
-		const actor = start({
-			actors: {
-				availability: bankAvailabilityMachine.provide({ guards: { accessAllowed: unavailable } })
-			}
-		})
+		const actor = start((machine) =>
+			createActor(
+				machine.provide({
+					actors: {
+						availability: bankAvailabilityMachine.provide({
+							guards: { accessAllowed: unavailable }
+						})
+					}
+				})
+			).start()
+		)
 		expect(actor.getSnapshot().status).toBe('done')
 		expect(actor.getSnapshot().context.setupToken).toBeUndefined()
 	})
 
 	it.each(['DISCOVER', 'CONNECT'])('settles %s cleanup when history fails', (command) => {
-		const actor = start({
-			actors: { history: bankHistoryMachine.provide({ actions: { summarize: unavailable } }) }
-		})
+		let failHistory = false
+		const currentRevision = bankHistoryMachine.sources.guards.currentRevision
+		if (typeof currentRevision !== 'function') throw new Error('Missing history guard')
+		const actor = start((machine) =>
+			createActor(
+				machine.provide({
+					actors: {
+						history: bankHistoryMachine.provide({
+							guards: {
+								currentRevision: (args) => {
+									if (failHistory) throw new Error('Controlled history calculation failure')
+									return currentRevision(args)
+								}
+							}
+						})
+					}
+				})
+			).start()
+		)
 		if (command === 'DISCOVER') actor.send({ type: 'DISCOVER' })
 		else actor.send({ type: 'CONNECT', token: 'secret-token' })
 		const child = actor.getSnapshot().children.operation ?? actor.getSnapshot().children.setup
 		if (!child) throw new Error('Expected operation child')
+		failHistory = true
 		actor.send({
 			type: 'HISTORY_CHANGED',
 			revision: 0,
@@ -275,7 +296,7 @@ describe('operation settlement handoff', () => {
 		actor.send({ type: 'SYNC' })
 		const child = actor.getSnapshot().children.operation
 		if (!child) throw new Error('Expected operation')
-		const subscription = child.subscribe((snapshot) => {
+		const subscription = child.subscribe((snapshot: import('xstate').Snapshot<unknown>) => {
 			if (snapshot.status === 'done') actor.send({ type: 'CANCEL' })
 		})
 		child.send({ type: 'CANCEL' })
@@ -290,9 +311,15 @@ describe('operation settlement handoff', () => {
 
 describe('bank report currency and command gating', () => {
 	function delayedAvailability() {
-		return start({
-			actors: { availability: bankAvailabilityMachine.provide({ actions: { publish: () => {} } }) }
-		})
+		return start((machine) =>
+			createActor(
+				machine.provide({
+					actors: {
+						availability: bankAvailabilityMachine.provide({ actions: { publish: () => {} } })
+					}
+				})
+			).start()
+		)
 	}
 	function report(actor: ReturnType<typeof start>, observed: BankSource = source) {
 		return availabilityReport(observed, actor.getSnapshot().context.generation)
@@ -318,7 +345,7 @@ describe('bank report currency and command gating', () => {
 			imported: 2,
 			existing: 0,
 			omitted: 0
-		} satisfies NonNullable<ReturnType<typeof selectBankView>['history']>
+		} satisfies import('./types.js').LastSync
 		actor.send({ type: 'HISTORY_REPORTED', revision: 0, connectionId: connection.id, summary })
 		expect(selectBankView(actor.getSnapshot()).history?.imported).toBe(2)
 		const revoked = { ...source, membership: null }
@@ -408,18 +435,22 @@ describe('bank report currency and command gating', () => {
 	})
 	it.each(['DISCOVER', 'CONNECT'])('drains %s when availability fails after startup', (command) => {
 		let broken = false
-		const actor = start({
-			actors: {
-				availability: bankAvailabilityMachine.provide({
-					guards: {
-						accessAllowed: () => {
-							if (broken) return unavailable()
-							return true
-						}
+		const actor = start((machine) =>
+			createActor(
+				machine.provide({
+					actors: {
+						availability: bankAvailabilityMachine.provide({
+							guards: {
+								accessAllowed: () => {
+									if (broken) return unavailable()
+									return true
+								}
+							}
+						})
 					}
 				})
-			}
-		})
+			).start()
+		)
 		if (command === 'DISCOVER') actor.send({ type: 'DISCOVER' })
 		else actor.send({ type: 'CONNECT', token: 'secret' })
 		const child = actor.getSnapshot().children.operation ?? actor.getSnapshot().children.setup
@@ -461,9 +492,11 @@ describe('bank-owned log retention', () => {
 			actors: {
 				retention: createSyncLogRetentionMachine(retentionDependencies).provide({
 					actors: {
-						authorization: fromPromise(async ({ input }) => {
-							checks.push(input.scope)
-							return false
+						authorization: createAsyncLogic<boolean, { scope: RetentionScope }>({
+							run: async ({ input }) => {
+								checks.push(input.scope)
+								return false
+							}
 						})
 					}
 				})
@@ -472,7 +505,9 @@ describe('bank-owned log retention', () => {
 	}
 	it('forwards the current bank connection on online, replacement and access observations', async () => {
 		const checks: RetentionScope[] = []
-		const actor = start({ actors: { retention: monitoredRetention(checks) } })
+		const actor = start((machine) =>
+			createActor(machine.provide({ actors: { retention: monitoredRetention(checks) } })).start()
+		)
 		expect(checks).toHaveLength(0)
 		actor.send({ type: 'NETWORK_CHANGED', offline: false })
 		await vi.waitFor(() => expect(checks).toHaveLength(1))
@@ -502,7 +537,9 @@ describe('bank-owned log retention', () => {
 	})
 	it('checks retention immediately after a recorded sync completion', async () => {
 		const checks: RetentionScope[] = []
-		const actor = start({ actors: { retention: monitoredRetention(checks) } })
+		const actor = start((machine) =>
+			createActor(machine.provide({ actors: { retention: monitoredRetention(checks) } })).start()
+		)
 		actor.send({ type: 'NETWORK_CHANGED', offline: false })
 		await vi.waitFor(() => expect(checks).toHaveLength(1))
 		const retention = actor.getSnapshot().children.retention
@@ -563,18 +600,20 @@ describe('bank-owned log retention', () => {
 				actors: {
 					retention: createSyncLogRetentionMachine(retentionDependencies).provide({
 						actors: {
-							authorization: fromPromise(async () => true),
-							history: fromPromise(async (): Promise<SyncAttempt[]> => rows),
-							accounts: fromPromise(
-								async (): Promise<import('#lib/schema.js').SyncAccountResult[]> => []
-							),
-							open: fromPromise(() => opening.promise),
-							rollback: fromPromise(() => rollback.promise)
+							authorization: createAsyncLogic({ run: async () => true }),
+							history: createAsyncLogic({ run: async (): Promise<SyncAttempt[]> => rows }),
+							accounts: createAsyncLogic({
+								run: async (): Promise<import('#lib/schema.js').SyncAccountResult[]> => []
+							}),
+							open: createAsyncLogic({ run: () => opening.promise }),
+							rollback: createAsyncLogic({ run: () => rollback.promise })
 						}
 					})
 				}
 			})
-			const actor = start({ actors: { retention: retentionLogic } })
+			const actor = start((machine) =>
+				createActor(machine.provide({ actors: { retention: retentionLogic } })).start()
+			)
 			actor.send({ type: 'NETWORK_CHANGED', offline: false })
 			const retention = actor.getSnapshot().children.retention
 			if (!retention) throw new Error('Expected retention coordinator')
@@ -776,7 +815,9 @@ describe('finite bank resource release', () => {
 					})
 				}
 			})
-			const actor = start({ actors: { retention: logic } })
+			const actor = start((machine) =>
+				createActor(machine.provide({ actors: { retention: logic } })).start()
+			)
 			const retention = actor.getSnapshot().children.retention
 			if (!retention) throw new Error('Missing retention coordinator')
 			if (outcome === 'unresolved') {
@@ -784,7 +825,7 @@ describe('finite bank resource release', () => {
 				await waitFor(retention, (snapshot) => snapshot.matches('idle'))
 			}
 			let completedBeforeNotification = false
-			const subscription = retention.subscribe((snapshot) => {
+			const subscription = retention.subscribe((snapshot: import('xstate').Snapshot<unknown>) => {
 				if (snapshot.status !== 'done') return
 				completedBeforeNotification = actor.getSnapshot().status === 'active'
 				actor.send({ type: 'SHUTDOWN' })
@@ -796,9 +837,15 @@ describe('finite bank resource release', () => {
 		}
 	)
 	it('records pure observer failure without claiming uncertain writes', () => {
-		const actor = start({
-			actors: { history: bankHistoryMachine.provide({ actions: { summarize: unavailable } }) }
-		})
+		const actor = start((machine) =>
+			createActor(
+				machine.provide({
+					actors: {
+						history: bankHistoryMachine.provide({ guards: { currentRevision: unavailable } })
+					}
+				})
+			).start()
+		)
 		actor.send({
 			type: 'HISTORY_CHANGED',
 			revision: 0,

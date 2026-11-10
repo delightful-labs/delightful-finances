@@ -4,6 +4,38 @@ These are user-approved architectural lessons from the bank-sync refactor. Read 
 implementing complex workflows, authorization, readiness, or derived UI capabilities. The
 constitution is authoritative; use the active feature artifacts for behavior requirements.
 
+## Current v6 migration contract
+
+The connected Finance graph targets unpatched `xstate@6.0.0-beta.1` and
+`@xstate/svelte@6.0.0-beta.0`. Historical v5 examples below describe ownership,
+not current authoring syntax. Read the exact installed package's docs and stability
+manifest before relying on a beta API.
+
+- Calculations can be repeated. Return immutable context patches; enqueue mutable
+  bookkeeping and native effects. Mutating a `WeakSet` while selecting a spawn can
+  reject the recalculated transition and lose the child.
+- Invocation input is selected before its owning state's entry context patch.
+  Bind it from the admitted request or assign binding/generation in the incoming
+  transition. Retain the same facts for later settlement and drain correlation.
+- A targetless `{}` consumes an event. Broad native lifecycle handlers must reject
+  unrelated actors with `undefined`, before enqueueing, so the corresponding invoke
+  handler can run. Prefer invoke handlers or explicit payload matches.
+- Completed/failed children can be removed before their notification arrives.
+  Use completion output, and retain recipients with the leases whose later release
+  needs them. A child disappearing is not a resource-release acknowledgement.
+- The installed Svelte binding's `useActorRef` still calls `stop()` on destruction.
+  Own roots explicitly when graceful shutdown and financial/native cleanup must
+  finish first. Public actor refs do not confer ownership of start/stop lifecycle.
+- Copy live Jazz query rows and arrays with `observeRow` / `observeRows` before
+  admitting them as actor observations. Development snapshots freeze plain context;
+  retaining a live subscription array prevents Jazz from applying later deltas.
+- Native browser/SDK handles are opaque resources. Tests must model that opacity;
+  do not disable freezing or use mutable plain-object SDK/canvas substitutes that
+  the engine correctly treats as immutable application data.
+
+See `specs/013-local-first-startup/xstate-v6-finance-implementation.md` for
+qualification and the still-pending application-worker handoff.
+
 ## Mandatory machine-first gate
 
 Apply this gate **before writing the implementation**, not after the user identifies a complex

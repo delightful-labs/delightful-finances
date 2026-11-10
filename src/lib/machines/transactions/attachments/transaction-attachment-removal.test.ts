@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise } from 'xstate'
 import { app } from '#lib/schema.js'
 import type { TransactionAttachmentRemovalInput } from './transaction-attachment-removal.js'
 import { transactionAttachmentRemovalMachine } from './transaction-attachment-removal.js'
+import { createActor, toPromise } from 'xstate'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {

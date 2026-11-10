@@ -1,11 +1,12 @@
 import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
-import { assign, fromPromise, enqueueActions, setup } from 'xstate'
 import { stableUuid } from '#lib/data.js'
 import { appAccountSchema } from '#lib/validation/accounts.js'
 import { createAccountWriteMachine } from './account-write.js'
 import { required } from './identity.js'
 import type { MappingInterruption } from './account-write-transaction.js'
 import type { Dependencies, OperationWork, ProviderSummary, Result } from './types.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Input = { work: OperationWork; provider: ProviderSummary }
 type Context = Input & {
@@ -16,33 +17,50 @@ type Context = Input & {
 
 export function createAccountCreationMachine(dependencies: Dependencies) {
 	const actors = {
-		validate: fromPromise(({ input }: { input: Input }) =>
-			Promise.resolve(
-				appAccountSchema.parse({
-					organizationId: input.work.scope.organizationId,
-					name: input.provider.name,
-					kind: ACCOUNT_KIND.BANK,
-					currency: input.provider.currency
-				})
-			)
-		),
-		accountId: fromPromise(({ input }: { input: Input }) =>
-			stableUuid(input.work.scope.organizationId, `simplefin-account:${input.provider.id}`)
-		),
+		validate: createAsyncLogic({
+			run: ({ input }: { input: Input }) =>
+				Promise.resolve(
+					appAccountSchema.parse({
+						organizationId: input.work.scope.organizationId,
+						name: input.provider.name,
+						kind: ACCOUNT_KIND.BANK,
+						currency: input.provider.currency
+					})
+				)
+		}),
+		accountId: createAsyncLogic({
+			run: ({ input }: { input: Input }) =>
+				stableUuid(input.work.scope.organizationId, `simplefin-account:${input.provider.id}`)
+		}),
 		write: createAccountWriteMachine(dependencies)
 	}
-	return setup<
-		Context,
-		{ type: 'CREATE' } | MappingInterruption,
-		typeof actors,
-		{},
-		{},
-		{},
-		never,
-		string,
-		Input,
-		Result<undefined>
-	>({ actors }).createMachine({
+	const events0 = {
+		CREATE: types<EventPayload<{ type: 'CREATE' } | MappingInterruption, 'CREATE'>>(),
+		CANCEL: types<EventPayload<{ type: 'CREATE' } | MappingInterruption, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<{ type: 'CREATE' } | MappingInterruption, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['validate']>
+				| import('xstate').OutputFrom<(typeof actors)['accountId']>
+				| import('xstate').OutputFrom<(typeof actors)['write']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Result<undefined>>(),
+			children: {
+				validate: types<import('xstate').ActorRefFrom<(typeof actors)['validate']>>(),
+				accountId: types<import('xstate').ActorRefFrom<(typeof actors)['accountId']>>(),
+				write: types<import('xstate').ActorRefFrom<(typeof actors)['write']>>()
+			}
+		},
+		actors
+	}).createMachine({
 		id: 'bank-account-create',
 		context: ({ input }) => ({
 			...input,
@@ -52,8 +70,12 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 		}),
 		initial: 'validatingAccount',
 		on: {
-			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
-			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+			CANCEL: () => {
+				return { target: '.failed', context: { error: new Error('disconnected') } }
+			},
+			SHUTDOWN: () => {
+				return { target: '.failed', context: { error: new Error('disconnected') } }
+			}
 		},
 		output: ({ context }) =>
 			context.error === undefined
@@ -64,39 +86,39 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 				invoke: {
 					src: 'validate',
 					input: ({ context }) => context,
-					onDone: {
-						target: 'generatingAccountId',
-						actions: assign({ values: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'generatingAccountId', context: { values: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			generatingAccountId: {
 				invoke: {
 					src: 'accountId',
 					input: ({ context }) => context,
-					onDone: {
-						target: 'writingAccountAndLink',
-						actions: assign({ accountId: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'writingAccountAndLink', context: { accountId: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			writingAccountAndLink: {
 				on: {
-					CANCEL: {
-						actions: enqueueActions(({ self, enqueue }) => {
-							const child = self.getSnapshot().children.write
-							if (child?.getSnapshot().status === 'active')
-								enqueue.sendTo(child, { type: 'CANCEL' })
-						})
+					CANCEL: (args, enq) => {
+						{
+							const child = args.children.write
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
 					},
-					SHUTDOWN: {
-						actions: enqueueActions(({ self, enqueue }) => {
-							const child = self.getSnapshot().children.write
-							if (child?.getSnapshot().status === 'active')
-								enqueue.sendTo(child, { type: 'SHUTDOWN' })
-						})
+					SHUTDOWN: (args, enq) => {
+						{
+							const child = args.children.write
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'SHUTDOWN' })
+						}
 					}
 				},
 				invoke: {
@@ -109,17 +131,19 @@ export function createAccountCreationMachine(dependencies: Dependencies) {
 						accountId: required(context.accountId),
 						values: required(context.values)
 					}),
-					onDone: [
-						{
-							guard: ({ event }) => !event.output.ok,
-							target: 'failed',
-							actions: assign({
-								error: ({ event }) => (event.output.ok ? undefined : event.output.error)
-							})
-						},
-						{ target: 'complete' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (!event.output.ok) {
+							return {
+								target: 'failed',
+								context: { error: event.output.ok ? undefined : event.output.error }
+							}
+						}
+						return { target: 'complete' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			complete: { type: 'final' },

@@ -1,10 +1,12 @@
 import { ACCOUNT_ACCESS } from '#lib/domain/account-access.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
-import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Organization } from '../../schema.js'
 import { workspaceCreationAttemptSchema } from '../../validation/identity.js'
 import type { WorkspaceCreationAttempt } from '../../domain/workspace-creation.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type WorkspacePersistenceEvent = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
 export type WorkspacePersistenceResult =
@@ -27,9 +29,11 @@ function required<T>(value: T | undefined): T {
 	return value
 }
 
-const open = fromPromise(({ input }: { input: Db }) => Promise.resolve(input.beginTransaction()))
-const read = fromPromise(
-	async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) => {
+const open = createAsyncLogic({
+	run: ({ input }: { input: Db }) => Promise.resolve(input.beginTransaction())
+})
+const read = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) => {
 		const { tx, attempt } = input
 		const [profile, organization, membership, categories] = await Promise.all([
 			tx.one(app.profiles.where({ id: attempt.profileId, userId: attempt.workspace.ownerId })),
@@ -39,9 +43,9 @@ const read = fromPromise(
 		])
 		return { profile, organization, membership, categories }
 	}
-)
-const insert = fromPromise(
-	async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) => {
+})
+const insert = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) => {
 		const { tx, attempt } = input
 		const workspace = tx.insert(app.organizations, attempt.workspace, {
 			id: attempt.organizationId
@@ -62,9 +66,9 @@ const insert = fromPromise(
 		}
 		return workspace
 	}
-)
-const createProfile = fromPromise(
-	async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) =>
+})
+const createProfile = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; attempt: WorkspaceCreationAttempt } }) =>
 		input.tx.insert(
 			app.profiles,
 			{
@@ -73,12 +77,36 @@ const createProfile = fromPromise(
 			},
 			{ id: input.attempt.profileId }
 		)
-)
-const commit = fromPromise(({ input }: { input: Transaction }) => Promise.resolve(input.commit()))
-const settle = fromPromise(({ input }: { input: OutputFrom<typeof commit> }) =>
-	input.wait({ tier: 'local' })
-)
-const rollback = fromPromise(({ input }: { input: Transaction }) => input.rollback())
+})
+const commit = createAsyncLogic({
+	run: ({ input }: { input: Transaction }) => Promise.resolve(input.commit())
+})
+const settle = createAsyncLogic({
+	run: ({ input }: { input: OutputFrom<typeof commit> }) => input.wait({ tier: 'local' })
+})
+const rollback = createAsyncLogic({ run: ({ input }: { input: Transaction }) => input.rollback() })
+const events0 = {
+	CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof open>
+			| import('xstate').OutputFrom<typeof read>
+			| import('xstate').OutputFrom<typeof insert>
+			| import('xstate').OutputFrom<typeof createProfile>
+			| import('xstate').OutputFrom<typeof commit>
+			| import('xstate').OutputFrom<typeof settle>
+			| import('xstate').OutputFrom<typeof rollback>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 type Context = {
 	request: Input
@@ -90,30 +118,112 @@ type Context = {
 }
 
 /** Owns one open Jazz transaction across guarded checks, staging, commit and cleanup. */
-export const workspaceCreationTransaction = setup<
-	Context,
-	Event,
-	{
-		open: typeof open
-		read: typeof read
-		insert: typeof insert
-		createProfile: typeof createProfile
-		commit: typeof commit
-		settle: typeof settle
-		rollback: typeof rollback
+export const workspaceCreationTransaction = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<WorkspacePersistenceResult>(),
+		children: {
+			open: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['open']
+				>
+			>(),
+			read: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['read']
+				>
+			>(),
+			insert: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['insert']
+				>
+			>(),
+			createProfile: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['createProfile']
+				>
+			>(),
+			commit: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['commit']
+				>
+			>(),
+			settle: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['settle']
+				>
+			>(),
+			rollback: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						insert: typeof insert
+						createProfile: typeof createProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['rollback']
+				>
+			>()
+		}
 	},
-	{},
-	{},
-	{ closing: undefined; cancelling: undefined },
-	never,
-	string,
-	Input,
-	WorkspacePersistenceResult
->({
 	actors: { open, read, insert, createProfile, commit, settle, rollback },
 	guards: {
-		closing: stateIn({ running: { control: 'closing' } }),
-		cancelling: stateIn({ running: { control: 'cancelling' } })
+		closing: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'closing' } }, args.value),
+		cancelling: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'cancelling' } }, args.value)
 	}
 }).createMachine({
 	id: 'workspace-creation-transaction',
@@ -156,28 +266,33 @@ export const workspaceCreationTransaction = setup<
 							invoke: {
 								src: 'open',
 								input: ({ context }) => context.request.db,
-								onDone: {
-									target: 'checkingAfterOpen',
-									actions: assign({ tx: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingAfterOpen', context: { tx: args.event.output } }
 								},
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingAfterOpen: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'reading' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'reading' }
+							}
 						},
 						reading: {
 							invoke: {
@@ -186,75 +301,77 @@ export const workspaceCreationTransaction = setup<
 									tx: required(context.tx),
 									attempt: context.request.attempt
 								}),
-								onDone: {
-									target: 'checkingProfile',
-									actions: assign({ records: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingProfile', context: { records: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingProfile: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{
-									guard: ({ context }) =>
-										context.records?.profile != null && context.request.purpose !== 'bootstrap',
-									target: 'checkingAttempt'
-								},
-								{
-									guard: ({ context }) =>
-										context.records?.profile == null && context.request.purpose === 'bootstrap',
-									target: 'checkingAttempt'
-								},
-								{
+							always: (args) => {
+								const { context } = args
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (context.records?.profile != null && context.request.purpose !== 'bootstrap') {
+									return { target: 'checkingAttempt' }
+								}
+								if (context.records?.profile == null && context.request.purpose === 'bootstrap') {
+									return { target: 'checkingAttempt' }
+								}
+								return {
 									target: 'rollingBack',
-									actions: assign({
-										result: (): WorkspacePersistenceResult => ({
+									context: {
+										result: {
 											outcome: 'profileUnavailable',
 											settlement: 'notStarted'
-										})
-									})
+										}
+									}
 								}
-							]
+							}
 						},
 						checkingAttempt: {
-							always: [
-								{
-									guard: ({ context }) =>
-										context.records?.organization == null &&
-										context.records?.membership == null &&
-										context.records?.categories.length === 0,
-									target: 'choosingStaging'
-								},
-								{
+							always: (args) => {
+								const { context } = args
+								if (
+									context.records?.organization == null &&
+									context.records?.membership == null &&
+									context.records?.categories.length === 0
+								) {
+									return { target: 'choosingStaging' }
+								}
+								return {
 									target: 'rollingBack',
-									actions: assign({
-										result: (): WorkspacePersistenceResult => ({
+									context: {
+										result: {
 											outcome: 'conflict',
 											settlement: 'notStarted'
-										})
-									})
+										}
+									}
 								}
-							]
+							}
 						},
 						choosingStaging: {
-							always: [
-								{
-									guard: ({ context }) => context.request.purpose === 'bootstrap',
-									target: 'creatingProfile'
-								},
-								{ target: 'staging' }
-							]
+							always: (args) => {
+								if (args.context.request.purpose === 'bootstrap') {
+									return { target: 'creatingProfile' }
+								}
+								return { target: 'staging' }
+							}
 						},
 						creatingProfile: {
 							invoke: {
@@ -263,25 +380,31 @@ export const workspaceCreationTransaction = setup<
 									tx: required(context.tx),
 									attempt: context.request.attempt
 								}),
-								onDone: 'checkingAfterProfile',
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onDone: { target: 'checkingAfterProfile' },
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingAfterProfile: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'staging' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'staging' }
+							}
 						},
 						staging: {
 							invoke: {
@@ -290,46 +413,55 @@ export const workspaceCreationTransaction = setup<
 									tx: required(context.tx),
 									attempt: workspaceCreationAttemptSchema.parse(context.request.attempt)
 								}),
-								onDone: {
-									target: 'checkingBeforeCommit',
-									actions: assign({ workspace: ({ event }) => event.output })
+								onDone: (args) => {
+									return {
+										target: 'checkingBeforeCommit',
+										context: { workspace: args.event.output }
+									}
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingBeforeCommit: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'committing' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'committing' }
+							}
 						},
 						committing: {
 							invoke: {
 								src: 'commit',
 								input: ({ context }) => required(context.tx),
-								onDone: {
-									target: 'settling',
-									actions: assign({ write: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'settling', context: { write: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -337,25 +469,29 @@ export const workspaceCreationTransaction = setup<
 							invoke: {
 								src: 'settle',
 								input: ({ context }) => required(context.write),
-								onDone: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ context }): WorkspacePersistenceResult => ({
-											outcome: 'succeeded',
-											settlement: 'locallyPersisted',
-											workspace: required(context.workspace)
-										})
-									})
+								onDone: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'succeeded',
+												settlement: 'locallyPersisted',
+												workspace: required(args.context.workspace)
+											}
+										}
+									}
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -363,37 +499,45 @@ export const workspaceCreationTransaction = setup<
 							invoke: {
 								src: 'rollback',
 								input: ({ context }) => required(context.tx),
-								onDone: [
-									{ guard: ({ event }) => event.output, target: 'finishing' },
-									{
+								onDone: (args) => {
+									if (args.event.output) {
+										return { target: 'finishing' }
+									}
+									return {
 										target: 'finishing',
-										actions: assign({
-											result: (): WorkspacePersistenceResult => ({
+										context: {
+											result: {
 												outcome: 'failed',
 												settlement: 'unresolved',
 												error: new Error('Workspace transaction rollback was not confirmed')
-											})
-										})
+											}
+										}
 									}
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): WorkspacePersistenceResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						finishing: {
-							always: [
-								{ guard: 'closing', target: '#workspace-creation-transaction.closed' },
-								{ guard: 'cancelling', target: '#workspace-creation-transaction.cancelled' },
-								{ target: '#workspace-creation-transaction.completed' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: '#workspace-creation-transaction.closed' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: '#workspace-creation-transaction.cancelled' }
+								}
+								return { target: '#workspace-creation-transaction.completed' }
+							}
 						}
 					}
 				}
@@ -401,21 +545,29 @@ export const workspaceCreationTransaction = setup<
 		},
 		closed: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): WorkspacePersistenceResult => ({
-					outcome: 'closed',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'closed',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		},
 		cancelled: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): WorkspacePersistenceResult => ({
-					outcome: 'cancelled',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'cancelled',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		},
 		completed: { type: 'final' }
 	}

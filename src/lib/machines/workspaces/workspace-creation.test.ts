@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, setup, assign, type AnyActorRef } from 'xstate'
 import type {
 	CreationBinding,
 	CreationRequest,
@@ -18,21 +17,43 @@ import {
 	profileId,
 	workspace
 } from './workspace-creation.fixture.js'
+import { createActor, setup, types } from 'xstate'
+import type { AnyActorRef } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
+
 const { started, interrupted } = vi.hoisted(() => ({ started: vi.fn(), interrupted: vi.fn() }))
 vi.mock('./workspace-creation-operation.js', () => ({
 	createWorkspaceCreationOperation: () =>
-		setup<
-			{ result: CreationResult },
-			{ type: 'FINISH'; result: CreationResult } | { type: 'SHUTDOWN' | 'CANCEL' },
-			{},
-			{},
-			{},
-			{},
-			never,
-			string,
-			{ binding: CreationBinding; request: CreationRequest },
-			CreationResult
-		>({}).createMachine({
+		setup({
+			schemas: {
+				context: types<{ result: CreationResult }>(),
+				events: {
+					FINISH:
+						types<
+							EventPayload<
+								{ type: 'FINISH'; result: CreationResult } | { type: 'SHUTDOWN' | 'CANCEL' },
+								'FINISH'
+							>
+						>(),
+					SHUTDOWN:
+						types<
+							EventPayload<
+								{ type: 'FINISH'; result: CreationResult } | { type: 'SHUTDOWN' | 'CANCEL' },
+								'SHUTDOWN'
+							>
+						>(),
+					CANCEL:
+						types<
+							EventPayload<
+								{ type: 'FINISH'; result: CreationResult } | { type: 'SHUTDOWN' | 'CANCEL' },
+								'CANCEL'
+							>
+						>()
+				},
+				input: types<{ binding: CreationBinding; request: CreationRequest }>(),
+				output: types<CreationResult>()
+			}
+		}).createMachine({
 			initial: 'waiting',
 			context: ({ input }) => {
 				started(input)
@@ -48,9 +69,15 @@ vi.mock('./workspace-creation-operation.js', () => ({
 			states: {
 				waiting: {
 					on: {
-						SHUTDOWN: { actions: interrupted },
-						CANCEL: { actions: interrupted },
-						FINISH: { target: 'done', actions: assign({ result: ({ event }) => event.result }) }
+						SHUTDOWN: (_, enq) => {
+							enq(interrupted)
+						},
+						CANCEL: (_, enq) => {
+							enq(interrupted)
+						},
+						FINISH: (args) => {
+							return { target: 'done', context: { result: args.event.result } }
+						}
 					}
 				},
 				done: { type: 'final' }

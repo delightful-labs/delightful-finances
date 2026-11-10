@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, fromCallback, setup } from 'xstate'
 import type {
 	WorkspaceLease,
 	WorkspaceDrainRequest
@@ -14,6 +13,7 @@ import type {
 import type { BankSource, BankSyncDependencies } from '../bank-sync/types.js'
 import { dependencies } from '../bank-sync/test-fixtures.js'
 import { createWorkspaceSelectedResources } from './workspace-selected-resources.js'
+import { createActor, createCallbackLogic, setup, types } from 'xstate'
 
 const controls: {
 	bank: ReturnType<typeof controlled> | undefined
@@ -53,18 +53,13 @@ function controlled() {
 	let result: WorkspaceResourceRelease = { outcome: 'released' }
 	const shutdown = vi.fn()
 	const commands: { type: string }[] = []
-	const logic = setup<
-		{},
-		{ type: string },
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		{ request: IntegrityRequest; recipient: IntegrityRecipient } | undefined,
-		WorkspaceResourceRelease
-	>({}).createMachine({
+	const logic = setup({
+		schemas: {
+			context: types<{}>(),
+			input: types<{ request: IntegrityRequest; recipient: IntegrityRecipient } | undefined>(),
+			output: types<WorkspaceResourceRelease>()
+		}
+	}).createMachine({
 		initial: 'working',
 		context: ({ input, self }) => {
 			send = (event) => self.send(event)
@@ -75,17 +70,19 @@ function controlled() {
 		states: {
 			working: {
 				on: {
-					SHUTDOWN: { actions: shutdown },
-					FINISH: 'done',
-					CRASH: {
-						actions: () => {
-							throw new Error('controlled resource crash')
-						}
+					SHUTDOWN: (_, enq) => {
+						enq(shutdown)
 					},
-					'*': {
-						actions: ({ event }) => {
+					FINISH: { target: 'done' },
+					CRASH: (args, enq) => {
+						enq(() => {
+							throw new Error('controlled resource crash')
+						})
+					},
+					'*': (args, enq) => {
+						enq(({ event }) => {
 							commands.push(event)
-						}
+						}, args)
 					}
 				}
 			},
@@ -135,7 +132,7 @@ function fixture(real = false, onReport?: (report: SelectedResourceReport) => vo
 	}
 	const reports: SelectedResourceReport[] = []
 	const recipient = createActor(
-		fromCallback<SelectedResourceReport>(({ receive }) => {
+		createCallbackLogic<SelectedResourceReport>(({ receive }) => {
 			receive((report) => {
 				reports.push(report)
 				onReport?.(report)

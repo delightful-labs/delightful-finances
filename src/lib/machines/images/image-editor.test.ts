@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import { imageEditorMachine, imageEditorPresentation } from './image-editor.js'
 import * as platform from '../../domain/image-editor-platform.js'
 import * as pixels from '../../domain/image-editor-pixels.js'
 import { TestImageData } from '../../testing/image-editor/fixtures.js'
+import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 const cleanups: (() => void)[] = []
 beforeEach(() => vi.stubGlobal('ImageData', TestImageData))
@@ -21,7 +21,10 @@ function fixture(mimeType = 'image/png') {
 		Array.from({ length: 16 }, () => [64, 128, 192, 255]).flat()
 	)
 	const bitmap: ImageBitmap = { width: 4, height: 4, close: vi.fn() }
-	const canvas = { width: 0, height: 0 }
+	const canvas = new (class {
+		width = 0
+		height = 0
+	})()
 	vi.stubGlobal('document', { createElement: () => canvas })
 	const canvasResource = platform.createEditorCanvas()
 	const decode = vi.spyOn(platform, 'decodeEditorImage').mockResolvedValue(bitmap)
@@ -39,8 +42,8 @@ function fixture(mimeType = 'image/png') {
 	const actor = createActor(
 		imageEditorMachine.provide({
 			actors: {
-				read: fromPromise(({ input }: { input: ImageBitmap }) => read(input)),
-				allocate: fromPromise(() => allocate())
+				read: createAsyncLogic({ run: ({ input }: { input: ImageBitmap }) => read(input) }),
+				allocate: createAsyncLogic({ run: () => allocate() })
 			}
 		}),
 		{ input: { file } }

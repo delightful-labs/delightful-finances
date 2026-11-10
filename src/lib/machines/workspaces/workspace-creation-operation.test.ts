@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor, type InputFrom } from 'xstate'
 import { createWorkspaceCreationOperation } from './workspace-creation-operation.js'
 import type { JournalResult, workspaceCreationJournal } from './workspace-creation-journal.js'
 import {
@@ -9,17 +8,19 @@ import {
 	userId,
 	workspace
 } from './workspace-creation.fixture.js'
+import { createActor, waitFor, createAsyncLogic } from 'xstate'
+import type { InputFrom } from 'xstate'
 
 const journal = vi.hoisted(() =>
 	vi.fn<(input: InputFrom<typeof workspaceCreationJournal>) => JournalResult>()
 )
 vi.mock('./workspace-creation-journal.js', async () => {
-	const { fromPromise } = await import('xstate')
+	const { createAsyncLogic } = await import('xstate')
 	return {
-		workspaceCreationJournal: fromPromise(
-			({ input }: { input: InputFrom<typeof workspaceCreationJournal> }) =>
+		workspaceCreationJournal: createAsyncLogic({
+			run: ({ input }: { input: InputFrom<typeof workspaceCreationJournal> }) =>
 				Promise.resolve(journal(input))
-		)
+		})
 	}
 })
 const actors: { stop: () => void }[] = []
