@@ -4,6 +4,7 @@ Status: native host custody implemented and tested; application handoff unfinish
 This branch follows merged Finance PR #66 on main, which incorporates merged
 PR #65. The live SDK, domain machines and subscriptions still run in Window.
 The draft does not claim the application worker handoff is implemented or qualified.
+Main's PR #68 recovery/reconnect fixes and updated DLF artifact are also incorporated.
 
 The approved ownership and behavior requirements remain in
 [xstate-v6-migration.md](./xstate-v6-migration.md). The conversion and existing
@@ -102,6 +103,10 @@ with Node **24.22.2**, pnpm **10.22.0** and the lockfile-pinned dependencies:
   two competing tabs. A worker-issued write is held at Window, the worker is
   terminated, and the replacement remains blocked until Window closes the old
   host. Replaying the old write cannot overwrite the replacement's value.
+- `pnpm check` — passed, zero errors/warnings, including service-worker types.
+- `pnpm check:tests` and `pnpm check:e2e` — passed.
+- `FINANCE_PREVIEW=true pnpm exec vitest run` — **1,955 passed** across 143 files.
+- `FINANCE_PREVIEW=true pnpm build` — passed; no deployment performed.
 - Focused Prettier and `git diff --check` — passed.
 
 The browser harness starts a disposable Vite server on an available network port,
@@ -112,7 +117,7 @@ tests plus this three-engine browser regression in a dedicated job.
 The first implementation checklist item remains unchecked at application scope:
 this qualifies the native account-selection boundary, not a live worker-owned
 Jazz session, broker-generation recovery, cold/offline Finance persistence,
-financial custody or UI migration. Full application types/build and the affected
-application browser suites have not been rerun for an activated handoff. The
+financial custody or UI migration. The affected application browser suites have
+not been rerun for an activated handoff. The
 remaining implementation and acceptance gates above are still required before
 this PR can leave draft. No localization or deployment changes are included.
