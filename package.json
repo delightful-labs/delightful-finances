@@ -62,7 +62,7 @@
 		"@vercel/functions": "3.11.0",
 		"@vercel/sandbox": "3.9.1",
 		"@xstate/svelte": "6.0.0-beta.0",
-		"delightful-local-first": "file:vendor/delightful-local-first-dbc452e-xstate-v6-jazz-alpha60.tgz",
+		"delightful-local-first": "file:vendor/delightful-local-first-dbc452e-xstate-v6-worker-recovery.tgz",
 		"delightful-ui": "file:vendor/delightful-ui-7a7f61b-xstate-v6.tgz",
 		"jazz-tools": "2.0.0-alpha.60",
 		"layerchart": "^2.9.0",

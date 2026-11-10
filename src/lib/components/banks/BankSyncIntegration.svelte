@@ -239,6 +239,7 @@
 				onSaveConnection={() => dispatch({ type: 'SAVE_CONNECTION' }, lease)}
 				onConnect={(token) => dispatch({ type: 'CONNECT', token }, lease)}
 				onDiscover={() => dispatch({ type: 'DISCOVER' }, lease)}
+				onReconnect={() => dispatch({ type: 'RECONNECT' }, lease)}
 				onSync={() => dispatch({ type: 'SYNC' }, lease)}
 				onMap={(providerId, accountId) => dispatch({ type: 'MAP', providerId, accountId }, lease)}
 				onCreateAccount={(providerId) => dispatch({ type: 'CREATE_ACCOUNT', providerId }, lease)}

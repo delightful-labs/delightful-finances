@@ -8,10 +8,12 @@
 	let {
 		error = false,
 		workspace = false,
+		message,
 		onRetry
 	}: {
 		error?: boolean
 		workspace?: boolean
+		message?: string | undefined
 		onRetry?: () => void
 	} = $props()
 </script>
@@ -20,13 +22,14 @@
 	<LoadingContent
 		style={error && onRetry ? '--dui-loading-screen-min-height: auto' : undefined}
 		variant={error ? 'error' : 'loading'}
-		text={workspace && error
-			? m['workspace.setup_error']()
-			: workspace
-				? m['workspace.loading']()
-				: error
-					? m['database.start_error']()
-					: m['database.starting']()}
+		text={message ??
+			(workspace && error
+				? m['workspace.setup_error']()
+				: workspace
+					? m['workspace.loading']()
+					: error
+						? m['database.start_error']()
+						: m['database.starting']())}
 	/>
 	{#if error && onRetry}
 		<Button type="button" onclick={onRetry}>

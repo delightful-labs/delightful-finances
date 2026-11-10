@@ -737,3 +737,91 @@ agreement at both viewport sizes including offline updates and workspace switchi
 test type, formatting and whitespace checks passed. The malformed dual-key context registration was
 fixed and the four relevant account-order cases passed after correction. No performance measurement
 was requested or claimed.
+
+### Recovery when another application version owns browser storage
+
+A rolling update can leave a different SharedWorker asset holding the same physical
+IndexedDB root. Treat that known contention as recoverable availability, preserving
+the existing exclusive ownership fence. Never clear the replica, force another tab
+to unload, or bypass native authorization.
+
+The shared session acquisition owner will model `opening -> checkingAvailability
+-> waitingForAvailability -> opening -> acquired`. The backend adapter classifies
+only the pinned SDK's physical-database-busy error and supplies one abortable Web
+Locks wait. Unrelated failures still report acquisition failure. Multiple attachments
+share the same wait; release of the last waiting attachment cancels it. Issued SDK
+creation still settles under the existing owner protocol. The public registry exposes
+only the selected availability descriptor; layout integration observes it and renders
+the approved conflict message. Update controls also render before session startup.
+No provider fetch or financial write is added to this path.
+
+Review before tests: shared acquisition/startup tests, browser SDK adapter error
+classification and cancellation, cross-version storage handoff, and startup update
+controls need focused coverage. Production evidence showed closure of other Finance
+windows released the conflicting owner and restored startup.
+
+Next focused bank-sync review: replacement-passkey setup should retain and reuse
+existing provider-account links by stable provider identity within the same workspace.
+Do not infer identity from account names or silently merge ambiguous links.
+
+### SimpleFIN reconnection review
+
+Explicit RECONNECT command after discovery: retain existing provider links; for each unlinked
+provider derive the same workspace-scoped account UUID used at creation, read that account and
+its links, skip absent/archived/currency-mismatched/conflicting destinations, then reuse the
+existing authorized mapping transaction. Never match names or create accounts. Provider identity
+changes remain manual. The child owns next -> identity -> snapshot -> guarded eligibility ->
+write -> advance; cancellation while writing forwards to and drains the mapping child before
+returning. The existing operation owns the workspace lock and authorizes the command; no provider
+request or transaction import occurs. UI integration spans the command type, parent dispatch,
+operation routing, mapping composition, one child machine and two existing components (seven
+implementation files); no schema changes.
+
+Review test impact: account reconnect child eligibility/cancellation, mapping transaction conflicts,
+operation authorization/lock lifecycle, parent command dispatch, and bank-sync Playwright selection.
+Tests for this new implementation await review approval.
+
+### Reconnection verification
+
+Implementation review approved by the user's “continue”. The focused reconnect tests exercise
+workspace/provider-derived account identity, renaming, absent/archived/currency-mismatched
+accounts, existing links, destination conflicts, duplicate provider identities, empty discovery,
+write failures, authorization, and cancellation/shutdown through the real mapping transaction.
+The browser replacement-passkey flow exposed Jazz's rejection of reinserting a deleted row ID;
+new link inserts now receive fresh UUIDs, while updates retain existing link IDs. The same browser
+flow now restores a deleted link to a renamed account, preserves a second link, keeps account IDs
+unchanged, performs no transaction import, and makes no provider requests beyond explicit setup
+and discovery. Existing creation/idempotent import and manual remapping browser flows also pass.
+
+Validation: 108 focused unit tests across reconnect, mapping, mapping transactions, bank parent,
+and startup binding; three focused Playwright flows; Svelte, e2e TypeScript and service-worker
+TypeScript checks. Test server was disposable on port 5182 and stopped after browser checks.
+No commits or deployment performed.
+
+Production preview build also passed. The vendored shared-library source delta is included at
+`vendor/delightful-local-first-worker-recovery.patch` for review (base library source commit
+`24ce037`; the Finance archive retains its existing alpha.60 package contents outside the four
+changed session contract/owner/adapter modules). User subsequently authorized committing and
+opening a pull request; production deployment remains outside this action.
+
+
+### XState v6 compatibility port
+
+Rebased onto Finance `bcb7d51` (#66), preserving its exact XState/Svelte bindings, DUI archive,
+SDK patch and worker-host changes. Reconnection now uses v6 schemas, typed children, native
+function transitions, choice routing and async leaves. Advance updates remain eventless transitions;
+cancellation still forwards to the active write and waits for settlement. The test storage leaf
+retains its AccountWrite input contract when provided again under v6; async snapshot assertions
+include v6's effect argument.
+
+Availability waiting is ported onto the generic DLF owner at source commit `dbc452e`, preserving
+its admission checks, immutable weak attachment references and acquisition record. Availability
+is bound in the incoming failed-open transition before the waiter is invoked. Last-attachment
+release cancels the waiter; the issued SDK open continues to retain its original ownership.
+The new archive changes only the four session contract/owner/adapter module families; source delta
+and SHA-256 baseline/output provenance are included beside it. The source delta is a zero-context
+patch (apply with `git apply --unidiff-zero`). This supersedes the earlier alpha.60/v5 source base.
+
+Port validation: 108 focused unit tests, 36 worker-host tests, the three bank Playwright flows,
+Svelte/service-worker/e2e/worker-host TypeScript checks, and production preview build pass. No
+production deployment was performed. The disposable browser server was stopped after checks.
