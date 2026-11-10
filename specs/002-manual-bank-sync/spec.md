@@ -261,3 +261,11 @@ Saved sync history MUST be represented by a child machine with absent, succeeded
 The application readiness actor MUST exist before Jazz session opening and own workspace bootstrap/organization selection and the bank subtree. Teardown must send explicit shutdown, wait for child terminal cleanup, and only then stop owned actors. Setup returns typed complete/cancelled/failed results. Reset/cancellation/shutdown states take precedence over unexpected child errors. Bank section visibility comes from machine-owned view states.
 
 When the browser reports offline using the same observation as the sidebar status indicator, replace bank setup/reconnect controls and their stepper with an offline availability message. Disable Sync now in the bank view and sidebar and show explanatory text below each. Reconnection only restores controls; it never starts syncing automatically.
+
+### Discovery after reconnection
+
+A discovery response containing usable accounts and provider-reported errors MUST
+retain those accounts for explicit mapping and report a partial result. Provider
+errors without any usable accounts remain a failed discovery. Discovery MUST NOT
+import transactions, persist a sync outcome, or automatically retry the provider.
+Passkey verification, authorization rechecks and credential cleanup remain required.

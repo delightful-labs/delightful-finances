@@ -1706,3 +1706,49 @@ for (const failure of ['http', 'json', 'schema', 'bootstrap', 'reply'] satisfies
 		}
 	)
 }
+
+test(
+	'discovery keeps usable accounts available for linking when another institution fails',
+	{ tag: ['@bank-sync'] },
+	async ({ page }) => {
+		const operations: string[] = []
+		let errorsOnly = false
+		await page.context().route('**/api/simplefin', async (route) => {
+			const operation = resilienceOperation(route.request().postDataJSON())
+			operations.push(operation)
+			if (operation === 'claim') {
+				await route.fulfill({ body: 'https://test:test@bridge.simplefin.org/simplefin' })
+				return
+			}
+			await route.fulfill({
+				json: {
+					errors: ['A different institution is temporarily unavailable'],
+					accounts: errorsOnly
+						? []
+						: [
+								{
+									id: 'available-checking',
+									name: 'Available Checking',
+									currency: 'USD',
+									org: { 'sfin-url': 'https://bank.example' }
+								}
+							]
+				}
+			})
+		})
+		await connectResilienceBank(page)
+		await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+		await expect(
+			page.getByRole('button', { name: 'Add Account “Available Checking”', exact: true })
+		).toBeVisible()
+		await expect(page.getByRole('status').filter({ hasText: 'provider errors' })).toBeVisible()
+		expect(operations).toEqual(['claim', 'discover'])
+		expect((await syncLog(page)).attempts).toEqual([])
+		errorsOnly = true
+		await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+		await expect(
+			page.getByRole('status').filter({ hasText: 'SimpleFIN could not complete the request' })
+		).toBeVisible()
+		expect(operations).toEqual(['claim', 'discover', 'discover'])
+	}
+)

@@ -29,7 +29,8 @@ import type {
 vi.mock('#lib/integrations/passkey.js', () => ({ unlockCredential: vi.fn() }))
 vi.mock('#lib/integrations/simplefin.js', () => ({
 	fetchAccounts: vi.fn(),
-	providerAccountIdentity: vi.fn(),
+	providerAccountIdentity: (account: { id: string }) => account.id,
+	providerBalanceSnapshot: () => undefined,
 	simplefinDemo: false
 }))
 vi.mock('#lib/integrations/diagnostics.js', () => ({ createBankTrace: vi.fn() }))
@@ -329,6 +330,44 @@ describe('operation actor failure boundaries', () => {
 		expect(failed).not.toHaveBeenCalled()
 		expect(fetchAccounts).toHaveBeenCalledTimes(stage === 'unlock' ? 0 : 1)
 		expect(imported).not.toHaveBeenCalled()
+		expectCleanup(actor)
+	})
+})
+
+describe('discovery response recovery', () => {
+	it('retains usable accounts from a mixed provider response without importing', async () => {
+		vi.mocked(fetchAccounts).mockResolvedValueOnce({
+			errors: ['One institution unavailable'],
+			accounts: [
+				{
+					id: 'checking',
+					name: 'Recovered Checking',
+					currency: 'USD',
+					org: { 'sfin-url': 'https://bank.example' }
+				}
+			]
+		})
+		const actor = start('DISCOVER')
+		expect(await toPromise(actor)).toMatchObject({
+			kind: 'partial',
+			discovered: [{ id: 'checking', name: 'Recovered Checking', currency: 'USD' }]
+		})
+		expect(imported).not.toHaveBeenCalled()
+		expect(persist).not.toHaveBeenCalled()
+		expectCleanup(actor)
+	})
+	it('fails an errors-only discovery response', async () => {
+		vi.mocked(fetchAccounts).mockResolvedValueOnce({
+			errors: ['Provider unavailable'],
+			accounts: []
+		})
+		const actor = start('DISCOVER')
+		expect(await toPromise(actor)).toMatchObject({
+			kind: 'failed',
+			error: new Error('provider_failure')
+		})
+		expect(imported).not.toHaveBeenCalled()
+		expect(persist).not.toHaveBeenCalled()
 		expectCleanup(actor)
 	})
 })

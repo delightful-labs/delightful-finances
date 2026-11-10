@@ -497,7 +497,9 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			checkingDiscovery: {
 				always: [
 					{
-						guard: ({ context }) => required(context.response).errors.length > 0,
+						guard: ({ context }) =>
+							required(context.response).errors.length > 0 &&
+							required(context.response).accounts.length === 0,
 						target: 'settlingFailure',
 						actions: assign({ error: () => new Error('provider_failure') })
 					},
@@ -514,7 +516,13 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							...providerBalanceSnapshot(account)
 						}))
 				}),
-				always: 'complete'
+				always: [
+					{
+						guard: ({ context }) => required(context.response).errors.length > 0,
+						target: 'partial'
+					},
+					{ target: 'complete' }
+				]
 			},
 			importing: {
 				initial: 'working',

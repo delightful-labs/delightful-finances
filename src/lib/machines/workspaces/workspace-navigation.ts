@@ -1,4 +1,5 @@
 import { assign, fromPromise, raise, setup } from 'xstate'
+import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '../../schema.js'
 import {
@@ -22,6 +23,15 @@ type Context = Input & {
 	destination: string | undefined
 	replace: boolean
 	transaction: { organizationId: string } | null
+	preferredWorkspaceId: string | null
+}
+// Preserve the original destination when an empty local catalog sent us to settings.
+function defaultWorkspaceHref(context: Context, workspaceId: string | null) {
+	const route =
+		context.facts.pathname === '/settings/workspace'
+			? (context.emptyEntry ?? context.facts)
+			: context.facts
+	return workspaceHref(workspaceId, `${route.pathname}${route.search}${route.hash}`)
 }
 type Event =
 	| { type: 'OBSERVED'; facts: WorkspaceNavigationFacts }
@@ -32,6 +42,9 @@ export function createWorkspaceNavigationMachine(
 	navigate: WorkspaceNavigate
 ) {
 	const actors = {
+		profile: fromPromise(({ input }: { input: string }) =>
+			db.one(app.profiles.where({ userId: input }), { tier: ReadTier.LocalFirst })
+		),
 		lookup: fromPromise(({ input }: { input: string }) =>
 			db.one(app.transactions.where({ id: input }))
 		),
@@ -64,7 +77,8 @@ export function createWorkspaceNavigationMachine(
 			emptyEntry: undefined,
 			destination: undefined,
 			replace: true,
-			transaction: null
+			transaction: null,
+			preferredWorkspaceId: null
 		}),
 		initial: 'assessing',
 		on: {
@@ -93,7 +107,6 @@ export function createWorkspaceNavigationMachine(
 								!origin ||
 								!facts.ready ||
 								facts.userId !== origin.userId ||
-								facts.organizations.length > 1 ||
 								workspaceRoute(facts.search).scoped ||
 								(facts.pathname !== '/settings/workspace' &&
 									`${facts.pathname}${facts.search}${facts.hash}` !==
@@ -120,23 +133,11 @@ export function createWorkspaceNavigationMachine(
 					},
 					{
 						guard: ({ context }) =>
-							context.emptyEntry !== undefined &&
 							context.facts.pathname === '/settings/workspace' &&
-							!context.facts.loading &&
-							context.facts.error == null &&
-							context.facts.organizations.length === 1,
-						target: 'navigating',
-						actions: assign({
-							destination: ({ context }) =>
-								workspaceHref(
-									context.facts.organizations[0]?.id ?? null,
-									`${context.emptyEntry?.pathname}${context.emptyEntry?.search}${context.emptyEntry?.hash}`
-								),
-							emptyEntry: undefined
-						})
-					},
-					{
-						guard: ({ context }) => context.facts.pathname === '/settings/workspace',
+							(workspaceRoute(context.facts.search).scoped ||
+								context.facts.loading ||
+								context.facts.error != null ||
+								context.facts.organizations.length === 0),
 						target: 'directory'
 					},
 					{
@@ -159,20 +160,81 @@ export function createWorkspaceNavigationMachine(
 						target: 'navigating',
 						actions: assign({
 							destination: ({ context }) =>
-								workspaceHref(
-									context.facts.organizations[0]?.id ?? null,
-									`${context.facts.pathname}${context.facts.search}${context.facts.hash}`
-								)
+								defaultWorkspaceHref(context, context.facts.organizations[0]?.id ?? null),
+							emptyEntry: undefined
 						})
+					},
+					{
+						guard: ({ context }) => context.facts.organizations.length > 1,
+						target: 'resolvingDefault'
 					},
 					{
 						target: 'navigating',
 						actions: assign({
-							emptyEntry: ({ context }) =>
-								context.facts.organizations.length === 0 ? context.facts : undefined,
+							emptyEntry: ({ context }) => context.facts,
 							destination: '/settings/workspace'
 						})
 					}
+				]
+			},
+			resolvingDefault: {
+				entry: [assign({ resolving: ({ context }) => context.facts }), report('waiting')],
+				on: {
+					REEVALUATE: [
+						{
+							guard: ({ context }) =>
+								context.facts.pathname !== context.resolving?.pathname ||
+								context.facts.search !== context.resolving?.search ||
+								context.facts.hash !== context.resolving?.hash ||
+								context.facts.userId !== context.resolving?.userId ||
+								!context.facts.ready ||
+								context.facts.loading ||
+								context.facts.error != null,
+							target: 'assessing'
+						},
+						{ actions: report('waiting') }
+					]
+				},
+				invoke: {
+					src: 'profile',
+					input: ({ context }) => {
+						if (!context.facts.userId) throw new Error('Missing workspace identity')
+						return context.facts.userId
+					},
+					onDone: {
+						target: 'choosingDefault',
+						actions: assign({
+							preferredWorkspaceId: ({ event }) => event.output?.initialWorkspaceId ?? null
+						})
+					},
+					onError: 'failed'
+				}
+			},
+			choosingDefault: {
+				always: [
+					{
+						guard: ({ context }) =>
+							context.facts.organizations.some((row) => row.id === context.preferredWorkspaceId),
+						target: 'navigating',
+						actions: assign({
+							destination: ({ context }) =>
+								defaultWorkspaceHref(context, context.preferredWorkspaceId),
+							emptyEntry: undefined
+						})
+					},
+					{
+						guard: ({ context }) => context.facts.organizations.length > 0,
+						target: 'navigating',
+						actions: assign({
+							destination: ({ context }) =>
+								defaultWorkspaceHref(
+									context,
+									context.facts.organizations.map((row) => row.id).sort()[0] ?? null
+								),
+							emptyEntry: undefined
+						})
+					},
+					{ target: 'assessing' }
 				]
 			},
 			checkingScope: {
