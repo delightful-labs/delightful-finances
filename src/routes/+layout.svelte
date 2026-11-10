@@ -9,7 +9,6 @@
 	} from '$app/env/public'
 	import { browser } from '$app/env'
 	import WorkerApplication from '#lib/components/startup/WorkerApplication.svelte'
-	import PwaUpdateIntegration from '#lib/components/pwa/PwaUpdateIntegration.svelte'
 	import DemoViewport from '#lib/components/diagnostics/DemoViewport.svelte'
 
 	const serverUrl = browser
@@ -22,5 +21,4 @@
 </script>
 
 <DemoViewport enabled={PUBLIC_SIMPLEFIN_DEMO === 'true'} />
-<PwaUpdateIntegration />
 <WorkerApplication {serverUrl} {legacyScope}>{@render children()}</WorkerApplication>

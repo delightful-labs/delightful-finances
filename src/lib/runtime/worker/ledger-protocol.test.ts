@@ -75,7 +75,15 @@ it('rejects unknown commands, unsafe cursors and embedded domain handles', () =>
 		{ type: 'TAG_PAGE', transactionId: id, offset: Number.MAX_SAFE_INTEGER + 1 },
 		{ type: 'TAG_PAGE', transactionId: id, offset: -1 },
 		{ type: 'ALL_ACCOUNTS', db: {} },
+		{ type: 'SET_ACCOUNT', accountId: id, selected: 'true' },
+		{ type: 'SET_ACCOUNT', accountId: 'unknown', selected: true },
 		{ type: 'SET_FILTER', query: () => {} }
 	])
 		expect(ledgerCommandSchema.safeParse(command).success).toBe(false)
+})
+
+it('accepts explicit account selection without toggling a repeated native event', () => {
+	expect(
+		ledgerCommandSchema.parse({ type: 'SET_ACCOUNT', accountId: id, selected: false })
+	).toEqual({ type: 'SET_ACCOUNT', accountId: id, selected: false })
 })

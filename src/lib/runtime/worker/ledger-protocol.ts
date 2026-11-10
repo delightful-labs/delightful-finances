@@ -8,6 +8,7 @@ export const ledgerCommandSchema = z.discriminatedUnion('type', [
 	z.strictObject({ type: z.literal('ALL_ACCOUNTS') }),
 	z.strictObject({ type: z.literal('NO_ACCOUNTS') }),
 	z.strictObject({ type: z.literal('TOGGLE_ACCOUNT'), accountId: id }),
+	z.strictObject({ type: z.literal('SET_ACCOUNT'), accountId: id, selected: z.boolean() }),
 	z.strictObject({ type: z.literal('TAG_PAGE'), transactionId: id, offset }),
 	z.strictObject({
 		type: z.literal('OPTIONS_PAGE'),

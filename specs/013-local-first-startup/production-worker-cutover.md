@@ -4,19 +4,22 @@ Updated: 2026-11-10. This is the active execution checklist for PR #67.
 
 ## Current truth and immediate priority
 
-**Point 1 implemented; awaiting user review before point 2.** The production layout
-now mounts `WorkerApplication.svelte`, which starts `FinanceWindowConnection` and
-the existing worker-owned Jazz application. The Window application actor, startup
-binding and `JazzSessionProvider` have been removed from that layout.
+**Paused at the user's request while Clipper extracts shared worker logic into
+Delightful Local First.** Point 1 is committed in `67e5425`. The production layout
+starts the worker-owned Jazz application without a Window SDK/provider.
 
-**Transitional limitation:** the old shell/pages still depend on Window SDK context.
-Their snippets remain gated at the startup boundary rather than starting a second
-SDK or mounting with missing context. The app is not yet a usable migrated finance
-UI. Connecting that shell/routes is point 2 and requires the user's next approval.
+Point 2 is an unfinished checkpoint: `WorkerShell` and adapters connect overview,
+accounts, category/tag settings, expense/income lists and entry/edit forms, and
+recovery to worker views/intents. Transaction drawer/filter presentation is reused;
+sidebar selection is projected by the worker. The normal-route browser test has
+been extended but has not been run for this checkpoint. P004–P007 remain unchecked.
 
-The next approved milestone will be connecting the shell and routes to that worker. Do not defer that milestone behind further generic transport
-or optional feature work. Keep the complete feature migration in scope, but prove
-production ownership before calling subsequent feature adapters production-ready.
+**Transitional limitations:** bank, account/profile and workspace settings routes
+remain gated. Account ordering is not connected. Unsupported route links currently
+reach the startup boundary. This is not a complete or release-ready migration.
+Resume by reconciling the shared library extraction, checking the Window import
+boundary and running the focused route/browser verification. Finish point 2 and
+check back with the user before starting point 3.
 
 Existing implementation/evidence history is in
 [xstate-v6-worker-handoff.md](xstate-v6-worker-handoff.md). Its chronological
@@ -47,26 +50,26 @@ syntax, or replace Finance's stricter custody/backpressure safeguards blindly.
 ## Milestone 1 — actual production entry point
 
 - [x] P001 Inspect Clipper's actual layout, integration component, worker client,
-  worker entry point and UI context. Record the exact checkout above.
+      worker entry point and UI context. Record the exact checkout above.
 - [x] P002 Verify Finance's actual production startup and distinguish it from the
-  worker harness. Inventory reachable SDK/context consumers before changing ownership.
+      worker harness. Inventory reachable SDK/context consumers before changing ownership.
 - [x] P003 Replace production layout startup with `FinanceWindowConnection` and
-  `createFinanceWindowRuntime` (or a thin production integration component composing
-  them). Bind route observations and native lifecycle on mount; retain the existing
-  account namespace and persisted identity. Mount exactly one application SDK.
+      `createFinanceWindowRuntime` (or a thin production integration component composing
+      them). Bind route observations and native lifecycle on mount; retain the existing
+      account namespace and persisted identity. Mount exactly one application SDK.
 - [ ] P004 Move startup, workspace/shell admission, navigation and recovery controls
-  to worker views/intents. Remove the Window application actor, startup binding,
-  `JazzSessionProvider`, restoration adapter and direct SDK session context from the
-  served layout. Preserve PWA admission/update behavior and native WebAuthn bridging.
+      to worker views/intents. Remove the Window application actor, startup binding,
+      `JazzSessionProvider`, restoration adapter and direct SDK session context from the
+      served layout. Preserve PWA admission/update behavior and native WebAuthn bridging.
 - [ ] P005 Rebind every SDK consumer reachable from the new production shell and its
-  migrated routes. Reuse existing WorkerAccounts, WorkerOverview/ledger and transaction
-  adapters. Do not leave a second SDK/provider available to satisfy old consumers.
+      migrated routes. Reuse existing WorkerAccounts, WorkerOverview/ledger and transaction
+      adapters. Do not leave a second SDK/provider available to satisfy old consumers.
 - [ ] P006 Run a browser test against the **normal SvelteKit root and real routes**.
-  Make the test fail if Window starts the Jazz client/application root or performs
-  domain queries. Prove usable local startup and reads/writes through the worker.
+      Make the test fail if Window starts the Jazz client/application root or performs
+      domain queries. Prove usable local startup and reads/writes through the worker.
 - [ ] P007 Close every client and reopen the normal app with the remote withholding
-  replies; prove the same persisted identity and data. Verify honest shutdown,
-  route changes, worker failure, and a pending write without early termination.
+      replies; prove the same persisted identity and data. Verify honest shutdown,
+      route changes, worker failure, and a pending write without early termination.
 
 Focused P003 evidence: `tests/production-worker-bootstrap.browser.test.ts` serves
 the normal SvelteKit `/` layout (no harness page) with an isolated unavailable
@@ -89,31 +92,31 @@ recovery and developer diagnostics. Extend this inventory with an import-graph a
 a text search is not proof of complete removal.
 
 - [ ] P008 Complete workspace lifecycle, identity/profile/login/recovery/settings
-  integrations and mutation-rejection feedback using worker-owned workflows.
+      integrations and mutation-rejection feedback using worker-owned workflows.
 - [ ] P009 Complete bank connection, consent, history, import, reconnect and provider
-  controls without moving crypto/SDK/provider orchestration back into Window.
+      controls without moving crypto/SDK/provider orchestration back into Window.
 - [ ] P010 Complete attachment preview/download/removal and image-selection/editor
-  ownership. Preserve native file/canvas/display capabilities and real drain semantics.
+      ownership. Preserve native file/canvas/display capabilities and real drain semantics.
 - [ ] P011 Complete backup/restore file handling, independent deletion, checks and
-  sample-data operations through scoped commands and bounded views.
+      sample-data operations through scoped commands and bounded views.
 - [ ] P012 Finish and qualify worker-owned new transaction-tag drafts, bounded
-  suggestion IDs and paging. The current in-progress slice has focused unit coverage
-  and a Chromium harness pass; it is not fully qualified or production-mounted.
+      suggestion IDs and paging. The current in-progress slice has focused unit coverage
+      and a Chromium harness pass; it is not fully qualified or production-mounted.
 - [ ] P013 Remove obsolete Window domain/query/session integrations and temporary
-  legacy branches once their production consumers are migrated. Preserve all existing
-  financial operations and canonical validation; do not hide missing features to claim
-  migration complete.
+      legacy branches once their production consumers are migrated. Preserve all existing
+      financial operations and canonical validation; do not hide missing features to claim
+      migration complete.
 
 ## Release gates
 
 - [ ] P014 Audit queued storage writes/account-generation fencing and subscription
-  cleanup, including failed unsubscribe, cross-tab account replacement, late replies
-  and retained unknown financial outcomes.
+      cleanup, including failed unsubscribe, cross-tab account replacement, late replies
+      and retained unknown financial outcomes.
 - [ ] P015 Run appropriate model/unit tests, all production-route browser flows,
-  cold/PWA cases, worker/host/Svelte type checks and production build. Verify the built
-  Window import/runtime boundary and worker assets, not only source conventions.
+      cold/PWA cases, worker/host/Svelte type checks and production build. Verify the built
+      Window import/runtime boundary and worker assets, not only source conventions.
 - [ ] P016 Review the complete diff, reconcile this checklist with evidence, commit
-  and publish/update PR #67, and verify CI. Leave unfinished requirements unchecked.
+      and publish/update PR #67, and verify CI. Leave unfinished requirements unchecked.
 
 The full migration is finished only when P003–P016 are verified. There is no claim
 that the production application is currently off the UI thread.

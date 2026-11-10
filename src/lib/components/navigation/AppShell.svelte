@@ -40,7 +40,7 @@
 	}: {
 		children: Snippet
 		accountCreation: Snippet<[Snippet<[() => void, boolean]>]>
-		bankSync: BankSyncControls
+		bankSync?: BankSyncControls | undefined
 		syncConfigured: boolean
 		browserOffline: boolean
 		organizations: readonly Organization[] | undefined

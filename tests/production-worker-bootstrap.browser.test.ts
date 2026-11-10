@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer, type ViteDevServer } from 'vite'
-import { chromium } from '@playwright/test'
+import { chromium, expect as browserExpect } from '@playwright/test'
 
 let server: ViteDevServer
 let url: string
@@ -26,6 +26,12 @@ beforeAll(async () => {
 							code.slice(0, start) +
 							"const serverUrl = 'http://127.0.0.1:9/jazz'\n\t" +
 							code.slice(end)
+						)
+					}
+					if (path.includes('/src/') && code.includes('createQuerySubscription(')) {
+						return code.replaceAll(
+							'createQuerySubscription(',
+							"(() => { if (typeof window !== 'undefined') throw new Error('DOMAIN_QUERY_IN_WINDOW'); return createQuerySubscription })()("
 						)
 					}
 					if (path.endsWith('/src/lib/runtime/jazz-session-capabilities.ts')) {
@@ -140,6 +146,55 @@ it('starts the normal application SDK exclusively in Worker and reopens the pers
 		expect(first.workers).toBe(1)
 		expect(first.identity).toMatch(/^[a-f\d-]{36}$/i)
 		expect(guarded).toEqual(new Set(['sdk', 'application']))
+		// Exercise the actual shell and routes before closing the only application client.
+		await page.getByRole('button', { name: 'Add Account', exact: true }).click()
+		const dialog = page.getByRole('dialog')
+		await dialog.getByLabel('Account name', { exact: true }).fill('Production worker cash')
+		await dialog.getByLabel('Account type', { exact: true }).selectOption('cash')
+		await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+		await browserExpect(
+			page.getByRole('checkbox', { name: 'Production worker cash', exact: true })
+		).toBeChecked()
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		const workspace = new URL(page.url()).searchParams.get('workspace')
+		expect(workspace).toMatch(/^[a-f\d-]{36}$/i)
+		await page.getByRole('link', { name: 'Expenses', exact: true }).click()
+		await page.getByRole('link', { name: 'Add Expenses', exact: true }).click()
+		await browserExpect(page.getByLabel('Amount', { exact: true })).toBeEnabled()
+		await page.getByLabel('Amount', { exact: true }).fill('12.34')
+		await page.getByLabel('Date', { exact: true }).fill('2026-11-09')
+		await page.getByLabel('Description', { exact: true }).fill('Production worker expense')
+		await page.getByRole('button', { name: 'Save', exact: true }).click()
+		await browserExpect(
+			page.getByRole('link').filter({ hasText: 'Production worker expense' })
+		).toHaveCount(1)
+		expect(new URL(page.url()).searchParams.get('workspace')).toBe(workspace)
+		await page.getByRole('checkbox', { name: 'Production worker cash', exact: true }).uncheck()
+		await browserExpect(
+			page.getByText('Turn on an account to see its transactions.', { exact: true })
+		).toBeVisible()
+		await page.getByRole('checkbox', { name: 'Production worker cash', exact: true }).check()
+		await browserExpect(
+			page.getByRole('link').filter({ hasText: 'Production worker expense' })
+		).toHaveCount(1)
+		await page.getByRole('link', { name: 'Income', exact: true }).click()
+		await browserExpect(page.getByRole('link', { name: 'Add Income', exact: true })).toBeVisible()
+		for (const path of ['/accounts', '/settings/categories', '/settings/tags', '/login']) {
+			// Use native links through the client router; preserve the single application owner.
+			await page.evaluate((href) => {
+				const link = document.createElement('a')
+				link.href = href
+				document.body.append(link)
+				link.click()
+				link.remove()
+			}, `${path}?workspace=${workspace}`)
+			await page.waitForURL((href) => href.pathname === path)
+			await browserExpect(page.getByRole('heading', { level: 1 })).toBeVisible()
+		}
+		await page.getByLabel('Recovery phrase', { exact: true }).fill('invalid recovery phrase')
+		await page.getByRole('button', { name: 'Login', exact: true }).click()
+		await browserExpect(page.getByRole('alert')).toBeVisible()
+		expect(await page.evaluate(() => window.financeBootstrapProbe.workers)).toBe(1)
 		await page.evaluate(() => window.financeBootstrapProbe.close())
 		await page.locator('main[data-finance-lifecycle="closed"]').waitFor({ timeout: 30_000 })
 		await page.close()

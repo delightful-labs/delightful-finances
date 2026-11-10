@@ -1,5 +1,7 @@
 <script lang="ts">
-	import TransactionEditEntry from '#lib/components/transactions/TransactionEditEntry.svelte'
+	import WorkerTransactionEntry from '#lib/components/transactions/WorkerTransactionEntry.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
 </script>
 
-<TransactionEditEntry />
+<WorkerTransactionEntry {navigation} />

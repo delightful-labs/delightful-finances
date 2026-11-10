@@ -9,11 +9,13 @@
 	import type { RuntimeView } from '#lib/runtime/worker/application-protocol.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import JazzStartup from './JazzStartup.svelte'
+	import WorkerShell from '../navigation/WorkerShell.svelte'
+	import PwaUpdateIntegration from '../pwa/PwaUpdateIntegration.svelte'
 
 	let {
 		serverUrl,
 		legacyScope,
-		children: _children
+		children
 	}: { serverUrl: string; legacyScope: string; children?: Snippet } = $props()
 	const view = writable<RuntimeView | undefined>()
 	let projected = $state.raw<RuntimeView>()
@@ -26,6 +28,11 @@
 			owner?.context.exchangeText?.(intent, signal) ?? Promise.resolve(undefined)
 	}
 	setContext(financeUiKey, runtime)
+	const supportedRoute = $derived(
+		['/', '/accounts', '/settings/categories', '/settings/tags', '/login'].includes(
+			page.url.pathname
+		) || /^\/(expenses|income)(\/(new|[a-f0-9-]{36}))?$/.test(page.url.pathname)
+	)
 	const route = $derived({
 		pathname: page.url.pathname,
 		search: page.url.search,
@@ -61,21 +68,25 @@
 	})
 </script>
 
-<!-- The legacy shell requires a Window SDK. Keep route admission closed until
-     the separately reviewed shell/route integration replaces that dependency. -->
+<!-- Admit only routes whose integrations use worker views and commands. -->
 <main
 	data-finance-runtime="worker"
 	data-finance-lifecycle={lifecycle}
 	data-finance-session={projected?.session.status ?? 'starting'}
 >
-	<JazzStartup
-		workspace={projected?.session.status === 'ready'}
-		error={lifecycle === 'blocked' || projected?.startup.failed === true}
-		message={projected?.startup.waitingForOtherVersion
-			? m['database.version_conflict']()
-			: undefined}
-		{...lifecycle === 'blocked'
-			? {}
-			: { onRetry: () => runtime.send({ type: 'APPLICATION', command: { type: 'RETRY' } }) }}
-	/>
+	{#if projected?.session.status === 'ready' && projected.workspace.navigation !== 'waiting' && supportedRoute}
+		<WorkerShell>{@render children?.()}</WorkerShell>
+	{:else}
+		<PwaUpdateIntegration />
+		<JazzStartup
+			workspace={projected?.session.status === 'ready'}
+			error={lifecycle === 'blocked' || projected?.startup.failed === true}
+			message={projected?.startup.waitingForOtherVersion
+				? m['database.version_conflict']()
+				: undefined}
+			{...lifecycle === 'blocked'
+				? {}
+				: { onRetry: () => runtime.send({ type: 'APPLICATION', command: { type: 'RETRY' } }) }}
+		/>
+	{/if}
 </main>

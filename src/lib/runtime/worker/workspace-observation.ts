@@ -803,7 +803,11 @@ class WorkspaceScope {
 		if (
 			generation !== this.generation ||
 			!this.currentForms() ||
-			!(this.ledgerActive() || this.options.route().pathname === '/')
+			!(
+				this.ledgerActive() ||
+				this.options.route().pathname === '/' ||
+				['SET_ACCOUNT', 'ALL_ACCOUNTS', 'NO_ACCOUNTS'].includes(command.type)
+			)
 		)
 			return
 		this.ledger.command(command, this.accounts.current ?? [])
@@ -967,6 +971,7 @@ class WorkspaceScope {
 				permissionOffset: this.permissionOffset,
 				balancesReady: this.balances !== null
 			}),
+			allAccountsSelected: this.ledger.allAccountsSelected(),
 			accountDefaultCurrency:
 				organizations.find((row) => row.id === this.organizationId)?.defaultCurrency === 'TZS'
 					? 'TZS'
@@ -997,6 +1002,7 @@ class WorkspaceScope {
 				kind: row.kind,
 				currency: row.currency,
 				archivedAt: row.archivedAt,
+				selected: this.ledger.isAccountSelected(row.id),
 				balanceMinor: this.balances?.get(row.id) ?? null
 			})),
 			organizationPage: {

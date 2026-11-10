@@ -27,6 +27,7 @@ export const accountViewSchema = z
 		kind: z.enum(['cash', 'bank', 'card']),
 		currency: z.string().max(64),
 		archivedAt: z.date().nullable(),
+		selected: z.boolean(),
 		balanceMinor: z.bigint().nullable()
 	})
 	.strict()
@@ -58,6 +59,7 @@ export const workspaceViewSchema = z
 		overview: overviewViewSchema,
 		transaction: transactionRouteViewSchema,
 		ledger: ledgerViewSchema,
+		allAccountsSelected: z.boolean(),
 		accountDefaultCurrency: z.enum(['USD', 'TZS']),
 		management: managementViewSchema,
 		accountActions: accountActionsViewSchema,
@@ -119,6 +121,7 @@ export function emptyWorkspaceView(generation = 0): PublicWorkspaceView {
 		overview: emptyOverviewView(),
 		transaction: emptyTransactionRouteView(),
 		ledger: emptyLedgerView(),
+		allAccountsSelected: true,
 		accountDefaultCurrency: 'USD',
 		management: emptyManagementView(),
 		accountActions: emptyAccountActions(),

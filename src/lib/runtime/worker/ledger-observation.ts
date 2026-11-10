@@ -77,13 +77,15 @@ export class WorkerLedgerObservation {
 	}
 	isAccountSelected = (accountId: string) =>
 		this.selection === null || this.selection.has(accountId)
+	allAccountsSelected = () => this.selection === null
 	command(command: LedgerCommand, accounts: readonly Account[]) {
 		if (command.type === 'ALL_ACCOUNTS') this.selection = null
 		if (command.type === 'NO_ACCOUNTS') this.selection = new Set()
-		if (command.type === 'TOGGLE_ACCOUNT') {
+		if (command.type === 'TOGGLE_ACCOUNT' || command.type === 'SET_ACCOUNT') {
 			if (!accounts.some((row) => row.id === command.accountId)) return
 			const selection = new Set(this.selection ?? accounts.map((row) => row.id))
-			if (selection.has(command.accountId)) selection.delete(command.accountId)
+			if (command.type === 'SET_ACCOUNT' ? !command.selected : selection.has(command.accountId))
+				selection.delete(command.accountId)
 			else selection.add(command.accountId)
 			this.selection = selection
 		}

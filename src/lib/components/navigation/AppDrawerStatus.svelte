@@ -10,14 +10,14 @@
 		browserOffline,
 		syncConfigured
 	}: {
-		bankSync: BankSyncControls
+		bankSync?: BankSyncControls | undefined
 		syncConfigured: boolean
 		browserOffline: boolean
 	} = $props()
 </script>
 
 <AppDrawerContentSection>
-	{#if bankSync.visible}
+	{#if bankSync?.visible}
 		<Button
 			disabled={browserOffline || bankSync.disabled}
 			aria-busy={bankSync.loading}
