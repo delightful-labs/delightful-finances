@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { Button, ButtonContent, Dialog, StatusMessage } from 'delightful-ui'
 	import ArchiveIcon from 'tdesign-icons-svg/src/folder-minus.svg?component'
-	import type { AccountArchiveView } from '#lib/machines/accounts/account-archive.js'
-	import type { AccountDeleteGrantView } from '#lib/machines/accounts/account-delete-grants.js'
+	import type {
+		AccountDeletePresentation,
+		AccountPermissionControl
+	} from '#lib/contracts/account-presentation-contract.js'
+	import { grantNoticeText } from './account-messages.js'
 	import type { Account, AccountMembership, OrganizationMember } from '#lib/schema.js'
 	import { m } from '#lib/paraglide/messages.js'
-	import type { ComponentProps } from 'svelte'
+	import type { ComponentProps, Snippet } from 'svelte'
 	import QueryContent from '../shared/QueryContent.svelte'
 
 	let {
@@ -15,11 +18,13 @@
 		grantQueries,
 		open = $bindable(false),
 		onArchive,
-		onDeleteGrant
+		onDeleteGrant,
+		permissionControls
 	}: {
 		account: Account | undefined
 		archiveAction: 'available' | 'archiving' | 'disabled' | 'unavailable' | undefined
-		deleteGrantView: AccountDeleteGrantView & {
+		deleteGrantView: AccountDeletePresentation & {
+			permissions?: readonly AccountPermissionControl[]
 			canManage: boolean
 			members: readonly OrganizationMember[]
 			grants: readonly AccountMembership[]
@@ -27,19 +32,34 @@
 		grantQueries: ComponentProps<typeof QueryContent>['queries']
 		open?: boolean
 		onArchive: () => void
+		permissionControls?: Snippet | undefined
 		onDeleteGrant: (accountId: string, userId: string, canDelete: boolean) => void
 	} = $props()
-	const grantFeedback = $derived(
-		deleteGrantView.result?.outcome === 'succeeded'
-			? m['permissions.updated']()
-			: deleteGrantView.result?.outcome === 'failed'
-				? m['permissions.update_failed']()
-				: deleteGrantView.result?.outcome === 'denied'
-					? m['permissions.manage_restricted']()
-					: undefined
+	const accountGrantNotice = $derived(
+		deleteGrantView.notice?.accountId === account?.id ? deleteGrantView.notice : undefined
 	)
 	const accountGrantFeedback = $derived(
-		deleteGrantView.result?.request?.accountId === account?.id ? grantFeedback : undefined
+		accountGrantNotice ? grantNoticeText(accountGrantNotice) : undefined
+	)
+	const permissions = $derived(
+		(deleteGrantView.permissions === undefined
+			? undefined
+			: deleteGrantView.permissionAccountId === account?.id
+				? deleteGrantView.permissions
+				: []) ??
+			deleteGrantView.members.map((member) => ({
+				id: member.id,
+				userId: member.userId,
+				canDelete: deleteGrantView.grants.some(
+					(grant) =>
+						grant.accountId === account?.id && grant.userId === member.userId && grant.canDelete
+				)
+			}))
+	)
+	const permissionQueries = $derived(
+		deleteGrantView.permissions !== undefined && deleteGrantView.permissionAccountId !== account?.id
+			? [{ isLoading: true, error: null }]
+			: grantQueries
 	)
 </script>
 
@@ -67,7 +87,7 @@
 			{/if}
 			{#if deleteGrantView.canManage}
 				<QueryContent
-					queries={grantQueries}
+					queries={permissionQueries}
 					loadingMessage={m['status.loading_subject']({
 						subject: m['nouns.permission']({ count: 2 })
 					})}
@@ -82,17 +102,11 @@
 							})}</legend
 						>
 						<p>{m['accounts.delete_access_description']()}</p>
-						{#each deleteGrantView.members as member (member.id)}
-							{@const granted = deleteGrantView.grants.some(
-								(grant) =>
-									grant.accountId === account.id &&
-									grant.userId === member.userId &&
-									grant.canDelete
-							)}
+						{#each permissions as member (member.id)}
 							<label>
 								<input
 									type="checkbox"
-									checked={granted}
+									checked={member.canDelete}
 									disabled={deleteGrantView.busy}
 									onchange={(event) =>
 										onDeleteGrant(account.id, member.userId, event.currentTarget.checked)}
@@ -101,13 +115,14 @@
 							</label>
 						{/each}
 					</fieldset>
+					{@render permissionControls?.()}
 				</QueryContent>
 			{:else}
 				<p>{m['permissions.manage_restricted']()}</p>
 			{/if}
 			{#if accountGrantFeedback}
 				<StatusMessage
-					variant={deleteGrantView.result?.outcome === 'succeeded' ? 'success' : 'error'}
+					variant={accountGrantNotice?.variant ?? 'error'}
 					text={accountGrantFeedback}
 				/>
 			{/if}

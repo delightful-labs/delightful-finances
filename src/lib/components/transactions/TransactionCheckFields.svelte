@@ -6,15 +6,24 @@
 	import { m } from '#lib/paraglide/messages.js'
 	let {
 		active,
+		readonlyNumber = false,
+		nativeNumber,
 		initialCheck,
+		today,
 		issues = []
 	}: {
 		active: boolean
+		readonlyNumber?: boolean
+		nativeNumber?: string | undefined
+		today?: string | undefined
 		initialCheck?: Pick<Check, 'id' | 'checkNumber' | 'checkDate'> | undefined
 		issues?: readonly { path: readonly PropertyKey[] }[]
 	} = $props()
 	let number = $state(untrack(() => initialCheck?.checkNumber ?? ''))
-	let date = $state(untrack(() => initialCheck?.checkDate ?? todayDateOnly()))
+	$effect(() => {
+		if (nativeNumber !== undefined) number = nativeNumber
+	})
+	let date = $state(untrack(() => initialCheck?.checkDate ?? today ?? todayDateOnly()))
 
 	function invalid(field: string) {
 		return issues.some((issue) => issue.path.at(-1) === field)
@@ -26,6 +35,7 @@
 
 	<InputText
 		name="checkNumber"
+		readonly={readonlyNumber}
 		id="check-number"
 		label={m['labels.subject_number']({ subject: m['nouns.check']({ count: 1 }) })}
 		bind:value={number}

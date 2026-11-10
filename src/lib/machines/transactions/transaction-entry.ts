@@ -2,7 +2,10 @@ import { TRANSACTION_SOURCE } from '#lib/domain/transaction-source.js'
 import { PAYMENT_METHOD } from '#lib/domain/payment-method.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import { EXPENSE, transactionPages } from '#lib/domain/transaction-kind.js'
-import { createTransactionSubmissionMachine } from './transaction-submission.js'
+import {
+	createTransactionSubmissionMachine,
+	type TransactionSubmissionValues
+} from './transaction-submission.js'
 import type { TransactionSaveDb } from './transaction-save.js'
 import { transferEditRequiresUnlink } from '#lib/contracts/transaction-save-contract.js'
 import { workspaceHref } from '../../domain/workspace-routes.js'
@@ -26,12 +29,15 @@ import {
 } from '#lib/validation/transactions.js'
 import type { AppTransaction, IncomePaymentMethod } from '#lib/domain/transaction.js'
 import { z } from 'zod'
-import { validateAttachmentSelection } from '#lib/domain/transaction-attachments.js'
+import {
+	validateAttachmentSelection,
+	MAX_TRANSACTION_ATTACHMENTS
+} from '#lib/domain/transaction-attachments.js'
 import { setup, types } from 'xstate'
 import type { SnapshotFrom } from 'xstate'
 import type { EventPayload } from '../../contracts/event-payload.js'
 
-export function transactionEntryScope(f: TransactionEntryObservation): TransactionEntryScope {
+export function transactionEntryScope(f: TransactionEntryScope): TransactionEntryScope {
 	return {
 		identityId: f.identityId,
 		organizationId: f.organizationId,
@@ -49,6 +55,27 @@ export function sameTransactionEntryScope(a: TransactionEntryScope, b: Transacti
 		a.transactionId === b.transactionId
 	)
 }
+/** Copied worker query leases retain immutable row/array identities between
+ * updates. An identical observation must not restart form authorization. */
+export function sameTransactionEntryObservation(
+	a: TransactionEntryObservation,
+	b: TransactionEntryObservation
+): boolean {
+	return (
+		sameTransactionEntryScope(transactionEntryScope(a), transactionEntryScope(b)) &&
+		a.sessionReady === b.sessionReady &&
+		a.loading === b.loading &&
+		a.failed === b.failed &&
+		a.membership === b.membership &&
+		a.grants === b.grants &&
+		a.accounts === b.accounts &&
+		a.categories === b.categories &&
+		a.tags === b.tags &&
+		a.transaction === b.transaction &&
+		a.intent === b.intent
+	)
+}
+
 export function writableTransactionAccounts(
 	f: Pick<
 		TransactionEntryObservation,
@@ -290,10 +317,11 @@ function withAttachmentSelectionValidation(
 	schema: ReturnType<typeof independentTransactionFormSchema>,
 	observe: () => TransactionEntryObservation
 ) {
-	return z.preprocess((input, ctx) => {
-		if (!isFormRecord(input)) return input
-		const { attachments, ...values } = input
-		const selected = (Array.isArray(attachments) ? attachments : []).filter(
+	return z.unknown().transform<TransactionSubmissionValues>((input, ctx) => {
+		const record = isFormRecord(input) ? input : {}
+		const { attachments, attachmentCount, ...values } = record
+		const raw = Array.isArray(attachments) ? attachments : []
+		const selected = raw.filter(
 			(file) =>
 				!(
 					typeof File !== 'undefined' &&
@@ -309,16 +337,34 @@ function withAttachmentSelectionValidation(
 			ctx.addIssue({ code: 'custom', path: ['attachments'], message: 'invalidSelection' })
 			return z.NEVER
 		}
-		const selection = validateAttachmentSelection(
-			files,
-			observe().transaction?.attachments?.length ?? 0
-		)
+		const count =
+			attachmentCount === undefined
+				? selected.length
+				: typeof attachmentCount === 'number' &&
+					  Number.isSafeInteger(attachmentCount) &&
+					  attachmentCount >= raw.length
+					? attachmentCount - raw.length + selected.length
+					: NaN
+		if (!Number.isSafeInteger(count)) {
+			ctx.addIssue({ code: 'custom', path: ['attachments'], message: 'invalidSelection' })
+			return z.NEVER
+		}
+		const existingCount = observe().transaction?.attachments?.length ?? 0
+		const selection =
+			existingCount + count > MAX_TRANSACTION_ATTACHMENTS
+				? { kind: 'limitReached' }
+				: validateAttachmentSelection(files, existingCount)
 		if (selection.kind !== 'accepted') {
 			ctx.addIssue({ code: 'custom', path: ['attachments'], message: selection.kind })
 			return z.NEVER
 		}
-		return values
-	}, schema)
+		const parsed = schema.safeParse(values)
+		if (!parsed.success) {
+			for (const issue of parsed.error.issues) ctx.addIssue({ ...issue })
+			return z.NEVER
+		}
+		return { ...parsed.data, selectedAttachments: files }
+	})
 }
 
 function isFormRecord(value: unknown): value is Record<string, unknown> {
@@ -328,19 +374,14 @@ function isFormRecord(value: unknown): value is Record<string, unknown> {
 export function createTransactionEntryFormOptions(
 	deps: TransactionFormPolicyDependencies & {
 		db: TransactionSaveDb
-		getAttachments?: () => readonly File[]
 		navigate?: (destination: string, signal: AbortSignal) => Promise<void>
 	}
 ) {
 	const { common, schema } = transactionFormPolicy(deps)
 	const availability = common.availability
-	const persistence = createTransactionSubmissionMachine(
-		deps.db,
-		deps.observe,
-		deps.getAttachments ?? (() => [])
-	)
+	const persistence = createTransactionSubmissionMachine(deps.db, deps.observe)
 	const options = createSingleWriteFormOptions<
-		TransactionSaveValues,
+		TransactionSubmissionValues,
 		void,
 		TransactionEntryReason,
 		TransactionEntryScope,
@@ -371,18 +412,13 @@ export function createTransactionEntryFormOptions(
 export function createTransactionEditFormOptions(
 	deps: TransactionFormPolicyDependencies & {
 		db: TransactionSaveDb
-		getAttachments?: () => readonly File[]
 	}
 ) {
 	const { common, schema } = transactionFormPolicy(deps)
 	const availability = common.availability
-	const persistence = createTransactionSubmissionMachine(
-		deps.db,
-		deps.observe,
-		deps.getAttachments ?? (() => [])
-	)
+	const persistence = createTransactionSubmissionMachine(deps.db, deps.observe)
 	return createSingleWriteFormOptions<
-		TransactionSaveValues,
+		TransactionSubmissionValues,
 		void,
 		TransactionEntryReason,
 		TransactionEntryScope,
@@ -402,10 +438,19 @@ export function createTransactionEditFormOptions(
 			if (!isTransactionFormDraft(draft)) return false
 			const selected =
 				'attachments' in draft && Array.isArray(draft.attachments) ? draft.attachments : []
-			const files = selected.filter(
+			const selection = selected.filter(
+				(file) =>
+					!(
+						typeof File !== 'undefined' &&
+						file instanceof File &&
+						file.name === '' &&
+						file.size === 0
+					)
+			)
+			const files = selection.filter(
 				(file): file is File => typeof File !== 'undefined' && file instanceof File
 			)
-			if (files.length !== selected.length || files.length > 0) return false
+			if (files.length !== selection.length || files.length > 0) return false
 			const values = draft
 			const amount = parseAmountMinor(values.amount, original.money.currency)
 			const names = (values: readonly string[]) => [...new Set(values.map(normalizedName))].sort()
@@ -485,11 +530,11 @@ function transactionAsInput(
 function isTransactionFormDraft(value: unknown): value is Record<string, unknown> &
 	Pick<AppTransaction, 'accountId' | 'categoryId' | 'bookedOn'> &
 	Partial<Pick<AppTransaction, 'description' | 'memo' | 'tags'>> & {
-		checkNumber?: string
-		checkDate?: string
+		checkNumber?: string | undefined
+		checkDate?: string | undefined
 	} & {
 		amount: string
-		paymentMethod?: IncomePaymentMethod | ''
+		paymentMethod?: IncomePaymentMethod | '' | undefined
 	} {
 	return (
 		typeof value === 'object' &&
@@ -502,18 +547,26 @@ function isTransactionFormDraft(value: unknown): value is Record<string, unknown
 		typeof value.amount === 'string' &&
 		'bookedOn' in value &&
 		typeof value.bookedOn === 'string' &&
-		(!('description' in value) || typeof value.description === 'string') &&
-		(!('memo' in value) || typeof value.memo === 'string') &&
-		(!('checkId' in value) || typeof value.checkId === 'string') &&
-		(!('checkNumber' in value) || typeof value.checkNumber === 'string') &&
-		(!('checkDate' in value) || typeof value.checkDate === 'string') &&
+		(!('description' in value) ||
+			value.description === undefined ||
+			typeof value.description === 'string') &&
+		(!('memo' in value) || value.memo === undefined || typeof value.memo === 'string') &&
+		(!('checkId' in value) || value.checkId === undefined || typeof value.checkId === 'string') &&
+		(!('checkNumber' in value) ||
+			value.checkNumber === undefined ||
+			typeof value.checkNumber === 'string') &&
+		(!('checkDate' in value) ||
+			value.checkDate === undefined ||
+			typeof value.checkDate === 'string') &&
 		(!('paymentMethod' in value) ||
+			value.paymentMethod === undefined ||
 			value.paymentMethod === '' ||
 			value.paymentMethod === PAYMENT_METHOD.CASH ||
 			value.paymentMethod === PAYMENT_METHOD.CHECK ||
 			value.paymentMethod === PAYMENT_METHOD.TRANSFER ||
 			value.paymentMethod === PAYMENT_METHOD.ELECTRONIC) &&
 		(!('tags' in value) ||
+			value.tags === undefined ||
 			(Array.isArray(value.tags) && value.tags.every((tag: unknown) => typeof tag === 'string')))
 	)
 }

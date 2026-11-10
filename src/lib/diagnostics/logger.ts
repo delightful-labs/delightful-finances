@@ -1,4 +1,4 @@
-import { PUBLIC_DEBUG } from '$app/env/public'
+import { PUBLIC_DEBUG } from '#lib/runtime/public-flags.js'
 import { createLogger as createSharedLogger } from 'delightful-local-first/diagnostics/logger'
 
 export type { DebugValue } from 'delightful-local-first/diagnostics/logger'

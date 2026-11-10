@@ -48,9 +48,12 @@
 		onsubmit,
 		onreset,
 		oncancel,
+		presentation,
 		oninput,
 		onattachmentschange,
 		savedImages,
+		savedTags,
+		newTags,
 		attachmentPickerRevision = 0,
 		onaddcategory,
 		canAddCategory = false,
@@ -72,21 +75,25 @@
 		onLinkCounterpart,
 		onTransferSearchEnabledChange,
 		onSelectTransferCandidate,
-		onUnlinkTransfer
+		onUnlinkTransfer,
+		onOpenCounterpart
 	}: {
 		kind: TransactionKind
 		paymentEntry: TransactionPaymentEntry
 		mode?: 'create' | 'edit'
-		initialTransaction?: Pick<
-			TransactionDetail,
-			'accountId' | 'categoryId' | 'amountMinor' | 'currency' | 'bookedOn'
-		> &
-			Partial<Pick<TransactionDetail, 'description' | 'memo' | 'paymentMethod' | 'checkId'>> & {
-				accountName?: Account['name'] | undefined
-				categoryName?: Category['name'] | undefined
-				check?: Pick<NonNullable<TransactionDetail['check']>, 'checkNumber' | 'checkDate'>
-				tags: readonly Tag['name'][]
-			}
+		initialTransaction?:
+			| (Pick<
+					TransactionDetail,
+					'accountId' | 'categoryId' | 'amountMinor' | 'currency' | 'bookedOn'
+			  > &
+					Partial<Pick<TransactionDetail, 'description' | 'memo' | 'paymentMethod' | 'checkId'>> & {
+						accountName?: Account['name'] | undefined
+						categoryName?: Category['name'] | undefined
+						check?:
+							Pick<NonNullable<TransactionDetail['check']>, 'checkNumber' | 'checkDate'> | undefined
+						tags: readonly Tag['name'][]
+					})
+			| undefined
 		organizationId: TransactionDetail['organizationId'] | null
 		accounts: readonly Account[]
 		defaultAccountId: Account['id'] | undefined
@@ -97,14 +104,27 @@
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
 		oncancel?: () => void
+		presentation?:
+			| {
+					today: string
+					amountPatterns: ReadonlyMap<string, string>
+					initialAmount?: string
+					readonlyFields?: readonly string[]
+					nativeTextValues?: Partial<Record<'description' | 'memo' | 'checkNumber', string>>
+			  }
+			| undefined
 		onaddcategory?: () => void
 		canAddCategory?: boolean
 		createdCategory?: Category | undefined
 		oninput?: (event: Event) => void
+		newTags?: Snippet
+		savedTags?: Snippet
 		savedImages?: Snippet
 		onattachmentschange?: (files: readonly File[]) => void
 		attachmentPickerRevision?: number
 		transferSuggestions?: readonly (InternalTransferCandidate & {
+			amountLabel?: string
+			dateLabel?: string
 			accountName: Account['name'] | undefined
 			description: TransactionDetail['description'] | undefined
 		})[]
@@ -124,14 +144,57 @@
 		transferUnlinkResult?: InternalTransferUnlinkResult | null
 		linkedCounterpartHref?: string | null
 		onLinkCounterpart?: (transactionId: string) => void
+		onOpenCounterpart?: ((href: string) => void) | undefined
 		onUnlinkTransfer?: () => void
 	} = $props()
 
 	const resetRevision = $derived(view.draftRevision)
+	const emptyTags: readonly string[] = []
+	const initialTags = $derived(presentation ? emptyTags : (initialTransaction?.tags ?? emptyTags))
 	let activeCheckFieldsKey = $state('')
+	let amount = $state('')
+	let bookedOn = $state('')
+	let description = $state('')
+	let memo = $state('')
+	const nativeDescription = $derived(presentation?.nativeTextValues?.description)
+	const nativeMemo = $derived(presentation?.nativeTextValues?.memo)
+	$effect(() => {
+		if (nativeDescription !== undefined) description = nativeDescription
+	})
+	$effect(() => {
+		if (nativeMemo !== undefined) memo = nativeMemo
+	})
+
 	let selectedAccountId = $state('')
+	let selectedCategoryId = $state('')
+	let selectedAccountOption = $state<Account>()
+	let selectedAccountPattern = $state<string>()
+	let selectedCategoryOption = $state<Category>()
+	$effect(() => {
+		const row = accounts.find((row) => row.id === selectedAccountId)
+		if (row) {
+			selectedAccountOption = row
+			selectedAccountPattern = presentation?.amountPatterns.get(row.id)
+		}
+	})
+	$effect(() => {
+		const row = categories.find((row) => row.id === selectedCategoryId)
+		if (row) selectedCategoryOption = row
+	})
+	const accountOptions = $derived(
+		selectedAccountOption?.id === selectedAccountId &&
+			!accounts.some((row) => row.id === selectedAccountId)
+			? [...accounts, selectedAccountOption]
+			: accounts
+	)
+	const categoryOptions = $derived(
+		selectedCategoryOption?.id === selectedCategoryId &&
+			!categories.some((row) => row.id === selectedCategoryId)
+			? [...categories, selectedCategoryOption]
+			: categories
+	)
 	const selectedAccountCurrency = $derived(
-		accounts.find((account) => account.id === selectedAccountId)?.currency ??
+		accountOptions.find((account) => account.id === selectedAccountId)?.currency ??
 			initialTransaction?.currency ??
 			'USD'
 	)
@@ -149,6 +212,7 @@
 			return
 		untrack(() => {
 			appliedCategoryId = category.id
+			selectedCategoryId = category.id
 			element.value = category.id
 			element.dispatchEvent(new Event('input', { bubbles: true }))
 		})
@@ -156,9 +220,21 @@
 	$effect(() => {
 		void resetRevision
 		untrack(() => {
+			amount = presentation
+				? (presentation.initialAmount ?? '')
+				: initialTransaction
+					? minorUnitsToInput(initialTransaction.amountMinor, initialTransaction.currency)
+					: ''
+			bookedOn = initialTransaction?.bookedOn ?? presentation?.today ?? todayDateOnly()
+			description = initialTransaction?.description ?? ''
+			memo = initialTransaction?.memo ?? ''
 			activeCheckFieldsKey =
 				initialTransaction?.paymentMethod === PAYMENT_METHOD.CHECK ? PAYMENT_METHOD.CHECK : ''
 			selectedAccountId = initialTransaction?.accountId ?? defaultAccountId ?? ''
+			selectedCategoryId = initialTransaction?.categoryId ?? defaultCategoryId ?? ''
+			selectedAccountOption = undefined
+			selectedAccountPattern = undefined
+			selectedCategoryOption = undefined
 		})
 	})
 	function syncPaymentMethod(element: HTMLSelectElement) {
@@ -208,7 +284,7 @@
 								})} · {initialTransaction.currency}</option
 						>
 					{/if}
-					{#each accounts as account (account.id)}
+					{#each accountOptions as account (account.id)}
 						<option value={account.id}>{account.name} · {account.currency}</option>
 					{/each}
 				</Select>
@@ -233,6 +309,7 @@
 					name="categoryId"
 					required
 					defaultValue={initialTransaction?.categoryId ?? defaultCategoryId ?? ''}
+					bind:value={selectedCategoryId}
 				>
 					<option value="" disabled>
 						{m['actions.select_subject']({ subject: m['nouns.category']({ count: 1 }) })}
@@ -245,7 +322,7 @@
 								})}</option
 						>
 					{/if}
-					{#each categories as category (category.id)}
+					{#each categoryOptions as category (category.id)}
 						<option value={category.id}>
 							{category.name}
 						</option>
@@ -270,12 +347,22 @@
 					aria-describedby="transaction-amount-feedback"
 					aria-invalid={fieldInvalid(issues, 'amount') || undefined}
 					name="amount"
+					bind:value={amount}
+					{...presentation ? { maxlength: 64 } : {}}
 					inputmode="decimal"
 					autocomplete="off"
-					pattern={amountInputPattern(selectedAccountCurrency)}
-					defaultValue={initialTransaction
-						? minorUnitsToInput(initialTransaction.amountMinor, initialTransaction.currency)
-						: ''}
+					pattern={presentation
+						? (presentation.amountPatterns.get(selectedAccountId) ??
+							(selectedAccountOption?.id === selectedAccountId
+								? selectedAccountPattern
+								: undefined) ??
+							'')
+						: amountInputPattern(selectedAccountCurrency)}
+					defaultValue={presentation
+						? (presentation.initialAmount ?? '')
+						: initialTransaction
+							? minorUnitsToInput(initialTransaction.amountMinor, initialTransaction.currency)
+							: ''}
 					required
 				/>
 				<FieldFeedback
@@ -291,7 +378,9 @@
 					aria-describedby="transaction-date-feedback"
 					aria-invalid={fieldInvalid(issues, 'bookedOn') || undefined}
 					name="bookedOn"
-					defaultValue={initialTransaction?.bookedOn ?? todayDateOnly()}
+					bind:value={bookedOn}
+					{...presentation ? { maxlength: 64 } : {}}
+					defaultValue={initialTransaction?.bookedOn ?? presentation?.today ?? todayDateOnly()}
 					required
 				/>
 				<FieldFeedback
@@ -331,7 +420,10 @@
 
 					{#key resetRevision}
 						<TransactionCheckFields
+							today={presentation?.today}
 							active={activeCheckFieldsKey === PAYMENT_METHOD.CHECK}
+							readonlyNumber={presentation?.readonlyFields?.includes('checkNumber') ?? false}
+							nativeNumber={presentation?.nativeTextValues?.checkNumber}
 							{issues}
 							initialCheck={initialTransaction?.checkId && initialTransaction.check
 								? { id: initialTransaction.checkId, ...initialTransaction.check }
@@ -348,11 +440,12 @@
 							value={initialTransaction.checkId}
 						/>{/if}
 				{/if}
-				{#if organizationId}
+				{#if savedTags}{@render savedTags()}{/if}
+				{#if newTags}{@render newTags()}{:else if organizationId}
 					<TransactionTagInput
 						{organizationId}
 						suggestions={tagSuggestions}
-						initialTags={initialTransaction?.tags ?? []}
+						{initialTags}
 						disabled={!form.fieldsEditable}
 					/>
 				{/if}
@@ -381,18 +474,23 @@
 						{linkedCounterpartHref}
 						onLink={onLinkCounterpart}
 						onUnlink={onUnlinkTransfer}
+						{onOpenCounterpart}
 					/>
 				{/if}
 				<InputText
 					label={m['labels.description']()}
 					id="transaction-description"
 					name="description"
+					readonly={presentation?.readonlyFields?.includes('description')}
+					bind:value={description}
 					defaultValue={initialTransaction?.description ?? ''}
 				/>
 				<Textarea
 					label={m['labels.memo']()}
 					id="transaction-memo"
 					name="memo"
+					readonly={presentation?.readonlyFields?.includes('memo')}
+					bind:value={memo}
 					defaultValue={initialTransaction?.memo ?? ''}
 				></Textarea>
 			{/if}

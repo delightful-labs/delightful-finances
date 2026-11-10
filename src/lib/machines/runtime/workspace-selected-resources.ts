@@ -1,3 +1,7 @@
+import {
+	createWorkspaceFormsMachine,
+	type WorkspaceFormsDependencies
+} from '../forms/workspace-forms.js'
 import type {
 	WorkspaceDrainRequest,
 	WorkspaceLease
@@ -29,10 +33,11 @@ import type { EventPayload } from '../../contracts/event-payload.js'
 type Input = { recipient: SelectedResourceRecipient }
 type Context = Input & {
 	drain: WorkspaceDrainRequest | undefined
+	formsResult: WorkspaceResourceRelease | undefined
 	bankResult: WorkspaceResourceRelease | undefined
 	integrityResult: WorkspaceResourceRelease | undefined
 	integrityRequest: IntegrityRequest | undefined
-	unexpectedStop: 'bank' | 'integrity' | undefined
+	unexpectedStop: 'bank' | 'integrity' | 'forms' | undefined
 	result: WorkspaceResourceRelease | undefined
 }
 type Event =
@@ -40,7 +45,7 @@ type Event =
 	| IntegrityStatusEvent
 	| {
 			type: 'RESOURCE_STOPPED'
-			resource: 'bank' | 'integrity'
+			resource: 'bank' | 'integrity' | 'forms'
 	  }
 
 function captureLease(lease: WorkspaceLease): WorkspaceLease {
@@ -54,10 +59,12 @@ function captureLease(lease: WorkspaceLease): WorkspaceLease {
 /** One selected lease's resource lifetime; identity-bound startup/creation/navigation stay outside. */
 export function createWorkspaceSelectedResources({
 	dependencies,
+	forms,
 	lease: issuedLease,
 	userId
 }: {
 	dependencies: BankSyncDependencies
+	forms?: WorkspaceFormsDependencies | undefined
 	lease: WorkspaceLease
 	userId: string
 }) {
@@ -78,6 +85,7 @@ export function createWorkspaceSelectedResources({
 				}
 	}
 	const actors = {
+		forms: createWorkspaceFormsMachine(db, forms),
 		bank: createBankSyncMachine({ db, passkeyName, read: readBoundSource }),
 		integrity: createWorkspaceIntegrityOwner(db)
 	}
@@ -103,6 +111,7 @@ export function createWorkspaceSelectedResources({
 			input: types<Input>(),
 			output: types<SelectedResourceOutput>(),
 			children: {
+				forms: types<import('xstate').ActorRefFrom<(typeof actors)['forms']>>(),
 				bank: types<import('xstate').ActorRefFrom<(typeof actors)['bank']>>(),
 				integrity: types<import('xstate').ActorRefFrom<(typeof actors)['integrity']>>()
 			}
@@ -122,6 +131,7 @@ export function createWorkspaceSelectedResources({
 		context: ({ input }) => ({
 			...input,
 			drain: undefined,
+			formsResult: undefined,
 			bankResult: undefined,
 			integrityResult: undefined,
 			integrityRequest: undefined,
@@ -251,14 +261,18 @@ export function createWorkspaceSelectedResources({
 								entry: (args, enq) => {
 									{
 										const children = args.children
-										for (const child of [children.bank, children.integrity])
+										for (const child of [children.bank, children.integrity, children.forms])
 											if (child?.getSnapshot().status === 'active')
 												enq.sendTo(child, { type: 'SHUTDOWN' })
 									}
 								},
 								always: (args) => {
 									const { context } = args
-									if (!(context.bankResult !== undefined && context.integrityResult !== undefined))
+									if (!(
+										context.bankResult !== undefined &&
+										context.integrityResult !== undefined &&
+										context.formsResult !== undefined
+									))
 										return
 									return { target: 'stopped' }
 								},
@@ -310,6 +324,29 @@ export function createWorkspaceSelectedResources({
 											})(args)
 										)
 										return {}
+									}
+								}
+							},
+							stopped: { type: 'final' }
+						}
+					},
+					forms: {
+						initial: 'running',
+						states: {
+							running: {
+								invoke: {
+									id: 'forms',
+									src: 'forms',
+									onDone: ({ event }, enq) => {
+										enq.raise({ type: 'RESOURCE_STOPPED', resource: 'forms' })
+										return { target: 'stopped', context: { formsResult: event.output } }
+									},
+									onError: (_, enq) => {
+										enq.raise({ type: 'RESOURCE_STOPPED', resource: 'forms' })
+										return {
+											target: 'stopped',
+											context: { formsResult: { outcome: 'unresolved' } }
+										}
 									}
 								}
 							},
@@ -373,7 +410,10 @@ export function createWorkspaceSelectedResources({
 						context: {
 							result: retainResourceRelease(
 								retainResourceRelease(
-									required(context.bankResult),
+									retainResourceRelease(
+										required(context.bankResult),
+										required(context.formsResult)
+									),
 									required(context.integrityResult)
 								),
 								{ outcome: context.unexpectedStop ? 'releasedWithFailure' : 'released' }
@@ -405,5 +445,13 @@ export function selectedResourceBankActor(
 ) {
 	return snapshot?.status === 'active' && snapshot.matches({ owning: { control: 'active' } })
 		? snapshot.children.bank
+		: undefined
+}
+
+export function selectedResourceFormsActor(
+	snapshot: SnapshotFrom<ReturnType<typeof createWorkspaceSelectedResources>> | undefined
+) {
+	return snapshot?.status === 'active' && snapshot.matches({ owning: { control: 'active' } })
+		? snapshot.children.forms
 		: undefined
 }

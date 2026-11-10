@@ -125,7 +125,6 @@
 	const options = createTransactionEntryFormOptions({
 		binding: db,
 		observe,
-		getAttachments: () => selectedAttachments,
 		navigate: (destination, signal) => {
 			signal.throwIfAborted()
 			return goto(destination, { replace: true })

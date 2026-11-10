@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { ACCOUNT_KIND } from '#lib/domain/account-kind.js'
 	import { Button, Table, StatusMessage } from 'delightful-ui'
-	import type { AccountArchiveView } from '#lib/machines/accounts/account-archive.js'
-	import type { AccountDeleteGrantView } from '#lib/machines/accounts/account-delete-grants.js'
+	import type {
+		AccountArchivePresentation,
+		AccountDeletePresentation,
+		AccountPermissionControl
+	} from '#lib/contracts/account-presentation-contract.js'
+	import { archiveNoticeText } from './account-messages.js'
 	import type { AccountMembership, OrganizationMember } from '#lib/schema.js'
 	import AccountActionsDialog from './AccountActionsDialog.svelte'
 	import { m } from '#lib/paraglide/messages.js'
 	import { formatSignedMoney } from '#lib/domain/money.js'
 	import { getLocale } from '#lib/paraglide/runtime.js'
-	import { onDestroy, untrack, type ComponentProps } from 'svelte'
+	import { onDestroy, untrack, type ComponentProps, type Snippet } from 'svelte'
 
 	let {
 		view,
@@ -17,11 +21,13 @@
 		onDeleteGrant,
 		balances,
 		grantQueries,
-		onActionsOpenChange
+		onActionsOpenChange,
+		permissionControls
 	}: {
-		view: AccountArchiveView
+		view: AccountArchivePresentation
 		onArchive: (accountId: string) => void
-		deleteGrantView: AccountDeleteGrantView & {
+		deleteGrantView: AccountDeletePresentation & {
+			permissions?: readonly AccountPermissionControl[]
 			canManage: boolean
 			members: readonly OrganizationMember[]
 			grants: readonly AccountMembership[]
@@ -29,29 +35,17 @@
 		onDeleteGrant: (accountId: string, userId: string, canDelete: boolean) => void
 		balances: ReadonlyMap<string, bigint> | null
 		grantQueries: ComponentProps<typeof AccountActionsDialog>['grantQueries']
-		onActionsOpenChange: (open: boolean) => void
+		onActionsOpenChange: (open: boolean, accountId?: string | null) => void
+		permissionControls?: Snippet | undefined
 	} = $props()
-	const feedbackText = $derived(
-		view.feedback?.outcome === 'succeeded'
-			? m['status.archived_subject_name']({
-					subject: m['nouns.account']({ count: 1 }),
-					name: view.feedback.request.name
-				})
-			: view.feedback?.settlement === 'locallyPersisted'
-				? m['accounts.archive_interrupted_saved']()
-				: view.feedback?.outcome === 'scopeChanged'
-					? m['accounts.archive_scope_changed']()
-					: view.feedback?.outcome === 'denied'
-						? m['accounts.archive_restricted']()
-						: m['errors.archive_subject']({ subject: m['nouns.account']({ count: 1 }) })
-	)
+	const feedbackText = $derived(view.notice ? archiveNoticeText(view.notice) : '')
 	let selectedAccountId = $state<string | null>(null)
 	let dialogOpen = $state(false)
 	$effect(() => {
 		const open = dialogOpen
-		untrack(() => onActionsOpenChange(open))
+		untrack(() => onActionsOpenChange(open, selectedAccountId))
 	})
-	onDestroy(() => onActionsOpenChange(false))
+	onDestroy(() => onActionsOpenChange(false, selectedAccountId))
 	const selectedAccount = $derived(
 		view.kind === 'ready'
 			? view.rows.find((row) => row.account.id === selectedAccountId)?.account
@@ -59,7 +53,6 @@
 	)
 	$effect(() => {
 		if (selectedAccountId && !selectedAccount) {
-			selectedAccountId = null
 			dialogOpen = false
 		}
 	})
@@ -80,11 +73,8 @@
 		text={m['errors.load_subject']({ subject: m['nouns.account']({ count: 2 }) })}
 	/>
 {:else if view.kind === 'ready'}
-	{#if view.feedback}
-		<StatusMessage
-			variant={view.feedback.settlement === 'locallyPersisted' ? 'success' : 'error'}
-			text={feedbackText}
-		/>
+	{#if view.notice}
+		<StatusMessage variant={view.notice.variant} text={feedbackText} />
 	{/if}
 	{#if view.rows.length === 0}
 		<p>{m['accounts.empty.title']()}</p>
@@ -147,6 +137,7 @@
 			bind:open={dialogOpen}
 			onArchive={() => selectedAccount && onArchive(selectedAccount.id)}
 			{onDeleteGrant}
+			{permissionControls}
 		/>
 	{/if}
 {/if}

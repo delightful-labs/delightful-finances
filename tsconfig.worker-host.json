@@ -11,6 +11,10 @@
 		"noEmit": true
 	},
 	"include": [
+		"src/lib/runtime/worker/application-protocol.ts",
+		"src/lib/runtime/worker/webauthn-channel.test.ts",
+		"src/lib/runtime/worker/native-capabilities.ts",
+		"src/lib/runtime/worker/native-capabilities.test.ts",
 		"tests/worker-host.browser.test.ts",
 		"tests/worker-host/*.ts",
 		"vitest.worker-browser.config.ts",

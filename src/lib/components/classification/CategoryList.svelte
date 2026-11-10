@@ -16,23 +16,34 @@
 		counts,
 		archivableCategoryIds,
 		archiveView,
-		onArchive
+		onArchive,
+		projected = false,
+		filter,
+		onFilter
 	}: {
 		loading?: boolean
 		categories: readonly Category[]
 		counts: ReadonlyMap<string, { transactions: number; tags: number }>
 		archivableCategoryIds: readonly string[]
 		archiveView: ManagementView<string>
+		projected?: boolean
+		filter?: ArchiveFilterValue
+		onFilter?: ((value: ArchiveFilterValue) => void) | undefined
 		onArchive: (categoryId: string) => void
 	} = $props()
 	const numbers = $derived(new Intl.NumberFormat(getLocale()))
 	let archiveFilter = $state<ArchiveFilterValue>('active')
+	$effect(() => {
+		if (filter !== undefined) archiveFilter = filter
+	})
 	const visibleCategories = $derived(
-		categories.filter(
-			(row) =>
-				archiveFilter === 'all' ||
-				(archiveFilter === 'archived' ? !!row.archivedAt : !row.archivedAt)
-		)
+		projected
+			? categories
+			: categories.filter(
+					(row) =>
+						archiveFilter === 'all' ||
+						(archiveFilter === 'archived' ? !!row.archivedAt : !row.archivedAt)
+				)
 	)
 </script>
 
@@ -49,7 +60,7 @@
 	section="result"
 />
 
-<ArchiveFilter bind:value={archiveFilter} />
+<ArchiveFilter bind:value={archiveFilter} onchange={onFilter} />
 
 {#if loading || visibleCategories.length}
 	<Table caption={m['nouns.category']({ count: 2 })}>

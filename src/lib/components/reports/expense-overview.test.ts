@@ -1,3 +1,4 @@
+import { emptyOverviewView } from '#lib/runtime/worker/overview-protocol.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'svelte/server'
 import ExpenseOverview from '#lib/components/reports/ExpenseOverview.svelte'
@@ -146,4 +147,36 @@ describe('expense overview presentation', () => {
 		expect(html).toContain('$12.34')
 		expect(html).toContain('All Categories')
 	})
+})
+
+it('keeps the selected category visible when its option belongs to another bounded page', () => {
+	const selected = '00000000-0000-4000-8000-000000000001'
+	const other = '00000000-0000-4000-8000-000000000002'
+	const { body } = render(ExpenseOverview, {
+		props: {
+			projection: {
+				...emptyOverviewView(),
+				active: true,
+				validRange: true,
+				transactionCount: 1,
+				total: 2n,
+				activeCategory: selected,
+				activeCategoryName: 'Historical category outside this page',
+				categories: [{ id: other, name: 'Food' }],
+				categoryPage: { offset: 500, total: 1000, hasMore: false },
+				filters: {
+					start: '2026-10-01',
+					end: '2026-10-23',
+					categoryId: selected,
+					currency: 'USD',
+					query: ''
+				}
+			}
+		}
+	})
+	expect(body).toContain(
+		`value="${selected}" selected="">Historical category outside this page</option>`
+	)
+	expect(body).toContain('value="00000000-0000-4000-8000-000000000002">Food</option>')
+	expect(body).toContain('$0.02')
 })

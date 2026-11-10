@@ -16,10 +16,11 @@ import { createWorkspaceSelectedResources } from './workspace-selected-resources
 import { createActor, createCallbackLogic, setup, types } from 'xstate'
 
 const controls: {
+	forms: ReturnType<typeof controlled> | undefined
 	bank: ReturnType<typeof controlled> | undefined
 	integrity: ReturnType<typeof controlled> | undefined
 	read: BankSyncDependencies['read'] | undefined
-} = vi.hoisted(() => ({ bank: undefined, integrity: undefined, read: undefined }))
+} = vi.hoisted(() => ({ forms: undefined, bank: undefined, integrity: undefined, read: undefined }))
 vi.mock('../bank-sync/index.js', async (original) => {
 	const actual = await original<typeof import('../bank-sync/index.js')>()
 	return {
@@ -39,10 +40,20 @@ vi.mock('../workspaces/workspace-integrity-owner.js', async (original) => {
 		) => controls.integrity?.logic ?? actual.createWorkspaceIntegrityOwner(db)
 	}
 })
+vi.mock('../forms/workspace-forms.js', async (original) => {
+	const actual = await original<typeof import('../forms/workspace-forms.js')>()
+	return {
+		...actual,
+		createWorkspaceFormsMachine: (
+			...input: Parameters<typeof actual.createWorkspaceFormsMachine>
+		) => controls.forms?.logic ?? actual.createWorkspaceFormsMachine(...input)
+	}
+})
 const actors = new Set<{ stop: () => void }>()
 afterEach(() => {
 	for (const actor of actors) actor.stop()
 	actors.clear()
+	controls.forms = undefined
 	controls.bank = undefined
 	controls.integrity = undefined
 	controls.read = undefined
@@ -409,4 +420,44 @@ describe('selected workspace resource lifetime', () => {
 			})
 		}
 	)
+})
+
+it('retains the selected lease until the form owner acknowledges its real shutdown', () => {
+	const forms = controlled()
+	controls.forms = forms
+	const f = fixture()
+	f.actor.send({ type: 'DRAIN', drain: f.drain })
+	expect(forms.shutdown).toHaveBeenCalledOnce()
+	f.bank.finish()
+	f.integrity.finish()
+	expect(f.actor.getSnapshot().status).toBe('active')
+	expect(f.actor.getSnapshot().output).toBeUndefined()
+	forms.finish()
+	expect(f.actor.getSnapshot().output?.release).toEqual({ outcome: 'released' })
+})
+it('retains unresolved form cleanup even after bank and integrity release', () => {
+	const forms = controlled()
+	controls.forms = forms
+	const f = fixture()
+	forms.crash()
+	expect(f.bank.shutdown).toHaveBeenCalledOnce()
+	expect(f.integrity.shutdown).toHaveBeenCalledOnce()
+	f.bank.finish()
+	expect(f.actor.getSnapshot().output).toBeUndefined()
+	f.integrity.finish()
+	expect(f.actor.getSnapshot().output?.release).toEqual({ outcome: 'unresolved' })
+})
+it('drains peers when a form owner closes unexpectedly instead of reopening it', () => {
+	const forms = controlled()
+	controls.forms = forms
+	const f = fixture()
+	forms.finish()
+	expect(f.reports).toContainEqual({
+		type: 'SELECTED_RESOURCES_STOPPING',
+		lease: f.issued,
+		resource: 'forms'
+	})
+	f.bank.finish()
+	f.integrity.finish()
+	expect(f.actor.getSnapshot().output?.release).toEqual({ outcome: 'releasedWithFailure' })
 })

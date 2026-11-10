@@ -5,26 +5,10 @@ import {
 	type CredentialScope
 } from '../validation/integrations.js'
 
-// isView recognizes views from other realms (including password-manager
-// extensions). instanceof ArrayBuffer does not recognize foreign ArrayBuffers.
-function byteView(value: ArrayBuffer | ArrayBufferView) {
-	return ArrayBuffer.isView(value)
-		? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-		: new Uint8Array(value)
-}
+import { decode, encode } from './passkey-bytes.js'
+import { webAuthn } from './webauthn-capability.js'
+export { encode } from './passkey-bytes.js'
 
-export function encode(bytes: ArrayBuffer | Uint8Array) {
-	return btoa(String.fromCharCode(...byteView(bytes)))
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replaceAll('=', '')
-}
-
-function decode(value: string) {
-	return Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), (c) =>
-		c.charCodeAt(0)
-	)
-}
 const random = (length: number) => crypto.getRandomValues(new Uint8Array(length))
 const text = (value: string) => new TextEncoder().encode(value)
 
@@ -50,32 +34,9 @@ async function keyFor(
 	trace: BankTrace
 ) {
 	signal.throwIfAborted()
-	const credential = await trace.step('passkey.assertion', () =>
-		navigator.credentials.get({
-			signal,
-			publicKey: {
-				challenge: random(32),
-				allowCredentials: [{ type: 'public-key', id: decode(credentialId) }],
-				userVerification: 'required',
-				extensions: { prf: { eval: { first: decode(salt) } } }
-			}
-		})
+	const bytes = await trace.step('passkey.assertion', () =>
+		webAuthn().assert({ credentialId, prfSalt: salt }, signal)
 	)
-	const credentialMatched =
-		credential instanceof PublicKeyCredential && encode(credential.rawId) === credentialId
-	const output =
-		credential instanceof PublicKeyCredential
-			? credential.getClientExtensionResults().prf?.results?.first
-			: undefined
-	trace.log('passkey.assertion.result', { credentialMatched, prfResultPresent: Boolean(output) })
-	if (!credentialMatched || !output) throw new Error('passkey-unavailable')
-	const bytes = byteView(output)
-	trace.log('passkey.prf.buffer', {
-		prfByteLength: bytes.byteLength,
-		prfSourceByteLength: output.byteLength,
-		prfIsView: ArrayBuffer.isView(output),
-		prfIsLocalArrayBuffer: output instanceof ArrayBuffer
-	})
 	if (bytes.byteLength !== 32) {
 		bytes.fill(0)
 		throw new Error('passkey-unavailable')
@@ -118,36 +79,12 @@ export async function createPasskey(
 	appName: string,
 	trace: BankTrace
 ) {
-	trace.log('passkey.capabilities', {
-		secureContext: globalThis.isSecureContext,
-		webAuthnAvailable: Boolean(globalThis.PublicKeyCredential)
-	})
-	if (!globalThis.isSecureContext || !globalThis.PublicKeyCredential)
-		throw new Error('passkey-unavailable')
+	signal.throwIfAborted()
 	const created = await trace.step('passkey.create', () =>
-		navigator.credentials.create({
-			signal,
-			publicKey: {
-				challenge: random(32),
-				rp: { name: appName },
-				user: { id: text(scope.ownerId), name: scope.ownerId, displayName: appName },
-				pubKeyCredParams: [
-					{ type: 'public-key', alg: -7 },
-					{ type: 'public-key', alg: -257 }
-				],
-				authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-				attestation: 'none',
-				extensions: { prf: {} }
-			}
-		})
+		webAuthn().create({ ownerId: scope.ownerId, appName }, signal)
 	)
-	trace.log('passkey.create.result', {
-		prfEnabled:
-			created instanceof PublicKeyCredential &&
-			created.getClientExtensionResults().prf?.enabled === true
-	})
-	if (!(created instanceof PublicKeyCredential)) throw new Error('passkey-unavailable')
-	return { credentialId: encode(created.rawId), prfSalt: encode(random(32)) }
+	trace.log('passkey.create.result', { prfEnabled: created.prfEnabled })
+	return { credentialId: created.credentialId, prfSalt: encode(random(32)) }
 }
 
 export async function encryptPasskeySample(

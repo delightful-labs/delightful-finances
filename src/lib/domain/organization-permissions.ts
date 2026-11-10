@@ -12,6 +12,25 @@ export function canManageBankCredentials(
 	)
 }
 
+/** Matches the account read policy in permissions.ts; a read grant never
+ * authorizes a write. Native full-text reads recheck this against fresh facts. */
+export function canReadAccount(
+	membership: OrganizationMember | null | undefined,
+	organizationId: string | null,
+	accountId: string,
+	grants: readonly { accountId: string; access: 'read' | 'write' }[]
+): boolean {
+	if (!membership || membership.organizationId !== organizationId) return false
+	return (
+		membership.role === ORGANIZATION_ROLE.OWNER ||
+		membership.role === ORGANIZATION_ROLE.ADMIN ||
+		((membership.role === ORGANIZATION_ROLE.MEMBER ||
+			membership.role === ORGANIZATION_ROLE.VIEWER) &&
+			membership.accountAccessMode === ACCOUNT_ACCESS.ALL) ||
+		grants.some((grant) => grant.accountId === accountId)
+	)
+}
+
 export function canWriteAccount(
 	membership: OrganizationMember | null | undefined,
 	organizationId: string | null,

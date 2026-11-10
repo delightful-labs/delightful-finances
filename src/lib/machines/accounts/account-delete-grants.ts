@@ -1,3 +1,7 @@
+import type {
+	AccountGrantWrite,
+	AccountGrantNotice
+} from '../../contracts/account-presentation-contract.js'
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import type { Account, AccountMembership, OrganizationMember } from '#lib/schema.js'
 import { setup, types, createAsyncLogic, matchesState } from 'xstate'
@@ -17,15 +21,8 @@ export type DeleteGrantObservation = {
 	grants: readonly AccountMembership[]
 }
 
-export type GrantWrite =
-	| { kind: 'update'; grantId: string; canDelete: boolean }
-	| {
-			kind: 'insert'
-			organizationId: string
-			accountId: string
-			userId: string
-			canDelete: boolean
-	  }
+export type GrantWrite = AccountGrantWrite
+
 type Request = {
 	identityId: string
 	organizationId: string
@@ -49,10 +46,21 @@ type Event =
 	| { type: 'SET_DELETE'; accountId: string; userId: string; canDelete: boolean }
 	| { type: 'SHUTDOWN' }
 
-function canManage(observation: DeleteGrantObservation, request: Request) {
-	const role = observation.membership?.role
+export function canManageAccountDeleteGrants(observation: DeleteGrantObservation) {
 	return (
 		observation.sessionReady &&
+		!!observation.binding &&
+		!!observation.identityId &&
+		!!observation.organizationId &&
+		observation.membership?.userId === observation.identityId &&
+		observation.membership.organizationId === observation.organizationId &&
+		(observation.membership.role === ORGANIZATION_ROLE.OWNER ||
+			observation.membership.role === ORGANIZATION_ROLE.ADMIN)
+	)
+}
+function canManage(observation: DeleteGrantObservation, request: Request) {
+	return (
+		canManageAccountDeleteGrants(observation) &&
 		observation.identityId === request.identityId &&
 		observation.organizationId === request.organizationId &&
 		observation.binding === request.binding &&
@@ -60,7 +68,6 @@ function canManage(observation: DeleteGrantObservation, request: Request) {
 		!observation.failed &&
 		observation.membership?.userId === request.identityId &&
 		observation.membership.organizationId === request.organizationId &&
-		(role === ORGANIZATION_ROLE.OWNER || role === ORGANIZATION_ROLE.ADMIN) &&
 		observation.accounts.some(
 			(account) =>
 				account.id === request.accountId && account.organizationId === request.organizationId
@@ -326,6 +333,8 @@ function required<Value>(value: Value | undefined): Value {
 
 export type AccountDeleteGrantView = {
 	busy: boolean
+	canManage: boolean
+	notice: AccountGrantNotice | undefined
 	result: Result | undefined
 }
 
@@ -333,5 +342,23 @@ export function selectAccountDeleteGrantView(
 	snapshot: SnapshotFrom<ReturnType<typeof createAccountDeleteGrantMachine>>
 ): AccountDeleteGrantView {
 	const busy = typeof snapshot.value === 'object' && 'operating' in snapshot.value
-	return { busy, result: snapshot.context.result }
+	const result = snapshot.context.result
+	return {
+		busy,
+		result,
+		canManage:
+			snapshot.status === 'active' && canManageAccountDeleteGrants(snapshot.context.observation),
+		notice: result
+			? {
+					key:
+						result.outcome === 'succeeded'
+							? 'permissions.updated'
+							: result.outcome === 'failed'
+								? 'permissions.update_failed'
+								: 'permissions.manage_restricted',
+					variant: result.outcome === 'succeeded' ? 'success' : 'error',
+					accountId: result.request?.accountId ?? null
+				}
+			: undefined
+	}
 }

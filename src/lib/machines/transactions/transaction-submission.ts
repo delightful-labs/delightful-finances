@@ -25,8 +25,11 @@ export type TransactionAttachmentDb = Pick<
 	'all' | 'insert' | 'insertStreaming' | 'delete'
 >
 export type TransactionSubmissionDb = TransactionSaveDb & TransactionAttachmentDb
+export type TransactionSubmissionValues = TransactionSaveValues & {
+	selectedAttachments?: readonly File[]
+}
 type Input = FormOperationInput<
-	TransactionSaveValues,
+	TransactionSubmissionValues,
 	TransactionEntryScope,
 	TransactionEntryObservation
 >
@@ -86,8 +89,7 @@ function attachmentFailure(saved: TransactionSaveResult): Result {
 /** Keeps finance persistence independent, then coordinates its saved ID with the image batch. */
 export function createTransactionSubmissionMachine(
 	db: TransactionSaveDb,
-	observe: () => TransactionEntryObservation,
-	getAttachments: () => readonly File[] = () => []
+	observe: () => TransactionEntryObservation
 ) {
 	const save = createTransactionSaveMachine(db, observe)
 	const attachments = createTransactionAttachmentsMachine()
@@ -125,7 +127,7 @@ export function createTransactionSubmissionMachine(
 		context: ({ input }) => ({
 			input,
 			attachmentDb: hasAttachmentOperations(db) ? db : undefined,
-			files: getAttachments(),
+			files: input.request.values.selectedAttachments ?? [],
 			saved: undefined,
 			attachmentResult: undefined,
 			result: undefined
@@ -174,7 +176,8 @@ export function createTransactionSubmissionMachine(
 					src: 'save',
 					input: ({ context }) => {
 						const input = required(context.input)
-						return input
+						const { selectedAttachments, ...values } = input.request.values
+						return { ...input, request: { ...input.request, values } }
 					},
 					onDone: (args) => {
 						const { event } = args

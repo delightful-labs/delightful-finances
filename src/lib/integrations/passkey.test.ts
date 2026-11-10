@@ -7,6 +7,8 @@ import {
 	unlockCredential,
 	verifyPasskeySample
 } from './passkey.js'
+import { bindWebAuthn } from './webauthn-capability.js'
+import { browserWebAuthn } from './browser-webauthn.js'
 import type { BankTrace } from './diagnostics.js'
 
 vi.mock('./diagnostics.js', () => ({}))
@@ -34,6 +36,7 @@ const get = vi.fn(async () => new Credential())
 const signal = () => new AbortController().signal
 
 beforeEach(() => {
+	bindWebAuthn(browserWebAuthn)
 	output = new Uint8Array(32).fill(7).buffer
 	vi.stubGlobal('PublicKeyCredential', Credential)
 	vi.stubGlobal('isSecureContext', true)

@@ -1,0 +1,15 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"lib": [
+			"ES2024",
+			"WebWorker"
+		],
+		"noEmit": true
+	},
+	"include": [
+		"src/lib/runtime/worker/application.worker.ts",
+		"tests/worker-runtime/image.worker.ts"
+	],
+	"exclude": []
+}

@@ -14,21 +14,34 @@
 		categoryNames,
 		archivableTagIds,
 		archiveView,
-		onArchive
+		onArchive,
+		projected = false,
+		filter,
+		onFilter,
+		showFilter
 	}: {
 		tags: readonly Tag[]
 		categoryNames: ReadonlyMap<string, string>
 		archivableTagIds: readonly string[]
 		archiveView: ManagementView<string>
+		projected?: boolean
+		filter?: ArchiveFilterValue
+		onFilter?: ((value: ArchiveFilterValue) => void) | undefined
+		showFilter?: boolean
 		onArchive: (tagId: string) => void
 	} = $props()
 	let archiveFilter = $state<ArchiveFilterValue>('active')
+	$effect(() => {
+		if (filter !== undefined) archiveFilter = filter
+	})
 	const visibleTags = $derived(
-		tags.filter(
-			(row) =>
-				archiveFilter === 'all' ||
-				(archiveFilter === 'archived' ? !!row.archivedAt : !row.archivedAt)
-		)
+		projected
+			? tags
+			: tags.filter(
+					(row) =>
+						archiveFilter === 'all' ||
+						(archiveFilter === 'archived' ? !!row.archivedAt : !row.archivedAt)
+				)
 	)
 </script>
 
@@ -45,8 +58,8 @@
 	section="result"
 />
 
-{#if tags.length}
-	<ArchiveFilter bind:value={archiveFilter} />
+{#if showFilter ?? tags.length > 0}
+	<ArchiveFilter bind:value={archiveFilter} onchange={onFilter} />
 {/if}
 
 {#if visibleTags.length}

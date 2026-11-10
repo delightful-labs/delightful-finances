@@ -12,6 +12,8 @@
 	import { m } from '#lib/paraglide/messages.js'
 
 	type Suggestion = InternalTransferCandidate & {
+		amountLabel?: string
+		dateLabel?: string
 		accountName: string | undefined
 		description: TransactionRow['description'] | undefined
 	}
@@ -28,7 +30,8 @@
 		unlinkWritable,
 		unlinkPending,
 		linkedCounterpartHref,
-		onUnlink
+		onUnlink,
+		onOpenCounterpart
 	}: {
 		suggestions: readonly Suggestion[]
 		writableSuggestionIds: ReadonlySet<string>
@@ -42,6 +45,7 @@
 		unlinkWritable: boolean
 		unlinkPending: boolean
 		linkedCounterpartHref: string | null
+		onOpenCounterpart?: ((href: string) => void) | undefined
 		onUnlink: (() => void) | undefined
 	} = $props()
 
@@ -62,8 +66,22 @@
 	{#if editorState === 'linked'}
 		<p>{m['labels.linked_name']({ name: m['nouns.transfer']({ count: 1 }) })}</p>
 		{#if linkedCounterpartHref}
-			<AppLink href={linkedCounterpartHref}
-				>{m['actions.open_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</AppLink
+			<AppLink
+				href={linkedCounterpartHref}
+				onclick={(event) => {
+					if (
+						onOpenCounterpart &&
+						linkedCounterpartHref &&
+						!event.metaKey &&
+						!event.ctrlKey &&
+						!event.shiftKey &&
+						!event.altKey &&
+						event.button === 0
+					) {
+						event.preventDefault()
+						onOpenCounterpart(linkedCounterpartHref)
+					}
+				}}>{m['actions.open_subject']({ subject: m['nouns.transaction']({ count: 1 }) })}</AppLink
 			>
 		{/if}
 		{#if unlinkAvailable && onUnlink}
@@ -101,12 +119,15 @@
 								onchange={() => onSelect?.(suggestion.id)}
 							/>
 							<span>
-								{formatDate(suggestion.bookedOn)} · {suggestion.accountName ??
+								{suggestion.dateLabel ?? formatDate(suggestion.bookedOn)} · {suggestion.accountName ??
 									m['status.unavailable_subject']({ subject: m['nouns.account']({ count: 1 }) })}
 								{#if suggestion.description}
 									· {suggestion.description}{/if}
 							</span>
-							<span>{formatMoney(suggestion.amountMinor, suggestion.currency, getLocale())}</span>
+							<span
+								>{suggestion.amountLabel ??
+									formatMoney(suggestion.amountMinor, suggestion.currency, getLocale())}</span
+							>
 						</label>
 					</li>
 				{/each}

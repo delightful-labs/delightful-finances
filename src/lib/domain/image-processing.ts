@@ -1,6 +1,21 @@
-import pica, { type PicaCanvas } from 'pica'
+import { Pica, type PicaCanvas } from 'pica'
 
-const resizer = pica()
+/** Pica's scratch allocations omit preferOffscreen on some resize paths.
+ * Bind its public canvas factory to the current realm, including those calls. */
+class FinanceImageResizer extends Pica {
+	override createCanvas(
+		width: number,
+		height: number,
+		preference?: { preferOffscreen?: boolean }
+	): PicaCanvas {
+		return 'document' in globalThis
+			? super.createCanvas(width, height, preference)
+			: new OffscreenCanvas(width, height)
+	}
+}
+const resizer = new FinanceImageResizer({
+	features: 'document' in globalThis ? ['js', 'wasm', 'ww'] : ['js', 'wasm']
+})
 
 export type ImageDimensions = { width: number; height: number }
 export type ImageProcessingOptions = {
@@ -31,7 +46,7 @@ export function fitImageDimensions(
 
 export function createImageCanvas(image: ImageBitmap, options: ImageProcessingOptions) {
 	const { width, height } = fitImageDimensions(image, options)
-	return resizer.createCanvas(width, height)
+	return resizer.createCanvas(width, height, { preferOffscreen: true })
 }
 
 export function resizeImage(image: ImageBitmap, canvas: PicaCanvas) {
@@ -42,6 +57,12 @@ export function encodeImage(
 	canvas: PicaCanvas,
 	options: ImageProcessingOptions
 ): Promise<Blob | null> {
+	if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
+		return canvas.convertToBlob({
+			type: options.mimeType,
+			...(options.quality === undefined ? {} : { quality: options.quality })
+		})
+	}
 	return resizer.toBlob(canvas, options.mimeType, options.quality)
 }
 

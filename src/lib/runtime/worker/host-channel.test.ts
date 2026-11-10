@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createWorkerHostClient } from './host-client.js'
-import { serveWindowHost } from './window-host.js'
+import { serveWindowHost, type WindowHostBinding } from './window-host.js'
 import {
 	HOST_PROTOCOL_VERSION,
 	HOST_REQUEST_TIMEOUT_MS,
@@ -59,7 +59,7 @@ function manualClient(port: MessagePort) {
 			})
 		})
 }
-function fixture() {
+function fixture(broker: WindowHostBinding['broker'] = { url: brokerUrl, baseName }) {
 	const ports = channel(),
 		values = new Map<string, string>()
 	const storage = {
@@ -78,7 +78,7 @@ function fixture() {
 	}
 	const stop = serveWindowHost(
 		ports.port2,
-		{ scope, accountStorageKey: key, broker: { url: brokerUrl, baseName } },
+		{ scope, accountStorageKey: key, broker },
 		{
 			origin: 'https://finance.example',
 			storage,
@@ -202,4 +202,23 @@ it('sanitizes native storage errors instead of exposing private exception conten
 		reason: 'unavailable',
 		writeOutcome: 'unknown'
 	})
+})
+
+it('admits bounded SDK-selected account roots on the private channel without changing the script capability', async () => {
+	const f = fixture({ url: brokerUrl, source: 'sdk' })
+	for (const name of ['jazz-runtime:first-account', 'jazz-runtime:second-account']) {
+		const generation = `jazz:shared-worker-generation:${name}`
+		expect(await f.client.broker.readGeneration(generation)).toBeNull()
+		await f.client.broker.writeGeneration(generation, '1')
+		const opened = await f.client.broker.open(brokerUrl, `${name}:generation-1`)
+		cleanup.add(() => opened.port.close())
+		expect(f.values.get(generation)).toBe('1')
+	}
+	await expect(
+		f.client.broker.open('https://foreign.example/broker.js', 'jazz-runtime:third:generation-0')
+	).rejects.toMatchObject({ reason: 'rejected' })
+	await expect(f.client.broker.readGeneration('unrelated-storage-key')).rejects.toMatchObject({
+		reason: 'rejected'
+	})
+	expect(f.openBroker).toHaveBeenCalledTimes(2)
 })

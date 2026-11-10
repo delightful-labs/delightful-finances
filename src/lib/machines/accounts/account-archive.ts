@@ -1,3 +1,4 @@
+import type { AccountArchiveNotice } from '../../contracts/account-presentation-contract.js'
 import { required } from '../bank-sync/identity.js'
 import {
 	archiveAllowed,
@@ -16,6 +17,7 @@ export type AccountArchiveView = {
 	kind: 'sessionUnavailable' | 'selectWorkspace' | 'loading' | 'loadFailed' | 'ready' | 'closed'
 	rows: readonly { account: ArchiveObservation['accounts'][number]; action: ArchiveRowAction }[]
 	feedback: ArchiveResult | undefined
+	notice?: AccountArchiveNotice | undefined
 }
 type Context = {
 	observation: ArchiveObservation
@@ -222,6 +224,26 @@ export function createAccountArchiveMachine(
 		}
 	})
 }
+export function selectAccountArchiveNotice(
+	result: ArchiveResult | undefined
+): AccountArchiveNotice | undefined {
+	if (!result) return undefined
+	return {
+		key:
+			result.outcome === 'succeeded'
+				? 'status.archived_subject_name'
+				: result.settlement === 'locallyPersisted'
+					? 'accounts.archive_interrupted_saved'
+					: result.outcome === 'scopeChanged'
+						? 'accounts.archive_scope_changed'
+						: result.outcome === 'denied'
+							? 'accounts.archive_restricted'
+							: 'errors.archive_subject',
+		variant: result.settlement === 'locallyPersisted' ? 'success' : 'error',
+		name: result.request.name
+	}
+}
+
 export function selectAccountArchiveView(
 	snapshot: SnapshotFrom<ReturnType<typeof createAccountArchiveMachine>>
 ): AccountArchiveView {
@@ -238,7 +260,12 @@ export function selectAccountArchiveView(
 					: snapshot.hasTag('loading') || snapshot.matches('assessing')
 						? 'loading'
 						: 'ready'
+	const feedback =
+		snapshot.context.result && archiveScopeMatches(snapshot.context.result.request, observation)
+			? snapshot.context.result
+			: undefined
 	return {
+		notice: selectAccountArchiveNotice(feedback),
 		kind,
 		rows: observation.accounts
 			.filter((account) => account.organizationId === observation.organizationId)
@@ -252,9 +279,6 @@ export function selectAccountArchiveView(
 							? 'archiving'
 							: 'disabled'
 			})),
-		feedback:
-			snapshot.context.result && archiveScopeMatches(snapshot.context.result.request, observation)
-				? snapshot.context.result
-				: undefined
+		feedback
 	}
 }

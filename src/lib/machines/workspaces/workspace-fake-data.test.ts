@@ -3,7 +3,7 @@ import { seedFixture } from '../samples/fake-data.fixture.js'
 import { createActor, toPromise, waitFor } from 'xstate'
 
 const environment = vi.hoisted(() => ({ PUBLIC_FAKE_DATA: 'false', PUBLIC_DEBUG: 'false' }))
-vi.mock('$app/env/public', () => environment)
+vi.mock('#lib/runtime/public-flags.js', () => environment)
 beforeEach(() => vi.resetModules())
 afterEach(() => vi.restoreAllMocks())
 

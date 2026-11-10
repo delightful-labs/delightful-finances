@@ -74,8 +74,7 @@
 	const entryForm = createTransactionEditFormOptions({
 		binding: db,
 		observe,
-		db,
-		getAttachments: () => selectedAttachments
+		db
 	})
 	const editWorkflow = createTransactionEditMachine(entryForm, db, trackTransferWrite, {
 		captureScope: (request) => captureTransferMutationScope(readiness.actor.getSnapshot(), request),

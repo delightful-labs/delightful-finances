@@ -10,8 +10,9 @@ rejected optimizations are not equivalent to delivery. Commit/deployment authori
 
 The production Jazz cutover is the immediate priority. Follow
 [production-worker-cutover.md](production-worker-cutover.md) for the current ordered
-checklist and Clipper reference implementation. Production still starts Jazz in
-Window; worker-harness passes do not close the production cutover tasks. The older
+checklist and Clipper reference implementation. The production entry now starts Jazz in its worker, with legacy route admission
+gated pending the user’s point-2 review. Harness passes do not close production
+shell/route integration tasks. The older
 startup backlog below remains historical/contextual and does not supersede this order.
 
 ## Specification and guidance

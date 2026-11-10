@@ -6,12 +6,14 @@
 		start,
 		end,
 		onchange,
-		onpreset
+		onpreset,
+		preset
 	}: {
 		start: string
 		end: string
 		onchange: (start: string, end: string) => void
 		onpreset: (days: number) => void
+		preset?: '7' | '30' | 'custom' | undefined
 	} = $props()
 
 	// Keep custom fields mounted while the parent propagates edited bounds,
@@ -19,6 +21,7 @@
 	let customRanges = $state<{ start: string; end: string }[]>([])
 	const selected = $derived.by(() => {
 		if (customRanges.some((range) => range.start === start && range.end === end)) return 'custom'
+		if (preset) return preset
 		const today = new Date()
 		if (end === todayDateOnly(today)) {
 			for (const days of [7, 30]) {

@@ -1,4 +1,4 @@
-import { PUBLIC_SIMPLEFIN_DEMO } from '$app/env/public'
+import { PUBLIC_SIMPLEFIN_DEMO } from '#lib/runtime/public-flags.js'
 import type { BankTrace } from './diagnostics.js'
 import { requestProviderWorker } from './simplefin-worker.js'
 import { requestRelay, type RelayRequest } from './simplefin-relay.js'

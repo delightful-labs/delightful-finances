@@ -11,7 +11,7 @@
 	} from '#lib/machines/accounts/account-archive.js'
 	import { stopAfterShutdown } from '#lib/runtime/actor-lifecycle.js'
 	import { createActor } from 'xstate'
-	import { archiveAccount } from '#lib/data.js'
+	import { archiveAccount, persistAccountDeleteGrant } from '#lib/data.js'
 	import { app } from '#lib/schema.js'
 	import { getDb, getJazzSession } from 'jazz-tools/svelte'
 	import {
@@ -110,21 +110,7 @@
 			grants: observeRows(allAccountGrants.current)
 		}
 	}
-	function persistDeleteGrant(write: GrantWrite) {
-		return write.kind === 'update'
-			? db.update(app.accountMemberships, write.grantId, { canDelete: write.canDelete }).wait({
-					tier: 'local'
-				})
-			: db
-					.insert(app.accountMemberships, {
-						organizationId: write.organizationId,
-						accountId: write.accountId,
-						userId: write.userId,
-						access: 'read',
-						canDelete: write.canDelete
-					})
-					.wait({ tier: 'local' })
-	}
+	const persistDeleteGrant = (write: GrantWrite) => persistAccountDeleteGrant(db, write)
 	const actor = createActor(
 		createAccountArchiveMachine((request) => archiveAccount(db, request.accountId), observe),
 		{ inspect: inspectActor }
@@ -183,9 +169,8 @@
 		onActionsOpenChange={(open) => (accountActionsOpen = open)}
 		grantQueries={[organizationMembers, allAccountGrants]}
 		deleteGrantView={{
-			canManage:
-				membership.current?.role === ORGANIZATION_ROLE.OWNER ||
-				membership.current?.role === ORGANIZATION_ROLE.ADMIN,
+			canManage: deleteGrantView.canManage,
+			notice: deleteGrantView.notice,
 			busy: deleteGrantView.busy,
 			result: deleteGrantView.result,
 			members: observeRows(organizationMembers.current).filter(

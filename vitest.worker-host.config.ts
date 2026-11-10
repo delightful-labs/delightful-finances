@@ -6,6 +6,8 @@ export default defineConfig({
 	tsconfig: './tsconfig.worker-host.json',
 	test: {
 		include: [
+			'src/lib/runtime/worker/webauthn-channel.test.ts',
+			'src/lib/runtime/worker/native-capabilities.test.ts',
 			'src/lib/runtime/worker/account-locks.test.ts',
 			'src/lib/runtime/worker/host-protocol.test.ts',
 			'src/lib/runtime/worker/host-channel.test.ts',

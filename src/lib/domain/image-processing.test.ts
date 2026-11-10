@@ -11,18 +11,29 @@ import {
 	resizeImage
 } from './image-processing.js'
 
+const convertToBlob = vi.fn()
 const resizer = vi.hoisted(() => ({
 	init: vi.fn(),
 	createCanvas: vi.fn(),
 	resize: vi.fn(),
 	toBlob: vi.fn()
 }))
-vi.mock('pica', () => ({ default: () => resizer }))
+vi.mock('pica', () => ({
+	Pica: class {
+		init = resizer.init
+		resize = resizer.resize
+		toBlob = resizer.toBlob
+		createCanvas(width: number, height: number, preference?: { preferOffscreen?: boolean }) {
+			return resizer.createCanvas(width, height, preference)
+		}
+	}
+}))
 
 beforeEach(() =>
 	vi.stubGlobal(
 		'OffscreenCanvas',
 		class {
+			convertToBlob = convertToBlob
 			constructor(
 				public width: number,
 				public height: number
@@ -82,13 +93,17 @@ describe('shared image processing platform', () => {
 			quality: 0.85
 		}
 		const canvas = createImageCanvas(bitmap, options)
-		expect(resizer.createCanvas).toHaveBeenCalledExactlyOnceWith(128, 256)
+		expect(canvas).toBeInstanceOf(OffscreenCanvas)
+		expect(canvas.width).toBe(128)
+		expect(canvas.height).toBe(256)
+		expect(resizer.createCanvas).not.toHaveBeenCalled()
 		await resizeImage(bitmap, canvas)
 		expect(resizer.resize).toHaveBeenCalledExactlyOnceWith(bitmap, canvas)
 		const blob = new Blob(['encoded'], { type: 'image/webp' })
-		resizer.toBlob.mockResolvedValueOnce(blob)
+		convertToBlob.mockResolvedValueOnce(blob)
 		expect(await encodeImage(canvas, options)).toBe(blob)
-		expect(resizer.toBlob).toHaveBeenCalledExactlyOnceWith(canvas, 'image/webp', 0.85)
+		expect(convertToBlob).toHaveBeenCalledExactlyOnceWith({ type: 'image/webp', quality: 0.85 })
+		expect(resizer.toBlob).not.toHaveBeenCalled()
 		expect(await readImageBytes(blob)).toEqual(new TextEncoder().encode('encoded'))
 		releaseImageBitmap(bitmap)
 		expect(bitmap.close).toHaveBeenCalledOnce()

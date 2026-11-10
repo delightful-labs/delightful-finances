@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { INCOME, EXPENSE } from '#lib/domain/transaction-kind.js'
+	import type { Snippet } from 'svelte'
 	import { InputText, Select } from 'delightful-ui'
 	import type { Tag, Category } from '#lib/schema.js'
-	import type { ManagementView, ManagementScope } from '#lib/contracts/management-contract.js'
+	import type { ManagementView } from '#lib/contracts/management-contract.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import { formReasonText } from '#lib/forms/form-messages.js'
 	import FormModal from '../forms/FormModal.svelte'
@@ -14,15 +15,23 @@
 		onsubmit,
 		onreset,
 		onRetryReadiness,
-		categories
+		categories,
+		categoriesProjected = false,
+		projectedKind,
+		onKindChange,
+		categoryOptionsControls
 	}: {
-		scope: ManagementScope
+		scope: unknown
 		view: ManagementView<Tag>
 		onopen: () => void
 		onsubmit: (event: SubmitEvent) => void
 		onreset: (event: Event) => void
 		onRetryReadiness: () => void
 		categories: readonly Category[]
+		categoriesProjected?: boolean
+		projectedKind?: 'income' | 'expense' | undefined
+		onKindChange?: ((kind: 'income' | 'expense') => void) | undefined
+		categoryOptionsControls?: Snippet<[string]> | undefined
 	} = $props()
 	let kind = $state<string>(EXPENSE)
 	let categoryId = $state('')
@@ -69,8 +78,11 @@
 			defaultValue={EXPENSE}
 			bind:value={kind}
 			disabled={!form.fieldsEditable}
-			onchange={() => {
+			onchange={(event) => {
 				categoryId = ''
+				if (!(event.currentTarget instanceof HTMLSelectElement)) return
+				const selected = event.currentTarget.value
+				if (selected === INCOME || selected === EXPENSE) onKindChange?.(selected)
 			}}
 		>
 			<option value={EXPENSE}>{m['nouns.expense']({ count: 2 })}</option>
@@ -92,7 +104,7 @@
 			<option value=""
 				>{m['labels.no_subject']({ subject: m['nouns.category']({ count: 1 }) })}</option
 			>
-			{#each categories.filter((category) => category.kind === kind) as category (category.id)}
+			{#each categoriesProjected ? (projectedKind === undefined || projectedKind === kind ? categories : []) : categories.filter((category) => category.kind === kind) as category (category.id)}
 				<option value={category.id}
 					>{category.name} ({category.kind === EXPENSE
 						? m['nouns.expense']({ count: 2 })
@@ -100,6 +112,7 @@
 				>
 			{/each}
 		</Select>
+		{@render categoryOptionsControls?.(kind)}
 	{/snippet}
 	{#snippet feedback(view)}
 		<FormFeedback

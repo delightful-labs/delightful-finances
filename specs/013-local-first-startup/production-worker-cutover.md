@@ -4,13 +4,17 @@ Updated: 2026-11-10. This is the active execution checklist for PR #67.
 
 ## Current truth and immediate priority
 
-**Production Finance still starts Jazz and its application/domain root in Window.**
-`src/routes/+layout.svelte` creates `createApplicationReadinessMachine`, calls
-`getJazzStartupBinding`, and mounts `JazzSessionProvider`. Worker integration tests
-exercise a separate runtime. Their passing results do not prove production migration.
+**Point 1 implemented; awaiting user review before point 2.** The production layout
+now mounts `WorkerApplication.svelte`, which starts `FinanceWindowConnection` and
+the existing worker-owned Jazz application. The Window application actor, startup
+binding and `JazzSessionProvider` have been removed from that layout.
 
-The next milestone is moving this actual production entry point to the existing
-application worker. Do not defer that milestone behind further generic transport
+**Transitional limitation:** the old shell/pages still depend on Window SDK context.
+Their snippets remain gated at the startup boundary rather than starting a second
+SDK or mounting with missing context. The app is not yet a usable migrated finance
+UI. Connecting that shell/routes is point 2 and requires the user's next approval.
+
+The next approved milestone will be connecting the shell and routes to that worker. Do not defer that milestone behind further generic transport
 or optional feature work. Keep the complete feature migration in scope, but prove
 production ownership before calling subsequent feature adapters production-ready.
 
@@ -46,7 +50,7 @@ syntax, or replace Finance's stricter custody/backpressure safeguards blindly.
   worker entry point and UI context. Record the exact checkout above.
 - [x] P002 Verify Finance's actual production startup and distinguish it from the
   worker harness. Inventory reachable SDK/context consumers before changing ownership.
-- [ ] P003 Replace production layout startup with `FinanceWindowConnection` and
+- [x] P003 Replace production layout startup with `FinanceWindowConnection` and
   `createFinanceWindowRuntime` (or a thin production integration component composing
   them). Bind route observations and native lifecycle on mount; retain the existing
   account namespace and persisted identity. Mount exactly one application SDK.
@@ -63,6 +67,15 @@ syntax, or replace Finance's stricter custody/backpressure safeguards blindly.
 - [ ] P007 Close every client and reopen the normal app with the remote withholding
   replies; prove the same persisted identity and data. Verify honest shutdown,
   route changes, worker failure, and a pending write without early termination.
+
+Focused P003 evidence: `tests/production-worker-bootstrap.browser.test.ts` serves
+the normal SvelteKit `/` layout (no harness page) with an isolated unavailable
+endpoint. Test guards throw if the SDK loader or application factory executes in
+Window. Chromium passes with one application worker, a real CLOSED/native-disposal
+receipt and the same persisted identity on a new page after every client closes.
+The focused browser case passes (6.08s), both Window lifecycle suites pass (5 tests),
+and Svelte/test typing checks pass. This does not prove usable routes, financial
+writes through the production shell, a production bundle, or P004–P007 completion.
 
 Milestone 1 is complete only with evidence from the served production layout.
 The `/__worker_runtime` harness alone cannot close P003–P007.
