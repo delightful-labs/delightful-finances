@@ -151,6 +151,7 @@ export function createBankSyncMachine(
 		DISCOVER: types<EventPayload<Event, 'DISCOVER'>>(),
 		SYNC: types<EventPayload<Event, 'SYNC'>>(),
 		MAP: types<EventPayload<Event, 'MAP'>>(),
+		RECONNECT: types<EventPayload<Event, 'RECONNECT'>>(),
 		CREATE_ACCOUNT: types<EventPayload<Event, 'CREATE_ACCOUNT'>>(),
 		DISCONNECT: types<EventPayload<Event, 'DISCONNECT'>>(),
 		CONNECT: types<EventPayload<Event, 'CONNECT'>>(),
@@ -743,6 +744,10 @@ export function createBankSyncMachine(
 						if (!args.guards.canOperate(args)) return
 						const { event } = args
 						return { target: '#bank.running', context: { command: event } }
+					},
+					RECONNECT: (args) => {
+						if (!args.guards.canOperate(args)) return
+						return { target: '#bank.running', context: { command: args.event } }
 					},
 					MAP: (args) => {
 						if (!args.guards.canOperate(args)) return

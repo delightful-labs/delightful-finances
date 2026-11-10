@@ -117,7 +117,9 @@ export function mappingFixture() {
 	})
 	const write = createAccountWriteMachine(deps).provide({
 		actors: {
-			providerLinks: createAsyncLogic({ run: async (): Promise<Link[]> => [] }),
+			providerLinks: createAsyncLogic({
+				run: async (_: { input: AccountWrite }): Promise<Link[]> => []
+			}),
 			account: createAsyncLogic({ run: async () => [account] }),
 			destinationLinks: createAsyncLogic({ run: async (): Promise<Link[]> => [] }),
 			linkId: createAsyncLogic({ run: async () => link.id }),

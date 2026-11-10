@@ -1,3 +1,4 @@
+import { createAccountReconnectMachine } from './account-reconnect.js'
 import { createAccountCreationMachine } from './account-create.js'
 import { createAccountWriteMachine } from './account-write.js'
 import { createAccountUnlinkMachine } from './account-unlink.js'
@@ -12,6 +13,7 @@ type Context = Input & { provider: ProviderSummary | undefined; error: unknown }
 
 export function createAccountMappingMachine(dependencies: Dependencies) {
 	const actors = {
+		reconnect: createAccountReconnectMachine(dependencies),
 		createAccount: createAccountCreationMachine(dependencies),
 		mapAccount: createAccountWriteMachine(dependencies),
 		unlinkAccount: createAccountUnlinkMachine(dependencies)
@@ -24,6 +26,7 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 	type NativeEvent0 =
 		| import('xstate').InferEvents<typeof events0>
 		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['reconnect']>
 				| import('xstate').OutputFrom<(typeof actors)['createAccount']>
 				| import('xstate').OutputFrom<(typeof actors)['mapAccount']>
 				| import('xstate').OutputFrom<(typeof actors)['unlinkAccount']>
@@ -36,6 +39,7 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 			input: types<Input>(),
 			output: types<Result<undefined>>(),
 			children: {
+				reconnect: types<import('xstate').ActorRefFrom<(typeof actors)['reconnect']>>(),
 				createAccount: types<import('xstate').ActorRefFrom<(typeof actors)['createAccount']>>(),
 				mapAccount: types<import('xstate').ActorRefFrom<(typeof actors)['mapAccount']>>(),
 				unlinkAccount: types<import('xstate').ActorRefFrom<(typeof actors)['unlinkAccount']>>()
@@ -62,6 +66,7 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 			checkingCommand: {
 				always: (args) => {
 					const { context } = args
+					if (context.work.command.type === 'RECONNECT') return { target: 'reconnecting' }
 					if (context.work.command.type === 'CREATE_ACCOUNT') {
 						return { target: 'selectingProvider' }
 					}
@@ -69,6 +74,28 @@ export function createAccountMappingMachine(dependencies: Dependencies) {
 						return { target: 'selectingProvider' }
 					}
 					return { target: 'invalidMapping' }
+				}
+			},
+			reconnecting: {
+				on: {
+					CANCEL: (_, enq) => {
+						enq.sendTo('reconnect', { type: 'CANCEL' })
+						return {}
+					},
+					SHUTDOWN: (_, enq) => {
+						enq.sendTo('reconnect', { type: 'SHUTDOWN' })
+						return {}
+					}
+				},
+				invoke: {
+					id: 'reconnect',
+					src: 'reconnect',
+					input: ({ context }) => context,
+					onDone: ({ event }) =>
+						event.output.ok
+							? { target: 'complete' }
+							: { target: 'failed', context: { error: event.output.error } },
+					onError: ({ event }) => ({ target: 'failed', context: { error: event.error } })
 				}
 			},
 			selectingProvider: {

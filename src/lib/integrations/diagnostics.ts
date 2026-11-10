@@ -49,6 +49,7 @@ type Details = {
 	event?:
 		| 'CONNECT'
 		| 'DISCOVER'
+		| 'RECONNECT'
 		| 'SYNC'
 		| 'MAP'
 		| 'CREATE_ACCOUNT'

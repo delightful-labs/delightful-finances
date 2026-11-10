@@ -70,6 +70,7 @@
 		"archived": "Archived only"
 	},
 	"bank": {
+		"reconnect_existing_accounts": "Reconnect existing accounts",
 		"system_account_name": "Bank Sync",
 		"account_already_linked": "This local account is already linked to another provider account. Add a new account or select an unlinked account.",
 		"cancelled": "Operation cancelled. Credential locked. If token claim had begun, revoke it at SimpleFIN before reconnecting.",
@@ -138,7 +139,8 @@
 		"offline": "Offline",
 		"online": "Online",
 		"start_error": "Your finances could not be opened.",
-		"starting": "Loading your finances…"
+		"starting": "Loading your finances…",
+		"version_conflict": "Finance is open in another version. Update your other Finance windows to continue. This window will resume automatically."
 	},
 	"defaults": {
 		"categories": {

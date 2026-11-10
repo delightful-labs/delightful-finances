@@ -1752,3 +1752,112 @@ test(
 		expect(operations).toEqual(['claim', 'discover', 'discover'])
 	}
 )
+
+test(
+	'reconnects previously created accounts in one action after replacing a passkey',
+	{ tag: ['@bank-sync'] },
+	async ({ page }) => {
+		const operations: string[] = []
+		const accounts = ['Checking', 'Savings'].map((name) => ({
+			id: name.toLowerCase(),
+			name: `Reconnect ${name}`,
+			currency: 'USD',
+			org: { 'sfin-url': 'https://bank.example', domain: 'bank.example' }
+		}))
+		await page.context().route('**/api/simplefin', async (route) => {
+			const operation = resilienceOperation(route.request().postDataJSON())
+			operations.push(operation)
+			if (operation === 'claim')
+				await route.fulfill({ body: 'https://test:test@bridge.simplefin.org/simplefin' })
+			else await route.fulfill({ json: { errors: [], accounts } })
+		})
+		await connectResilienceBank(page)
+		await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+		for (const account of accounts) {
+			await page.getByRole('button', { name: `Add Account “${account.name}”`, exact: true }).click()
+			await expect(page.getByText(`Linked to ${account.name}`, { exact: true })).toBeVisible()
+		}
+		const before = await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing disposable test database')
+			const accounts = await db.all(app.accounts)
+			const links = await db.all(app.simplefinAccountLinks)
+			const checking = accounts.find((account) => account.name === 'Reconnect Checking')
+			if (!checking) throw new Error('Missing created checking account')
+			await db
+				.update(app.accounts, checking.id, { name: 'Renamed Checking' })
+				.wait({ tier: 'local' })
+			// Exercise missing-link recovery while retaining a second mapping unchanged.
+			const removed = links.find((link) => link.accountId === checking.id)
+			if (!removed) throw new Error('Missing original link')
+			await db.delete(app.simplefinAccountLinks, removed.id).wait({ tier: 'local' })
+			return {
+				accountIds: accounts.map((account) => account.id).sort(),
+				retained: links.filter((link) => link.id !== removed.id)
+			}
+		})
+		await page.getByRole('button', { name: 'Disconnect Bank sync', exact: true }).click()
+		await expect(page.getByRole('button', { name: 'Create Passkey', exact: true })).toBeVisible()
+		// Re-run setup with a different PRF credential; the original passkey cannot unlock this envelope.
+		await page.evaluate(() => {
+			class ReplacementCredential {
+				rawId = new Uint8Array([4, 5, 6]).buffer
+				getClientExtensionResults() {
+					return { prf: { enabled: true, results: { first: new Uint8Array(32).fill(8).buffer } } }
+				}
+			}
+			Object.defineProperty(window, 'PublicKeyCredential', {
+				value: ReplacementCredential,
+				configurable: true
+			})
+			Object.defineProperty(navigator, 'credentials', {
+				configurable: true,
+				value: {
+					create: async () => new ReplacementCredential(),
+					get: async () => new ReplacementCredential()
+				}
+			})
+		})
+		await page
+			.getByLabel('SimpleFIN Bridge setup token', { exact: true })
+			.fill(btoa('https://bridge.simplefin.org/simplefin/claim/replacement-token'))
+		for (const name of [
+			'Create Passkey',
+			'Test encryption with my passkey',
+			'Test unlocking with my passkey',
+			'Connect and save securely'
+		])
+			await page.getByRole('button', { name, exact: true }).click()
+		await page.getByRole('button', { name: 'Discover Accounts', exact: true }).click()
+		await expect(page.getByText('Linked to Reconnect Savings', { exact: true })).toBeVisible()
+		await page.getByRole('button', { name: 'Reconnect existing accounts', exact: true }).click()
+		await expect(page.getByText('Linked to Renamed Checking', { exact: true })).toBeVisible()
+		await expect(
+			page.getByRole('button', { name: 'Reconnect existing accounts', exact: true })
+		).toHaveCount(0)
+		const after = await page.evaluate(async () => {
+			const schemaPath = '/src/lib/schema.ts',
+				sessionPath = '/src/lib/runtime/jazz-session.ts'
+			const { app }: typeof import('../src/lib/schema.js') = await import(schemaPath)
+			const { getCurrentJazzSession }: typeof import('../src/lib/runtime/jazz-session.js') =
+				await import(sessionPath)
+			const db = getCurrentJazzSession()?.getSnapshot().client?.db
+			if (!db) throw new Error('Missing disposable test database')
+			return {
+				accountIds: (await db.all(app.accounts)).map((account) => account.id).sort(),
+				links: await db.all(app.simplefinAccountLinks),
+				transactions: await db.all(app.transactions)
+			}
+		})
+		expect(after.accountIds).toEqual(before.accountIds)
+		expect(after.links).toHaveLength(2)
+		expect(after.links).toEqual(expect.arrayContaining(before.retained))
+		expect(after.transactions).toHaveLength(0)
+		expect(operations).toEqual(['claim', 'discover', 'claim', 'discover'])
+	}
+)

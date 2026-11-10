@@ -381,7 +381,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 					if (context.command.type === 'DISCONNECT') {
 						return { target: 'authorizingDisconnect' }
 					}
-					if (context.command.type === 'MAP' || context.command.type === 'CREATE_ACCOUNT') {
+					if (
+						context.command.type === 'MAP' ||
+						context.command.type === 'CREATE_ACCOUNT' ||
+						context.command.type === 'RECONNECT'
+					) {
 						return { target: 'authorizingMapping' }
 					}
 					return { target: 'unlocking' }

@@ -28,6 +28,7 @@
 		onSaveConnection,
 		onConnect,
 		onDiscover,
+		onReconnect,
 		onSync,
 		onMap,
 		onCreateAccount,
@@ -42,6 +43,7 @@
 		onSaveConnection: () => void
 		onConnect: (token: string) => void
 		onDiscover: () => void
+		onReconnect: () => void
 		onSync: () => void
 		onMap: (providerId: string, accountId: string) => void
 		onCreateAccount: (providerId: string) => void
@@ -187,6 +189,11 @@
 			</Button>
 
 			{#if busy}<Button type="button" onclick={onCancel}>{m['actions.cancel']()}</Button>{/if}
+			{#if providerAccounts.some((provider) => provider.mapping.kind === 'unmapped')}
+				<Button type="button" onclick={onReconnect} disabled={busy}>
+					{m['bank.reconnect_existing_accounts']()}
+				</Button>
+			{/if}
 			<ul>
 				{#each providerAccounts as provider (provider.id)}
 					<li>
