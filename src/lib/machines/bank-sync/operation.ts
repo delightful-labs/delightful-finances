@@ -9,7 +9,7 @@ import {
 import { createAuthorizationMachine } from './authorization.js'
 import { createAccountMappingMachine } from './accounts.js'
 import { createImportMachine } from './import.js'
-import { createPreparationMachine } from './preparation.js'
+import { createPreparationMachine, type PreparedScope } from './preparation.js'
 import { required } from './identity.js'
 import { bankLock } from './lock.js'
 import {
@@ -151,6 +151,15 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 	const actors = {
 		lock: bankLock,
 		prepare: createPreparationMachine(dependencies),
+		startWork: createAsyncLogic<OperationWork, { command: BankCommand; prepared: PreparedScope }>({
+			run: async ({ input }) => ({
+				command: input.command,
+				current: required(input.prepared.connection),
+				scope: input.prepared.scope,
+				trace: createBankTrace(input.command.type),
+				attemptAt: new Date()
+			})
+		}),
 		authorize: createAuthorizationMachine(dependencies),
 		disconnect,
 		unlock,
@@ -211,6 +220,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			children: {
 				lock: types<import('xstate').ActorRefFrom<(typeof actors)['lock']>>(),
 				prepare: types<import('xstate').ActorRefFrom<(typeof actors)['prepare']>>(),
+				startWork: types<import('xstate').ActorRefFrom<(typeof actors)['startWork']>>(),
 				authorize: types<import('xstate').ActorRefFrom<(typeof actors)['authorize']>>(),
 				disconnect: types<import('xstate').ActorRefFrom<(typeof actors)['disconnect']>>(),
 				unlock: types<import('xstate').ActorRefFrom<(typeof actors)['unlock']>>(),
@@ -224,6 +234,36 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 			},
 			meta: types<BankViewMeta>()
 		},
+		states: {
+			locking: {},
+			preparing: {},
+			allocatingWork: {
+				schemas: { input: types<{ command: BankCommand; prepared: PreparedScope }>() }
+			},
+			choosingOperation: {},
+			disconnecting: { states: { working: {}, cancelling: {}, failing: {} } },
+			mapping: { states: { working: {}, cancelling: {}, failing: {} } },
+			authorizingDisconnect: {},
+			authorizingMapping: {},
+			unlocking: {},
+			authorizingFetch: {},
+			fetching: {},
+			authorizingResponse: {},
+			checkingDiscovery: {},
+			discovering: {},
+			importing: { states: { working: {}, cancelling: {}, failing: {} } },
+			classifyingSuccess: {},
+			recordingComplete: {},
+			recordingPartial: {},
+			preparingFailure: {},
+			recordingFailure: {},
+			persistingOutcome: { states: { working: {}, cancelling: {}, failing: {} } },
+			settlingFailure: {},
+			complete: { type: 'final' },
+			partial: { type: 'final' },
+			cancelled: { type: 'final' },
+			failed: { type: 'final' }
+		},
 		actors,
 		guards: {
 			mappingCancelling: (args: { value: import('xstate').StateValue }) =>
@@ -232,8 +272,8 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				matchesState({ mapping: 'failing' }, args.value)
 		}
 	})
-	const failure = (context: Context, error: unknown) => {
-		context.work?.trace.failed('operation.failed', error)
+	const failure = (context: Context, error: unknown, enqueue: (effect: () => void) => void) => {
+		enqueue(() => context.work?.trace.failed('operation.failed', error))
 		return { error, accessUrl: undefined }
 	}
 	return workflow.createMachine({
@@ -270,21 +310,21 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				ownerId: context.identity.userId,
 				organizationId: context.identity.organizationId
 			}),
-			onError: (args) => {
+			onError: (args, enq) => {
 				const { context, event } = args
 				return {
 					target: '.settlingFailure',
-					context: failure(context, 'error' in event ? event.error : new Error('failure'))
+					context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 				}
 			}
 		},
 		on: {
 			CANCEL: { target: '.cancelled' },
-			LOCK_FAILED: (args) => {
+			LOCK_FAILED: (args, enq) => {
 				const { context, event } = args
 				return {
 					target: '.settlingFailure',
-					context: failure(context, 'error' in event ? event.error : new Error('failure'))
+					context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 				}
 			},
 			IMPORT_PROGRESS: (args, enq) => {
@@ -310,28 +350,29 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							}
 						}
 						return {
-							target: 'choosingOperation',
-							context: {
-								work: (({ context, event }) => {
-									const prepared = required(event.output.ok ? event.output.value : undefined)
-									return {
-										command: context.command,
-										current: required(prepared.connection),
-										scope: prepared.scope,
-										trace: createBankTrace(context.command.type),
-										attemptAt: new Date()
-									}
-								})(args)
-							}
+							target: 'allocatingWork',
+							input: { command: args.context.command, prepared: event.output.value }
 						}
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: 'settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
+				}
+			},
+			allocatingWork: {
+				invoke: {
+					id: 'startWork',
+					src: 'startWork',
+					input: ({ input }) => input,
+					onDone: ({ event }) => ({ target: 'choosingOperation', context: { work: event.output } }),
+					onError: ({ context, event }, enq) => ({
+						target: 'settlingFailure',
+						context: failure(context, event.error, enq)
+					})
 				}
 			},
 			choosingOperation: {
@@ -360,11 +401,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				},
 				on: {
 					CANCEL: { target: '.cancelling' },
-					LOCK_FAILED: (args) => {
+					LOCK_FAILED: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '.failing',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -380,7 +421,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'complete', context: { writeSettlement: 'settled', result: [] } }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						if (matchesState1({ disconnecting: 'cancelling' }, args.value)) {
 							return {
@@ -401,7 +442,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							context = { ...args.context, ...patch }
 							patch = {
 								...patch,
-								...failure(context, 'error' in event ? event.error : new Error('failure'))
+								...failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 							}
 							context = { ...args.context, ...patch }
 							return { target: 'settlingFailure', context: patch }
@@ -435,7 +476,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return {
 							target: '.failing',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -465,7 +506,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'complete', context: { writeSettlement: 'settled' } }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						if (args.guards.mappingCancelling(args)) {
 							return { target: 'cancelled' }
@@ -475,7 +516,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return {
 							target: 'settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				}
@@ -491,11 +532,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'disconnecting' }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: 'settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				}
@@ -511,11 +552,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'mapping' }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: 'settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				}
@@ -537,7 +578,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						)
 						return {
 							target: 'preparingFailure',
-							context: failure(context, new Error('unlock_failure'))
+							context: failure(context, new Error('unlock_failure'), enq)
 						}
 					}
 				}
@@ -556,11 +597,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'fetching' }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: 'settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				}
@@ -588,7 +629,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						)
 						return {
 							target: 'preparingFailure',
-							context: failure(context, new Error('provider_failure'))
+							context: failure(context, new Error('provider_failure'), enq)
 						}
 					}
 				}
@@ -607,11 +648,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'importing' }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: 'settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				}
@@ -664,7 +705,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						let patch = {}
 						patch = {
 							...patch,
-							...failure(context, 'error' in event ? event.error : new Error('failure'))
+							...failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 						context = { ...args.context, ...patch }
 						patch = { ...patch, ...((args) => ({ response: undefined }))({ ...args, context }) }
@@ -705,7 +746,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'classifyingSuccess', context: importCompletion(event.output) }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						if (matchesState1({ importing: 'cancelling' }, args.value)) {
 							return {
@@ -726,7 +767,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							context = { ...args.context, ...patch }
 							patch = {
 								...patch,
-								...failure(context, 'error' in event ? event.error : new Error('failure'))
+								...failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 							}
 							context = { ...args.context, ...patch }
 							return { target: 'recordingFailure', context: patch }
@@ -789,11 +830,11 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 				},
 				on: {
 					CANCEL: { target: '.cancelling' },
-					LOCK_FAILED: (args) => {
+					LOCK_FAILED: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '.failing',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -820,7 +861,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 						}
 						return { target: 'settlingFailure', context: { writeSettlement: 'settled' } }
 					},
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						if (matchesState1({ persistingOutcome: 'cancelling' }, args.value)) {
 							return {
@@ -847,7 +888,7 @@ export function createBankOperationMachine(dependencies: Dependencies) {
 							context = { ...args.context, ...patch }
 							patch = {
 								...patch,
-								...failure(context, 'error' in event ? event.error : new Error('failure'))
+								...failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 							}
 							context = { ...args.context, ...patch }
 							return { target: 'settlingFailure', context: patch }

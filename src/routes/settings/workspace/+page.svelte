@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { prepareBackupSubmission } from '#lib/backup/submission.js'
 	import PageLayout from '#lib/components/navigation/PageLayout.svelte'
 	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
 	const navigation = getPageNavigation()
@@ -181,7 +182,10 @@
 			kind="download"
 			view={backupView}
 			ondownload={(protection, password) =>
-				backupActor.send({ type: 'SUBMIT', protection, password })}
+				backupActor.send({
+					type: 'SUBMIT',
+					submission: prepareBackupSubmission(protection, password)
+				})}
 			oncancel={() => backupActor.send({ type: 'CANCEL' })}
 			onreload={() => readiness.actor.send({ type: 'RELOAD' })}
 		/>

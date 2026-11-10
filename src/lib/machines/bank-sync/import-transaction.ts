@@ -100,8 +100,11 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 			}
 		})
 	}
-	const patchReadTimedOut = ({ context }: { context: Context }): Partial<Context> => {
-		context.work.trace.log('import.transaction.read.timeout')
+	const patchReadTimedOut = (
+		{ context }: { context: Context },
+		enqueue: (effect: () => void) => void
+	): Partial<Context> => {
+		enqueue(() => context.work.trace.log('import.transaction.read.timeout'))
 		return { error: new Error('import-read-timeout') }
 	}
 	const events0 = {
@@ -333,8 +336,8 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 			},
 			authorizingLookup: {
 				after: {
-					readDeadline: (args) => {
-						return { target: 'failed', context: patchReadTimedOut(args) }
+					readDeadline: (args, enq) => {
+						return { target: 'failed', context: patchReadTimedOut(args, enq) }
 					}
 				},
 				invoke: {
@@ -354,8 +357,8 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 			},
 			findingExisting: {
 				after: {
-					readDeadline: (args) => {
-						return { target: 'failed', context: patchReadTimedOut(args) }
+					readDeadline: (args, enq) => {
+						return { target: 'failed', context: patchReadTimedOut(args, enq) }
 					}
 				},
 				invoke: {
@@ -374,8 +377,8 @@ export function createTransactionImportMachine(dependencies: Dependencies) {
 			},
 			authorizingWrite: {
 				after: {
-					readDeadline: (args) => {
-						return { target: 'failed', context: patchReadTimedOut(args) }
+					readDeadline: (args, enq) => {
+						return { target: 'failed', context: patchReadTimedOut(args, enq) }
 					}
 				},
 				invoke: {

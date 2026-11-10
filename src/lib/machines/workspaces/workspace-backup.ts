@@ -1,3 +1,4 @@
+import { takeBackupProtection, type BackupSubmission } from '../../backup/submission.js'
 import { z } from 'zod'
 import {
 	prepareJazzArchiveExport,
@@ -312,8 +313,14 @@ type Options = Omit<
 > & { environment: string; observe(): BackupObservation }
 type Event =
 	| { type: 'OBSERVE'; facts: BackupObservation }
-	| { type: 'SUBMIT'; protection: 'none' | 'password'; password: string }
+	| { type: 'SUBMIT'; submission: BackupSubmission }
 	| { type: 'CANCEL' | 'SHUTDOWN' }
+type BackupPreparation = {
+	submission: BackupSubmission
+	facts: BackupObservation
+	generation: number
+	isCurrent(): boolean
+}
 type Context = {
 	facts: BackupObservation
 	generation: number
@@ -323,6 +330,29 @@ type Context = {
 /** Settings owns eligibility and the invoked export lifetime; DLF owns the native resources. */
 export function createWorkspaceBackupMachine(options: Options) {
 	const actors = {
+		prepare: createAsyncLogic<JazzArchiveExportRequest, BackupPreparation>({
+			run: async ({ input }) => {
+				const protection = takeBackupProtection(input.submission)
+				const { identityId, workspaceId } = input.facts
+				if (!identityId || !workspaceId) throw new Error('Backup scope unavailable')
+				return prepareJazzArchiveExport({
+					db: options.db,
+					handoff: options.handoff,
+					...(options.limits ? { limits: options.limits } : {}),
+					profile: financeBackupProfile,
+					protection,
+					binding: {
+						applicationId: 'delightful-finances',
+						environment: options.environment,
+						workspaceId,
+						identityId,
+						operationId: crypto.randomUUID(),
+						generation: input.generation
+					},
+					isCurrent: input.isCurrent
+				})
+			}
+		}),
 		export: createJazzArchiveExportMachine(financeBackupReader),
 		release: createAsyncLogic<void, { request: JazzArchiveExportRequest | undefined }>({
 			run: ({ input }) => input.request?.release() ?? Promise.resolve()
@@ -356,6 +386,7 @@ export function createWorkspaceBackupMachine(options: Options) {
 			input: types<{}>(),
 			children: {
 				export: types<import('xstate').ActorRefFrom<(typeof actors)['export']>>(),
+				prepare: types<import('xstate').ActorRefFrom<(typeof actors)['prepare']>>(),
 				release: types<import('xstate').ActorRefFrom<(typeof actors)['release']>>()
 			}
 		},
@@ -380,6 +411,9 @@ export function createWorkspaceBackupMachine(options: Options) {
 			result: undefined
 		}),
 		on: {
+			SUBMIT: ({ event }, enq) => {
+				enq(() => event.submission.release())
+			},
 			OBSERVE: (args) => {
 				if (!args.guards.changed(args)) return
 				return { target: '.checking', context: { ...patchObserve(args), result: undefined } }
@@ -399,12 +433,9 @@ export function createWorkspaceBackupMachine(options: Options) {
 			editing: {
 				initial: 'ready',
 				on: {
-					SUBMIT: (args) => {
-						const { event } = args
-						if (
-							event.protection === 'password' &&
-							(!event.password || new TextEncoder().encode(event.password).length > 1024)
-						) {
+					SUBMIT: ({ event }, enq) => {
+						if (!event.submission.validPassword) {
+							enq(() => event.submission.release())
 							return { target: '.invalidPassword' }
 						}
 						return { target: 'preparing' }
@@ -413,55 +444,56 @@ export function createWorkspaceBackupMachine(options: Options) {
 				states: { ready: {}, invalidPassword: {}, downloaded: {}, failed: {}, cancelled: {} }
 			},
 			preparing: {
-				entry: (args) => {
-					return {
-						context: (({ context, event, self }) => {
-							if (
-								event.type !== 'SUBMIT' ||
-								!context.facts.identityId ||
-								!context.facts.workspaceId
-							)
-								return {}
-							const generation = context.generation,
-								facts = context.facts,
-								identityId = context.facts.identityId,
-								workspaceId = context.facts.workspaceId
-							try {
-								return {
-									result: undefined,
-									request: prepareJazzArchiveExport({
-										db: options.db,
-										handoff: options.handoff,
-										...(options.limits ? { limits: options.limits } : {}),
-										profile: financeBackupProfile,
-										protection:
-											event.protection === 'none'
-												? { kind: 'none' }
-												: { kind: 'password', password: event.password },
-										binding: {
-											applicationId: 'delightful-finances',
-											environment: options.environment,
-											workspaceId,
-											identityId,
-											operationId: crypto.randomUUID(),
-											generation
-										},
-										isCurrent: () =>
-											self.getSnapshot().context.generation === generation &&
-											sameObservation(facts, options.observe())
-									})
-								}
-							} catch {
-								return { request: undefined, result: undefined }
-							}
-						})(args)
+				initial: 'working',
+				invoke: {
+					id: 'prepare',
+					src: 'prepare',
+					input: ({ context, event, self }) => {
+						if (event.type !== 'SUBMIT') throw new Error('Backup submission required')
+						const { facts, generation } = context
+						return {
+							submission: event.submission,
+							facts,
+							generation,
+							isCurrent: () =>
+								self.getSnapshot().context.generation === generation &&
+								sameObservation(facts, options.observe())
+						}
+					},
+					onDone: (args) => {
+						const context = { request: args.event.output, result: undefined }
+						if (matchesState({ preparing: 'closing' }, args.value))
+							return { target: 'releasing.closing', context }
+						if (matchesState({ preparing: 'invalidating' }, args.value))
+							return { target: 'releasing.changing', context }
+						if (matchesState({ preparing: 'cancelling' }, args.value))
+							return { target: 'releasing.cancelled', context }
+						return { target: 'exporting', context }
+					},
+					onError: (args) => {
+						if (matchesState({ preparing: 'closing' }, args.value)) return { target: 'closed' }
+						if (matchesState({ preparing: 'invalidating' }, args.value))
+							return { target: 'checking' }
+						if (matchesState({ preparing: 'cancelling' }, args.value))
+							return { target: 'editing.cancelled' }
+						return { target: 'editing.failed' }
 					}
 				},
-				always: (args) => {
-					if (args.context.request !== undefined) {
-						return { target: 'exporting' }
+				on: {
+					CANCEL: { target: '.cancelling' },
+					SHUTDOWN: { target: '.closing' },
+					OBSERVE: (args) => {
+						if (!args.guards.changed(args)) return
+						return { target: '.invalidating', context: patchObserve(args) }
 					}
-					return { target: 'editing.failed' }
+				},
+				states: {
+					working: {},
+					cancelling: { on: { CANCEL: {} } },
+					invalidating: { on: { CANCEL: {} } },
+					closing: {
+						on: { SHUTDOWN: {}, CANCEL: {}, OBSERVE: (args) => ({ context: patchObserve(args) }) }
+					}
 				}
 			},
 			exporting: {
@@ -553,6 +585,12 @@ export function createWorkspaceBackupMachine(options: Options) {
 						if (matchesState({ releasing: 'changing' }, args.value)) {
 							return { target: 'checking', context: { request: undefined, result: undefined } }
 						}
+						if (matchesState({ releasing: 'cancelled' }, args.value)) {
+							return {
+								target: 'editing.cancelled',
+								context: { request: undefined, result: undefined }
+							}
+						}
 						if (eligible(args.context.facts)) {
 							return { target: 'editing.failed', context: { request: undefined } }
 						}
@@ -569,6 +607,7 @@ export function createWorkspaceBackupMachine(options: Options) {
 				},
 				states: {
 					working: {},
+					cancelled: {},
 					changing: {},
 					closing: {
 						on: {
@@ -615,7 +654,10 @@ export function selectWorkspaceBackup(snapshot: WorkspaceBackupSnapshot): {
 	message: BackupMessage
 	alert: boolean
 } {
-	const busy = snapshot.matches('exporting') || snapshot.matches('releasing'),
+	const busy =
+			snapshot.matches('preparing') ||
+			snapshot.matches('exporting') ||
+			snapshot.matches('releasing'),
 		editing = snapshot.matches('editing'),
 		result = snapshot.context.result
 	const message: BackupMessage = snapshot.matches('releaseBlocked')
@@ -640,7 +682,8 @@ export function selectWorkspaceBackup(snapshot: WorkspaceBackupSnapshot): {
 	return {
 		editable: editing,
 		canDownload: editing,
-		canCancel: snapshot.matches({ exporting: 'working' }),
+		canCancel:
+			snapshot.matches({ preparing: 'working' }) || snapshot.matches({ exporting: 'working' }),
 		canReload: snapshot.matches('releaseBlocked'),
 		message,
 		alert:

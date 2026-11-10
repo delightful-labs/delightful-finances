@@ -9,7 +9,8 @@ type Input = {
 	baselineStatus: Connection['status'] | null
 	encrypted: CredentialEnvelope
 }
-function connectionValues(input: Input) {
+type Write = Pick<Input, 'scope' | 'encrypted'>
+function connectionValues(input: Write, claimedAt: Date) {
 	return {
 		organizationId: input.scope.organizationId,
 		ownerId: input.scope.ownerId,
@@ -20,7 +21,7 @@ function connectionValues(input: Input) {
 		iv: input.encrypted.iv,
 		ciphertext: input.encrypted.ciphertext,
 		status: 'active',
-		claimedAt: new Date()
+		claimedAt
 	} satisfies Pick<
 		Connection,
 		| 'organizationId'
@@ -35,8 +36,7 @@ function connectionValues(input: Input) {
 		| 'claimedAt'
 	>
 }
-type Write = { scope: CredentialScope; values: ReturnType<typeof connectionValues> }
-type Context = Input & { values: Write['values']; error: Error | undefined }
+type Context = Input & { error: Error | undefined }
 type Output =
 	{ settlement: 'locallyPersisted'; error: undefined } | { settlement: 'unresolved'; error: Error }
 
@@ -46,7 +46,9 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 			run: async ({ input, signal }) => {
 				signal.throwIfAborted()
 				await db
-					.insert(app.simplefinConnections, input.values, { id: input.scope.connectionId })
+					.insert(app.simplefinConnections, connectionValues(input, new Date()), {
+						id: input.scope.connectionId
+					})
 					.wait({ tier: 'local' })
 			}
 		}),
@@ -54,7 +56,11 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 			run: async ({ input, signal }) => {
 				signal.throwIfAborted()
 				await db
-					.update(app.simplefinConnections, input.scope.connectionId, input.values)
+					.update(
+						app.simplefinConnections,
+						input.scope.connectionId,
+						connectionValues(input, new Date())
+					)
 					.wait({ tier: 'local' })
 			}
 		})
@@ -81,7 +87,7 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 		actors
 	}).createMachine({
 		id: 'bank-setup-persistence',
-		context: ({ input }) => ({ ...input, values: connectionValues(input), error: undefined }),
+		context: ({ input }) => ({ ...input, error: undefined }),
 		initial: 'choosingWrite',
 		output: ({ context }): Output =>
 			context.error
@@ -99,7 +105,7 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 			inserting: {
 				invoke: {
 					src: 'insert',
-					input: ({ context }) => ({ scope: context.scope, values: context.values }),
+					input: ({ context }) => ({ scope: context.scope, encrypted: context.encrypted }),
 					onDone: { target: 'saved' },
 					onError: { target: 'failed' }
 				}
@@ -107,7 +113,7 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 			updating: {
 				invoke: {
 					src: 'update',
-					input: ({ context }) => ({ scope: context.scope, values: context.values }),
+					input: ({ context }) => ({ scope: context.scope, encrypted: context.encrypted }),
 					onDone: { target: 'saved' },
 					onError: { target: 'failed' }
 				}

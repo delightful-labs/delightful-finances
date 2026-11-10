@@ -235,7 +235,9 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 			},
 			loadingExisting: {
 				// This snapshot is intentionally partial: only presence enables the fast path.
-				entry: ({ context }) => context.work.trace.log('import.existing-snapshot:start'),
+				entry: ({ context }, enq) => {
+					enq(() => context.work.trace.log('import.existing-snapshot:start'))
+				},
 				after: {
 					existingReadDeadline: (args, enq) => {
 						enq(() => args.context.work.trace.log('import.existing-snapshot.timeout'))

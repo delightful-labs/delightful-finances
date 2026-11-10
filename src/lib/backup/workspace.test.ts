@@ -1,3 +1,4 @@
+import { prepareBackupSubmission, takeBackupProtection } from './submission.js'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
 	createJazzClient,
@@ -27,7 +28,15 @@ import {
 	type BackupObservation
 } from '../machines/workspaces/workspace-backup.js'
 import { encodeAttachmentBytes, financeBackupProfile, readFinanceMetadata } from './workspace.js'
-import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
+import {
+	createActor,
+	toPromise,
+	waitFor,
+	createAsyncLogic,
+	initialTransition,
+	transition,
+	type InputFrom
+} from 'xstate'
 
 let authority: ReturnType<typeof createJazz>,
 	server: ReturnType<typeof createServer>,
@@ -668,9 +677,12 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 			}),
 			{ input: {} }
 		).start()
-		actor.send({ type: 'SUBMIT', protection: 'password', password: '' })
+		actor.send({ type: 'SUBMIT', submission: prepareBackupSubmission('password', '') })
 		expect(selectWorkspaceBackup(actor.getSnapshot()).message).toBe('password')
-		actor.send({ type: 'SUBMIT', protection: 'password', password: 'do-not-retain-this-password' })
+		actor.send({
+			type: 'SUBMIT',
+			submission: prepareBackupSubmission('password', 'do-not-retain-this-password')
+		})
 		await started.promise
 		expect(JSON.stringify(actor.getSnapshot())).not.toContain('do-not-retain-this-password')
 		actor.send({ type: 'CANCEL' })
@@ -765,7 +777,7 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 				{ input: {} }
 			).start()
 			try {
-				actor.send({ type: 'SUBMIT', protection: 'none', password: '' })
+				actor.send({ type: 'SUBMIT', submission: prepareBackupSubmission('none', '') })
 				await entered.promise
 				const request = actor.getSnapshot().context.request
 				proceed.resolve()
@@ -788,7 +800,7 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 				})
 				expect(actor.getSnapshot().context.request).toBe(request)
 				actor.send({ type: 'OBSERVE', facts })
-				actor.send({ type: 'SUBMIT', protection: 'none', password: '' })
+				actor.send({ type: 'SUBMIT', submission: prepareBackupSubmission('none', '') })
 				actor.send({ type: 'SHUTDOWN' })
 				expect(actor.getSnapshot().status).toBe('active')
 				expect(actor.getSnapshot().context.request).toBe(request)
@@ -800,4 +812,140 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 			}
 		}
 	)
+})
+
+function backupFacts(g: Awaited<ReturnType<typeof seed>>): BackupObservation {
+	return {
+		identityId,
+		workspaceId: g.organization,
+		membershipId: g.member,
+		memberUserId: identityId,
+		ownerId: identityId,
+		role: 'owner',
+		access: 'all',
+		sessionReady: true,
+		attached: true,
+		loading: false,
+		failed: false
+	}
+}
+
+it('previews repeated backup submissions without consuming passwords or allocating SDK requests', async () => {
+	const g = await seed()
+	const facts = backupFacts(g)
+	const logic = createWorkspaceBackupMachine({
+		db,
+		environment: 'test',
+		observe: () => facts,
+		handoff: { dispatch: async () => 'rejected' }
+	})
+	const submission = prepareBackupSubmission('password', 'private-preview-password')
+	const random = vi.spyOn(crypto, 'randomUUID')
+	try {
+		const [initial] = initialTransition(logic, {})
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const [preview] = transition(logic, initial, { type: 'SUBMIT', submission })
+			expect(preview.matches({ preparing: 'working' })).toBe(true)
+			expect(JSON.stringify(preview)).not.toContain('private-preview-password')
+		}
+		expect(random).not.toHaveBeenCalled()
+		expect(takeBackupProtection(submission)).toEqual({
+			kind: 'password',
+			password: 'private-preview-password'
+		})
+		expect(() => takeBackupProtection(submission)).toThrow('Backup submission unavailable')
+	} finally {
+		submission.release()
+	}
+})
+
+it.each([
+	'cancel',
+	'shutdown',
+	'replace',
+	'replace-then-cancel',
+	'shutdown-then-replace',
+	'release-rejected'
+])('drains late backup request preparation through %s without exporting', async (intent) => {
+	const g = await seed()
+	let facts = backupFacts(g)
+	const entered = Promise.withResolvers<void>()
+	const acquired =
+		Promise.withResolvers<
+			import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest
+		>()
+	const released = Promise.withResolvers<void>()
+	const release = vi.fn(() => released.promise)
+	const request: import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest = {
+		release,
+		toJSON: () => ({ kind: 'jazzArchiveExport' })
+	}
+	const logic = createWorkspaceBackupMachine({
+		db,
+		environment: 'test',
+		observe: () => facts,
+		handoff: { dispatch: async () => 'rejected' }
+	})
+	const prepare = logic.sources.actors.prepare
+	const actor = createActor(
+		logic.provide({
+			actors: {
+				prepare: createAsyncLogic<
+					import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest,
+					InputFrom<typeof prepare>
+				>({
+					run: ({ input }) => {
+						takeBackupProtection(input.submission)
+						entered.resolve()
+						return acquired.promise
+					}
+				})
+			}
+		}),
+		{ input: {} }
+	).start()
+	try {
+		actor.send({
+			type: 'SUBMIT',
+			submission: prepareBackupSubmission('password', 'private-preparation-password')
+		})
+		await entered.promise
+		expect(JSON.stringify(actor.getSnapshot())).not.toContain('private-preparation-password')
+		if (intent === 'cancel' || intent === 'release-rejected') actor.send({ type: 'CANCEL' })
+		if (intent.startsWith('shutdown')) actor.send({ type: 'SHUTDOWN' })
+		if (intent.includes('replace')) {
+			facts = { ...facts, workspaceId: crypto.randomUUID() }
+			actor.send({ type: 'OBSERVE', facts })
+		}
+		if (intent === 'replace-then-cancel') actor.send({ type: 'CANCEL' })
+		acquired.resolve(request)
+		await vi.waitFor(() => expect(release).toHaveBeenCalledOnce())
+		expect(actor.getSnapshot().status).toBe('active')
+		if (intent === 'release-rejected') {
+			released.reject(new Error('Request release unavailable'))
+			await waitFor(actor, (snapshot) => selectWorkspaceBackup(snapshot).canReload, {
+				timeout: 1000
+			})
+			expect(actor.getSnapshot().context.request).toBe(request)
+			actor.send({ type: 'SHUTDOWN' })
+			expect(actor.getSnapshot().status).toBe('active')
+			return
+		}
+		released.resolve()
+		await waitFor(
+			actor,
+			(snapshot) =>
+				intent.startsWith('shutdown') ? snapshot.status === 'done' : snapshot.matches('editing'),
+			{ timeout: 1000 }
+		)
+		expect(actor.getSnapshot().context.request).toBeUndefined()
+		if (intent === 'cancel')
+			expect(selectWorkspaceBackup(actor.getSnapshot()).message).toBe('cancelled')
+		if (intent.startsWith('replace'))
+			expect(selectWorkspaceBackup(actor.getSnapshot()).message).toBeUndefined()
+	} finally {
+		acquired.resolve(request)
+		released.resolve()
+		actor.stop()
+	}
 })

@@ -2114,6 +2114,7 @@ export function createWorkspaceRestoreController(
 									context: {
 										native: (({ context, spawn }) =>
 											spawn(required(restoreFile(context.request).logic), {
+												id: 'nativeRestore',
 												syncSnapshot: true
 											}))({ ...args, spawn: enq.spawn })
 									}

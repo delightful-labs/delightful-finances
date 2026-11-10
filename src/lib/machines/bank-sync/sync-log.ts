@@ -59,6 +59,17 @@ function logFailure(
 /** Owns log writes only. The bank operation retains credentials, locks and import cleanup. */
 export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 	const actors = {
+		dateCancellation: createAsyncLogic<SyncLogCompletion, undefined>({
+			run: async () => ({
+				outcome: 'cancelled',
+				finishedAt: new Date(),
+				importSettlement: 'notStarted',
+				failureCode: null,
+				importedCount: null,
+				existingCount: null,
+				omittedCount: null
+			})
+		}),
 		accountId: createAsyncLogic<string, { attemptId: string; accountId: string }>({
 			run: ({ input }) => stableUuid(input.attemptId, `sync-account:${input.accountId}`)
 		}),
@@ -109,6 +120,8 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 			output: types<SyncLogOutput>(),
 			children: {
 				accountId: types<import('xstate').ActorRefFrom<(typeof actors)['accountId']>>(),
+				dateCancellation:
+					types<import('xstate').ActorRefFrom<(typeof actors)['dateCancellation']>>(),
 				recordAccount: types<import('xstate').ActorRefFrom<(typeof actors)['recordAccount']>>(),
 				recordStart: types<import('xstate').ActorRefFrom<(typeof actors)['recordStart']>>(),
 				recordResult: types<import('xstate').ActorRefFrom<(typeof actors)['recordResult']>>()
@@ -149,24 +162,19 @@ export function createSyncLogMachine({ db }: Pick<Dependencies, 'db'>) {
 					input: ({ context }) => context.start,
 					onDone: (args) => {
 						if (matchesState({ recordingStart: 'cancelling' }, args.value)) {
-							return {
-								target: 'validatingResult',
-								context: {
-									result: {
-										outcome: 'cancelled',
-										finishedAt: new Date(),
-										importSettlement: 'notStarted',
-										failureCode: null,
-										importedCount: null,
-										existingCount: null,
-										omittedCount: null
-									}
-								}
-							}
+							return { target: 'datingCancellation' }
 						}
 						return { target: 'awaitingResult' }
 					},
 					onError: { target: 'startWriteFailed' }
+				}
+			},
+			datingCancellation: {
+				on: { CANCEL: {} },
+				invoke: {
+					id: 'dateCancellation',
+					src: 'dateCancellation',
+					onDone: ({ event }) => ({ target: 'validatingResult', context: { result: event.output } })
 				}
 			},
 			awaitingResult: {

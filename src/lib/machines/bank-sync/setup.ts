@@ -12,7 +12,7 @@ import type { CredentialEnvelope } from '#lib/validation/integrations.js'
 import { createAuthorizationMachine } from './authorization.js'
 import { createSetupBaselineMachine, type SetupBaseline } from './setup-baseline.js'
 import { createSetupPersistenceMachine } from './setup-persist.js'
-import { createPreparationMachine } from './preparation.js'
+import { createPreparationMachine, type PreparedScope } from './preparation.js'
 import { required } from './identity.js'
 import { bankLock } from './lock.js'
 import { bankEnvironment } from './types.js'
@@ -85,6 +85,14 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 		run: ({ input, signal }) => input.seal(input.accessUrl, signal)
 	})
 	const actors = {
+		startBase: createAsyncLogic<Base, PreparedScope>({
+			run: async ({ input }) => ({
+				scope: input.scope,
+				baselineCiphertext: input.connection?.ciphertext ?? null,
+				baselineStatus: input.connection?.status ?? null,
+				trace: createBankTrace('CONNECT')
+			})
+		}),
 		lock: bankLock,
 		prepare: createPreparationMachine(dependencies),
 		authorize: createAuthorizationMachine(dependencies),
@@ -137,6 +145,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 			output: types<Output>(),
 			children: {
 				lock: types<import('xstate').ActorRefFrom<(typeof actors)['lock']>>(),
+				startBase: types<import('xstate').ActorRefFrom<(typeof actors)['startBase']>>(),
 				prepare: types<import('xstate').ActorRefFrom<(typeof actors)['prepare']>>(),
 				authorize: types<import('xstate').ActorRefFrom<(typeof actors)['authorize']>>(),
 				checkBaseline: types<import('xstate').ActorRefFrom<(typeof actors)['checkBaseline']>>(),
@@ -150,14 +159,62 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 			},
 			meta: types<BankViewMeta>()
 		},
+		states: {
+			creating: {
+				states: {
+					locking: {},
+					preparing: {},
+					allocatingBase: { schemas: { input: types<PreparedScope>() } },
+					authorizingCreate: {},
+					checkingCreateBaseline: {},
+					validatingToken: {},
+					creatingPasskey: {}
+				}
+			},
+			encrypting: {
+				states: {
+					locking: {},
+					authorizingEncrypt: {},
+					checkingEncryptBaseline: {},
+					encryptingSample: {}
+				}
+			},
+			verifying: {
+				states: {
+					locking: {},
+					authorizingVerify: {},
+					checkingVerifyBaseline: {},
+					verifyingSample: {}
+				}
+			},
+			saving: {
+				states: {
+					locking: {},
+					authorizingClaim: {},
+					checkingClaimBaseline: {},
+					claiming: {},
+					sealing: {},
+					authorizingSave: {},
+					checkingSaveBaseline: {},
+					persisting: { states: { working: {}, draining: {}, failing: {} } }
+				}
+			},
+			readyToEncrypt: { id: 'bank-setup.readyToEncrypt' },
+			readyToVerify: { id: 'bank-setup.readyToVerify' },
+			readyToSave: { id: 'bank-setup.readyToSave' },
+			complete: { id: 'bank-setup.complete', type: 'final' },
+			cancelled: { id: 'bank-setup.cancelled', type: 'final' },
+			settlingFailure: { id: 'bank-setup.settlingFailure' },
+			failed: { type: 'final' }
+		},
 		actors,
 		guards: {
 			isDraining: (args: { value: import('xstate').StateValue }) =>
 				matchesState({ saving: { persisting: 'draining' } }, args.value)
 		}
 	})
-	const failure = (context: Context, error: unknown) => {
-		context.base?.trace.failed('setup.failed', error)
+	const failure = (context: Context, error: unknown, enqueue: (effect: () => void) => void) => {
+		enqueue(() => context.base?.trace.failed('setup.failed', error))
 		return { error, accessUrl: undefined, token: undefined }
 	}
 	return workflow.createMachine({
@@ -192,20 +249,20 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
 					}),
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
 				on: {
-					LOCK_FAILED: (args) => {
+					LOCK_FAILED: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -223,28 +280,34 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 										context: { error: event.output.ok ? undefined : event.output.error }
 									}
 								}
-								return {
-									target: 'authorizingCreate',
-									context: {
-										base: (({ event }) => {
-											const prepared = required(event.output.ok ? event.output.value : undefined)
-											return {
-												scope: prepared.scope,
-												baselineCiphertext: prepared.connection?.ciphertext ?? null,
-												baselineStatus: prepared.connection?.status ?? null,
-												trace: createBankTrace('CONNECT')
-											}
-										})(args)
-									}
-								}
+								return { target: 'allocatingBase', input: event.output.value }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
+						}
+					},
+					allocatingBase: {
+						invoke: {
+							id: 'startBase',
+							src: 'startBase',
+							input: ({ input }) => input,
+							onDone: ({ event }) => ({
+								target: 'authorizingCreate',
+								context: { base: event.output }
+							}),
+							onError: ({ context, event }, enq) => ({
+								target: '#bank-setup.settlingFailure',
+								context: failure(context, event.error, enq)
+							})
 						}
 					},
 					authorizingCreate: {
@@ -261,11 +324,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'checkingCreateBaseline' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -284,11 +351,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'validatingToken' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -301,11 +372,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								return { token: context.token, base: baseFor(context) }
 							},
 							onDone: { target: 'creatingPasskey' },
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, new Error('invalid_setup_token'))
+									context: failure(context, new Error('invalid_setup_token'), enq)
 								}
 							}
 						}
@@ -320,11 +391,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context: { material: { passkey: args.event.output } }
 								}
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, new Error('passkey_failure'))
+									context: failure(context, new Error('passkey_failure'), enq)
 								}
 							}
 						}
@@ -340,20 +411,20 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
 					}),
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
 				on: {
-					LOCK_FAILED: (args) => {
+					LOCK_FAILED: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -373,11 +444,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'checkingEncryptBaseline' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -396,11 +471,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'encryptingSample' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -419,11 +498,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context: { material: { sample: args.event.output } }
 								}
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, new Error('passkey_failure'))
+									context: failure(context, new Error('passkey_failure'), enq)
 								}
 							}
 						}
@@ -439,20 +518,20 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
 					}),
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
 				on: {
-					LOCK_FAILED: (args) => {
+					LOCK_FAILED: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -472,11 +551,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'checkingVerifyBaseline' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -495,11 +578,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'verifyingSample' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -518,11 +605,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context: { material: { seal: args.event.output } }
 								}
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, new Error('passkey_failure'))
+									context: failure(context, new Error('passkey_failure'), enq)
 								}
 							}
 						}
@@ -538,21 +625,21 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 						ownerId: context.identity.userId,
 						organizationId: context.identity.organizationId
 					}),
-					onError: (args) => {
+					onError: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
 				on: {
 					CREDENTIAL_CHANGED: {},
-					LOCK_FAILED: (args) => {
+					LOCK_FAILED: (args, enq) => {
 						const { context, event } = args
 						return {
 							target: '#bank-setup.settlingFailure',
-							context: failure(context, 'error' in event ? event.error : new Error('failure'))
+							context: failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 						}
 					}
 				},
@@ -572,11 +659,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'checkingClaimBaseline' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -595,11 +686,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 								}
 								return { target: 'claiming' }
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						}
@@ -617,11 +712,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context: { accessUrl: args.event.output, token: undefined }
 								}
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, new Error('claim_failure'))
+									context: failure(context, new Error('claim_failure'), enq)
 								}
 							}
 						}
@@ -641,11 +736,11 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context: { material: { encrypted: args.event.output }, accessUrl: undefined }
 								}
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context } = args
 								return {
 									target: '#bank-setup.settlingFailure',
-									context: failure(context, new Error('save_failure'))
+									context: failure(context, new Error('save_failure'), enq)
 								}
 							}
 						}
@@ -729,11 +824,15 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 						},
 						on: {
 							CANCEL: { target: '.draining' },
-							LOCK_FAILED: (args) => {
+							LOCK_FAILED: (args, enq) => {
 								const { context, event } = args
 								return {
 									target: '.failing',
-									context: failure(context, 'error' in event ? event.error : new Error('failure'))
+									context: failure(
+										context,
+										'error' in event ? event.error : new Error('failure'),
+										enq
+									)
 								}
 							}
 						},
@@ -774,7 +873,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context: { settlement: event.output.settlement }
 								}
 							},
-							onError: (args) => {
+							onError: (args, enq) => {
 								const { context, event } = args
 								if (args.guards.isDraining(args)) {
 									return {
@@ -789,7 +888,7 @@ export function createBankSetupMachine(dependencies: Dependencies) {
 									context = { ...args.context, ...patch }
 									patch = {
 										...patch,
-										...failure(context, 'error' in event ? event.error : new Error('failure'))
+										...failure(context, 'error' in event ? event.error : new Error('failure'), enq)
 									}
 									context = { ...args.context, ...patch }
 									return { target: '#bank-setup.settlingFailure', context: patch }

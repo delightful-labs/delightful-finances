@@ -1,5 +1,5 @@
 import { createBankOperationMachine, type OperationResult } from './operation.js'
-import { createPreparationMachine } from './preparation.js'
+import { createPreparationMachine, type PreparedScope } from './preparation.js'
 import { createSyncLogMachine } from './sync-log.js'
 import { required } from './identity.js'
 import {
@@ -20,14 +20,16 @@ import type {
 	SyncLogEvent,
 	SyncLogAccountResult
 } from '#lib/contracts/bank-sync-log.js'
-import { setup, types, matchesState } from 'xstate'
+import { setup, types, matchesState, createAsyncLogic } from 'xstate'
 import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Input = { command: BankCommand; discovered: ProviderSummary[] }
 export type LoggedOperationResult = OperationResult & { logging: SyncLogOutput | undefined }
+type FinishCommand = Extract<SyncLogEvent, { type: 'FINISH' }>
 type Context = Input & {
 	identity: RequestIdentity
 	start: SyncLogStart | undefined
+	completion: FinishCommand | undefined
 	result: OperationResult | undefined
 	logging: SyncLogOutput | undefined
 }
@@ -67,8 +69,7 @@ const failureCodes: Readonly<Record<string, NonNullable<SyncLogCompletion['failu
 	mapping: 'mapping',
 	other_tab: 'interrupted'
 }
-function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }> {
-	const result = required(context.result)
+function finishedLog(result: OperationResult, finishedAt: Date): FinishCommand {
 	const reports = result.accountResults
 	const accounts: SyncLogAccountResult[] = []
 	for (const report of reports) {
@@ -94,7 +95,7 @@ function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }
 		accounts,
 		result: {
 			outcome: result.kind === 'complete' ? 'succeeded' : result.kind,
-			finishedAt: new Date(),
+			finishedAt,
 			importSettlement:
 				result.settlement === 'unresolved'
 					? 'unresolved'
@@ -116,6 +117,21 @@ function finishedLog(context: Context): Extract<SyncLogEvent, { type: 'FINISH' }
 /** Supervises logging; the existing operation retains ownership of locks and credentials. */
 export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 	const actors = {
+		allocateStart: createAsyncLogic<SyncLogStart, PreparedScope>({
+			run: async ({ input }) => ({
+				id: crypto.randomUUID(),
+				organizationId: input.scope.organizationId,
+				connectionId: input.scope.connectionId,
+				initiatedBy: input.scope.ownerId,
+				startedAt: new Date()
+			})
+		}),
+		allocateCompletion: createAsyncLogic<
+			FinishCommand,
+			{ result: OperationResult; completion: FinishCommand | undefined }
+		>({
+			run: async ({ input }) => input.completion ?? finishedLog(input.result, new Date())
+		}),
 		prepare: createPreparationMachine(dependencies),
 		log: createSyncLogMachine(dependencies),
 		operation: createBankOperationMachine(dependencies)
@@ -204,9 +220,28 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 			output: types<LoggedOperationResult>(),
 			children: {
 				prepare: types<import('xstate').ActorRefFrom<(typeof actors)['prepare']>>(),
+				allocateStart: types<import('xstate').ActorRefFrom<(typeof actors)['allocateStart']>>(),
+				allocateCompletion:
+					types<import('xstate').ActorRefFrom<(typeof actors)['allocateCompletion']>>(),
 				log: types<import('xstate').ActorRefFrom<(typeof actors)['log']>>(),
 				operation: types<import('xstate').ActorRefFrom<(typeof actors)['operation']>>()
 			}
+		},
+		states: {
+			choosing: {},
+			unlogged: { id: 'logged-bank-operation.unlogged', states: { working: {}, cancelling: {} } },
+			preparing: {},
+			allocatingStart: { schemas: { input: types<PreparedScope>() } },
+			logged: {
+				states: {
+					starting: {},
+					cancellingStart: {},
+					operating: { states: { working: {}, cancelling: {}, logFailed: {} } },
+					resultLogFailed: {},
+					finishing: { states: { preparing: {}, waiting: {} } }
+				}
+			},
+			done: { id: 'logged-bank-operation.done', type: 'final' }
 		},
 		actors,
 		guards: {
@@ -216,11 +251,19 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 		delays: { logDeadline: 5000 }
 	})
 	// A deadline stops waiting; it does not abort or retry the issued Jazz write.
-	const startFailure = ({ context }: { context: Context }) => ({
+	const startFailure = ({
+		context
+	}: {
+		context: Context
+	}): { target: '#logged-bank-operation.unlogged'; context: Pick<Context, 'logging'> } => ({
 		target: '#logged-bank-operation.unlogged',
 		context: { logging: startLogFailure(context) }
 	})
-	const cancelledStartFailure = ({ context }: { context: Context }) => ({
+	const cancelledStartFailure = ({
+		context
+	}: {
+		context: Context
+	}): { target: '#logged-bank-operation.done'; context: Pick<Context, 'logging' | 'result'> } => ({
 		target: '#logged-bank-operation.done',
 		context: { result: cancelled(), logging: startLogFailure(context) }
 	})
@@ -232,6 +275,7 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 				...input,
 				identity: { userId: observed.userId, organizationId: observed.organizationId },
 				start: undefined,
+				completion: undefined,
 				result: undefined,
 				logging: undefined
 			}
@@ -296,25 +340,21 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 								context: { result: failure(event.output.ok ? undefined : event.output.error) }
 							}
 						}
-						return {
-							target: 'logged',
-							context: {
-								start: (({ event }) => {
-									const prepared = required(event.output.ok ? event.output.value : undefined)
-									return {
-										id: crypto.randomUUID(),
-										organizationId: prepared.scope.organizationId,
-										connectionId: prepared.scope.connectionId,
-										initiatedBy: prepared.scope.ownerId,
-										startedAt: new Date()
-									}
-								})(args)
-							}
-						}
+						return { target: 'allocatingStart', input: event.output.value }
 					},
 					onError: (args) => {
 						return { target: 'done', context: { result: failure(args.event.error) } }
 					}
+				}
+			},
+			allocatingStart: {
+				on: { CANCEL: () => ({ target: 'done', context: { result: cancelled() } }) },
+				invoke: {
+					id: 'allocateStart',
+					src: 'allocateStart',
+					input: ({ input }) => input,
+					onDone: ({ event }) => ({ target: 'logged', context: { start: event.output } }),
+					onError: ({ event }) => ({ target: 'done', context: { result: failure(event.error) } })
 				}
 			},
 			logged: {
@@ -360,14 +400,9 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 						on: {
 							LOG_FAILED: cancelledStartFailure,
 							CANCEL: {},
-							SYNC_LOG_READY: (args, enq) => {
-								let context = args.context
-								if (!(args.event.attemptId === context.start?.id)) return
-								let patch = {}
-								patch = { ...patch, result: cancelled() }
-								context = { ...args.context, ...patch }
-								enq.sendTo('log', finishedLog(context))
-								return { context: patch }
+							SYNC_LOG_READY: (args) => {
+								if (args.event.attemptId !== args.context.start?.id) return
+								return { target: 'finishing', context: { result: cancelled() } }
 							}
 						}
 					},
@@ -421,28 +456,48 @@ export function createLoggedBankOperationMachine(dependencies: Dependencies) {
 						}
 					},
 					resultLogFailed: {
-						entry: (args) => {
-							const { context } = args
-							return {
+						invoke: {
+							id: 'allocateCompletion',
+							src: 'allocateCompletion',
+							input: ({ context }) => ({
+								result: required(context.result),
+								completion: context.completion
+							}),
+							onDone: ({ context, event }) => ({
+								target: '#logged-bank-operation.done',
 								context: {
+									completion: event.output,
 									logging: {
 										kind: 'resultUnrecorded',
 										attemptId: required(context.start).id,
-										result: finishedLog(context).result,
+										result: event.output.result,
 										reason: 'resultWriteFailed'
 									}
 								}
-							}
-						},
-						always: { target: '#logged-bank-operation.done' }
+							})
+						}
 					},
 					finishing: {
 						after: { logDeadline: { target: 'resultLogFailed' } },
-						entry: (args, enq) => {
-							const { context } = args
-							enq.sendTo('log', finishedLog(context))
-						},
-						on: { CANCEL: {}, LOG_FAILED: { target: 'resultLogFailed' } }
+						on: { CANCEL: {}, LOG_FAILED: { target: 'resultLogFailed' } },
+						initial: 'preparing',
+						states: {
+							preparing: {
+								invoke: {
+									id: 'allocateCompletion',
+									src: 'allocateCompletion',
+									input: ({ context }) => ({
+										result: required(context.result),
+										completion: context.completion
+									}),
+									onDone: ({ event }, enq) => {
+										enq.sendTo('log', event.output)
+										return { target: 'waiting', context: { completion: event.output } }
+									}
+								}
+							},
+							waiting: {}
+						}
 					}
 				}
 			},
