@@ -14,12 +14,15 @@ function workspaceId(href: string) {
 }
 async function start(page: Page) {
 	await page.goto('/settings/workspace')
+	await expect(page).toHaveURL((url) => Boolean(url.searchParams.get('workspace')))
 	await expect(
 		page.getByRole('main').getByRole('button', { name: 'Create Workspace', exact: true })
 	).toBeEnabled()
 	await harness(page)
 }
 async function create(page: Page, name: string) {
+	// Automatic scoping navigates; finish it before opening a page-owned modal.
+	await expect(page).toHaveURL((url) => Boolean(url.searchParams.get('workspace')))
 	const dialog = await openCreationModal(page, 'Create Workspace')
 	await dialog.getByLabel('Workspace name', { exact: true }).fill(name)
 	await dialog.getByRole('button', { name: 'Create Workspace', exact: true }).click()
@@ -32,7 +35,7 @@ async function create(page: Page, name: string) {
 }
 
 test(
-	'a sole workspace can be selected explicitly from the unscoped chooser',
+	'an unscoped chooser automatically selects the sole workspace and retains it on reload',
 	{ tag: ['@workspaces'] },
 	async ({ page }) => {
 		await start(page)
@@ -40,13 +43,8 @@ test(
 		const manager = page.getByLabel('Select Workspace', { exact: true })
 		const drawer = page.getByLabel('Current Workspace', { exact: true })
 		await expect(manager.locator('option:not([disabled])')).toHaveCount(1)
-		await expect(manager).toHaveValue('')
-		await expect(drawer).toHaveValue('')
-		await expect(manager).toBeEnabled()
-		await expect(drawer).toBeEnabled()
 		const id = await manager.locator('option:not([disabled])').getAttribute('value')
 		if (!id) throw new Error('Expected sole local workspace')
-		await manager.selectOption(id)
 		await expect(page).toHaveURL(`/settings/workspace?workspace=${id}`)
 		await expect(manager).toHaveValue(id)
 		await expect(drawer).toHaveValue(id)
@@ -254,12 +252,15 @@ test(
 	{ tag: ['@workspaces'] },
 	async ({ page }) => {
 		await start(page)
+		const originalScope = workspaceId(page.url())
 		const first = await create(page, 'Same')
-		await expect(page).toHaveURL(/\/settings\/workspace$/)
+		await expect(page).toHaveURL(`/settings/workspace?workspace=${originalScope}`)
 		await page.getByRole('button', { name: 'Create another Workspace' }).click()
 		const second = await create(page, 'Same')
 		expect(second).not.toBe(first)
+		await expect(page).toHaveURL(`/settings/workspace?workspace=${originalScope}`)
 		await page.reload()
+		await expect(page).toHaveURL(`/settings/workspace?workspace=${originalScope}`)
 		await expect(
 			page
 				.getByLabel('Select Workspace', { exact: true })
