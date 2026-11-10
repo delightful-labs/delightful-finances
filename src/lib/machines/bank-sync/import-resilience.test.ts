@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fromCallback, toPromise } from 'xstate'
 import { importFixture, raw, response } from './import.fixture.js'
 import type { ProviderResponse } from './types.js'
 import * as diagnostics from '#lib/integrations/diagnostics.js'
+import { createCallbackLogic, toPromise } from 'xstate'
 
 function singleAccountResponse(count: number): ProviderResponse {
 	const provider = response.accounts[0]
@@ -175,7 +175,7 @@ describe('bank import resilience', () => {
 	it('cancels during the traversal yield and never starts the next transaction', async () => {
 		const entered = Promise.withResolvers<void>()
 		const f = importFixture({
-			yieldControl: fromCallback<{ type: 'CONTINUE' }>(() => {
+			yieldControl: createCallbackLogic<{ type: 'CONTINUE' }>(() => {
 				entered.resolve()
 			})
 		})

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { createScopedFormWriteMachine } from './scoped-form-write.js'
 import { renameFixture } from '../workspaces/workspace-rename.fixture.js'
+import { createActor, waitFor } from 'xstate'
 
 describe('shared single-write operation', () => {
 	it('supervises a failed readiness projection before any write', async () => {

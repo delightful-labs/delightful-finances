@@ -1,272 +1,169 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createActor, createMachine, fromPromise, spawnChild } from 'xstate'
-import type { StatelyInspectionEvent } from '@statelyai/inspect'
+import { createActor, createMachine, createAsyncLogic, waitFor } from 'xstate'
 
-const fixture = vi.hoisted(() => ({
-	browser: true,
-	PUBLIC_DEBUG: 'true',
-	events: new Array<StatelyInspectionEvent>(),
-	open: vi.fn(),
-	fail: false,
-	postMessage: vi.fn(),
-	focus: vi.fn(),
-	listeners: new Array<{
-		listener: EventListenerOrEventListenerObject
-		signal: AbortSignal | undefined
-	}>()
+const fixture = vi.hoisted(() => ({ enabled: true, warn: vi.fn(), error: vi.fn() }))
+vi.mock('$app/env', () => ({ browser: true }))
+vi.mock('./logger.js', () => ({
+	debugEnabled: fixture.enabled,
+	createLogger: () => ({ warn: fixture.warn, error: fixture.error })
 }))
-vi.mock('$app/env', () => fixture)
-vi.mock('$app/env/public', () => fixture)
-vi.mock('@statelyai/inspect', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('@statelyai/inspect')>()
-	return {
-		...actual,
-		createBrowserInspector: vi.fn(
-			(options: Parameters<typeof actual.createBrowserInspector>[0]) => {
-				if (fixture.fail) throw new Error('PRIVATE_ATTACH_ERROR')
-				return actual.createBrowserInspector({
-					...options,
-					send: (event) => fixture.events.push(event)
-				})
-			}
-		)
-	}
-})
-
+const cleanup = new Set<() => void>()
+let listener: ((event: MessageEvent<unknown>) => void) | undefined
+const popup = { closed: false, focus: vi.fn(), postMessage: vi.fn() }
+const open = vi.fn(() => popup)
 beforeEach(() => {
 	vi.resetModules()
-	fixture.events.length = 0
-	fixture.browser = true
-	fixture.PUBLIC_DEBUG = 'true'
-	fixture.fail = false
-	fixture.open.mockReset()
-	fixture.postMessage.mockReset()
-	fixture.focus.mockReset()
-	fixture.listeners.length = 0
+	fixture.enabled = true
+	fixture.warn.mockClear()
+	fixture.error.mockClear()
+	popup.closed = false
+	popup.focus.mockClear()
+	popup.postMessage.mockClear()
+	open.mockReset()
+	open.mockReturnValue(popup)
+	listener = undefined
 	vi.stubGlobal('window', {
-		open: fixture.open,
-		addEventListener: (
-			_type: string,
-			listener: EventListenerOrEventListenerObject,
-			options?: AddEventListenerOptions
-		) => {
-			fixture.listeners.push({ listener, signal: options?.signal })
-		},
-		postMessage: fixture.postMessage,
-		focus: fixture.focus,
-		closed: false,
-		requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0)
+		open,
+		addEventListener: (_type: string, callback: (event: MessageEvent<unknown>) => void) => {
+			listener = callback
+		}
 	})
-	fixture.open.mockImplementation(() => window)
 })
 afterEach(() => {
+	for (const stop of cleanup) stop()
+	cleanup.clear()
 	vi.unstubAllGlobals()
-	vi.restoreAllMocks()
 })
-
-it.each([
-	{ browser: false, flag: 'true' },
-	{ browser: true, flag: 'false' }
-])('does not initialize on SSR or when disabled: $browser/$flag', async ({ browser, flag }) => {
-	fixture.browser = browser
-	fixture.PUBLIC_DEBUG = flag
-	const { inspectActor } = await import('./inspector.js')
-	const actor = createActor(createMachine({}), { inspect: inspectActor }).start()
-	actor.stop()
-	expect(fixture.open).not.toHaveBeenCalled()
-	expect(fixture.events).toEqual([])
-})
-
-it('uses the real SDK to inspect descendants while removing data before buffering', async () => {
-	const { inspectActor } = await import('./inspector.js')
-	const child = createMachine({
-		id: 'fixture-child',
-		context: { secret: 'PRIVATE_CHILD_CONTEXT' },
-		initial: 'working',
-		output: { secret: 'PRIVATE_CHILD_OUTPUT' },
-		states: { working: { after: { 0: 'finished' } }, finished: { type: 'final' } }
-	})
-	const machine = createMachine({
-		id: 'fixture-root',
-		context: { secret: 'PRIVATE_ROOT_CONTEXT' },
-		initial: 'running',
-		entry: spawnChild(child, { id: 'PRIVATE_PROVIDER_ACTOR_ID' }),
-		states: {
-			running: {
-				on: { FINISH: 'done' }
-			},
-			done: { type: 'final' }
-		},
-		output: { secret: 'PRIVATE_ROOT_OUTPUT' }
-	})
-	const actor = createActor(machine, { inspect: inspectActor }).start()
-	await new Promise((resolve) => setTimeout(resolve, 10))
-	actor.send({ type: 'FINISH', token: 'PRIVATE_EVENT_PAYLOAD' })
-	await vi.waitFor(() =>
-		expect(fixture.events).toContainEqual(
-			expect.objectContaining({ type: '@xstate.event', event: { type: 'FINISH' } })
-		)
-	)
-	const registrations = fixture.events.filter((event) => event.type === '@xstate.actor')
-	expect(registrations).toHaveLength(2)
-	expect(registrations[1]?.parentId).toBe(actor.sessionId)
-	expect(fixture.events).toContainEqual(
-		expect.objectContaining({
-			type: '@xstate.snapshot',
-			snapshot: { status: 'done', value: 'done', output: undefined, error: undefined },
-			event: { type: 'FINISH' }
-		})
-	)
-	expect(fixture.events).toContainEqual(
-		expect.objectContaining({
-			type: '@xstate.event',
-			event: { type: 'FINISH' }
-		})
-	)
-	expect(JSON.stringify(fixture.events)).not.toContain('PRIVATE_')
-	expect(registrations[0]?.definition).toContain('running')
-	expect(fixture.events).toContainEqual(
-		expect.objectContaining({ type: '@xstate.event', event: { type: 'xstate.done.actor.[actor]' } })
-	)
-	expect(fixture.open).not.toHaveBeenCalled()
-	actor.stop()
-})
-
-it('cannot fail application startup when inspector construction throws', async () => {
-	fixture.fail = true
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const { inspectActor } = await import('./inspector.js')
-	const actor = createActor(createMachine({ initial: 'ready', states: { ready: {} } }), {
-		inspect: inspectActor
-	})
-	expect(() => actor.start()).not.toThrow()
-	expect(actor.getSnapshot().value).toBe('ready')
-	expect(warn).toHaveBeenCalledWith('[inspector] Inspector could not attach', {})
-	expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_')
-	actor.stop()
-})
-
-it('removes rejected actor errors from the real SDK output', async () => {
-	const { inspectActor } = await import('./inspector.js')
-	const actor = createActor(
-		fromPromise(async () => {
-			throw new Error('PRIVATE_RUNTIME_ERROR')
-		}),
-		{
-			id: 'PRIVATE_PROVIDER_PROMISE_ID',
-			inspect: inspectActor
-		}
-	)
-	actor.subscribe({ error: () => {} })
-	actor.start()
-	await vi.waitFor(() =>
-		expect(fixture.events).toContainEqual(
-			expect.objectContaining({
-				type: '@xstate.snapshot',
-				snapshot: { status: 'error', output: undefined, error: undefined }
-			})
-		)
-	)
-	expect(JSON.stringify(fixture.events)).not.toContain('PRIVATE_')
-	actor.stop()
-})
-
-it('never traverses live context before the SDK sanitizers run', async () => {
-	const { inspectActor } = await import('./inspector.js')
-	const readPrivateValue = vi.fn(() => 'PRIVATE_CONTEXT_VALUE')
-	const privatePayload = Object.defineProperty({}, 'token', {
-		enumerable: true,
-		get: readPrivateValue
-	})
+function connect(source: unknown = popup, origin = 'https://stately.ai') {
+	const event = new MessageEvent('message', { origin, data: { type: '@statelyai.connected' } })
+	Object.defineProperty(event, 'source', { value: source })
+	listener?.(event)
+}
+function wire() {
+	return JSON.stringify(popup.postMessage.mock.calls)
+}
+it('inspects native v6 descendants without buffering private context, input or output', async () => {
+	const { inspectActor, openStateInspector } = await import('./inspector.js')
+	const child = createAsyncLogic({ run: async () => 'PRIVATE_OUTPUT' })
 	const actor = createActor(
 		createMachine({
-			id: 'private-context-fixture',
-			context: () => ({ privatePayload }),
-			initial: 'waiting',
-			states: { waiting: { on: { ADVANCE: 'finished' } }, finished: { type: 'final' } }
+			id: 'safe-parent',
+			context: { secret: 'PRIVATE_CONTEXT' },
+			initial: 'loading',
+			states: {
+				loading: {
+					invoke: { src: child, input: { secret: 'PRIVATE_INPUT' }, onDone: { target: 'ready' } }
+				},
+				ready: {}
+			}
 		}),
 		{ inspect: inspectActor }
 	).start()
-	actor.send({ type: 'ADVANCE', privatePayload })
-	await vi.waitFor(() =>
-		expect(fixture.events).toContainEqual(
-			expect.objectContaining({
-				type: '@xstate.snapshot',
-				snapshot: expect.objectContaining({ status: 'done' })
-			})
-		)
-	)
-	expect(readPrivateValue).not.toHaveBeenCalled()
-	expect(JSON.stringify(fixture.events)).not.toContain('PRIVATE_CONTEXT_VALUE')
-	actor.stop()
+	cleanup.add(() => actor.stop())
+	await waitFor(actor, (snapshot) => snapshot.matches('ready'))
+	expect(open).not.toHaveBeenCalled()
+	openStateInspector()
+	connect()
+	expect(popup.postMessage.mock.calls.length).toBeGreaterThan(1)
+	expect(wire()).not.toMatch(/PRIVATE_(CONTEXT|INPUT|OUTPUT)/)
+	expect(wire()).toContain('safe-parent')
+	expect(popup.postMessage.mock.calls.every((call) => call[1] === 'https://stately.ai')).toBe(true)
 })
-
-it('opens only on request and replays current topology after event history rolls over', async () => {
+it('keeps popup failures out of application startup and private errors out of transport', async () => {
+	const { inspectActor, openStateInspector } = await import('./inspector.js')
+	open.mockImplementation(() => {
+		throw new Error('PRIVATE_POPUP_FAILURE')
+	})
+	const actor = createActor(createMachine({ initial: 'ready', states: { ready: {} } }), {
+		inspect: inspectActor
+	}).start()
+	cleanup.add(() => actor.stop())
+	expect(() => openStateInspector()).not.toThrow()
+	expect(actor.getSnapshot().status).toBe('active')
+	expect(fixture.warn).toHaveBeenCalledExactlyOnceWith('Inspector could not open')
+	expect(wire()).not.toContain('PRIVATE_POPUP_FAILURE')
+})
+it('projects failed actor status without rejection payloads', async () => {
+	const { inspectActor, openStateInspector } = await import('./inspector.js')
+	const child = createAsyncLogic({
+		run: async () => {
+			throw new Error('PRIVATE_REJECTION')
+		}
+	})
+	const actor = createActor(
+		createMachine({
+			initial: 'loading',
+			states: { loading: { invoke: { src: child, onError: { target: 'failed' } } }, failed: {} }
+		}),
+		{ inspect: inspectActor }
+	).start()
+	cleanup.add(() => actor.stop())
+	await waitFor(actor, (snapshot) => snapshot.matches('failed'))
+	openStateInspector()
+	connect()
+	expect(wire()).toContain('failed')
+	expect(wire()).not.toContain('PRIVATE_REJECTION')
+})
+it('never traverses a live context getter', async () => {
+	const { inspectActor, openStateInspector } = await import('./inspector.js')
+	const getter = vi.fn(() => {
+		throw new Error('PRIVATE_GETTER')
+	})
+	class Resource {}
+	const resource = new Resource()
+	Object.defineProperty(resource, 'secret', { get: getter, enumerable: true })
+	const context = { resource }
+	const actor = createActor(createMachine({ context, initial: 'ready', states: { ready: {} } }), {
+		inspect: inspectActor
+	}).start()
+	cleanup.add(() => actor.stop())
+	openStateInspector()
+	connect()
+	expect(getter).not.toHaveBeenCalled()
+	expect(wire()).not.toContain('PRIVATE_GETTER')
+})
+it('checks popup source and origin and replays current topology after many transitions', async () => {
 	const { inspectActor, openStateInspector } = await import('./inspector.js')
 	const actor = createActor(
 		createMachine({
-			id: 'retained-machine',
-			initial: 'waiting',
-			states: {
-				waiting: { on: { PING: {}, FINISH: 'finished' } },
-				finished: { type: 'final' }
-			}
+			id: 'current-state',
+			initial: 'one',
+			states: { one: { on: { NEXT: { target: 'two' } } }, two: { on: { NEXT: { target: 'one' } } } }
 		}),
 		{ inspect: inspectActor }
 	).start()
-	for (let i = 0; i < 300; i += 1) actor.send({ type: 'PING' })
-	actor.send({ type: 'FINISH' })
-	await vi.waitFor(() =>
-		expect(fixture.events).toContainEqual(
-			expect.objectContaining({
-				type: '@xstate.snapshot',
-				snapshot: expect.objectContaining({ status: 'done' })
-			})
-		)
-	)
-	expect(fixture.open).not.toHaveBeenCalled()
+	cleanup.add(() => actor.stop())
+	for (let index = 0; index < 401; index++) actor.send({ type: 'NEXT' })
 	openStateInspector()
-	expect(fixture.open).toHaveBeenCalledTimes(1)
-	const connected = Object.assign(new Event('message'), {
-		data: { type: '@statelyai.connected' },
-		origin: 'https://stately.ai',
-		source: window
-	})
-	for (const { listener, signal } of fixture.listeners) {
-		if (signal?.aborted) continue
-		if (typeof listener === 'function') listener(connected)
-		else listener.handleEvent(connected)
-	}
-	expect(fixture.postMessage).toHaveBeenCalledWith(
-		expect.objectContaining({
-			type: '@xstate.actor',
-			name: 'retained-machine',
-			snapshot: expect.objectContaining({ status: 'done', value: 'finished' })
-		}),
-		'https://stately.ai'
-	)
+	connect({}, 'https://stately.ai')
+	connect(popup, 'https://foreign.example')
+	expect(popup.postMessage).not.toHaveBeenCalled()
+	connect()
+	expect(wire()).toContain('two')
+	expect(wire()).toContain('current-state')
 	openStateInspector()
-	expect(fixture.open).toHaveBeenCalledTimes(1)
-	expect(fixture.focus).toHaveBeenCalledOnce()
-	actor.stop()
+	expect(open).toHaveBeenCalledOnce()
+	expect(popup.focus).toHaveBeenCalledOnce()
 })
-
-it('preserves deeply nested chart definitions for the hosted renderer', async () => {
-	const { inspectActor } = await import('./inspector.js')
-	type Node = { initial?: string; states?: Record<string, Node>; type?: 'final' }
-	let nested: Node = { type: 'final' }
-	for (let i = 0; i < 16; i += 1) nested = { initial: 'child', states: { child: nested } }
+it('retains deep static hierarchy while omitting configuration payloads', async () => {
+	const { inspectActor, openStateInspector } = await import('./inspector.js')
+	type Tree = { initial?: string; states?: Record<string, Tree>; type?: 'final' }
+	const tree = (depth: number): Tree =>
+		depth
+			? { initial: 'nested', states: { nested: tree(depth - 1) } }
+			: { initial: 'deepest', states: { deepest: { type: 'final' } } }
 	const actor = createActor(
-		createMachine({ id: 'deep-machine', initial: 'nested', states: { nested } }),
+		createMachine({
+			id: 'deep',
+			context: { data: 'PRIVATE_DEFINITION' },
+			initial: 'outer',
+			states: { outer: tree(25) }
+		}),
 		{ inspect: inspectActor }
 	).start()
-	await vi.waitFor(() =>
-		expect(fixture.events.some((event) => event.type === '@xstate.actor')).toBe(true)
-	)
-	const registration = fixture.events.find((event) => event.type === '@xstate.actor')
-	if (registration?.type !== '@xstate.actor') throw new Error('Missing registration')
-	expect(registration.definition).not.toContain('[Object]')
-	expect(registration.definition).not.toContain('[Array]')
-	expect(registration.definition).toContain('"type":"final"')
-	actor.stop()
+	cleanup.add(() => actor.stop())
+	openStateInspector()
+	connect()
+	expect(wire()).toContain('deepest')
+	expect(wire()).not.toContain('PRIVATE_DEFINITION')
 })

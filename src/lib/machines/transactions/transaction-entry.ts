@@ -8,7 +8,6 @@ import { transferEditRequiresUnlink } from '#lib/contracts/transaction-save-cont
 import { workspaceHref } from '../../domain/workspace-routes.js'
 import { parseAmountMinor } from '#lib/domain/money.js'
 import { normalizedName } from '#lib/domain/names.js'
-import { assign, setup, type SnapshotFrom } from 'xstate'
 import type {
 	FormCapability,
 	FormChildEvent,
@@ -28,6 +27,9 @@ import {
 import type { AppTransaction, IncomePaymentMethod } from '#lib/domain/transaction.js'
 import { z } from 'zod'
 import { validateAttachmentSelection } from '#lib/domain/transaction-attachments.js'
+import { setup, types } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export function transactionEntryScope(f: TransactionEntryObservation): TransactionEntryScope {
 	return {
@@ -75,100 +77,113 @@ export function applicableTransactionTags(f: TransactionEntryObservation) {
 	)
 }
 export function createTransactionEntryAvailability(binding: object) {
-	return setup<
-		{ observation: FormObservation<TransactionEntryObservation> },
-		FormChildEvent<TransactionEntryObservation>,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<TransactionEntryObservation>
-	>({}).createMachine({
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<TransactionEntryObservation>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<{ observation: FormObservation<TransactionEntryObservation> }>(),
+			events: events0,
+			input: types<FormObservation<TransactionEntryObservation>>()
+		}
+	}).createMachine({
 		initial: 'checking',
 		context: ({ input }) => ({ observation: input }),
 		on: {
-			OBSERVE: {
-				target: '.checking',
-				actions: assign({ observation: ({ event }) => event.observation })
+			OBSERVE: (args) => {
+				return { target: '.checking', context: { observation: args.event.observation } }
 			}
 		},
 		states: {
 			checking: {
-				always: [
-					{
-						guard: ({
+				always: (args) => {
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => !f.sessionReady || !f.identityId || f.binding !== binding,
-						target: 'sessionUnavailable'
-					},
-					{
-						guard: ({
+						}) => !f.sessionReady || !f.identityId || f.binding !== binding)(args)
+					) {
+						return { target: 'sessionUnavailable' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => !f.organizationId,
-						target: 'selectWorkspace'
-					},
-					{
-						guard: ({
+						}) => !f.organizationId)(args)
+					) {
+						return { target: 'selectWorkspace' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => f.failed,
-						target: 'loadFailed'
-					},
-					{
-						guard: ({
+						}) => f.failed)(args)
+					) {
+						return { target: 'loadFailed' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => f.loading,
-						target: 'loading'
-					},
-					{
-						guard: ({
+						}) => f.loading)(args)
+					) {
+						return { target: 'loading' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
 						}) =>
 							f.membership?.userId !== f.identityId ||
 							f.membership?.organizationId !== f.organizationId ||
-							f.membership?.role === ORGANIZATION_ROLE.VIEWER,
-						target: 'readOnly'
-					},
-					{
-						guard: ({
+							f.membership?.role === ORGANIZATION_ROLE.VIEWER)(args)
+					) {
+						return { target: 'readOnly' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
 						}) =>
 							!f.accounts.some(
 								(a) => a.organizationId === f.organizationId && a.archivedAt === null
-							),
-						target: 'noAccounts'
-					},
-					{
-						guard: ({
+							))(args)
+					) {
+						return { target: 'noAccounts' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => writableTransactionAccounts(f).length === 0,
-						target: 'readOnly'
-					},
-					{
-						guard: ({
+						}) => writableTransactionAccounts(f).length === 0)(args)
+					) {
+						return { target: 'readOnly' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => applicableTransactionCategories(f).length === 0,
-						target: 'noCategories'
-					},
-					{
-						guard: ({
+						}) => applicableTransactionCategories(f).length === 0)(args)
+					) {
+						return { target: 'noCategories' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -182,24 +197,30 @@ export function createTransactionEntryAvailability(binding: object) {
 										!f.transaction.externalId?.trim()) ||
 									f.transaction.organizationId !== f.organizationId ||
 									f.transaction.id !== f.transactionId ||
-									(f.transaction.paymentMethod === PAYMENT_METHOD.CHECK && !f.transaction.check))),
-						target: 'unavailableReference'
-					},
-					{
-						guard: ({
+									(f.transaction.paymentMethod === PAYMENT_METHOD.CHECK && !f.transaction.check))))(
+							args
+						)
+					) {
+						return { target: 'unavailableReference' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => f.intent !== undefined && transferEditRequiresUnlink(f.transaction, f.intent),
-						target: 'linkedTransferRequiresUnlink'
-					},
-					{ target: 'checkingTags' }
-				]
+						}) => f.intent !== undefined && transferEditRequiresUnlink(f.transaction, f.intent))(
+							args
+						)
+					) {
+						return { target: 'linkedTransferRequiresUnlink' }
+					}
+					return { target: 'checkingTags' }
+				}
 			},
 			checkingTags: {
-				always: [
-					{
-						guard: ({
+				always: (args) => {
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -212,11 +233,12 @@ export function createTransactionEntryAvailability(binding: object) {
 									applicableTransactionTags(f).filter(
 										(tag) => normalizedName(tag.name) === normalizedName(name)
 									).length > 1
-							),
-						target: 'ambiguousTagName'
-					},
-					{ target: 'ready' }
-				]
+							))(args)
+					) {
+						return { target: 'ambiguousTagName' }
+					}
+					return { target: 'ready' }
+				}
 			},
 			ambiguousTagName: {},
 			sessionUnavailable: {},

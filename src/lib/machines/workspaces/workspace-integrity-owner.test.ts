@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { workspaceIntegrity } from './workspace-integrity.js'
 import { workspaceReports } from './workspace-reports.fixture.js'
 import {
@@ -11,6 +10,8 @@ import {
 	type IntegrityBinding
 } from './workspace-integrity-owner.js'
 import { integrityFixture, membership, records, scope } from './workspace-integrity.fixture.js'
+import { createActor, waitFor } from 'xstate'
+
 const actors: { stop: () => void }[] = []
 afterEach(() => actors.splice(0).forEach((actor) => actor.stop()))
 const binding: IntegrityBinding = {

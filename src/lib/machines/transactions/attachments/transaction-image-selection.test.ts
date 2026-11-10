@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise, waitFor } from 'xstate'
 import {
 	transactionImageSelectionMachine,
 	transactionImageSelectionPresentation
 } from './transaction-image-selection.js'
 import { mockEditorPlatform } from '../../../testing/image-editor/fixtures.js'
+import { createActor, toPromise, waitFor } from 'xstate'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {

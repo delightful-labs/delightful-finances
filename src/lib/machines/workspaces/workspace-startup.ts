@@ -1,8 +1,9 @@
-import type { SnapshotFrom, OutputFrom } from 'xstate'
 import { createWorkspaceStartupMachine as createSharedStartup } from 'delightful-local-first/workspace/startup'
 import type { getDb } from 'jazz-tools/svelte'
 import { workspaceInitialization } from './workspace-initialization.js'
 import { workspaceFakeData } from './workspace-fake-data.js'
+import type { SnapshotFrom, OutputFrom } from 'xstate'
+
 type Db = Pick<
 	ReturnType<typeof getDb>,
 	'all' | 'beginTransaction' | 'beginSerializableTransaction' | 'getConfig'

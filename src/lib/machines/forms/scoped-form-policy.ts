@@ -1,4 +1,3 @@
-import type { ActorLogic, Snapshot, SnapshotFrom } from 'xstate'
 import type { z } from 'zod'
 import type {
 	FormCapability,
@@ -11,6 +10,7 @@ import type {
 import type { FormPersistence } from './scoped-form-write.js'
 import { createSingleWriteFormOptions as createSharedOptions } from 'delightful-local-first/forms/policy'
 import type { ScopedFormOptions } from './scoped-form.js'
+import type { ActorLogic, Snapshot, SnapshotFrom } from 'xstate'
 
 /** Composition only: policy states and effects are supplied by the domain. */
 export function createSingleWriteFormOptions<

@@ -1,4 +1,3 @@
-import { setup, types, createAsyncLogic, matchesState } from 'xstate-v6'
 import { accountStoreLock, type AccountLockInput } from './account-store-lock.js'
 import { accountStoreReadMachine } from './account-store-read.js'
 import { accountStoreLegacyMachine } from './account-store-legacy.js'
@@ -13,6 +12,7 @@ import {
 	droppedAccountRoots,
 	type AccountStorageBinding
 } from '../../runtime/worker/account-selection.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
 
 type Input = {
 	request: AccountStoreRequest
@@ -56,26 +56,45 @@ const actors = {
 		run: ({ input }: { input: AccountStoreStorage }) => input.closeHostAndDrain()
 	})
 }
+const events0 = {
+	LOCKED: types(),
+	RELEASED: types(),
+	LOCK_FAILED: types(),
+	SHUTDOWN: types(),
+	HOST_CLOSED: types<{ scope: string }>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof actors.lock>
+			| import('xstate').OutputFrom<typeof actors.legacy>
+			| import('xstate').OutputFrom<typeof actors.read>
+			| import('xstate').OutputFrom<typeof actors.snapshot>
+			| import('xstate').OutputFrom<typeof actors.transform>
+			| import('xstate').OutputFrom<typeof actors.write>
+			| import('xstate').OutputFrom<typeof actors.drain>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 const model = setup({
 	schemas: {
 		context: types<Context>(),
 		input: types<Input>(),
 		output: types<AccountStoreResult>(),
-		events: {
-			LOCKED: types(),
-			RELEASED: types(),
-			LOCK_FAILED: types(),
-			SHUTDOWN: types(),
-			HOST_CLOSED: types<{ scope: string }>()
-		},
+		events: events0,
 		children: {
-			lock: types<import('xstate-v6').ActorRefFrom<typeof actors.lock>>(),
-			legacy: types<import('xstate-v6').ActorRefFrom<typeof actors.legacy>>(),
-			read: types<import('xstate-v6').ActorRefFrom<typeof actors.read>>(),
-			snapshot: types<import('xstate-v6').ActorRefFrom<typeof actors.snapshot>>(),
-			transform: types<import('xstate-v6').ActorRefFrom<typeof actors.transform>>(),
-			write: types<import('xstate-v6').ActorRefFrom<typeof actors.write>>(),
-			drain: types<import('xstate-v6').ActorRefFrom<typeof actors.drain>>()
+			lock: types<import('xstate').ActorRefFrom<typeof actors.lock>>(),
+			legacy: types<import('xstate').ActorRefFrom<typeof actors.legacy>>(),
+			read: types<import('xstate').ActorRefFrom<typeof actors.read>>(),
+			snapshot: types<import('xstate').ActorRefFrom<typeof actors.snapshot>>(),
+			transform: types<import('xstate').ActorRefFrom<typeof actors.transform>>(),
+			write: types<import('xstate').ActorRefFrom<typeof actors.write>>(),
+			drain: types<import('xstate').ActorRefFrom<typeof actors.drain>>()
 		}
 	},
 	states: {
@@ -123,11 +142,14 @@ const model = setup({
 	},
 	actors,
 	guards: {
-		stopping: ({ value }: { value: import('xstate-v6').StateValue }) =>
+		stopping: ({ value }: { value: import('xstate').StateValue }) =>
 			matchesState({ updating: { control: 'stopping' } }, value),
-		definitelyNotIssued: (_, params: { error: unknown }) => definitelyNotIssued(params.error),
+		definitelyNotIssued: (
+			_: { context: Context; event: NativeEvent0; value: import('xstate').StateValue },
+			params: { error: unknown }
+		) => definitelyNotIssued(params.error),
 		needsLegacyCleanup: (
-			_,
+			_: { context: Context; event: NativeEvent0; value: import('xstate').StateValue },
 			params: { key: string | undefined; currentKey: string; dropped: string[] }
 		) => !!params.key && params.key !== params.currentKey && params.dropped.length > 0
 	}

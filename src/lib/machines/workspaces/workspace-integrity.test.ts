@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import { workspaceIntegrity } from './workspace-integrity.js'
 import {
@@ -9,6 +8,7 @@ import {
 	records,
 	scope
 } from './workspace-integrity.fixture.js'
+import { createActor, waitFor } from 'xstate'
 
 describe('selected workspace integrity coordination', () => {
 	it('accepts intact local records without reading remotely or opening a transaction', async () => {

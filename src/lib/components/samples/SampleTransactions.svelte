@@ -89,39 +89,44 @@
 		db,
 		observe: sampleObservation
 	})
-	const sampleMachine = createSampleTransactionsMachine(creation.operation, (index) => {
-		if (!debugEnabled || batchScope !== currentSampleScope())
-			throw new Error('Sample scope changed')
-		const observation = sampleObservation()
-		const account = writableTransactionAccounts(observation).find(
-			(account) =>
-				filters.selectedAccountIds === null || filters.selectedAccountIds.includes(account.id)
-		)
-		const category = applicableTransactionCategories(observation)[0]
-		const date = new Date()
-		date.setDate(date.getDate() - Math.floor(index / 5))
-		const bookedOn = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-		const transaction = independentTransactionFormSchema(() => ({
-			...observation,
-			accounts: writableTransactionAccounts(observation)
-		})).parse({
-			accountId: account?.id,
-			categoryId: category?.id,
-			bookedOn,
-			amount: `${Math.floor((100 + index * 137) / 100)}.${String((100 + index * 137) % 100).padStart(2, '0')}`,
-			paymentMethod: PAYMENT_METHOD.CASH,
-			description: fakeTransactionDescription(),
-			tags: []
-		})
-		return {
-			request: {
-				id: index,
-				scopeRevision: 0,
-				scope: transactionEntryScope(observation),
-				values: transaction
-			},
-			observation: { revision: observationRevision, facts: observation }
-		}
+	const sampleMachine = createSampleTransactionsMachine({
+		logic: creation.operation,
+		prepare: (index) => {
+			if (!debugEnabled || batchScope !== currentSampleScope())
+				throw new Error('Sample scope changed')
+			const observation = sampleObservation()
+			const account = writableTransactionAccounts(observation).find(
+				(account) =>
+					filters.selectedAccountIds === null || filters.selectedAccountIds.includes(account.id)
+			)
+			const category = applicableTransactionCategories(observation)[0]
+			const date = new Date()
+			date.setDate(date.getDate() - Math.floor(index / 5))
+			const bookedOn = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+			const transaction = independentTransactionFormSchema(() => ({
+				...observation,
+				accounts: writableTransactionAccounts(observation)
+			})).parse({
+				accountId: account?.id,
+				categoryId: category?.id,
+				bookedOn,
+				amount: `${Math.floor((100 + index * 137) / 100)}.${String((100 + index * 137) % 100).padStart(2, '0')}`,
+				paymentMethod: PAYMENT_METHOD.CASH,
+				description: fakeTransactionDescription(),
+				tags: []
+			})
+			return {
+				request: {
+					id: index,
+					scopeRevision: 0,
+					scope: transactionEntryScope(observation),
+					values: transaction
+				},
+				observation: { revision: observationRevision, facts: observation }
+			}
+		},
+		result: (output) => output,
+		recipient: (actor) => actor
 	})
 	let observationRevision = 0
 	const samples = createActor(sampleMachine, { inspect: inspectActor })

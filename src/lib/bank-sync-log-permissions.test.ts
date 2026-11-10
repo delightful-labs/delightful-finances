@@ -7,8 +7,16 @@ import {
 } from 'jazz-tools/testing'
 import { app } from './schema.js'
 import permissions from './permissions.js'
-import { createActor, fromCallback, toPromise, waitFor } from 'xstate'
 import { createSyncLogMachine } from './machines/bank-sync/sync-log.js'
+import {
+	createActor,
+	setup,
+	types,
+	type ActorRefFrom,
+	createCallbackLogic,
+	toPromise,
+	waitFor
+} from 'xstate'
 
 const ownerSession = {
 	user_id: 'sync-log-owner',
@@ -94,12 +102,23 @@ afterAll(async () => {
 })
 
 it('persists account results through the logging actor before finalizing its attempt', async () => {
-	const parent = createActor(fromCallback(() => {})).start()
 	const attemptId = crypto.randomUUID()
-	const actor = createActor(createSyncLogMachine({ db: owner }), {
-		input: { id: attemptId, organizationId, connectionId, initiatedBy, startedAt },
-		parent
-	}).start()
+	const logic = createSyncLogMachine({ db: owner })
+	const parent = createActor(
+		setup({
+			actors: { log: logic },
+			schemas: { children: { log: types<ActorRefFrom<typeof logic>>() } }
+		}).createMachine({
+			invoke: {
+				id: 'log',
+				src: 'log',
+				input: { id: attemptId, organizationId, connectionId, initiatedBy, startedAt }
+			}
+		})
+	).start()
+	const actor = parent.getSnapshot().children.log
+	if (!actor) throw new Error('Missing supervised sync log')
+
 	try {
 		await waitFor(actor, (state) => state.matches('awaitingResult'))
 		actor.send({

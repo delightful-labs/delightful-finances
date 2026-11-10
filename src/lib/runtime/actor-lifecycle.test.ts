@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, createMachine, fromPromise } from 'xstate'
 import { stopAfterShutdown } from './actor-lifecycle.js'
+import { createActor, createMachine, createAsyncLogic } from 'xstate'
 
 describe('actor owner shutdown', () => {
 	it('keeps the actor alive until asynchronous cleanup finishes', async () => {
@@ -10,14 +10,16 @@ describe('actor owner shutdown', () => {
 			createMachine({
 				initial: 'ready',
 				states: {
-					ready: { on: { SHUTDOWN: 'draining' } },
+					ready: { on: { SHUTDOWN: { target: 'draining' } } },
 					draining: {
 						invoke: {
-							src: fromPromise(async () => {
-								await cleanup.promise
-								released()
+							src: createAsyncLogic({
+								run: async () => {
+									await cleanup.promise
+									released()
+								}
 							}),
-							onDone: 'closed'
+							onDone: { target: 'closed' }
 						}
 					},
 					closed: { type: 'final' }
@@ -42,7 +44,7 @@ describe('actor owner shutdown', () => {
 		const machine = createMachine({
 			initial: 'ready',
 			states: {
-				ready: { on: { SHUTDOWN: 'closed' } },
+				ready: { on: { SHUTDOWN: { target: 'closed' } } },
 				closed: { type: 'final' }
 			}
 		})
@@ -55,8 +57,13 @@ describe('actor owner shutdown', () => {
 		const finished = createActor(machine).start()
 		finished.send({ type: 'SHUTDOWN' })
 		const finishedStop = vi.spyOn(finished, 'stop')
-		const finishedSend = vi.spyOn(finished, 'send')
-		stopAfterShutdown(finished)
+		const finishedSend = vi.fn((event: { type: 'SHUTDOWN' }) => finished.send(event))
+		stopAfterShutdown({
+			getSnapshot: () => finished.getSnapshot(),
+			subscribe: (observer) => finished.subscribe(observer),
+			send: finishedSend,
+			stop: () => finished.stop()
+		})
 		expect(finishedSend).not.toHaveBeenCalled()
 		expect(finishedStop).toHaveBeenCalledOnce()
 	})

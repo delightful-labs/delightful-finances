@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assign, createActor, fromTransition, setup, waitFor, type SnapshotFrom } from 'xstate'
 import type {
 	FormCapability,
 	FormCapabilityReportEvent,
@@ -10,6 +9,10 @@ import { createScopedFormWriteMachine } from './scoped-form-write.js'
 import { createScopedFormReadinessMachine } from './scoped-form-readiness.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
 import { fixture, ready, success, type Facts } from './scoped-form.fixture.js'
+import { createActor, isMachineSnapshot, setup, waitFor, types, createStepLogic } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
+import { collectEvents } from '../report-collector.fixture.js'
 
 type ReadinessFacts = Facts & {
 	reportRevision?: number
@@ -21,38 +24,42 @@ afterEach(() => {
 	for (const stop of cleanup.splice(0)) stop()
 })
 function domain() {
-	const source = setup<
-		{ observation: FormObservation<ReadinessFacts> },
-		FormChildEvent<ReadinessFacts>,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<ReadinessFacts>
-	>({}).createMachine({
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<ReadinessFacts>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<ReadinessFacts>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<ReadinessFacts>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<ReadinessFacts>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	const source = setup({
+		schemas: {
+			context: types<{ observation: FormObservation<ReadinessFacts> }>(),
+			events: events0,
+			input: types<FormObservation<ReadinessFacts>>()
+		}
+	}).createMachine({
 		context: ({ input }) => ({ observation: input }),
 		initial: 'checking',
 		on: {
-			OBSERVE: {
-				target: '.checking',
-				actions: assign({ observation: ({ event }) => event.observation })
+			OBSERVE: (args) => {
+				return { target: '.checking', context: { observation: args.event.observation } }
 			}
 		},
 		states: {
 			checking: {
-				always: [
-					{
-						guard: ({ context }) => context.observation.facts.sourceFailure === 'crash',
-						target: 'crashed'
-					},
-					{
-						guard: ({ context }) => context.observation.facts.sourceFailure === 'done',
-						target: 'done'
-					},
-					{ target: 'active' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.observation.facts.sourceFailure === 'crash') {
+						return { target: 'crashed' }
+					}
+					if (context.observation.facts.sourceFailure === 'done') {
+						return { target: 'done' }
+					}
+					return { target: 'active' }
+				}
 			},
 			active: {},
 			crashed: {
@@ -83,15 +90,7 @@ function domain() {
 }
 function adapter(facts: ReadinessFacts = ready, mode: 'watch' | 'assessment' = 'watch') {
 	const options = domain()
-	const reports = createActor(
-		fromTransition(
-			(
-				events: FormCapabilityReportEvent<string, string>[],
-				event: FormCapabilityReportEvent<string, string>
-			) => [...events, event],
-			[]
-		)
-	).start()
+	const reports = collectEvents<FormCapabilityReportEvent<string, string>>()
 	const errors: unknown[] = []
 	const delivery =
 		mode === 'watch'
@@ -364,8 +363,8 @@ describe('finite readiness with the real write owner', () => {
 		}
 		const source = () => {
 			const snapshot = review().getSnapshot()
-			if (!('children' in snapshot)) throw new Error('Expected readiness statechart')
-			const child = Object.values(snapshot.children).find((child) => child?.id === 'source')
+			if (!isMachineSnapshot(snapshot)) throw new Error('Expected readiness statechart')
+			const child = snapshot.children.source
 			if (!child) throw new Error('Expected domain source')
 			return child
 		}

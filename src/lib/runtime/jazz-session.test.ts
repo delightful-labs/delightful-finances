@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createActor, fromCallback, waitFor } from 'xstate'
 import type { JazzClient, JazzSession, JazzClientConfig } from 'jazz-tools/client'
 import { createSessionStartupMachine } from 'delightful-local-first/session/workflow'
 import type { SessionStartupReport } from 'delightful-local-first/session/contracts'
 import type { JazzStartupBinding } from './jazz-session.js'
+import { Actor, createActor, createCallbackLogic, waitFor } from 'xstate'
 
 const environment = vi.hoisted(() => ({ browser: true }))
 vi.mock('$app/env', () => environment)
@@ -19,6 +19,10 @@ vi.mock('delightful-local-first/backend/jazz/session', () => ({
 	}
 }))
 const actors = new Set<{ stop: () => void }>()
+function stopOwner(owner: JazzStartupBinding['owner']) {
+	if (!(owner instanceof Actor)) throw new Error('Expected native session owner')
+	owner.stop()
+}
 const owners = new Set<JazzStartupBinding['owner']>()
 const config = {
 	scope: 'test-app',
@@ -45,7 +49,7 @@ function attach(binding: JazzStartupBinding) {
 	owners.add(binding.owner)
 	const reports: SessionStartupReport<Session>[] = []
 	const recipient = createActor(
-		fromCallback<SessionStartupReport<Session>>(({ receive }) =>
+		createCallbackLogic<SessionStartupReport<Session>>(({ receive }) =>
 			receive((event) => reports.push(event))
 		)
 	).start()
@@ -65,7 +69,7 @@ beforeEach(() => {
 })
 afterEach(() => {
 	for (const actor of actors) actor.stop()
-	for (const owner of owners) owner.stop()
+	for (const owner of owners) stopOwner(owner)
 	actors.clear()
 	owners.clear()
 	vi.restoreAllMocks()
@@ -150,7 +154,7 @@ describe('browser shared acquisition binding', () => {
 		const { getJazzStartupBinding, getCurrentJazzSession } = await import('./jazz-session.js')
 		const first = getJazzStartupBinding(config)
 		owners.add(first.owner)
-		first.owner.stop()
+		stopOwner(first.owner)
 		const second = getJazzStartupBinding(config)
 		expect(second.owner).toBe(first.owner)
 		const app = attach(second)

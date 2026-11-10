@@ -1,10 +1,10 @@
 import { Transaction } from 'jazz-tools'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import { createSyncLogRetentionMachine, type RetentionScope } from './log-retention.js'
 import { createSyncLogRetentionCoordinator } from './log-retention-coordinator.js'
 import { dependencies, observation, connection, id } from './test-fixtures.js'
 import type { SyncAttempt, SyncAccountResult } from '#lib/schema.js'
+import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 const scope: RetentionScope = {
 	organizationId: connection.organizationId,
@@ -47,14 +47,14 @@ function fixture() {
 	const rollback = vi.fn(async () => true)
 	const logic = createSyncLogRetentionMachine(deps, 30).provide({
 		actors: {
-			open: fromPromise(opened),
-			authorization: fromPromise(authorized),
-			history: fromPromise(history),
-			accounts: fromPromise(accounts),
-			stage: fromPromise(stage),
-			commit: fromPromise(commit),
-			settle: fromPromise(settle),
-			rollback: fromPromise(rollback)
+			open: createAsyncLogic({ run: opened }),
+			authorization: createAsyncLogic({ run: authorized }),
+			history: createAsyncLogic({ run: history }),
+			accounts: createAsyncLogic({ run: accounts }),
+			stage: createAsyncLogic({ run: stage }),
+			commit: createAsyncLogic({ run: commit }),
+			settle: createAsyncLogic({ run: settle }),
+			rollback: createAsyncLogic({ run: rollback })
 		}
 	})
 	return { deps, tx, opened, authorized, history, accounts, stage, commit, settle, rollback, logic }
@@ -101,12 +101,12 @@ it('rolls back after authorization loss before staging', async () => {
 	})
 	const logic = createSyncLogRetentionMachine({ ...deps, observe: () => deps.observe() }).provide({
 		actors: {
-			open: fromPromise(f.opened),
-			authorization: fromPromise(f.authorized),
-			history: fromPromise(f.history),
-			accounts: fromPromise(async (): Promise<SyncAccountResult[]> => []),
-			rollback: fromPromise(f.rollback),
-			stage: fromPromise(f.stage)
+			open: createAsyncLogic({ run: f.opened }),
+			authorization: createAsyncLogic({ run: f.authorized }),
+			history: createAsyncLogic({ run: f.history }),
+			accounts: createAsyncLogic({ run: async (): Promise<SyncAccountResult[]> => [] }),
+			rollback: createAsyncLogic({ run: f.rollback }),
+			stage: createAsyncLogic({ run: f.stage })
 		}
 	})
 	expect(await toPromise(createActor(logic, { input: { scope } }).start())).toMatchObject({

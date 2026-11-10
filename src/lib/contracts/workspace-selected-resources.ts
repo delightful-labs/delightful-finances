@@ -1,4 +1,3 @@
-import type { ActorRef, Snapshot } from 'xstate'
 import type {
 	WorkspaceDrainRequest,
 	WorkspaceLease
@@ -6,6 +5,7 @@ import type {
 import type { BankEvent, BankObservationEvent } from '../machines/bank-sync/types.js'
 import type { IntegrityRequest, IntegrityReport } from './workspace-integrity-contract.js'
 import type { WorkspaceResourceRelease } from './workspace-resource-release.js'
+import type { ActorRef, Snapshot } from 'xstate'
 
 export type SelectedResourceReport =
 	| { type: 'SELECTED_RESOURCES_STOPPING'; lease: WorkspaceLease; resource: 'bank' | 'integrity' }

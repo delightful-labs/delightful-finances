@@ -1,4 +1,3 @@
-import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '../../schema.js'
 import {
@@ -9,6 +8,9 @@ import {
 	type IntegrityRecords
 } from './workspace-integrity-assessment.js'
 import { createJazzTransactionActors } from '../persistence/jazz-transaction-actors.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type IntegrityEvent = { type: 'CANCEL' } | { type: 'SHUTDOWN' }
 export type IntegrityResult =
@@ -33,8 +35,12 @@ const transactionActors = createJazzTransactionActors(
 	(write: ReturnType<Transaction['commit']>) => write.wait({ tier: 'local' })
 )
 const { open, commit, settle, rollback } = transactionActors
-const read = fromPromise(
-	async ({ input }: { input: { tx: Transaction; scope: Input } }): Promise<IntegrityRecords> => {
+const read = createAsyncLogic({
+	run: async ({
+		input
+	}: {
+		input: { tx: Transaction; scope: Input }
+	}): Promise<IntegrityRecords> => {
 		const { tx, scope } = input
 		const [profiles, organizations, memberships] = await Promise.all([
 			tx.all(app.profiles.where({ userId: scope.userId })),
@@ -48,13 +54,13 @@ const read = fromPromise(
 		])
 		return { profiles, organizations, memberships }
 	}
-)
-const linkProfile = fromPromise(
-	async ({ input }: { input: { tx: Transaction; link: IntegrityPlan['profileLink'] } }) =>
+})
+const linkProfile = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; link: IntegrityPlan['profileLink'] } }) =>
 		input.tx.update(app.organizationMembers, input.link.membershipId, {
 			profileId: input.link.profileId
 		})
-)
+})
 type Context = Input & {
 	tx: Transaction | undefined
 	records: IntegrityRecords | undefined
@@ -63,28 +69,130 @@ type Context = Input & {
 	write: OutputFrom<typeof commit> | undefined
 	result: IntegrityResult | undefined
 }
+const events0 = {
+	CANCEL: types<EventPayload<IntegrityEvent, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<IntegrityEvent, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof open>
+			| import('xstate').OutputFrom<typeof read>
+			| import('xstate').OutputFrom<typeof workspaceIntegrityAssessment>
+			| import('xstate').OutputFrom<typeof linkProfile>
+			| import('xstate').OutputFrom<typeof commit>
+			| import('xstate').OutputFrom<typeof settle>
+			| import('xstate').OutputFrom<typeof rollback>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** One resource owner: reads/checks/staging/commit are states, never a transaction callback. */
-export const workspaceIntegrityTransaction = setup<
-	Context,
-	IntegrityEvent,
-	{
-		open: typeof transactionActors.open
-		read: typeof read
-		assess: typeof workspaceIntegrityAssessment
-		linkProfile: typeof linkProfile
-		commit: typeof transactionActors.commit
-		settle: typeof transactionActors.settle
-		rollback: typeof transactionActors.rollback
+export const workspaceIntegrityTransaction = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<IntegrityResult>(),
+		children: {
+			open: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['open']
+				>
+			>(),
+			read: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['read']
+				>
+			>(),
+			assess: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['assess']
+				>
+			>(),
+			linkProfile: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['linkProfile']
+				>
+			>(),
+			commit: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['commit']
+				>
+			>(),
+			settle: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['settle']
+				>
+			>(),
+			rollback: types<
+				import('xstate').ActorRefFrom<
+					{
+						open: typeof open
+						read: typeof read
+						assess: typeof workspaceIntegrityAssessment
+						linkProfile: typeof linkProfile
+						commit: typeof commit
+						settle: typeof settle
+						rollback: typeof rollback
+					}['rollback']
+				>
+			>()
+		}
 	},
-	{},
-	{},
-	{ closing: undefined; cancelling: undefined },
-	never,
-	string,
-	Input,
-	IntegrityResult
->({
 	actors: {
 		open,
 		read,
@@ -95,8 +203,10 @@ export const workspaceIntegrityTransaction = setup<
 		rollback
 	},
 	guards: {
-		closing: stateIn({ running: { control: 'closing' } }),
-		cancelling: stateIn({ running: { control: 'cancelling' } })
+		closing: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'closing' } }, args.value),
+		cancelling: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ running: { control: 'cancelling' } }, args.value)
 	}
 }).createMachine({
 	id: 'workspace-integrity-transaction',
@@ -118,8 +228,8 @@ export const workspaceIntegrityTransaction = setup<
 				control: {
 					initial: 'active',
 					states: {
-						active: { on: { CANCEL: 'cancelling', SHUTDOWN: 'closing' } },
-						cancelling: { on: { CANCEL: {}, SHUTDOWN: 'closing' } },
+						active: { on: { CANCEL: { target: 'cancelling' }, SHUTDOWN: { target: 'closing' } } },
+						cancelling: { on: { CANCEL: {}, SHUTDOWN: { target: 'closing' } } },
 						closing: { on: { CANCEL: {}, SHUTDOWN: {} } }
 					}
 				},
@@ -130,118 +240,137 @@ export const workspaceIntegrityTransaction = setup<
 							invoke: {
 								src: 'open',
 								input: ({ context }) => context.db,
-								onDone: {
-									target: 'checkingAfterOpen',
-									actions: assign({ tx: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingAfterOpen', context: { tx: args.event.output } }
 								},
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingAfterOpen: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'reading' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'reading' }
+							}
 						},
 						reading: {
 							invoke: {
 								src: 'read',
 								input: ({ context }) => ({ tx: required(context.tx), scope: context }),
-								onDone: {
-									target: 'checkingAfterRead',
-									actions: assign({ records: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingAfterRead', context: { records: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingAfterRead: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'assessing' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'assessing' }
+							}
 						},
 						assessing: {
 							invoke: {
 								src: 'assess',
 								input: ({ context }) => ({ ...context, records: required(context.records) }),
-								onDone: {
-									target: 'checkingPlan',
-									actions: assign({ assessment: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'checkingPlan', context: { assessment: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingPlan: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{
-									guard: ({ context }) =>
-										context.assessment !== undefined && context.assessment.outcome !== 'repair',
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ context }): IntegrityResult => {
-											const assessment = required(context.assessment)
-											if (assessment.outcome === 'repair')
-												throw new Error('Expected terminal assessment')
-											return { ...assessment, settlement: 'notStarted' }
+							always: (args) => {
+								const { context } = args
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (context.assessment !== undefined && context.assessment.outcome !== 'repair') {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: (({ context }): IntegrityResult => {
+												const assessment = required(context.assessment)
+												if (assessment.outcome === 'repair')
+													throw new Error('Expected terminal assessment')
+												return { ...assessment, settlement: 'notStarted' }
+											})(args)
 										}
-									})
-								},
-								{
-									guard: ({ context }) =>
-										context.assessment?.outcome === 'repair' &&
-										context.assessment.plan.profileLink.membershipId ===
-											context.expected.profileLink.membershipId &&
-										context.assessment.plan.profileLink.profileId ===
-											context.expected.profileLink.profileId,
-									target: 'stagingProfileLink',
-									actions: assign(({ context }) => {
-										const assessment = required(context.assessment)
-										if (assessment.outcome !== 'repair') throw new Error('Expected repair payload')
-										return { plan: assessment.plan }
-									})
-								},
-								{
+									}
+								}
+								if (
+									context.assessment?.outcome === 'repair' &&
+									context.assessment.plan.profileLink.membershipId ===
+										context.expected.profileLink.membershipId &&
+									context.assessment.plan.profileLink.profileId ===
+										context.expected.profileLink.profileId
+								) {
+									return {
+										target: 'stagingProfileLink',
+										context: (({ context }) => {
+											const assessment = required(context.assessment)
+											if (assessment.outcome !== 'repair')
+												throw new Error('Expected repair payload')
+											return { plan: assessment.plan }
+										})(args)
+									}
+								}
+								return {
 									target: 'rollingBack',
-									actions: assign({
+									context: {
 										result: {
 											outcome: 'conflict',
 											reason: 'repairPlanChanged',
 											settlement: 'notStarted'
 										}
-									})
+									}
 								}
-							]
+							}
 						},
 						stagingProfileLink: {
 							invoke: {
@@ -250,43 +379,50 @@ export const workspaceIntegrityTransaction = setup<
 									tx: required(context.tx),
 									link: required(context.plan?.profileLink)
 								}),
-								onDone: 'checkingBeforeCommit',
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'notStarted',
-											error: event.error
-										})
-									})
+								onDone: { target: 'checkingBeforeCommit' },
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'notStarted',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						checkingBeforeCommit: {
-							always: [
-								{ guard: 'closing', target: 'rollingBack' },
-								{ guard: 'cancelling', target: 'rollingBack' },
-								{ target: 'committing' }
-							]
+							always: (args) => {
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: 'rollingBack' }
+								}
+								return { target: 'committing' }
+							}
 						},
 						committing: {
 							invoke: {
 								src: 'commit',
 								input: ({ context }) => required(context.tx),
-								onDone: {
-									target: 'settling',
-									actions: assign({ write: ({ event }) => event.output })
+								onDone: (args) => {
+									return { target: 'settling', context: { write: args.event.output } }
 								},
-								onError: {
-									target: 'rollingBack',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								onError: (args) => {
+									return {
+										target: 'rollingBack',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
@@ -294,86 +430,93 @@ export const workspaceIntegrityTransaction = setup<
 							invoke: {
 								src: 'settle',
 								input: ({ context }) => required(context.write),
-								onDone: 'classifyingSuccess',
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								onDone: { target: 'classifyingSuccess' },
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						classifyingSuccess: {
-							always: {
-								target: 'finishing',
-								actions: assign({ result: { outcome: 'complete', settlement: 'locallyPersisted' } })
+							always: () => {
+								return {
+									target: 'finishing',
+									context: { result: { outcome: 'complete', settlement: 'locallyPersisted' } }
+								}
 							}
 						},
 						rollingBack: {
 							invoke: {
 								src: 'rollback',
 								input: ({ context }) => required(context.tx),
-								onDone: [
-									{ guard: ({ event }) => event.output, target: 'finishing' },
-									{
+								onDone: (args) => {
+									if (args.event.output) {
+										return { target: 'finishing' }
+									}
+									return {
 										target: 'finishing',
-										actions: assign({
+										context: {
 											result: {
 												outcome: 'failed',
 												settlement: 'unresolved',
 												error: new Error('Integrity rollback was not confirmed')
 											}
-										})
+										}
 									}
-								],
-								onError: {
-									target: 'finishing',
-									actions: assign({
-										result: ({ event }): IntegrityResult => ({
-											outcome: 'failed',
-											settlement: 'unresolved',
-											error: event.error
-										})
-									})
+								},
+								onError: (args) => {
+									return {
+										target: 'finishing',
+										context: {
+											result: {
+												outcome: 'failed',
+												settlement: 'unresolved',
+												error: args.event.error
+											}
+										}
+									}
 								}
 							}
 						},
 						finishing: {
-							entry: assign({
-								tx: undefined,
-								write: undefined,
-								records: undefined,
-								plan: undefined
-							}),
-							always: [
-								{ guard: 'closing', target: '#workspace-integrity-transaction.closed' },
-								{ guard: 'cancelling', target: '#workspace-integrity-transaction.cancelled' },
-								{
-									guard: ({ context }) => context.result?.outcome === 'complete',
-									target: '#workspace-integrity-transaction.complete'
-								},
-								{
-									guard: ({ context }) => context.result?.outcome === 'partial',
-									target: '#workspace-integrity-transaction.partial'
-								},
-								{
-									guard: ({ context }) => context.result?.outcome === 'unavailable',
-									target: '#workspace-integrity-transaction.unavailable'
-								},
-								{
-									guard: ({ context }) => context.result?.outcome === 'conflict',
-									target: '#workspace-integrity-transaction.conflict'
-								},
-								{
-									guard: ({ context }) => context.result?.settlement === 'unresolved',
-									target: '#workspace-integrity-transaction.unresolved'
-								},
-								{ target: '#workspace-integrity-transaction.failed' }
-							]
+							entry: () => {
+								return {
+									context: { tx: undefined, write: undefined, records: undefined, plan: undefined }
+								}
+							},
+							always: (args) => {
+								const { context } = args
+								if (matchesState({ running: { control: 'closing' } }, args.value)) {
+									return { target: '#workspace-integrity-transaction.closed' }
+								}
+								if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+									return { target: '#workspace-integrity-transaction.cancelled' }
+								}
+								if (context.result?.outcome === 'complete') {
+									return { target: '#workspace-integrity-transaction.complete' }
+								}
+								if (context.result?.outcome === 'partial') {
+									return { target: '#workspace-integrity-transaction.partial' }
+								}
+								if (context.result?.outcome === 'unavailable') {
+									return { target: '#workspace-integrity-transaction.unavailable' }
+								}
+								if (context.result?.outcome === 'conflict') {
+									return { target: '#workspace-integrity-transaction.conflict' }
+								}
+								if (context.result?.settlement === 'unresolved') {
+									return { target: '#workspace-integrity-transaction.unresolved' }
+								}
+								return { target: '#workspace-integrity-transaction.failed' }
+							}
 						}
 					}
 				}
@@ -387,21 +530,29 @@ export const workspaceIntegrityTransaction = setup<
 		unresolved: { type: 'final' },
 		cancelled: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): IntegrityResult => ({
-					outcome: 'cancelled',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'cancelled',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		},
 		closed: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): IntegrityResult => ({
-					outcome: 'closed',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'closed',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		}
 	}
 })

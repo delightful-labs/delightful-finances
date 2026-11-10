@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { waitFor } from 'xstate'
 import { app } from '../../schema.js'
 import { creationFixture, attempt, workspace } from './workspace-creation.fixture.js'
+import { waitFor } from 'xstate'
 
 describe.each(['native', 'shared'])('%s workspace transaction ownership', (owner) => {
 	const transaction = (f: ReturnType<typeof creationFixture>) =>

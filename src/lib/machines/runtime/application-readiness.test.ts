@@ -1,15 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-	assign,
-	createActor,
-	setup,
-	sendParent,
-	waitFor,
-	fromCallback,
-	fromPromise,
-	type ActorRefFrom,
-	type InspectionEvent
-} from 'xstate'
+	createSessionStartupMachine,
+	createSessionReadinessMachine
+} from 'delightful-local-first/session/workflow'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RecoveryPhrase } from 'jazz-tools/passphrase'
 import { createJazzSessionReadinessAdapter } from 'delightful-local-first/backend/jazz/session-readiness'
 import { createJazzRestorationAdapter } from 'delightful-local-first/backend/jazz/restoration'
@@ -37,22 +30,40 @@ import type { WorkspaceResourceRelease } from '../../contracts/workspace-resourc
 import type { TransferMutationRequest } from '../transfers/internal-transfer-mutation-owner.js'
 import type { WorkspaceLease } from 'delightful-local-first/workspace/contracts'
 import { membership, scope } from '../workspaces/workspace-integrity.fixture.js'
+import {
+	Actor,
+	createActor,
+	setup,
+	waitFor,
+	createCallbackLogic,
+	types,
+	createAsyncLogic
+} from 'xstate'
+import type { ActorFromLogic, InspectionEvent } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 function heldResources() {
 	type Input = { lease: WorkspaceLease; release: WorkspaceResourceRelease }
 	type Context = Input & { drain: SelectedResourceOutput['drain'] }
-	return setup<
-		Context,
-		SelectedResourceCommand | { type: 'FINISH' },
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		Input,
-		SelectedResourceOutput
-	>({}).createMachine({
+	const events0 = {
+		BANK: types<EventPayload<SelectedResourceCommand | { type: 'FINISH' }, 'BANK'>>(),
+		INTEGRITY: types<EventPayload<SelectedResourceCommand | { type: 'FINISH' }, 'INTEGRITY'>>(),
+		DRAIN: types<EventPayload<SelectedResourceCommand | { type: 'FINISH' }, 'DRAIN'>>(),
+		SHUTDOWN: types<EventPayload<SelectedResourceCommand | { type: 'FINISH' }, 'SHUTDOWN'>>(),
+		FINISH: types<EventPayload<SelectedResourceCommand | { type: 'FINISH' }, 'FINISH'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<SelectedResourceOutput>()
+		}
+	}).createMachine({
 		context: ({ input }) => ({ ...input, drain: undefined }),
 		initial: 'active',
 		output: ({ context }) => ({
@@ -63,21 +74,26 @@ function heldResources() {
 		states: {
 			active: {
 				on: {
-					DRAIN: { target: 'draining', actions: assign({ drain: ({ event }) => event.drain }) },
-					SHUTDOWN: 'draining'
+					DRAIN: (args) => {
+						return { target: 'draining', context: { drain: args.event.drain } }
+					},
+					SHUTDOWN: { target: 'draining' }
 				}
 			},
-			draining: { on: { FINISH: 'closed' } },
+			draining: { on: { FINISH: { target: 'closed' } } },
 			closed: { type: 'final' }
 		}
 	})
 }
-type HeldResources = ActorRefFrom<ReturnType<typeof heldResources>>
-const heldActors: HeldResources[] = []
+type HeldResources = import('xstate').ActorRef<
+	import('xstate').Snapshot<SelectedResourceOutput>,
+	SelectedResourceCommand | { type: 'FINISH' }
+>
+const heldActors: { stop: () => void }[] = []
 const { workspaceStart, workspaceControls } = vi.hoisted(() => ({
 	workspaceStart: vi.fn(),
 	workspaceControls: new Map<
-		string,
+		object,
 		{
 			close: () => void
 			crash: () => void
@@ -89,20 +105,90 @@ const { workspaceStart, workspaceControls } = vi.hoisted(() => ({
 // Delay workspace acknowledgement so shutdown races can be exercised deterministically.
 vi.mock('./readiness.js', () => ({
 	createWorkspaceReadinessMachine: () =>
-		setup<
-			{
-				observation: ReadinessObservation | undefined
-				lease: WorkspaceLease | undefined
-				resourceLease: WorkspaceLease | undefined
-				resourceActor: HeldResources | undefined
-			},
-			| { type: 'SHUTDOWN' }
-			| { type: 'ACK_CLOSE' }
-			| { type: 'CRASH' }
-			| { type: 'OBSERVED'; observation: ReadinessObservation }
-			| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
-			| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources }
-		>({}).createMachine({
+		setup({
+			schemas: {
+				context: types<{
+					observation: ReadinessObservation | undefined
+					lease: WorkspaceLease | undefined
+					resourceLease: WorkspaceLease | undefined
+					resourceActor: HeldResources | undefined
+				}>(),
+				events: {
+					SHUTDOWN:
+						types<
+							EventPayload<
+								| { type: 'SHUTDOWN' }
+								| { type: 'ACK_CLOSE' }
+								| { type: 'CRASH' }
+								| { type: 'OBSERVED'; observation: ReadinessObservation }
+								| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+								| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources },
+								'SHUTDOWN'
+							>
+						>(),
+					ACK_CLOSE:
+						types<
+							EventPayload<
+								| { type: 'SHUTDOWN' }
+								| { type: 'ACK_CLOSE' }
+								| { type: 'CRASH' }
+								| { type: 'OBSERVED'; observation: ReadinessObservation }
+								| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+								| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources },
+								'ACK_CLOSE'
+							>
+						>(),
+					CRASH:
+						types<
+							EventPayload<
+								| { type: 'SHUTDOWN' }
+								| { type: 'ACK_CLOSE' }
+								| { type: 'CRASH' }
+								| { type: 'OBSERVED'; observation: ReadinessObservation }
+								| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+								| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources },
+								'CRASH'
+							>
+						>(),
+					OBSERVED:
+						types<
+							EventPayload<
+								| { type: 'SHUTDOWN' }
+								| { type: 'ACK_CLOSE' }
+								| { type: 'CRASH' }
+								| { type: 'OBSERVED'; observation: ReadinessObservation }
+								| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+								| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources },
+								'OBSERVED'
+							>
+						>(),
+					SELECTION:
+						types<
+							EventPayload<
+								| { type: 'SHUTDOWN' }
+								| { type: 'ACK_CLOSE' }
+								| { type: 'CRASH' }
+								| { type: 'OBSERVED'; observation: ReadinessObservation }
+								| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+								| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources },
+								'SELECTION'
+							>
+						>(),
+					SET_RESOURCES:
+						types<
+							EventPayload<
+								| { type: 'SHUTDOWN' }
+								| { type: 'ACK_CLOSE' }
+								| { type: 'CRASH' }
+								| { type: 'OBSERVED'; observation: ReadinessObservation }
+								| { type: 'SELECTION'; status: string; lease: WorkspaceLease | undefined }
+								| { type: 'SET_RESOURCES'; lease: WorkspaceLease; actor: HeldResources },
+								'SET_RESOURCES'
+							>
+						>()
+				}
+			}
+		}).createMachine({
 			context: {
 				observation: undefined,
 				lease: undefined,
@@ -111,41 +197,47 @@ vi.mock('./readiness.js', () => ({
 			},
 			initial: 'active',
 			output: () => ({ selectedResources: { outcome: 'released' } }),
-			entry: [
-				workspaceStart,
-				({ self }) => {
-					workspaceControls.set(self.id, {
+			entry: (args, enq) => {
+				enq(workspaceStart)
+				enq(() => {
+					const { self } = args
+					workspaceControls.set(self, {
 						close: () => self.send({ type: 'ACK_CLOSE' }),
 						crash: () => self.send({ type: 'CRASH' }),
 						resource: (lease, actor) => self.send({ type: 'SET_RESOURCES', lease, actor })
 					})
-				}
-			],
+				})
+			},
 			on: {
-				CRASH: {
-					actions: () => {
+				CRASH: (args, enq) => {
+					enq(() => {
 						throw new Error('private workspace crash')
-					}
+					})
 				}
 			},
 			states: {
 				active: {
 					on: {
-						SHUTDOWN: 'closing',
-						SET_RESOURCES: {
-							actions: assign({
-								resourceLease: ({ event }) => event.lease,
-								resourceActor: ({ event }) => event.actor
-							})
+						SHUTDOWN: { target: 'closing' },
+						SET_RESOURCES: (args) => {
+							const { event } = args
+							return { context: { resourceLease: event.lease, resourceActor: event.actor } }
 						},
-						OBSERVED: { actions: assign({ observation: ({ event }) => event.observation }) },
-						SELECTION: { actions: assign({ lease: ({ event }) => event.lease }) }
+						OBSERVED: (args) => {
+							return { context: { observation: args.event.observation } }
+						},
+						SELECTION: (args) => {
+							return { context: { lease: args.event.lease } }
+						}
 					}
 				},
-				closing: { on: { ACK_CLOSE: 'closed' } },
+				closing: { on: { ACK_CLOSE: { target: 'closed' } } },
 				closed: {
 					type: 'final',
-					entry: sendParent(({ self }) => ({ type: 'WORKSPACE_CLOSED', actor: self }))
+					entry: (args, enq) => {
+						const { self } = args
+						enq.sendTo(args.parent, { type: 'WORKSPACE_CLOSED', actor: self })
+					}
 				}
 			}
 		})
@@ -153,10 +245,10 @@ vi.mock('./readiness.js', () => ({
 
 type Session = JazzSession<JazzClient>
 type MutationErrorDb = Pick<ReturnType<typeof getDb>, 'onMutationError'>
-const actors: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>[] = []
-const owners: ActorRefFrom<ReturnType<typeof createSessionAcquisitionMachine<Session>>>[] = []
+const actors: ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>[] = []
+const owners: ActorFromLogic<ReturnType<typeof createSessionAcquisitionMachine<Session>>>[] = []
 const startupBindings = new Map<
-	ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+	ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>,
 	JazzStartupBinding
 >()
 function startupOwner(open: () => Promise<Session>, existing?: Session) {
@@ -167,18 +259,20 @@ function startupOwner(open: () => Promise<Session>, existing?: Session) {
 	owners.push(owner)
 	return { owner, scope: { binding, attachment: {}, generation: 0 } }
 }
-function beginStartup(actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>) {
+function beginStartup(actor: ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>) {
 	const startup = startupBindings.get(actor)
 	if (!startup) throw new Error('Expected startup test binding')
 	actor.send({ type: 'START', startup })
 }
-function readinessScope(actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>) {
+function readinessScope(
+	actor: ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>
+) {
 	const scope = actor.getSnapshot().context.readinessScope
 	if (!scope) throw new Error('Expected acquired session readiness binding')
 	return scope
 }
 function failObservation(
-	actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>
+	actor: ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>
 ) {
 	// Inject a normalized read fault at the real library observer boundary, retaining retry ownership.
 	actor.getSnapshot().children.sessionReadiness?.send({
@@ -189,7 +283,7 @@ function failObservation(
 	})
 }
 function reportStatus(
-	actor: ActorRefFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+	actor: ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>,
 	status: ReturnType<Session['getSnapshot']>['status']
 ) {
 	actor.send({
@@ -208,7 +302,7 @@ afterEach(() => {
 	workspaceControls.clear()
 })
 function control(actor: { id: string }) {
-	const value = workspaceControls.get(actor.id)
+	const value = workspaceControls.get(actor)
 	if (!value) throw new Error('Expected workspace test controls')
 	return value
 }
@@ -225,18 +319,89 @@ function session(db?: MutationErrorDb) {
 		notify = listener
 		return unsubscribe
 	})
-	const value: Session = {
-		getSnapshot,
-		subscribe,
-		retry: vi.fn(async () => {}),
-		close: vi.fn(async () => {}),
-		createLocalFirst: vi.fn(async () => {}),
-		restoreLocalFirst: vi.fn(async () => {}),
-		loginWithBackend: vi.fn(async () => {}),
-		linkWithBackend: vi.fn(async () => {}),
-		logout: vi.fn(async () => {})
-	}
+	const value: Session = new (class {
+		getSnapshot = getSnapshot
+		subscribe = subscribe
+		retry = vi.fn(async () => {})
+		close = vi.fn(async () => {})
+		createLocalFirst = vi.fn(async () => {})
+		restoreLocalFirst = vi.fn(async () => {})
+		loginWithBackend = vi.fn(async () => {})
+		linkWithBackend = vi.fn(async () => {})
+		logout = vi.fn(async () => {})
+	})()
+
 	return { value, getSnapshot, subscribe, unsubscribe, notify: () => notify() }
+}
+const nativeFaults = new WeakMap<object, { startup: () => void; readiness: () => void }>()
+function failStartup(actor: object) {
+	const fault = nativeFaults.get(actor)
+	if (!fault) throw new Error('Missing native startup fault control')
+	fault.startup()
+}
+function failReadiness(actor: object) {
+	const fault = nativeFaults.get(actor)
+	if (!fault) throw new Error('Missing native readiness fault control')
+	fault.readiness()
+}
+
+function sessionFaultSources() {
+	let startupBroken = false,
+		readinessBroken = false
+	const startupLogic = createSessionStartupMachine<Session>()
+	const readinessLogic = createSessionReadinessMachine()
+	const transition = startupLogic.transition.bind(startupLogic)
+	vi.spyOn(startupLogic, 'transition').mockImplementation((...args) => {
+		if (startupBroken) throw new Error('Controlled startup actor crash')
+		return transition(...args)
+	})
+	const supervisedStartup = startupLogic
+	const currentObservation = readinessLogic.sources.guards.currentObservation
+	if (typeof currentObservation !== 'function') throw new Error('Missing session guard contract')
+
+	const supervisedReadiness = readinessLogic.provide({
+		guards: {
+			currentObservation: (args) => {
+				if (readinessBroken) {
+					throw new Error('Controlled readiness actor crash')
+				}
+				return currentObservation(args)
+			}
+		}
+	})
+
+	return {
+		actors: { startup: supervisedStartup, sessionReadiness: supervisedReadiness },
+		bind: (actor: ActorFromLogic<ReturnType<typeof createApplicationReadinessMachine>>) => {
+			nativeFaults.set(actor, {
+				startup: () => {
+					const child = actor.getSnapshot().children.startup
+					if (child?.getSnapshot().status !== 'active') return
+					startupBroken = true
+					try {
+						child.send({ type: 'OWNER_FAILED' })
+					} finally {
+						startupBroken = false
+					}
+				},
+				readiness: () => {
+					const child = actor.getSnapshot().children.sessionReadiness
+					if (child?.getSnapshot().status !== 'active') return
+					readinessBroken = true
+					try {
+						child.send({
+							type: 'OBSERVATION_FAILED',
+							scope: readinessScope(actor),
+							observation: actor.getSnapshot().context.observation,
+							reason: 'readFailed'
+						})
+					} finally {
+						readinessBroken = false
+					}
+				}
+			})
+		}
+	}
 }
 async function start(
 	open: () => Promise<Session>,
@@ -245,6 +410,8 @@ async function start(
 	prepare?: (session: Session) => Promise<void>
 ) {
 	const startup = startupOwner(open, existing)
+	const faults = sessionFaultSources()
+
 	const actor = createActor(
 		createApplicationReadinessMachine(
 			undefined,
@@ -252,9 +419,11 @@ async function start(
 			createJazzSessionReadinessAdapter,
 			undefined,
 			prepare
-		),
+		).provide({ actors: faults.actors }),
 		{ inspect }
 	).start()
+	faults.bind(actor)
+
 	startupBindings.set(actor, startup)
 	actors.push(actor)
 	if (existing) {
@@ -263,7 +432,13 @@ async function start(
 	}
 	return actor
 }
-function attach(actor: Awaited<ReturnType<typeof start>>, observed?: ReadinessObservation) {
+function attach(
+	actor: import('xstate').ActorRef<
+		import('xstate').SnapshotFrom<ReturnType<typeof createApplicationReadinessMachine>>,
+		import('xstate').SendableEventFromLogic<ReturnType<typeof createApplicationReadinessMachine>>
+	>,
+	observed?: ReadinessObservation
+) {
 	// The workspace factory above owns no database effects in this test.
 	const source = {
 		organizationId: null,
@@ -484,12 +659,8 @@ describe('application readiness supervision', () => {
 		const open = vi.fn(() => pending.promise)
 		const actor = await start(open)
 		beginStartup(actor)
-		actor.send({
-			type: 'xstate.error.actor.startup',
-			actorId: 'startup',
-			error: new Error('private')
-		})
-		expect(actor.getSnapshot().matches('startupActorFailed')).toBe(true)
+		failStartup(actor)
+		expect(actor.getSnapshot().value).toBe('startupActorFailed')
 		actor.send({ type: 'RETRY' })
 		pending.resolve(current.value)
 		await waitFor(actor, (state) => state.matches({ running: 'ready' }))
@@ -502,7 +673,7 @@ describe('application readiness supervision', () => {
 		const actor = await start(async () => current.value, current.value)
 		const workspace = attach(actor)
 		actor.send({ type: 'SHUTDOWN' })
-		actor.send({ type: 'xstate.error.actor.startup', actorId: 'startup', error: new Error('late') })
+		failStartup(actor)
 		expect(actor.getSnapshot().matches('closing')).toBe(true)
 		control(workspace).close()
 		expect(actor.getSnapshot().status).toBe('done')
@@ -636,11 +807,6 @@ describe('application readiness supervision', () => {
 		expect(replacement).not.toBe(previous)
 		actor.send({ type: 'DETACH_WORKSPACE', attachment: previousAttachment })
 		actor.send({ type: 'WORKSPACE_CLOSED', actor: previous })
-		actor.send({
-			type: `xstate.error.actor.${previous.id}`,
-			actorId: previous.id,
-			error: new Error('stale')
-		})
 		expect(actor.getSnapshot().context.workspace).toBe(replacement)
 		expect(replacement?.getSnapshot().matches('active')).toBe(true)
 	})
@@ -677,6 +843,22 @@ function accountSnapshot(id: string): ReturnType<Session['getSnapshot']> {
 	Object.defineProperty(snapshot, 'account', { value: { id } })
 	return snapshot
 }
+type RestorationBinding = ReturnType<typeof createJazzRestorationAdapter>
+class MutableRestorationFixture implements RestorationBinding {
+	readonly binding: RestorationBinding['binding']
+	readonly capability: RestorationBinding['capability']
+	readonly invalidate: RestorationBinding['invalidate']
+	constructor(source: RestorationBinding) {
+		this.binding = source.binding
+		this.invalidate = () => source.invalidate()
+		this.capability = new (class {
+			parsePhrase = source.capability.parsePhrase
+			isCurrentBinding = source.capability.isCurrentBinding
+			restoreIdentity = source.capability.restoreIdentity
+			readIdentity = source.capability.readIdentity
+		})()
+	}
+}
 async function mutationFixture(observed?: ReadinessObservation) {
 	const current = session()
 	current.getSnapshot.mockReturnValue(accountSnapshot('restored'))
@@ -688,19 +870,23 @@ async function mutationFixture(observed?: ReadinessObservation) {
 	const open = vi.fn(async () => current.value)
 	const bindings: ReturnType<typeof createJazzRestorationAdapter>[] = []
 	const bindRestoration = vi.fn((value: Session) => {
-		const adapter = createJazzRestorationAdapter(value, () => current.value)
+		const adapter = new MutableRestorationFixture(
+			createJazzRestorationAdapter(value, () => current.value)
+		)
 		vi.spyOn(adapter, 'invalidate')
 		bindings.push(adapter)
 		return adapter
 	})
+	const faults = sessionFaultSources()
 	const actor = createActor(
 		createApplicationReadinessMachine(
 			{ readHref, navigate },
 			bindRestoration,
 			createJazzSessionReadinessAdapter
-		)
+		).provide({ actors: faults.actors })
 	).start()
 	actors.push(actor)
+	faults.bind(actor)
 	startupBindings.set(actor, startupOwner(open, current.value))
 	beginStartup(actor)
 	await waitFor(actor, (state) => state.matches({ running: 'ready' }))
@@ -824,12 +1010,7 @@ describe('session mutation pre-drain and issued retry ownership', () => {
 					throw new Error('private')
 				})
 				f.current.notify()
-			} else
-				f.actor.send({
-					type: 'xstate.error.actor.startup',
-					actorId: 'startup',
-					error: new Error('private')
-				})
+			} else failStartup(f.actor)
 			f.actor.send({ type: 'RETRY' })
 			f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...f.attachment } })
 			reportStatus(f.actor, 'ready')
@@ -926,12 +1107,7 @@ describe('application-owned account recovery', () => {
 			await beginRestore(f)
 			if (interruption === 'shutdown') f.actor.send({ type: 'SHUTDOWN' })
 			else if (interruption === 'observer') failObservation(f.actor)
-			else
-				f.actor.send({
-					type: 'xstate.error.actor.startup',
-					actorId: 'startup',
-					error: new Error('private')
-				})
+			else failStartup(f.actor)
 			reportStatus(f.actor, 'ready')
 			f.actor.send({ type: 'RETRY' })
 			f.actor.send({ type: 'ATTACH_WORKSPACE', attachment: { ...f.attachment } })
@@ -950,22 +1126,10 @@ describe('application-owned account recovery', () => {
 		const f = await mutationFixture()
 		await beginRestore(f)
 		failObservation(f.actor)
-		f.actor.send({
-			type: 'xstate.error.actor.startup',
-			actorId: 'startup',
-			error: new Error('private')
-		})
+		failStartup(f.actor)
 		f.actor.send({ type: 'SHUTDOWN' })
-		f.actor.send({
-			type: 'xstate.error.actor.startup',
-			actorId: 'startup',
-			error: new Error('late')
-		})
-		f.actor.send({
-			type: 'xstate.error.actor.sessionReadiness',
-			actorId: 'sessionReadiness',
-			error: new Error('late')
-		})
+		failStartup(f.actor)
+		failReadiness(f.actor)
 		failObservation(f.actor)
 		reportStatus(f.actor, 'ready')
 		f.pending.reject(new Error('late'))
@@ -1147,7 +1311,7 @@ describe('shared startup attachment integration', () => {
 	it('drains workspace before requesting release and waits for the matching acknowledgement', async () => {
 		const requests: SessionOwnerEvent<Session>[] = []
 		const owner = createActor(
-			fromCallback<SessionOwnerEvent<Session>>(({ receive }) =>
+			createCallbackLogic<SessionOwnerEvent<Session>>(({ receive }) =>
 				receive((event) => requests.push(event))
 			)
 		).start()
@@ -1203,7 +1367,8 @@ describe('shared startup attachment integration', () => {
 			startup: { ...startup, scope: { ...startup.scope, attachment: {} } }
 		})
 		expect(actor.getSnapshot().matches('opening')).toBe(true)
-		expect(actor.getSnapshot().context.startupBinding).toBe(startup)
+		expect(actor.getSnapshot().context.startupBinding?.owner).toBe(startup.owner)
+		expect(actor.getSnapshot().context.startupBinding?.scope).toBe(startup.scope)
 		expect(actor.getSnapshot().context.session).toBeUndefined()
 		pending.resolve(current.value)
 		await waitFor(actor, (s) => s.matches({ running: 'ready' }))
@@ -1217,6 +1382,7 @@ describe('shared startup attachment integration', () => {
 			else beginRetry(f)
 			const source = startupBindings.get(f.actor)
 			if (!source) throw new Error('Expected startup owner')
+			if (!(source.owner instanceof Actor)) throw new Error('Expected native startup owner')
 			source.owner.stop()
 			expect(f.actor.getSnapshot().status).toBe('active')
 			f.pending.resolve()
@@ -1312,11 +1478,7 @@ describe('shared acquired session readiness integration', () => {
 			if (operation === 'restore') await beginRestore(f)
 			else beginRetry(f)
 			// Exercise parent supervision separately from ordinary SDK/observation rejection.
-			f.actor.send({
-				type: 'xstate.error.actor.sessionReadiness',
-				actorId: 'sessionReadiness',
-				error: new Error('private actor failure')
-			})
+			failReadiness(f.actor)
 			if (operation === 'restore') {
 				expect(f.actor.getSnapshot().matches({ running: { recovering: 'readinessCrashed' } })).toBe(
 					true
@@ -1338,11 +1500,7 @@ describe('shared acquired session readiness integration', () => {
 		const f = await mutationFixture()
 		beginRetry(f)
 		f.actor.send({ type: 'SHUTDOWN' })
-		f.actor.send({
-			type: 'xstate.error.actor.sessionReadiness',
-			actorId: 'sessionReadiness',
-			error: new Error('private crash')
-		})
+		failReadiness(f.actor)
 		f.pending.resolve()
 		await waitFor(f.actor, (state) => state.status === 'done')
 		expect(f.retry).toHaveBeenCalledOnce()
@@ -1567,7 +1725,7 @@ it('does not forward saved resource output to an immediately completed drain joi
 		current.value,
 		(event) => {
 			if (
-				event.type === '@xstate.event' &&
+				event.type === '@xstate.transition' &&
 				event.event.type === 'SELECTED_RESOURCES_RELEASED' &&
 				event.actorRef.getSnapshot().status === 'done'
 			)
@@ -1622,33 +1780,37 @@ describe('application-owned workspace restore drain', () => {
 		const { createWorkspaceRestoreController, prepareWorkspaceRestoreFile } =
 			await import('../workspaces/workspace-restore.js')
 		const controller = createWorkspaceRestoreController().provide({
-			actions: crash
-				? {
-						fail: () => {
-							throw new Error('Injected controller crash')
-						}
-					}
-				: {},
 			actors: {
-				readFile: fromPromise<
+				readFile: createAsyncLogic<
 					void,
 					import('../workspaces/workspace-restore.js').WorkspaceRestoreFile
-				>(() => {
-					entered.resolve()
-					return gate.promise
+				>({
+					run: () => {
+						entered.resolve()
+						return gate.promise
+					}
 				})
 			}
 		})
+		const transition = controller.transition.bind(controller)
+		vi.spyOn(controller, 'transition').mockImplementation((...args) => {
+			if (crash && args[1].type === 'CANCEL')
+				throw new Error('Injected controller calculation crash')
+			return transition(...args)
+		})
+
+		const faults = sessionFaultSources()
 		const actor = createActor(
 			createApplicationReadinessMachine(
 				{ readHref: () => '/', navigate: async () => {}, reload },
 				(value) => createJazzRestorationAdapter(value, () => current.value),
 				createJazzSessionReadinessAdapter,
 				{ appId: crypto.randomUUID(), serverUrl: 'http://disposable.invalid', environment: 'test' }
-			).provide({ actors: { workspaceRestore: controller } })
+			).provide({ actors: { workspaceRestore: controller, ...faults.actors } })
 		).start()
 		actors.push(actor)
 		const startup = startupOwner(async () => current.value, current.value)
+		faults.bind(actor)
 		startupBindings.set(actor, startup)
 		beginStartup(actor)
 		await waitFor(actor, (state) => state.matches({ running: 'ready' }))
@@ -1670,9 +1832,11 @@ describe('application-owned workspace restore drain', () => {
 			})
 			.mockImplementation(() => {})
 		const f = await fixture(true, reload)
-		f.gate.reject(new Error('Injected file read failure'))
+		const controller = f.actor.getSnapshot().children.workspaceRestore
+		if (!controller) throw new Error('Missing restore controller')
+		f.actor.send({ type: 'WORKSPACE_RESTORE_COMMAND', command: { type: 'CANCEL' } })
 		await waitFor(f.actor, (state) => state.matches({ reloadRecovery: 'required' }))
-		expect(f.actor.getSnapshot().children.workspaceRestore?.getSnapshot().status).toBe('error')
+		expect(controller.getSnapshot().status).toBe('error')
 		expect(selectApplicationWorkspaceRestore(f.actor.getSnapshot())).toMatchObject({
 			busy: true,
 			editable: false,
@@ -1693,9 +1857,11 @@ describe('application-owned workspace restore drain', () => {
 		expect(f.actor.getSnapshot().context.workspaceRestoreView.busy).toBe(true)
 		expect(f.restore).not.toHaveBeenCalled()
 		expect(f.retry).not.toHaveBeenCalled()
-		expect(f.startup.owner.getSnapshot().context.released.has(f.startup.scope.attachment)).toBe(
-			false
-		)
+		expect(
+			f.startup.owner
+				.getSnapshot()
+				.context.released.some((reference) => reference.deref() === f.startup.scope.attachment)
+		).toBe(false)
 	})
 	it('retains reload intent against late failure and startup events', async () => {
 		const f = await fixture()
@@ -1728,12 +1894,7 @@ describe('application-owned workspace restore drain', () => {
 					origin: '/login',
 					destination: '/'
 				})
-			else if (command === 'startup-failure')
-				f.actor.send({
-					type: 'xstate.error.actor.startup',
-					actorId: 'startup',
-					error: new Error('Controlled failure')
-				})
+			else if (command === 'startup-failure') failStartup(f.actor)
 			else failObservation(f.actor)
 			await waitFor(f.workspace, (state) => state.matches('closing'))
 			control(f.workspace).close()
@@ -1743,9 +1904,11 @@ describe('application-owned workspace restore drain', () => {
 			expect(f.restore).not.toHaveBeenCalled()
 			expect(f.retry).not.toHaveBeenCalled()
 			expect(f.startup.owner.getSnapshot().status).toBe('active')
-			expect(f.startup.owner.getSnapshot().context.released.has(f.startup.scope.attachment)).toBe(
-				false
-			)
+			expect(
+				f.startup.owner
+					.getSnapshot()
+					.context.released.some((reference) => reference.deref() === f.startup.scope.attachment)
+			).toBe(false)
 			f.gate.resolve()
 			await waitFor(f.actor, (state) => !state.context.workspaceRestoreView.busy)
 			if (command === 'shutdown') await waitFor(f.actor, (state) => state.status === 'done')
@@ -1759,7 +1922,9 @@ describe('application-owned workspace restore drain', () => {
 			}
 			if (command === 'startup-failure')
 				await waitFor(f.startup.owner, (state) =>
-					state.context.released.has(f.startup.scope.attachment)
+					state.context.released.some(
+						(reference) => reference.deref() === f.startup.scope.attachment
+					)
 				)
 		})
 	}

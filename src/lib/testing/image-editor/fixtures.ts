@@ -24,7 +24,10 @@ export function mockEditorPlatform() {
 		Array.from({ length: 16 }, () => [64, 128, 192, 255]).flat()
 	)
 	const bitmap: ImageBitmap = { width: 4, height: 4, close: vi.fn() }
-	const canvas = { width: 0, height: 0 }
+	const canvas = new (class {
+		width = 0
+		height = 0
+	})()
 	vi.stubGlobal('document', { createElement: () => canvas })
 	const canvasResource = platform.createEditorCanvas()
 	const decode = vi.spyOn(platform, 'decodeEditorImage').mockResolvedValue(bitmap)

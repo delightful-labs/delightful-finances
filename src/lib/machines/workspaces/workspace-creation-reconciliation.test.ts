@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise } from 'xstate'
 import { workspaceCreationReconciliation } from './workspace-creation-reconciliation.js'
 import { attempt, profileId, userId, workspace } from './workspace-creation.fixture.js'
+import { createActor, toPromise } from 'xstate'
 
 const profile = { id: profileId, userId }
 const member = {

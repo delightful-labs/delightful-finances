@@ -1,5 +1,4 @@
 import { afterEach, vi } from 'vitest'
-import { assign, createActor, fromPromise, setup, waitFor } from 'xstate'
 import { z } from 'zod'
 import type {
 	FormCapability,
@@ -9,6 +8,8 @@ import type {
 	FormOperationResult
 } from '#lib/contracts/form-contract.js'
 import { createScopedFormMachine, selectScopedFormView } from './scoped-form.js'
+import { createActor, setup, waitFor, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type Facts = { scope: string; allowed: boolean; publish?: boolean; broken?: boolean }
 type Values = { name: string }
@@ -34,48 +35,72 @@ export function fixture(
 ) {
 	const received = vi.fn<(event: FormChildEvent<Facts>) => void>()
 	const started = vi.fn<(input: FormOperationInput<Values, string, Facts>) => void>()
-	const availability = setup<
-		{ observation: FormObservation<Facts>; capability: FormCapability<string, string> },
-		FormChildEvent<Facts>,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<Facts>
-	>({}).createMachine({
+	const events1 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<Facts>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<Facts>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<Facts>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<Facts>, 'OBSERVE'>>()
+	}
+	type NativeEvent1 =
+		| import('xstate').InferEvents<typeof events1>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	const availability = setup({
+		schemas: {
+			context: types<{
+				observation: FormObservation<Facts>
+				capability: FormCapability<string, string>
+			}>(),
+			events: events1,
+			input: types<FormObservation<Facts>>()
+		}
+	}).createMachine({
 		context: ({ input }) => ({ observation: input, capability: capability(input) }),
 		on: {
-			OBSERVE: {
-				actions: assign(({ context, event }) => ({
-					observation: event.observation,
-					capability:
-						event.observation.facts.publish === false
-							? context.capability
-							: capability(event.observation)
-				}))
+			OBSERVE: (args) => {
+				const { event } = args
+				return {
+					context: {
+						observation: event.observation,
+						capability:
+							event.observation.facts.publish === false
+								? args.context.capability
+								: capability(event.observation)
+					}
+				}
 			}
 		}
 	})
 	const settlement = Promise.withResolvers<Result>()
 	const aborted = vi.fn()
-	const settle = fromPromise<Result>(({ signal }) => {
-		signal.addEventListener('abort', aborted)
-		return settlement.promise
+	const settle = createAsyncLogic<Result>({
+		run: ({ signal }) => {
+			signal.addEventListener('abort', aborted)
+			return settlement.promise
+		}
 	})
-	const operation = setup<
-		{ input: FormOperationInput<Values, string, Facts>; result: Result },
-		FormChildEvent<Facts>,
-		{ settle: typeof settle },
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormOperationInput<Values, string, Facts>,
-		Result
-	>({ actors: { settle } }).createMachine({
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<Facts>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<Facts>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<Facts>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<Facts>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof settle>>
+		| import('xstate').ErrorActorEvent
+	const operation = setup({
+		schemas: {
+			context: types<{ input: FormOperationInput<Values, string, Facts>; result: Result }>(),
+			events: events0,
+			input: types<FormOperationInput<Values, string, Facts>>(),
+			output: types<Result>(),
+			children: {
+				settle: types<import('xstate').ActorRefFrom<{ settle: typeof settle }['settle']>>()
+			}
+		},
+		actors: { settle }
+	}).createMachine({
 		context: ({ input }) => ({ input, result: success }),
 		initial: 'working',
 		entry: ({ context }) => started(context.input),
@@ -84,13 +109,27 @@ export function fixture(
 			working: {
 				invoke: {
 					src: 'settle',
-					onDone: { target: 'done', actions: assign({ result: ({ event }) => event.output }) }
+					onDone: (args) => {
+						return { target: 'done', context: { result: args.event.output } }
+					}
 				},
 				on: {
-					OBSERVE: { actions: ({ event }) => received(event) },
-					INVALIDATE: { actions: ({ event }) => received(event) },
-					CANCEL: { actions: ({ event }) => received(event) },
-					SHUTDOWN: { actions: ({ event }) => received(event) }
+					OBSERVE: (args, enq) => {
+						const { event } = args
+						enq(() => received(event))
+					},
+					INVALIDATE: (args, enq) => {
+						const { event } = args
+						enq(() => received(event))
+					},
+					CANCEL: (args, enq) => {
+						const { event } = args
+						enq(() => received(event))
+					},
+					SHUTDOWN: (args, enq) => {
+						const { event } = args
+						enq(() => received(event))
+					}
 				}
 			},
 			done: { type: 'final' }

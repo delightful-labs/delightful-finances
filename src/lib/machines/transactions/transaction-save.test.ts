@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Transaction, ReadTier, type schema } from 'jazz-tools'
-import { createActor, fromPromise, toPromise } from 'xstate'
 import { transactionCheckpointSchema } from '#lib/contracts/transaction-save-contract.js'
 import { app, type Check } from '#lib/schema.js'
 import { createTransactionSaveMachine } from './transaction-save.js'
 import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
+import { createActor, toPromise, createAsyncLogic } from 'xstate'
 
 const organizationId = '22222222-2222-4222-8222-222222222222'
 const accountId = '11111111-1111-4111-8111-111111111111'
@@ -120,7 +120,17 @@ function fixture() {
 	}
 	const observe = vi.fn(() => facts)
 	const machine = createTransactionSaveMachine(db, observe)
-	const actor = (saveValues = values, logic = machine, checkpoint?: unknown) => {
+	const actor = (
+		saveValues = values,
+		logic: import('xstate').ActorLogic<
+			import('xstate').SnapshotFrom<typeof machine>,
+			import('xstate').EventFromLogic<typeof machine>,
+			import('xstate').InputFrom<typeof machine>,
+			import('xstate').AnyActorSystem,
+			import('xstate').EmittedFrom<typeof machine>
+		> = machine,
+		checkpoint?: unknown
+	) => {
 		const save = createActor(logic, {
 			input: {
 				request: {
@@ -148,7 +158,7 @@ describe('staged transaction save', () => {
 	it('saves an inline Check before linking it to the ledger transaction', async () => {
 		const f = fixture()
 		const logic = f.machine.provide({
-			actors: { readCheck: fromPromise(() => Promise.resolve([persistedCheck])) }
+			actors: { readCheck: createAsyncLogic({ run: () => Promise.resolve([persistedCheck]) }) }
 		})
 		const result = await toPromise(f.actor(values, logic))
 		expect(result).toMatchObject({
@@ -191,7 +201,7 @@ describe('staged Check recovery and interruptions', () => {
 				import('#lib/contracts/transaction-save-contract.js').TransactionCheckpoint
 			>()
 		const logic = f.machine.provide({
-			actors: { allocate: fromPromise(() => allocated.promise) }
+			actors: { allocate: createAsyncLogic({ run: () => allocated.promise }) }
 		})
 		const actor = f.actor(values, logic)
 		await vi.waitFor(() =>
@@ -222,7 +232,9 @@ describe('staged Check recovery and interruptions', () => {
 			if (table === app.transactions && rejectLedger) throw new Error('Ledger rejected')
 		})
 		const logic = f.machine.provide({
-			actors: { readCheck: fromPromise(async (): Promise<Check[]> => [persistedCheck]) }
+			actors: {
+				readCheck: createAsyncLogic({ run: async (): Promise<Check[]> => [persistedCheck] })
+			}
 		})
 		const first = await toPromise(f.actor(values, logic))
 		expect(first).toMatchObject({ outcome: 'partial', reason: 'checkRetained' })
@@ -245,9 +257,15 @@ describe('staged Check recovery and interruptions', () => {
 		const reads: boolean[] = []
 		const logic = f.machine.provide({
 			actors: {
-				readCheck: fromPromise(async ({ input }): Promise<Check[]> => {
-					reads.push(input.uncertain)
-					return [persistedCheck]
+				readCheck: createAsyncLogic({
+					run: async ({
+						input
+					}: {
+						input: { id: string; uncertain: boolean }
+					}): Promise<Check[]> => {
+						reads.push(input.uncertain)
+						return [persistedCheck]
+					}
 				})
 			}
 		})
@@ -299,8 +317,8 @@ describe('staged Check recovery and interruptions', () => {
 			)
 			const logic = f.machine.provide({
 				actors: {
-					readCheck: fromPromise(async (): Promise<Check[]> => [persistedCheck]),
-					readLedger: fromPromise(readLedger)
+					readCheck: createAsyncLogic({ run: async (): Promise<Check[]> => [persistedCheck] }),
+					readLedger: createAsyncLogic({ run: readLedger })
 				}
 			})
 			const first = await toPromise(f.actor(values, logic))
@@ -333,7 +351,7 @@ describe('staged Check recovery and interruptions', () => {
 			})
 			const logic = f.machine.provide({
 				actors: {
-					readCheck: fromPromise(async (): Promise<Check[]> => [persistedCheck])
+					readCheck: createAsyncLogic({ run: async (): Promise<Check[]> => [persistedCheck] })
 				}
 			})
 			const actor = f.actor(values, logic)
@@ -366,7 +384,7 @@ describe('staged Check scope and remote boundaries', () => {
 			f.observe.mockReturnValueOnce(facts).mockReturnValue({ ...facts, ...replacement })
 			const logic = f.machine.provide({
 				actors: {
-					readCheck: fromPromise(async (): Promise<Check[]> => [persistedCheck])
+					readCheck: createAsyncLogic({ run: async (): Promise<Check[]> => [persistedCheck] })
 				}
 			})
 			await expect(toPromise(f.actor(values, logic))).resolves.toMatchObject({
@@ -387,7 +405,7 @@ describe('staged Check scope and remote boundaries', () => {
 			})
 			const initial = f.machine.provide({
 				actors: {
-					readCheck: fromPromise(async (): Promise<Check[]> => [persistedCheck])
+					readCheck: createAsyncLogic({ run: async (): Promise<Check[]> => [persistedCheck] })
 				}
 			})
 			const first = await toPromise(f.actor(values, initial))

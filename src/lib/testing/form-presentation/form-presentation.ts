@@ -1,4 +1,3 @@
-import { assign, fromPromise, setup } from 'xstate'
 import { z } from 'zod'
 import type {
 	FormCapability,
@@ -8,6 +7,8 @@ import type {
 	FormOperationResult
 } from '../../contracts/form-contract.js'
 import type { ScopedFormOptions } from '../../machines/forms/scoped-form.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type Facts = { scope: string; allowed: boolean; publish?: boolean; broken?: boolean }
 type Values = { name: string }
@@ -19,33 +20,53 @@ export function harnessOptions(controls: {
 	start: () => Promise<Result>
 	command: (event: FormChildEvent<Facts>) => void
 }) {
-	const availability = setup<
-		{ observation: FormObservation<Facts> },
-		FormChildEvent<Facts>,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<Facts>
-	>({}).createMachine({
+	const events1 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<Facts>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<Facts>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<Facts>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<Facts>, 'OBSERVE'>>()
+	}
+	type NativeEvent1 =
+		| import('xstate').InferEvents<typeof events1>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	const availability = setup({
+		schemas: {
+			context: types<{ observation: FormObservation<Facts> }>(),
+			events: events1,
+			input: types<FormObservation<Facts>>()
+		}
+	}).createMachine({
 		context: ({ input }) => ({ observation: input }),
-		on: { OBSERVE: { actions: assign({ observation: ({ event }) => event.observation }) } }
+		on: {
+			OBSERVE: (args) => {
+				return { context: { observation: args.event.observation } }
+			}
+		}
 	})
-	const settle = fromPromise<Result>(() => controls.start())
-	const operation = setup<
-		{ result: Result },
-		FormChildEvent<Facts>,
-		{ settle: typeof settle },
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormOperationInput<Values, string, Facts>,
-		Result
-	>({ actors: { settle } }).createMachine({
+	const settle = createAsyncLogic<Result>({ run: () => controls.start() })
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<Facts>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<Facts>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<Facts>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<Facts>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof settle>>
+		| import('xstate').ErrorActorEvent
+	const operation = setup({
+		schemas: {
+			context: types<{ result: Result }>(),
+			events: events0,
+			input: types<FormOperationInput<Values, string, Facts>>(),
+			output: types<Result>(),
+			children: {
+				settle: types<import('xstate').ActorRefFrom<{ settle: typeof settle }['settle']>>()
+			}
+		},
+		actors: { settle }
+	}).createMachine({
 		context: { result: { outcome: 'succeeded', value: undefined, settlement: 'locallyPersisted' } },
 		initial: 'working',
 		output: ({ context }) => context.result,
@@ -53,13 +74,27 @@ export function harnessOptions(controls: {
 			working: {
 				invoke: {
 					src: 'settle',
-					onDone: { target: 'done', actions: assign({ result: ({ event }) => event.output }) }
+					onDone: (args) => {
+						return { target: 'done', context: { result: args.event.output } }
+					}
 				},
 				on: {
-					OBSERVE: { actions: ({ event }) => controls.command(event) },
-					INVALIDATE: { actions: ({ event }) => controls.command(event) },
-					CANCEL: { actions: ({ event }) => controls.command(event) },
-					SHUTDOWN: { actions: ({ event }) => controls.command(event) }
+					OBSERVE: (args, enq) => {
+						const { event } = args
+						enq(() => controls.command(event))
+					},
+					INVALIDATE: (args, enq) => {
+						const { event } = args
+						enq(() => controls.command(event))
+					},
+					CANCEL: (args, enq) => {
+						const { event } = args
+						enq(() => controls.command(event))
+					},
+					SHUTDOWN: (args, enq) => {
+						const { event } = args
+						enq(() => controls.command(event))
+					}
 				}
 			},
 			done: { type: 'final' }

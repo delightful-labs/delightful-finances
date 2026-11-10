@@ -1,7 +1,6 @@
 import { tagFormSchema } from '#lib/validation/tags.js'
 import { categoryFormSchema } from '#lib/validation/categories.js'
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, getInitialSnapshot, waitFor } from 'xstate'
 import type { ManagementObservation, ManagementReason } from '#lib/contracts/management-contract.js'
 import {
 	createManagementAvailability,
@@ -12,6 +11,7 @@ import {
 	createManagementFormOptions
 } from './management.js'
 import { createScopedFormWriteMachine } from '../forms/scoped-form-write.js'
+import { createActor, waitFor, initialTransition } from 'xstate'
 
 const binding = {}
 const category = {
@@ -52,7 +52,7 @@ function facts(): ManagementObservation {
 }
 function policy(f: ManagementObservation) {
 	return selectManagementAvailability(
-		getInitialSnapshot(createManagementAvailability(binding), { revision: 4, facts: f })
+		initialTransition(createManagementAvailability(binding), { revision: 4, facts: f })[0]
 	).readiness
 }
 describe('category/tag policy', () => {

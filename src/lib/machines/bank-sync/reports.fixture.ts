@@ -1,11 +1,4 @@
-import {
-	createActor,
-	fromTransition,
-	type ActorRef,
-	type ActorRefFrom,
-	type Snapshot,
-	type EventObject
-} from 'xstate'
+import { collectEvents as collectReports } from '../report-collector.fixture.js'
 import { bankAvailabilityMachine, type AvailabilityEvent } from './availability.js'
 import {
 	bankData,
@@ -15,6 +8,8 @@ import {
 	type BankSource
 } from './types.js'
 import { required } from './identity.js'
+import { createActor, createStepLogic } from 'xstate'
+import type { ActorRef, ActorRefFrom, Snapshot, EventObject } from 'xstate'
 
 export function accessFor(source: BankSource): BankAccess {
 	const observed = bankObservation(source)
@@ -56,11 +51,7 @@ export function publishAvailability(
 	})
 }
 
-export function collectReports<Event extends EventObject>() {
-	return createActor(
-		fromTransition((events: Event[], event: Event) => [...events, event], [])
-	).start()
-}
+export { collectEvents as collectReports } from '../report-collector.fixture.js'
 
 export function availabilityReport(source: BankSource, generation: number) {
 	const recipient = collectReports<AvailabilityEvent>()

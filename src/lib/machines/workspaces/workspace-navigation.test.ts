@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { createWorkspaceNavigationMachine } from './workspace-navigation.js'
 import type {
 	NavigationStatusEvent,
@@ -13,6 +12,8 @@ import {
 	workspaceLabel,
 	workspaceRoute
 } from '../../domain/workspace-routes.js'
+import { createActor, waitFor } from 'xstate'
+
 const actors: { stop: () => void }[] = []
 afterEach(() => actors.splice(0).forEach((actor) => actor.stop()))
 const facts: WorkspaceNavigationFacts = {

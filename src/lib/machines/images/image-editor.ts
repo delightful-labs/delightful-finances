@@ -1,4 +1,3 @@
-import { assign, fromPromise, setup, type SnapshotFrom } from 'xstate'
 import {
 	initialImageSelection,
 	moveImageSelection,
@@ -11,6 +10,9 @@ import {
 } from '#lib/domain/image-editor-geometry.js'
 import { renderEditorPixels, type ImageAdjustments } from '#lib/domain/image-editor-pixels.js'
 import * as platform from '#lib/domain/image-editor-platform.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type ImageEditorInput = { file: File; mode?: ImageSelectionMode }
 export type ImageEditorOutput =
@@ -71,54 +73,195 @@ function nudge(context: Context, target: DragTarget, delta: ImagePoint) {
 	)
 }
 
-const decode = fromPromise(({ input }: { input: File }) => platform.decodeEditorImage(input))
-const read = fromPromise(async ({ input }: { input: ImageBitmap }) =>
-	platform.readEditorSource(input)
-)
-const render = fromPromise(async ({ input }: { input: ReturnType<typeof renderInput> }) =>
-	renderEditorPixels(input.source, input.selection, input.adjustments)
-)
-const allocate = fromPromise(async () => platform.createEditorCanvas())
-const paint = fromPromise(
-	async ({ input }: { input: { canvas: HTMLCanvasElement; pixels: ImageData } }) =>
+const decode = createAsyncLogic({
+	run: ({ input }: { input: File }) => platform.decodeEditorImage(input)
+})
+const read = createAsyncLogic({
+	run: async ({ input }: { input: ImageBitmap }) => platform.readEditorSource(input)
+})
+const render = createAsyncLogic({
+	run: async ({ input }: { input: ReturnType<typeof renderInput> }) =>
+		renderEditorPixels(input.source, input.selection, input.adjustments)
+})
+const allocate = createAsyncLogic({ run: async () => platform.createEditorCanvas() })
+const paint = createAsyncLogic({
+	run: async ({ input }: { input: { canvas: HTMLCanvasElement; pixels: ImageData } }) =>
 		platform.paintEditorCanvas(input.canvas, input.pixels)
-)
-const encode = fromPromise(
-	({ input }: { input: { canvas: HTMLCanvasElement; mimeType: string } }) =>
+})
+const encode = createAsyncLogic({
+	run: ({ input }: { input: { canvas: HTMLCanvasElement; mimeType: string } }) =>
 		platform.encodeEditorCanvas(input.canvas, input.mimeType)
-)
-const closeBitmap = fromPromise(async ({ input }: { input: ImageBitmap }) => input.close())
-const closeCanvas = fromPromise(async ({ input }: { input: HTMLCanvasElement }) =>
-	platform.releaseEditorCanvas(input)
-)
+})
+const closeBitmap = createAsyncLogic({
+	run: async ({ input }: { input: ImageBitmap }) => input.close()
+})
+const closeCanvas = createAsyncLogic({
+	run: async ({ input }: { input: HTMLCanvasElement }) => platform.releaseEditorCanvas(input)
+})
+const patchShutdown = (): Partial<Context> => ({ result: { kind: 'closed' } })
+const patchCancel = ({ context }: { context: Context }): Partial<Context> => ({
+	result: cancelled(context)
+})
+const events0 = {
+	BEGIN_DRAG: types<EventPayload<ImageEditorEvent, 'BEGIN_DRAG'>>(),
+	DRAG: types<EventPayload<ImageEditorEvent, 'DRAG'>>(),
+	END_DRAG: types<EventPayload<ImageEditorEvent, 'END_DRAG'>>(),
+	NUDGE: types<EventPayload<ImageEditorEvent, 'NUDGE'>>(),
+	SET_MODE: types<EventPayload<ImageEditorEvent, 'SET_MODE'>>(),
+	SET_CONTRAST: types<EventPayload<ImageEditorEvent, 'SET_CONTRAST'>>(),
+	SET_BLACK_WHITE: types<EventPayload<ImageEditorEvent, 'SET_BLACK_WHITE'>>(),
+	PREVIEW: types<EventPayload<ImageEditorEvent, 'PREVIEW'>>(),
+	EDIT: types<EventPayload<ImageEditorEvent, 'EDIT'>>(),
+	RESET: types<EventPayload<ImageEditorEvent, 'RESET'>>(),
+	APPLY: types<EventPayload<ImageEditorEvent, 'APPLY'>>(),
+	CANCEL: types<EventPayload<ImageEditorEvent, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<ImageEditorEvent, 'SHUTDOWN'>>(),
+	DISPLAY_FAILED: types<EventPayload<ImageEditorEvent, 'DISPLAY_FAILED'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof decode>
+			| import('xstate').OutputFrom<typeof read>
+			| import('xstate').OutputFrom<typeof render>
+			| import('xstate').OutputFrom<typeof allocate>
+			| import('xstate').OutputFrom<typeof paint>
+			| import('xstate').OutputFrom<typeof encode>
+			| import('xstate').OutputFrom<typeof closeBitmap>
+			| import('xstate').OutputFrom<typeof closeCanvas>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** Owns editing and export resources; callers drain SHUTDOWN before stopping the actor. */
-export const imageEditorMachine = setup<
-	Context,
-	ImageEditorEvent,
-	{
-		decode: typeof decode
-		read: typeof read
-		render: typeof render
-		allocate: typeof allocate
-		paint: typeof paint
-		encode: typeof encode
-		closeBitmap: typeof closeBitmap
-		closeCanvas: typeof closeCanvas
+export const imageEditorMachine = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<ImageEditorInput>(),
+		output: types<ImageEditorOutput>(),
+		children: {
+			decode: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['decode']
+				>
+			>(),
+			read: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['read']
+				>
+			>(),
+			render: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['render']
+				>
+			>(),
+			allocate: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['allocate']
+				>
+			>(),
+			paint: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['paint']
+				>
+			>(),
+			encode: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['encode']
+				>
+			>(),
+			closeBitmap: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['closeBitmap']
+				>
+			>(),
+			closeCanvas: types<
+				import('xstate').ActorRefFrom<
+					{
+						decode: typeof decode
+						read: typeof read
+						render: typeof render
+						allocate: typeof allocate
+						paint: typeof paint
+						encode: typeof encode
+						closeBitmap: typeof closeBitmap
+						closeCanvas: typeof closeCanvas
+					}['closeCanvas']
+				>
+			>()
+		}
 	},
-	{},
-	{ cancel: undefined; shutdown: undefined },
-	{},
-	never,
-	string,
-	ImageEditorInput,
-	ImageEditorOutput
->({
 	actors: { decode, read, render, allocate, paint, encode, closeBitmap, closeCanvas },
-	actions: {
-		cancel: assign({ result: ({ context }) => cancelled(context) }),
-		shutdown: assign({ result: (): ImageEditorOutput => ({ kind: 'closed' }) })
-	}
+	actions: {}
 }).createMachine({
 	id: 'image-editor',
 	initial: 'validating',
@@ -138,39 +281,41 @@ export const imageEditorMachine = setup<
 	output: ({ context }) => context.result ?? { kind: 'failed', reason: 'input' },
 	// Pending native operations retain their invocation until settlement. Completion
 	// transitions consume this requested terminal result before starting another operation.
-	on: { CANCEL: { actions: 'cancel' }, SHUTDOWN: { actions: 'shutdown' } },
+	on: {
+		CANCEL: (args) => {
+			return { context: patchCancel(args) }
+		},
+		SHUTDOWN: (args) => {
+			return { context: patchShutdown() }
+		}
+	},
 	states: {
 		validating: {
-			always: [
-				{
-					guard: ({ context }) =>
-						context.file.size > 0 &&
-						['image/png', 'image/jpeg', 'image/webp'].includes(context.file.type),
-					target: 'decoding'
-				},
-				{
-					target: 'failed',
-					actions: assign({
-						result: (): ImageEditorOutput => ({ kind: 'failed', reason: 'input' })
-					})
+			always: (args) => {
+				const { context } = args
+				if (
+					context.file.size > 0 &&
+					['image/png', 'image/jpeg', 'image/webp'].includes(context.file.type)
+				) {
+					return { target: 'decoding' }
 				}
-			]
+				return { target: 'failed', context: { result: { kind: 'failed', reason: 'input' } } }
+			}
 		},
 		decoding: {
 			invoke: {
 				src: 'decode',
 				input: ({ context }) => context.file,
-				onDone: [
-					{
-						guard: ({ context }) => context.result !== undefined,
-						target: 'cleanup',
-						actions: assign({ bitmap: ({ event }) => event.output })
-					},
-					{ target: 'readingSource', actions: assign({ bitmap: ({ event }) => event.output }) }
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'decode') })
+				onDone: (args) => {
+					const { event } = args
+					if (args.context.result !== undefined) {
+						return { target: 'cleanup', context: { bitmap: event.output } }
+					}
+					return { target: 'readingSource', context: { bitmap: event.output } }
+				},
+				onError: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'decode') } }
 				}
 			}
 		},
@@ -178,19 +323,22 @@ export const imageEditorMachine = setup<
 			invoke: {
 				src: 'read',
 				input: ({ context }) => required(context.bitmap),
-				onDone: [
-					{ guard: ({ context }) => context.result !== undefined, target: 'cleanup' },
-					{
-						target: 'closingSource',
-						actions: assign({
-							source: ({ event }) => event.output,
-							selection: ({ context, event }) => initialImageSelection(context.mode, event.output)
-						})
+				onDone: (args) => {
+					const { context, event } = args
+					if (context.result !== undefined) {
+						return { target: 'cleanup' }
 					}
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'read') })
+					return {
+						target: 'closingSource',
+						context: {
+							source: event.output,
+							selection: initialImageSelection(context.mode, event.output)
+						}
+					}
+				},
+				onError: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'read') } }
 				}
 			}
 		},
@@ -198,136 +346,155 @@ export const imageEditorMachine = setup<
 			invoke: {
 				src: 'closeBitmap',
 				input: ({ context }) => required(context.bitmap),
-				onDone: [
-					{
-						guard: ({ context }) => context.result !== undefined,
+				onDone: (args) => {
+					if (args.context.result !== undefined) {
+						return { target: 'cleanup', context: { bitmap: undefined } }
+					}
+					return { target: 'interactive', context: { bitmap: undefined } }
+				},
+				onError: (args) => {
+					const { context } = args
+					return {
 						target: 'cleanup',
-						actions: assign({ bitmap: undefined })
-					},
-					{ target: 'interactive', actions: assign({ bitmap: undefined }) }
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({
-						bitmap: undefined,
-						result: ({ context }) => failed(context, 'cleanup')
-					})
+						context: { bitmap: undefined, result: failed(context, 'cleanup') }
+					}
 				}
 			}
 		},
 		interactive: {
 			initial: 'editing',
 			on: {
-				DISPLAY_FAILED: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'render') })
+				DISPLAY_FAILED: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'render') } }
 				},
-				CANCEL: { target: 'cleanup', actions: 'cancel' },
-				SHUTDOWN: { target: 'cleanup', actions: 'shutdown' },
-				SET_MODE: {
-					target: '.editing.idle',
-					actions: assign({
-						mode: ({ event }) => event.mode,
-						selection: ({ context, event }) =>
-							initialImageSelection(event.mode, required(context.source)),
-						drag: undefined,
-						preview: undefined
-					})
+				CANCEL: (args) => {
+					return { target: 'cleanup', context: patchCancel(args) }
 				},
-				SET_CONTRAST: {
-					guard: ({ event }) => Number.isFinite(event.value),
-					target: '.editing.idle',
-					actions: assign({
-						adjustments: ({ context, event }) => ({
-							...context.adjustments,
-							contrast: Math.max(0, Math.min(200, event.value))
-						}),
-						drag: undefined,
-						preview: undefined
-					})
+				SHUTDOWN: (args) => {
+					return { target: 'cleanup', context: patchShutdown() }
 				},
-				SET_BLACK_WHITE: {
-					target: '.editing.idle',
-					actions: assign({
-						adjustments: ({ context, event }) => ({
-							...context.adjustments,
-							blackWhite: event.value
-						}),
-						drag: undefined,
-						preview: undefined
-					})
+				SET_MODE: (args) => {
+					const { event } = args
+					return {
+						target: '.editing.idle',
+						context: {
+							mode: event.mode,
+							selection: initialImageSelection(event.mode, required(args.context.source)),
+							drag: undefined,
+							preview: undefined
+						}
+					}
 				},
-				RESET: {
-					target: '.editing.idle',
-					actions: assign({
-						selection: ({ context }) =>
-							initialImageSelection(context.mode, required(context.source)),
-						adjustments: () => ({ blackWhite: false, contrast: 100 }),
-						drag: undefined,
-						preview: undefined
-					})
+				SET_CONTRAST: (args) => {
+					const { event } = args
+					if (!Number.isFinite(event.value)) return
+					return {
+						target: '.editing.idle',
+						context: {
+							adjustments: {
+								...args.context.adjustments,
+								contrast: Math.max(0, Math.min(200, event.value))
+							},
+							drag: undefined,
+							preview: undefined
+						}
+					}
 				},
-				APPLY: {
-					guard: ({ context }) =>
-						validImageQuad(selectionQuad(required(context.selection)), required(context.source)),
-					target: 'renderingApply',
-					actions: assign({ drag: undefined, preview: undefined })
+				SET_BLACK_WHITE: (args) => {
+					return {
+						target: '.editing.idle',
+						context: {
+							adjustments: {
+								...args.context.adjustments,
+								blackWhite: args.event.value
+							},
+							drag: undefined,
+							preview: undefined
+						}
+					}
+				},
+				RESET: (args) => {
+					const { context } = args
+					return {
+						target: '.editing.idle',
+						context: {
+							selection: initialImageSelection(context.mode, required(context.source)),
+							adjustments: { blackWhite: false, contrast: 100 },
+							drag: undefined,
+							preview: undefined
+						}
+					}
+				},
+				APPLY: (args) => {
+					const { context } = args
+					if (!validImageQuad(selectionQuad(required(context.selection)), required(context.source)))
+						return
+					return { target: 'renderingApply', context: { drag: undefined, preview: undefined } }
 				}
 			},
 			states: {
 				editing: {
 					initial: 'idle',
 					on: {
-						PREVIEW: {
-							target: '#image-editor.interactive.renderingPreview',
-							actions: assign({ drag: undefined })
+						PREVIEW: () => {
+							return {
+								target: '#image-editor.interactive.renderingPreview',
+								context: { drag: undefined }
+							}
 						},
-						NUDGE: {
-							target: '.idle',
-							actions: assign({
-								selection: ({ context, event }) => nudge(context, event.target, event.delta),
-								drag: undefined
-							})
+						NUDGE: (args) => {
+							const { context, event } = args
+							return {
+								target: '.idle',
+								context: { selection: nudge(context, event.target, event.delta), drag: undefined }
+							}
 						}
 					},
 					states: {
 						idle: {
 							on: {
-								BEGIN_DRAG: {
-									guard: ({ event }) =>
-										Number.isFinite(event.point.x) && Number.isFinite(event.point.y),
-									target: 'dragging',
-									actions: assign({
-										drag: ({ context, event }) => ({
-											point: event.point,
-											target: event.target,
-											selection: required(context.selection)
-										})
-									})
+								BEGIN_DRAG: (args) => {
+									const { event } = args
+									if (!(Number.isFinite(event.point.x) && Number.isFinite(event.point.y))) return
+									return {
+										target: 'dragging',
+										context: {
+											drag: {
+												point: event.point,
+												target: event.target,
+												selection: required(args.context.selection)
+											}
+										}
+									}
 								}
 							}
 						},
 						dragging: {
 							on: {
-								DRAG: {
-									actions: assign({
-										selection: ({ context, event }) => {
-											const origin = required(context.drag)
-											return moveImageSelection(
-												origin.selection,
-												{
-													...origin.target,
-													delta: {
-														x: event.point.x - origin.point.x,
-														y: event.point.y - origin.point.y
-													}
-												},
-												required(context.source)
-											)
+								DRAG: (args) => {
+									return {
+										context: {
+											selection: (({ context, event }) => {
+												const origin = required(context.drag)
+												return moveImageSelection(
+													origin.selection,
+													{
+														...origin.target,
+														delta: {
+															x: event.point.x - origin.point.x,
+															y: event.point.y - origin.point.y
+														}
+													},
+													required(context.source)
+												)
+											})(args)
 										}
-									})
+									}
 								},
-								END_DRAG: { target: 'idle', actions: assign({ drag: undefined }) }
+								END_DRAG: () => {
+									return { target: 'idle', context: { drag: undefined } }
+								}
 							}
 						}
 					}
@@ -336,18 +503,24 @@ export const imageEditorMachine = setup<
 					invoke: {
 						src: 'render',
 						input: ({ context }) => renderInput(context),
-						onDone: {
-							target: 'previewReady',
-							actions: assign({ preview: ({ event }) => event.output })
+						onDone: (args) => {
+							return { target: 'previewReady', context: { preview: args.event.output } }
 						},
-						onError: {
-							target: '#image-editor.cleanup',
-							actions: assign({ result: ({ context }) => failed(context, 'render') })
+						onError: (args) => {
+							const { context } = args
+							return {
+								target: '#image-editor.cleanup',
+								context: { result: failed(context, 'render') }
+							}
 						}
 					}
 				},
 				previewReady: {
-					on: { EDIT: { target: 'editing', actions: assign({ preview: undefined }) } }
+					on: {
+						EDIT: () => {
+							return { target: 'editing', context: { preview: undefined } }
+						}
+					}
 				}
 			}
 		},
@@ -355,30 +528,31 @@ export const imageEditorMachine = setup<
 			invoke: {
 				src: 'render',
 				input: ({ context }) => renderInput(context),
-				onDone: [
-					{ guard: ({ context }) => context.result !== undefined, target: 'cleanup' },
-					{ target: 'creatingCanvas', actions: assign({ rendered: ({ event }) => event.output }) }
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'render') })
+				onDone: (args) => {
+					if (args.context.result !== undefined) {
+						return { target: 'cleanup' }
+					}
+					return { target: 'creatingCanvas', context: { rendered: args.event.output } }
+				},
+				onError: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'render') } }
 				}
 			}
 		},
 		creatingCanvas: {
 			invoke: {
 				src: 'allocate',
-				onDone: [
-					{
-						guard: ({ context }) => context.result !== undefined,
-						target: 'cleanup',
-						actions: assign({ canvas: ({ event }) => event.output })
-					},
-					{ target: 'painting', actions: assign({ canvas: ({ event }) => event.output }) }
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'render') })
+				onDone: (args) => {
+					const { event } = args
+					if (args.context.result !== undefined) {
+						return { target: 'cleanup', context: { canvas: event.output } }
+					}
+					return { target: 'painting', context: { canvas: event.output } }
+				},
+				onError: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'render') } }
 				}
 			}
 		},
@@ -389,13 +563,15 @@ export const imageEditorMachine = setup<
 					canvas: required(context.canvas),
 					pixels: required(context.rendered)
 				}),
-				onDone: [
-					{ guard: ({ context }) => context.result !== undefined, target: 'cleanup' },
-					{ target: 'encoding' }
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'render') })
+				onDone: (args) => {
+					if (args.context.result !== undefined) {
+						return { target: 'cleanup' }
+					}
+					return { target: 'encoding' }
+				},
+				onError: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'render') } }
 				}
 			}
 		},
@@ -403,75 +579,85 @@ export const imageEditorMachine = setup<
 			invoke: {
 				src: 'encode',
 				input: ({ context }) => ({ canvas: required(context.canvas), mimeType: context.file.type }),
-				onDone: [
-					{ guard: ({ context }) => context.result !== undefined, target: 'cleanup' },
-					{
-						guard: ({ context, event }) =>
-							event.output !== null &&
-							event.output.size > 0 &&
-							event.output.type === context.file.type,
-						target: 'cleanup',
-						actions: assign({
-							result: ({ context, event }): ImageEditorOutput => ({
-								kind: 'applied',
-								file: new File([required(event.output ?? undefined)], context.file.name, {
-									type: context.file.type
-								})
-							})
-						})
-					},
-					{
-						target: 'cleanup',
-						actions: assign({ result: ({ context }) => failed(context, 'encode') })
+				onDone: (args) => {
+					const { context, event } = args
+					if (context.result !== undefined) {
+						return { target: 'cleanup' }
 					}
-				],
-				onError: {
-					target: 'cleanup',
-					actions: assign({ result: ({ context }) => failed(context, 'encode') })
+					if (
+						event.output !== null &&
+						event.output.size > 0 &&
+						event.output.type === context.file.type
+					) {
+						return {
+							target: 'cleanup',
+							context: {
+								result: {
+									kind: 'applied',
+									file: new File([required(event.output ?? undefined)], context.file.name, {
+										type: context.file.type
+									})
+								}
+							}
+						}
+					}
+					return { target: 'cleanup', context: { result: failed(context, 'encode') } }
+				},
+				onError: (args) => {
+					const { context } = args
+					return { target: 'cleanup', context: { result: failed(context, 'encode') } }
 				}
 			}
 		},
 		cleanup: {
 			initial: 'bitmap',
-			onDone: 'settling',
+			onDone: { target: 'settling' },
 			states: {
 				bitmap: {
-					always: [
-						{ guard: ({ context }) => context.bitmap !== undefined, target: 'closingBitmap' },
-						{ target: 'canvas' }
-					]
+					always: (args) => {
+						if (args.context.bitmap !== undefined) {
+							return { target: 'closingBitmap' }
+						}
+						return { target: 'canvas' }
+					}
 				},
 				closingBitmap: {
 					invoke: {
 						src: 'closeBitmap',
 						input: ({ context }) => required(context.bitmap),
-						onDone: { target: 'canvas', actions: assign({ bitmap: undefined }) },
-						onError: {
-							target: 'canvas',
-							actions: assign({
-								bitmap: undefined,
-								result: ({ context }) => failed(context, 'cleanup')
-							})
+						onDone: () => {
+							return { target: 'canvas', context: { bitmap: undefined } }
+						},
+						onError: (args) => {
+							const { context } = args
+							return {
+								target: 'canvas',
+								context: { bitmap: undefined, result: failed(context, 'cleanup') }
+							}
 						}
 					}
 				},
 				canvas: {
-					always: [
-						{ guard: ({ context }) => context.canvas !== undefined, target: 'closingCanvas' },
-						{ target: 'done' }
-					]
+					always: (args) => {
+						if (args.context.canvas !== undefined) {
+							return { target: 'closingCanvas' }
+						}
+						return { target: 'done' }
+					}
 				},
 				closingCanvas: {
 					invoke: {
 						src: 'closeCanvas',
 						input: ({ context }) => required(context.canvas),
-						onDone: { target: 'done', actions: assign({ canvas: undefined }) },
-						onError: {
-							target: 'done',
-							actions: assign({
-								canvas: undefined,
-								result: ({ context }) => failed(context, 'cleanup')
-							})
+						onDone: () => {
+							return { target: 'done', context: { canvas: undefined } }
+						},
+						onError: (args) => {
+							const { context } = args
+							return {
+								target: 'done',
+								context: { canvas: undefined, result: failed(context, 'cleanup') }
+							}
 						}
 					}
 				},
@@ -479,18 +665,24 @@ export const imageEditorMachine = setup<
 			}
 		},
 		settling: {
-			entry: assign({
-				source: undefined,
-				preview: undefined,
-				rendered: undefined,
-				drag: undefined
-			}),
-			always: [
-				{ guard: ({ context }) => context.result?.kind === 'applied', target: 'applied' },
-				{ guard: ({ context }) => context.result?.kind === 'cancelled', target: 'cancelled' },
-				{ guard: ({ context }) => context.result?.kind === 'closed', target: 'closed' },
-				{ target: 'failed' }
-			]
+			entry: () => {
+				return {
+					context: { source: undefined, preview: undefined, rendered: undefined, drag: undefined }
+				}
+			},
+			always: (args) => {
+				const { context } = args
+				if (context.result?.kind === 'applied') {
+					return { target: 'applied' }
+				}
+				if (context.result?.kind === 'cancelled') {
+					return { target: 'cancelled' }
+				}
+				if (context.result?.kind === 'closed') {
+					return { target: 'closed' }
+				}
+				return { target: 'failed' }
+			}
 		},
 		applied: { type: 'final' },
 		cancelled: { type: 'final' },

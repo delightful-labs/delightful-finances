@@ -1,4 +1,3 @@
-import { assign, sendTo, setup, stateIn, type SnapshotFrom } from 'xstate'
 import { required } from '../bank-sync/identity.js'
 import {
 	archiveAllowed,
@@ -8,6 +7,9 @@ import {
 	type ArchiveRequest,
 	type ArchiveResult
 } from './account-archive-operation.js'
+import { setup, types, matchesState } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type ArchiveRowAction = 'unavailable' | 'available' | 'disabled' | 'archiving'
 export type AccountArchiveView = {
@@ -29,43 +31,60 @@ export function createAccountArchiveMachine(
 	observe: () => ArchiveObservation
 ) {
 	const operation = createAccountArchiveOperation(persist, observe)
-	const workflow = setup<
-		Context,
-		Event,
-		{ operation: typeof operation },
-		{},
-		{},
-		{ closing: undefined }
-	>({ actors: { operation }, guards: { closing: stateIn({ operating: 'closing' }) } })
-	const update = workflow.assign({
-		observation: ({ context, event }) =>
-			event.type === 'OBSERVE' ? event.observation : context.observation
+	const events0 = {
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>(),
+		ARCHIVE: types<EventPayload<Event, 'ARCHIVE'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof operation>>
+		| import('xstate').ErrorActorEvent
+	const workflow = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			children: {
+				operation:
+					types<import('xstate').ActorRefFrom<{ operation: typeof operation }['operation']>>()
+			}
+		},
+		actors: { operation },
+		guards: {
+			closing: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ operating: 'closing' }, args.value)
+		}
 	})
 	const readiness = workflow.createStateConfig({
 		initial: 'assessing',
 		states: {
 			assessing: {
-				always: [
-					{
-						guard: ({ context }) =>
-							!context.observation.sessionReady ||
-							!context.observation.identityId ||
-							!context.observation.binding,
-						target: 'sessionUnavailable'
-					},
-					{
-						guard: ({ context }) => !context.observation.organizationId,
-						target: 'selectWorkspace'
-					},
-					{ guard: ({ context }) => context.observation.failed, target: 'loadFailed' },
-					{ guard: ({ context }) => context.observation.loading, target: 'loading' },
-					{ target: 'ready' }
-				]
+				always: (args: { context: Context }) => {
+					const { context } = args
+					if (
+						!context.observation.sessionReady ||
+						!context.observation.identityId ||
+						!context.observation.binding
+					) {
+						return { target: 'sessionUnavailable' }
+					}
+					if (!context.observation.organizationId) {
+						return { target: 'selectWorkspace' }
+					}
+					if (context.observation.failed) {
+						return { target: 'loadFailed' }
+					}
+					if (context.observation.loading) {
+						return { target: 'loading' }
+					}
+					return { target: 'ready' }
+				}
 			},
-			sessionUnavailable: { tags: 'sessionUnavailable' },
-			selectWorkspace: { tags: 'selectWorkspace' },
-			loadFailed: { tags: 'loadFailed' },
-			loading: { tags: 'loading' },
+			sessionUnavailable: { tags: ['sessionUnavailable'] },
+			selectWorkspace: { tags: ['selectWorkspace'] },
+			loadFailed: { tags: ['loadFailed'] },
+			loading: { tags: ['loading'] },
 			ready: {}
 		}
 	})
@@ -74,51 +93,60 @@ export function createAccountArchiveMachine(
 		invoke: {
 			id: 'operation',
 			src: 'operation',
-			input: ({ context }) => ({
+			input: ({ context }: { context: Context }) => ({
 				request: required(context.request),
 				observation: context.observation
 			}),
-			onDone: [
-				{ guard: 'closing', target: '#account-archive.closed' },
-				{
-					guard: ({ event }) => event.output.outcome === 'closed',
-					target: '#account-archive.closed'
-				},
-				{
-					target: '#account-archive.assessing',
-					actions: assign({
-						result: ({ event }) => event.output,
-						request: undefined,
-						observation: () => observe()
-					})
+			onDone: (args) => {
+				const { event } = args
+				if (matchesState({ operating: 'closing' }, args.value)) {
+					return { target: '#account-archive.closed' }
 				}
-			],
-			onError: [
-				{
-					guard: 'closing',
-					target: '#account-archive.closed'
-				},
-				{
+				if (event.output.outcome === 'closed') {
+					return { target: '#account-archive.closed' }
+				}
+				return {
 					target: '#account-archive.assessing',
-					actions: assign({
-						result: ({ context }) => ({
+					context: { result: event.output, request: undefined, observation: observe() }
+				}
+			},
+			onError: (args) => {
+				if (matchesState({ operating: 'closing' }, args.value)) {
+					return { target: '#account-archive.closed' }
+				}
+				return {
+					target: '#account-archive.assessing',
+					context: {
+						result: {
 							outcome: 'failed',
-							request: required(context.request),
+							request: required(args.context.request),
 							settlement: 'unknown'
-						}),
+						},
 						request: undefined,
-						observation: () => observe()
-					})
+						observation: observe()
+					}
 				}
-			]
+			}
 		},
 		on: {
-			OBSERVE: {
-				target: '.running.assessing',
-				actions: [update, sendTo('operation', ({ event }) => event)]
+			OBSERVE: (args, enq) => {
+				const { event } = args
+				enq.sendTo('operation', event)
+				return {
+					target: '.running.assessing',
+					context: ((args) => ({
+						observation: (({ context, event }) =>
+							event.type === 'OBSERVE' ? event.observation : context.observation)(args)
+					}))(args)
+				}
 			},
-			CANCEL: { actions: sendTo('operation', { type: 'CANCEL' }) },
-			SHUTDOWN: { target: '.closing', actions: sendTo('operation', { type: 'SHUTDOWN' }) }
+			CANCEL: (args, enq) => {
+				enq.sendTo('operation', { type: 'CANCEL' })
+			},
+			SHUTDOWN: (args, enq) => {
+				enq.sendTo('operation', { type: 'SHUTDOWN' })
+				return { target: '.closing' }
+			}
 		},
 		states: { running: readiness, closing: { on: { SHUTDOWN: {}, CANCEL: {}, OBSERVE: {} } } }
 	})
@@ -126,52 +154,70 @@ export function createAccountArchiveMachine(
 		id: 'account-archive',
 		initial: 'assessing',
 		context: () => ({ observation: observe(), request: undefined, result: undefined }),
-		on: { OBSERVE: { target: '.assessing', actions: update }, SHUTDOWN: '.closed' },
+		on: {
+			OBSERVE: (args) => {
+				return {
+					target: '.assessing',
+					context: ((args) => ({
+						observation: (({ context, event }) =>
+							event.type === 'OBSERVE' ? event.observation : context.observation)(args)
+					}))(args)
+				}
+			},
+			SHUTDOWN: { target: '.closed' }
+		},
 		states: {
 			...readiness.states,
 			ready: {
 				on: {
-					ARCHIVE: {
-						guard: ({ event, context }) => archiveAllowed(context.observation, event.accountId),
-						target: 'operating',
-						actions: workflow.assign({
-							request: ({ context, event }) =>
-								event.type === 'ARCHIVE'
-									? {
-											identityId: required(context.observation.identityId),
-											organizationId: required(context.observation.organizationId),
-											binding: required(context.observation.binding),
-											accountId: event.accountId,
-											name: required(
-												context.observation.accounts.find(
-													(account) => account.id === event.accountId
-												)
-											).name
-										}
-									: undefined,
-							result: undefined
-						})
+					ARCHIVE: (args) => {
+						const { context, event } = args
+						if (!archiveAllowed(context.observation, event.accountId)) return
+						return {
+							target: 'operating',
+							context: {
+								request:
+									event.type === 'ARCHIVE'
+										? {
+												identityId: required(context.observation.identityId),
+												organizationId: required(context.observation.organizationId),
+												binding: required(context.observation.binding),
+												accountId: event.accountId,
+												name: required(
+													context.observation.accounts.find(
+														(account) => account.id === event.accountId
+													)
+												).name
+											}
+										: undefined,
+								result: undefined
+							}
+						}
 					}
 				}
 			},
 			operating: active,
 			closed: {
 				type: 'final',
-				entry: workflow.assign({
-					request: undefined,
-					result: undefined,
-					observation: () => ({
-						identityId: null,
-						organizationId: null,
-						binding: null,
-						sessionReady: false,
-						loading: false,
-						failed: false,
-						accounts: [],
-						membership: undefined,
-						grants: []
-					})
-				})
+				entry: () => {
+					return {
+						context: {
+							request: undefined,
+							result: undefined,
+							observation: {
+								identityId: null,
+								organizationId: null,
+								binding: null,
+								sessionReady: false,
+								loading: false,
+								failed: false,
+								accounts: [],
+								membership: undefined,
+								grants: []
+							}
+						}
+					}
+				}
 			}
 		}
 	})

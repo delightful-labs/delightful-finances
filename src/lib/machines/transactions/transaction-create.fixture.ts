@@ -1,10 +1,11 @@
 import { afterEach, vi } from 'vitest'
 import { Transaction } from 'jazz-tools'
-import { createActor, type InputFrom } from 'xstate'
 import { createTransactionSaveMachine } from './transaction-save.js'
 import { transactionEntryScope } from './transaction-entry.js'
 import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
 import type { TransactionSaveValues } from '#lib/validation/transactions.js'
+import { createActor } from 'xstate'
+import type { InputFrom } from 'xstate'
 
 export const organizationId = '22222222-2222-4222-8222-222222222222'
 export const creationValues: TransactionSaveValues = {
@@ -99,7 +100,16 @@ export function creationFixture() {
 			observation: { revision: 0, facts }
 		}
 	}
-	function start(values = creationValues, logic = machine) {
+	function start(
+		values = creationValues,
+		logic: import('xstate').ActorLogic<
+			import('xstate').SnapshotFrom<typeof machine>,
+			import('xstate').EventFromLogic<typeof machine>,
+			import('xstate').InputFrom<typeof machine>,
+			import('xstate').AnyActorSystem,
+			import('xstate').EmittedFrom<typeof machine>
+		> = machine
+	) {
 		const actor = createActor(logic, { input: input(values) })
 		cleanups.push(() => actor.stop())
 		return actor.start()

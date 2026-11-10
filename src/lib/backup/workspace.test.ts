@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import {
 	createJazzClient,
 	createJazz,
@@ -28,6 +27,7 @@ import {
 	type BackupObservation
 } from '../machines/workspaces/workspace-backup.js'
 import { encodeAttachmentBytes, financeBackupProfile, readFinanceMetadata } from './workspace.js'
+import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 let authority: ReturnType<typeof createJazz>,
 	server: ReturnType<typeof createServer>,
@@ -567,11 +567,13 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 			resume = Promise.withResolvers<void>()
 		const reader = financeBackupReader.provide({
 			actors: {
-				metadata: fromPromise<void, JazzArchiveReaderInput>(async ({ input }) => {
-					await readFinanceMetadata(input)
-					if (input.mode === 'capture') {
-						reached.resolve()
-						await resume.promise
+				metadata: createAsyncLogic<void, JazzArchiveReaderInput>({
+					run: async ({ input }) => {
+						await readFinanceMetadata(input)
+						if (input.mode === 'capture') {
+							reached.resolve()
+							await resume.promise
+						}
 					}
 				})
 			}
@@ -714,28 +716,27 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 				vi.spyOn(transaction, 'rollback').mockImplementation(rollbackAttempt)
 				return transaction
 			})
-			const exporter = createJazzArchiveExportMachine(financeBackupReader).provide({
+			const reader = financeBackupReader.provide({
 				actors: {
-					preparePayload: fromPromise<
-						void,
-						{
-							request: import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest
+					metadata: createAsyncLogic<void, JazzArchiveReaderInput>({
+						run: async ({ input }) => {
+							await readFinanceMetadata(input)
+							if (input.mode !== 'capture') return
+							entered.resolve()
+							await proceed.promise
+							throw new Error('Injected capture failure')
 						}
-					>(async () => {
-						entered.resolve()
-						await proceed.promise
-						throw new Error('Injected payload preparation failure')
 					})
-				},
-				actions:
-					mode === 'normal'
-						? {}
-						: {
-								fail: () => {
-									throw new Error('Injected export crash')
-								}
-							}
+				}
 			})
+			const exporter = createJazzArchiveExportMachine(reader)
+			const transition = exporter.transition.bind(exporter)
+			vi.spyOn(exporter, 'transition').mockImplementation((...args) => {
+				if (mode !== 'normal' && args[1].type === 'CANCEL')
+					throw new Error('Injected export calculation crash')
+				return transition(...args)
+			})
+
 			const actor = createActor(
 				createWorkspaceBackupMachine({
 					db,
@@ -745,17 +746,19 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 				}).provide({
 					actors: {
 						export: exporter,
-						release: fromPromise<
+						release: createAsyncLogic<
 							void,
 							{
 								request:
 									| import('delightful-local-first/backend/jazz/backup').JazzArchiveExportRequest
 									| undefined
 							}
-						>(async ({ input }) => {
-							releasing.resolve()
-							await releaseGate.promise
-							await input.request?.release()
+						>({
+							run: async ({ input }) => {
+								releasing.resolve()
+								await releaseGate.promise
+								await input.request?.release()
+							}
 						})
 					}
 				}),
@@ -767,6 +770,7 @@ describe('Finance native backup', { timeout: 30_000 }, () => {
 				const request = actor.getSnapshot().context.request
 				proceed.resolve()
 				if (mode !== 'normal') {
+					actor.send({ type: 'CANCEL' })
 					await releasing.promise
 					if (mode === 'closing') actor.send({ type: 'SHUTDOWN' })
 					if (mode === 'changing')

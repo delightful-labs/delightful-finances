@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createActor } from 'xstate'
 import type { OrganizationMember } from '#lib/schema.js'
 import { accountCreationAccessMachine } from './account-creation-access.js'
+import { createActor } from 'xstate'
 
 const membership = {
 	id: 'membership',

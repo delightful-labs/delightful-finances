@@ -1,4 +1,3 @@
-import { and, assign, enqueueActions, raise, sendParent, sendTo, setup, stateIn } from 'xstate'
 import type {
 	TransferMutationScope,
 	TransferScopeDrainRequest,
@@ -23,6 +22,8 @@ import {
 	internalTransferLinkMachine,
 	internalTransferUnlinkMachine
 } from './internal-transfer.js'
+import { setup, types, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type TransferMutationResult =
 	| { operation: 'create'; result: InternalTransferCreateResult }
@@ -194,157 +195,157 @@ export function createInternalTransferMutationOwner() {
 		unlink: internalTransferUnlinkMachine,
 		delete: internalTransferDeleteMachine
 	}
-	const machine = setup<
-		Context,
-		Event,
-		typeof actors,
-		{
-			createOperation: 'create'
-			linkOperation: 'link'
-			unlinkOperation: 'unlink'
-			deleteOperation: 'delete'
+	const patchFinishFailure = ({ context }: { context: Context }): Partial<Context> => {
+		const request = required(context.request)
+		return {
+			result: {
+				type: 'TRANSFER_MUTATION_RESULT',
+				requestId: request.requestId,
+				result: failure(request)
+			}
+		}
+	}
+	const patchSetWorkspace = ({ event }: { event: Event }): Partial<Context> => ({
+		workspaceId: event.type === 'TRANSFER_SCOPE_CHANGED' ? event.workspaceId : undefined
+	})
+	const patchStartNext = ({ context }: { context: Context }): Partial<Context> => ({
+		request: context.queue[0],
+		queue: context.queue.slice(1),
+		result: undefined
+	})
+	const patchRemoveCancelled = ({
+		context,
+		event
+	}: {
+		context: Context
+		event: Event
+	}): Partial<Context> => ({
+		queue:
+			event.type === 'CANCEL_TRANSFER_MUTATION'
+				? context.queue.filter((item) => item.requestId !== event.requestId)
+				: context.queue
+	})
+	const patchQueueRequest = ({
+		context,
+		event
+	}: {
+		context: Context
+		event: Event
+	}): Partial<Context> => ({
+		queue:
+			event.type === 'REQUEST_TRANSFER_MUTATION' ? [...context.queue, event.request] : context.queue
+	})
+	const patchClearCurrent = (): Partial<Context> => ({
+		request: undefined,
+		result: undefined,
+		queue: []
+	})
+	const patchRememberDrain = ({ event }: { event: Event }): Partial<Context> => {
+		if (event.type !== 'DRAIN_TRANSFER_SCOPE') throw new Error('Missing scoped transfer drain')
+		return {
+			drain: {
+				request: { token: event.drain.request.token, scope: { ...event.drain.request.scope } },
+				recipient: event.drain.recipient
+			},
+			drainResult: undefined,
+			workspaceId: undefined,
+			queue: []
+		}
+	}
+	const patchBindScope = ({ event }: { event: Event }): Partial<Context> => {
+		if (event.type !== 'BIND_TRANSFER_SCOPE') throw new Error('Missing transfer scope binding')
+		return {
+			scope: { ...event.scope },
+			workspaceId: event.scope.workspaceId,
+			drain: undefined,
+			drainResult: undefined,
+			scopeResult: undefined
+		}
+	}
+	const patchRecordScopeResult = ({ context }: { context: Context }): Partial<Context> => ({
+		scopeResult: retainScopeResult(context.scopeResult, context.result?.result.result)
+	})
+	const events0 = {
+		REQUEST_TRANSFER_MUTATION: types<EventPayload<Event, 'REQUEST_TRANSFER_MUTATION'>>(),
+		CANCEL_TRANSFER_MUTATION: types<EventPayload<Event, 'CANCEL_TRANSFER_MUTATION'>>(),
+		TRANSFER_SCOPE_CHANGED: types<EventPayload<Event, 'TRANSFER_SCOPE_CHANGED'>>(),
+		BIND_TRANSFER_SCOPE: types<EventPayload<Event, 'BIND_TRANSFER_SCOPE'>>(),
+		DRAIN_TRANSFER_SCOPE: types<EventPayload<Event, 'DRAIN_TRANSFER_SCOPE'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		SCOPE_RELEASED: types<EventPayload<Event, 'SCOPE_RELEASED'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['create']>
+				| import('xstate').OutputFrom<(typeof actors)['link']>
+				| import('xstate').OutputFrom<(typeof actors)['unlink']>
+				| import('xstate').OutputFrom<(typeof actors)['delete']>
+				| import('xstate').OutputFrom<(typeof actors)['create']>
+				| import('xstate').OutputFrom<(typeof actors)['link']>
+				| import('xstate').OutputFrom<(typeof actors)['unlink']>
+				| import('xstate').OutputFrom<(typeof actors)['delete']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const machine = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<undefined>(),
+			output: types<TransferMutationOwnerOutput>(),
+			children: {
+				create: types<import('xstate').ActorRefFrom<(typeof actors)['create']>>(),
+				link: types<import('xstate').ActorRefFrom<(typeof actors)['link']>>(),
+				unlink: types<import('xstate').ActorRefFrom<(typeof actors)['unlink']>>(),
+				delete: types<import('xstate').ActorRefFrom<(typeof actors)['delete']>>(),
+				createOperation: types<import('xstate').ActorRefFrom<(typeof actors)['create']>>(),
+				linkOperation: types<import('xstate').ActorRefFrom<(typeof actors)['link']>>(),
+				unlinkOperation: types<import('xstate').ActorRefFrom<(typeof actors)['unlink']>>(),
+				deleteOperation: types<import('xstate').ActorRefFrom<(typeof actors)['delete']>>()
+			}
 		},
-		{
-			queueRequest: undefined
-			rejectRequest: undefined
-			rejectQueue: undefined
-			cancelQueued: undefined
-			removeCancelled: undefined
-			reportResult: undefined
-			startNext: undefined
-			setWorkspace: undefined
-			finishFailure: undefined
-			recordScopeResult: undefined
-			bindScope: undefined
-			rememberDrain: undefined
-			stopIssued: undefined
-			rejectDrain: undefined
-			replayDrain: undefined
-			reportDrain: undefined
-			clearCurrent: undefined
-		},
-		{
-			creating: undefined
-			linking: undefined
-			unlinking: undefined
-			deleting: undefined
-			queuedRequestInScope: undefined
-			cancelsCurrent: undefined
-			activeControl: undefined
-			closingControl: undefined
-			workIdle: undefined
-			legacyMode: undefined
-			admitRequest: undefined
-			freshScope: undefined
-			matchingScope: undefined
-			freshDrain: undefined
-			sameDrain: undefined
-			pendingDrain: undefined
-			unresolvedResult: undefined
-			unresolvedBound: undefined
-			recoveryRequiredResult: undefined
-		},
-		never,
-		string,
-		unknown,
-		TransferMutationOwnerOutput
-	>({
 		actors,
 		guards: {
-			activeControl: stateIn({ running: { control: 'active' } }),
-			closingControl: stateIn({ running: { control: 'closing' } }),
-			workIdle: stateIn({ running: { work: 'idle' } }),
-			legacyMode: ({ context }) => context.scope === undefined,
-			admitRequest: and([
-				'activeControl',
-				({ context, event }) =>
-					event.type === 'REQUEST_TRANSFER_MUTATION' &&
-					event.request.workspaceId === context.workspaceId &&
-					(context.scope
-						? sameScope(event.request.scope, context.scope) &&
-							context.scopeResult?.settlement !== 'unresolved'
-						: event.request.scope === undefined)
-			]),
-			freshScope: ({ context, event }) =>
+			legacyMode: ({ context }: { context: Context }) => context.scope === undefined,
+			freshScope: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'BIND_TRANSFER_SCOPE' &&
 				event.scope.workspaceId.trim().length > 0 &&
 				Number.isSafeInteger(event.scope.generation) &&
 				event.scope.generation >= 0 &&
 				context.scopeResult?.settlement !== 'unresolved' &&
 				(!context.scope || event.scope.generation > context.scope.generation),
-			matchingScope: ({ context, event }) =>
+			matchingScope: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'DRAIN_TRANSFER_SCOPE' &&
 				sameScope(event.drain.request.scope, context.scope),
-			freshDrain: and([
-				'matchingScope',
-				({ context, event }) =>
+			freshDrain: (args: { context: Context; event: Event; value: import('xstate').StateValue }) =>
+				(({ context, event }) =>
 					event.type === 'DRAIN_TRANSFER_SCOPE' &&
-					!context.retiredDrains.has(event.drain.request.token)
-			]),
-			sameDrain: ({ context, event }) =>
+					sameScope(event.drain.request.scope, context.scope))(args) &&
+				(({ context, event }) =>
+					event.type === 'DRAIN_TRANSFER_SCOPE' &&
+					!context.retiredDrains.has(event.drain.request.token))(args),
+			sameDrain: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'DRAIN_TRANSFER_SCOPE' &&
 				event.drain.request.token === context.drain?.request.token &&
 				event.drain.recipient === context.drain.recipient &&
 				sameScope(event.drain.request.scope, context.drain.request.scope),
-			pendingDrain: ({ context }) =>
+			pendingDrain: ({ context }: { context: Context }) =>
 				context.drain !== undefined && context.drainResult === undefined,
-			unresolvedResult: ({ context }) => context.scopeResult?.settlement === 'unresolved',
-			unresolvedBound: ({ context }) =>
+			unresolvedResult: ({ context }: { context: Context }) =>
+				context.scopeResult?.settlement === 'unresolved',
+			unresolvedBound: ({ context }: { context: Context }) =>
 				context.scope !== undefined && context.scopeResult?.settlement === 'unresolved',
-			recoveryRequiredResult: ({ context }) => context.scopeResult?.outcome === 'recoveryRequired',
-			creating: ({ context }) => context.request?.operation === 'create',
-			linking: ({ context }) => context.request?.operation === 'link',
-			unlinking: ({ context }) => context.request?.operation === 'unlink',
-			deleting: ({ context }) => context.request?.operation === 'delete',
-			queuedRequestInScope: and([
-				'activeControl',
-				({ context }) =>
-					context.queue[0] !== undefined &&
-					context.queue[0].workspaceId === context.workspaceId &&
-					(context.scope
-						? sameScope(context.queue[0].scope, context.scope)
-						: context.queue[0].scope === undefined)
-			]),
-			cancelsCurrent: ({ context, event }) =>
+			recoveryRequiredResult: ({ context }: { context: Context }) =>
+				context.scopeResult?.outcome === 'recoveryRequired',
+			creating: ({ context }: { context: Context }) => context.request?.operation === 'create',
+			linking: ({ context }: { context: Context }) => context.request?.operation === 'link',
+			unlinking: ({ context }: { context: Context }) => context.request?.operation === 'unlink',
+			deleting: ({ context }: { context: Context }) => context.request?.operation === 'delete',
+			cancelsCurrent: ({ context, event }: { context: Context; event: NativeEvent0 }) =>
 				event.type === 'CANCEL_TRANSFER_MUTATION' && context.request?.requestId === event.requestId
 		},
 		actions: {
-			recordScopeResult: assign(({ context }) => ({
-				scopeResult: retainScopeResult(context.scopeResult, context.result?.result.result)
-			})),
-			bindScope: assign(({ event }) => {
-				if (event.type !== 'BIND_TRANSFER_SCOPE') throw new Error('Missing transfer scope binding')
-				return {
-					scope: { ...event.scope },
-					workspaceId: event.scope.workspaceId,
-					drain: undefined,
-					drainResult: undefined,
-					scopeResult: undefined
-				}
-			}),
-			rememberDrain: assign(({ event }) => {
-				if (event.type !== 'DRAIN_TRANSFER_SCOPE') throw new Error('Missing scoped transfer drain')
-				return {
-					drain: {
-						request: { token: event.drain.request.token, scope: { ...event.drain.request.scope } },
-						recipient: event.drain.recipient
-					},
-					drainResult: undefined,
-					workspaceId: undefined,
-					queue: []
-				}
-			}),
-			stopIssued: enqueueActions(({ self, enqueue }) => {
-				const children = self.getSnapshot().children
-				for (const actor of [
-					children.createOperation,
-					children.linkOperation,
-					children.unlinkOperation,
-					children.deleteOperation
-				])
-					if (actor?.getSnapshot().status === 'active') enqueue.sendTo(actor, { type: 'SHUTDOWN' })
-			}),
-			rejectDrain: ({ context, event }) => {
+			rejectDrain: ({ context, event }: { context: Context; event: NativeEvent0 }) => {
 				if (event.type !== 'DRAIN_TRANSFER_SCOPE') return
 				event.drain.recipient.send({
 					type: 'TRANSFER_SCOPE_DRAIN_RESULT',
@@ -357,21 +358,14 @@ export function createInternalTransferMutationOwner() {
 							: 'busy'
 				})
 			},
-			replayDrain: ({ context }) => {
+			replayDrain: ({ context }: { context: Context }) => {
 				if (context.drainResult) context.drain?.recipient.send(context.drainResult)
 			},
-			reportDrain: ({ context }) => {
+			reportDrain: ({ context }: { context: Context }) => {
 				context.retiredDrains.add(required(context.drain).request.token)
 				required(context.drain).recipient.send(required(context.drainResult))
 			},
-			clearCurrent: assign({ request: undefined, result: undefined, queue: [] }),
-			queueRequest: assign({
-				queue: ({ context, event }) =>
-					event.type === 'REQUEST_TRANSFER_MUTATION'
-						? [...context.queue, event.request]
-						: context.queue
-			}),
-			rejectRequest: ({ event }) => {
+			rejectRequest: ({ event }: { event: NativeEvent0 }) => {
 				if (event.type !== 'REQUEST_TRANSFER_MUTATION') return
 				event.request.recipient.send({
 					type: 'TRANSFER_MUTATION_RESULT',
@@ -379,7 +373,7 @@ export function createInternalTransferMutationOwner() {
 					result: rejectedTransferMutation(event.request)
 				})
 			},
-			rejectQueue: ({ context }) =>
+			rejectQueue: ({ context }: { context: Context }) =>
 				context.queue.forEach((request) =>
 					request.recipient.send({
 						type: 'TRANSFER_MUTATION_RESULT',
@@ -387,7 +381,7 @@ export function createInternalTransferMutationOwner() {
 						result: rejectedTransferMutation(request)
 					})
 				),
-			cancelQueued: ({ context, event }) => {
+			cancelQueued: ({ context, event }: { context: Context; event: NativeEvent0 }) => {
 				if (event.type !== 'CANCEL_TRANSFER_MUTATION') return
 				const request = context.queue.find((item) => item.requestId === event.requestId)
 				if (request)
@@ -397,34 +391,9 @@ export function createInternalTransferMutationOwner() {
 						result: cancelled(request)
 					})
 			},
-			removeCancelled: assign({
-				queue: ({ context, event }) =>
-					event.type === 'CANCEL_TRANSFER_MUTATION'
-						? context.queue.filter((item) => item.requestId !== event.requestId)
-						: context.queue
-			}),
-			reportResult: ({ context }) => {
+			reportResult: ({ context }: { context: Context }) => {
 				if (context.result) context.request?.recipient.send(context.result)
-			},
-			startNext: assign({
-				request: ({ context }) => context.queue[0],
-				queue: ({ context }) => context.queue.slice(1),
-				result: undefined
-			}),
-			setWorkspace: assign({
-				workspaceId: ({ event }) =>
-					event.type === 'TRANSFER_SCOPE_CHANGED' ? event.workspaceId : undefined
-			}),
-			finishFailure: assign(({ context }) => {
-				const request = required(context.request)
-				return {
-					result: {
-						type: 'TRANSFER_MUTATION_RESULT',
-						requestId: request.requestId,
-						result: failure(request)
-					}
-				}
-			})
+			}
 		}
 	})
 
@@ -450,60 +419,117 @@ export function createInternalTransferMutationOwner() {
 			running: {
 				type: 'parallel',
 				on: {
-					DRAIN_TRANSFER_SCOPE: [
-						{ guard: 'sameDrain', actions: 'replayDrain' },
-						{
-							guard: and(['freshDrain', ({ context }) => context.drain === undefined]),
-							actions: ['rejectQueue', 'rememberDrain', 'stopIssued']
-						},
-						{ actions: 'rejectDrain' }
-					]
+					DRAIN_TRANSFER_SCOPE: (args, enq) => {
+						if (args.guards.sameDrain(args)) {
+							enq(args.actions.replayDrain, args)
+							return {}
+						}
+						if (args.guards.freshDrain(args) && args.context.drain === undefined) {
+							enq(args.actions.rejectQueue, args)
+							const patchRememberDrainResult22 = patchRememberDrain(args)
+							{
+								const children = args.children
+								for (const actor of [
+									children.createOperation,
+									children.linkOperation,
+									children.unlinkOperation,
+									children.deleteOperation
+								])
+									if (actor?.getSnapshot().status === 'active')
+										enq.sendTo(actor, { type: 'SHUTDOWN' })
+							}
+							return {
+								context: patchRememberDrainResult22
+							}
+						}
+						enq(args.actions.rejectDrain, args)
+						return {}
+					}
 				},
-				onDone: 'closed',
+				onDone: { target: 'closed' },
 				states: {
 					control: {
 						initial: 'active',
-						on: { SHUTDOWN: '.closing' },
+						on: { SHUTDOWN: { target: '.closing' } },
 						states: {
 							active: {
 								on: {
-									BIND_TRANSFER_SCOPE: {
-										guard: and(['legacyMode', 'workIdle', 'freshScope']),
-										actions: 'bindScope'
+									BIND_TRANSFER_SCOPE: (args) => {
+										if (!(
+											args.guards.legacyMode(args) &&
+											matchesState({ running: { work: 'idle' } }, args.value) &&
+											args.guards.freshScope(args)
+										))
+											return
+										return { context: patchBindScope(args) }
 									},
-									DRAIN_TRANSFER_SCOPE: [
-										{
-											guard: 'freshDrain',
-											target: 'draining',
-											actions: ['rejectQueue', 'rememberDrain', 'stopIssued']
-										},
-										{ actions: 'rejectDrain' }
-									]
+									DRAIN_TRANSFER_SCOPE: (args, enq) => {
+										if (args.guards.freshDrain(args)) {
+											enq(args.actions.rejectQueue, args)
+											const patchRememberDrainResult21 = patchRememberDrain(args)
+											{
+												const children = args.children
+												for (const actor of [
+													children.createOperation,
+													children.linkOperation,
+													children.unlinkOperation,
+													children.deleteOperation
+												])
+													if (actor?.getSnapshot().status === 'active')
+														enq.sendTo(actor, { type: 'SHUTDOWN' })
+											}
+											return { target: 'draining', context: patchRememberDrainResult21 }
+										}
+										enq(args.actions.rejectDrain, args)
+										return {}
+									}
 								}
 							},
 							draining: {
 								on: {
-									DRAIN_TRANSFER_SCOPE: [{ guard: 'sameDrain' }, { actions: 'rejectDrain' }],
-									SCOPE_RELEASED: 'released'
+									DRAIN_TRANSFER_SCOPE: (args, enq) => {
+										if (args.guards.sameDrain(args)) {
+											return {}
+										}
+										enq(args.actions.rejectDrain, args)
+										return {}
+									},
+									SCOPE_RELEASED: { target: 'released' }
 								}
 							},
 							released: {
 								on: {
-									BIND_TRANSFER_SCOPE: {
-										guard: 'freshScope',
-										target: 'active',
-										actions: 'bindScope'
+									BIND_TRANSFER_SCOPE: (args) => {
+										if (!args.guards.freshScope(args)) return
+										return { target: 'active', context: patchBindScope(args) }
 									},
-									DRAIN_TRANSFER_SCOPE: [
-										{ guard: 'sameDrain', actions: 'replayDrain' },
-										{ actions: 'rejectDrain' }
-									]
+									DRAIN_TRANSFER_SCOPE: (args, enq) => {
+										if (args.guards.sameDrain(args)) {
+											enq(args.actions.replayDrain, args)
+											return {}
+										}
+										enq(args.actions.rejectDrain, args)
+										return {}
+									}
 								}
 							},
 							closing: {
 								type: 'final',
-								entry: ['stopIssued', 'rejectQueue', assign({ queue: [] })],
-								on: { SHUTDOWN: {} }
+								entry: (args, enq) => {
+									{
+										const children = args.children
+										for (const actor of [
+											children.createOperation,
+											children.linkOperation,
+											children.unlinkOperation,
+											children.deleteOperation
+										])
+											if (actor?.getSnapshot().status === 'active')
+												enq.sendTo(actor, { type: 'SHUTDOWN' })
+									}
+									enq(args.actions.rejectQueue, args)
+									return { context: ((args) => ({ queue: [] }))(args) }
+								}
 							}
 						}
 					},
@@ -511,76 +537,115 @@ export function createInternalTransferMutationOwner() {
 						initial: 'idle',
 						states: {
 							idle: {
-								always: [
-									{ guard: 'pendingDrain', target: 'classifyingDrain' },
-									{
-										guard: and(['closingControl', 'unresolvedBound']),
-										target: '#internal-transfer-mutation-owner.unresolved'
-									},
-									{ guard: 'closingControl', target: 'stopped' }
-								],
+								always: (args) => {
+									if (args.guards.pendingDrain(args)) {
+										return { target: 'classifyingDrain' }
+									}
+									if (
+										matchesState({ running: { control: 'closing' } }, args.value) &&
+										args.guards.unresolvedBound(args)
+									) {
+										return { target: '#internal-transfer-mutation-owner.unresolved' }
+									}
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'stopped' }
+									}
+								},
 								on: {
-									REQUEST_TRANSFER_MUTATION: [
-										{
-											guard: 'admitRequest',
-											target: 'dispatching',
-											actions: assign({ request: ({ event }) => event.request })
-										},
-										{ actions: 'rejectRequest' }
-									],
-									CANCEL_TRANSFER_MUTATION: { actions: ['cancelQueued', 'removeCancelled'] },
-									TRANSFER_SCOPE_CHANGED: { guard: 'legacyMode', actions: 'setWorkspace' }
+									REQUEST_TRANSFER_MUTATION: (args, enq) => {
+										const { context, event } = args
+										if (
+											matchesState({ running: { control: 'active' } }, args.value) &&
+											event.type === 'REQUEST_TRANSFER_MUTATION' &&
+											event.request.workspaceId === context.workspaceId &&
+											(context.scope
+												? sameScope(event.request.scope, context.scope) &&
+													context.scopeResult?.settlement !== 'unresolved'
+												: event.request.scope === undefined)
+										) {
+											return { target: 'dispatching', context: { request: event.request } }
+										}
+										enq(args.actions.rejectRequest, args)
+										return {}
+									},
+									CANCEL_TRANSFER_MUTATION: (args, enq) => {
+										enq(args.actions.cancelQueued, args)
+										return { context: patchRemoveCancelled(args) }
+									},
+									TRANSFER_SCOPE_CHANGED: (args) => {
+										if (!args.guards.legacyMode(args)) return
+										return { context: patchSetWorkspace(args) }
+									}
 								}
 							},
 							dispatching: {
-								always: [
-									{ guard: 'creating', target: 'creating' },
-									{ guard: 'linking', target: 'linking' },
-									{ guard: 'unlinking', target: 'unlinking' },
-									{ guard: 'deleting', target: 'deleting' },
-									{ target: 'finishing', actions: 'finishFailure' }
-								]
+								always: (args) => {
+									if (args.guards.creating(args)) {
+										return { target: 'creating' }
+									}
+									if (args.guards.linking(args)) {
+										return { target: 'linking' }
+									}
+									if (args.guards.unlinking(args)) {
+										return { target: 'unlinking' }
+									}
+									if (args.guards.deleting(args)) {
+										return { target: 'deleting' }
+									}
+									return { target: 'finishing', context: patchFinishFailure(args) }
+								}
 							},
 							creating: {
 								invoke: {
 									id: 'createOperation',
 									src: 'create',
 									input: ({ context }) => createRequest(context.request).input,
-									onDone: {
-										target: 'finishing',
-										actions: assign(({ context, event }) => ({
-											result: {
-												type: 'TRANSFER_MUTATION_RESULT',
-												requestId: required(context.request).requestId,
-												result: { operation: 'create', result: event.output }
+									onDone: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													type: 'TRANSFER_MUTATION_RESULT',
+													requestId: required(args.context.request).requestId,
+													result: { operation: 'create', result: args.event.output }
+												}
 											}
-										}))
+										}
 									},
-									onError: { target: 'finishing', actions: 'finishFailure' }
+									onError: (args) => {
+										return { target: 'finishing', context: patchFinishFailure(args) }
+									}
 								},
 								on: {
-									REQUEST_TRANSFER_MUTATION: [
-										{
-											guard: 'admitRequest',
-											actions: 'queueRequest'
-										},
-										{ actions: 'rejectRequest' }
-									],
-									CANCEL_TRANSFER_MUTATION: [
-										{
-											guard: 'cancelsCurrent',
-											actions: sendTo('createOperation', { type: 'SHUTDOWN' })
-										},
-										{ actions: ['cancelQueued', 'removeCancelled'] }
-									],
-									TRANSFER_SCOPE_CHANGED: {
-										guard: 'legacyMode',
-										actions: [
-											sendTo('createOperation', { type: 'SHUTDOWN' }),
-											'rejectQueue',
-											'setWorkspace',
-											assign({ queue: [] })
-										]
+									REQUEST_TRANSFER_MUTATION: (args, enq) => {
+										const { context, event } = args
+										if (
+											matchesState({ running: { control: 'active' } }, args.value) &&
+											event.type === 'REQUEST_TRANSFER_MUTATION' &&
+											event.request.workspaceId === context.workspaceId &&
+											(context.scope
+												? sameScope(event.request.scope, context.scope) &&
+													context.scopeResult?.settlement !== 'unresolved'
+												: event.request.scope === undefined)
+										) {
+											return { context: patchQueueRequest(args) }
+										}
+										enq(args.actions.rejectRequest, args)
+										return {}
+									},
+									CANCEL_TRANSFER_MUTATION: (args, enq) => {
+										if (args.guards.cancelsCurrent(args)) {
+											enq.sendTo('createOperation', { type: 'SHUTDOWN' })
+											return {}
+										}
+										enq(args.actions.cancelQueued, args)
+										return { context: patchRemoveCancelled(args) }
+									},
+									TRANSFER_SCOPE_CHANGED: (args, enq) => {
+										if (!args.guards.legacyMode(args)) return
+										enq.sendTo('createOperation', { type: 'SHUTDOWN' })
+										enq(args.actions.rejectQueue, args)
+										return { context: { ...patchSetWorkspace(args), queue: [] } }
 									}
 								}
 							},
@@ -589,41 +654,52 @@ export function createInternalTransferMutationOwner() {
 									id: 'linkOperation',
 									src: 'link',
 									input: ({ context }) => linkRequest(context.request).input,
-									onDone: {
-										target: 'finishing',
-										actions: assign(({ context, event }) => ({
-											result: {
-												type: 'TRANSFER_MUTATION_RESULT',
-												requestId: required(context.request).requestId,
-												result: { operation: 'link', result: event.output }
+									onDone: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													type: 'TRANSFER_MUTATION_RESULT',
+													requestId: required(args.context.request).requestId,
+													result: { operation: 'link', result: args.event.output }
+												}
 											}
-										}))
+										}
 									},
-									onError: { target: 'finishing', actions: 'finishFailure' }
+									onError: (args) => {
+										return { target: 'finishing', context: patchFinishFailure(args) }
+									}
 								},
 								on: {
-									REQUEST_TRANSFER_MUTATION: [
-										{
-											guard: 'admitRequest',
-											actions: 'queueRequest'
-										},
-										{ actions: 'rejectRequest' }
-									],
-									CANCEL_TRANSFER_MUTATION: [
-										{
-											guard: 'cancelsCurrent',
-											actions: sendTo('linkOperation', { type: 'SHUTDOWN' })
-										},
-										{ actions: ['cancelQueued', 'removeCancelled'] }
-									],
-									TRANSFER_SCOPE_CHANGED: {
-										guard: 'legacyMode',
-										actions: [
-											sendTo('linkOperation', { type: 'SHUTDOWN' }),
-											'rejectQueue',
-											'setWorkspace',
-											assign({ queue: [] })
-										]
+									REQUEST_TRANSFER_MUTATION: (args, enq) => {
+										const { context, event } = args
+										if (
+											matchesState({ running: { control: 'active' } }, args.value) &&
+											event.type === 'REQUEST_TRANSFER_MUTATION' &&
+											event.request.workspaceId === context.workspaceId &&
+											(context.scope
+												? sameScope(event.request.scope, context.scope) &&
+													context.scopeResult?.settlement !== 'unresolved'
+												: event.request.scope === undefined)
+										) {
+											return { context: patchQueueRequest(args) }
+										}
+										enq(args.actions.rejectRequest, args)
+										return {}
+									},
+									CANCEL_TRANSFER_MUTATION: (args, enq) => {
+										if (args.guards.cancelsCurrent(args)) {
+											enq.sendTo('linkOperation', { type: 'SHUTDOWN' })
+											return {}
+										}
+										enq(args.actions.cancelQueued, args)
+										return { context: patchRemoveCancelled(args) }
+									},
+									TRANSFER_SCOPE_CHANGED: (args, enq) => {
+										if (!args.guards.legacyMode(args)) return
+										enq.sendTo('linkOperation', { type: 'SHUTDOWN' })
+										enq(args.actions.rejectQueue, args)
+										return { context: { ...patchSetWorkspace(args), queue: [] } }
 									}
 								}
 							},
@@ -632,41 +708,52 @@ export function createInternalTransferMutationOwner() {
 									id: 'unlinkOperation',
 									src: 'unlink',
 									input: ({ context }) => unlinkRequest(context.request).input,
-									onDone: {
-										target: 'finishing',
-										actions: assign(({ context, event }) => ({
-											result: {
-												type: 'TRANSFER_MUTATION_RESULT',
-												requestId: required(context.request).requestId,
-												result: { operation: 'unlink', result: event.output }
+									onDone: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													type: 'TRANSFER_MUTATION_RESULT',
+													requestId: required(args.context.request).requestId,
+													result: { operation: 'unlink', result: args.event.output }
+												}
 											}
-										}))
+										}
 									},
-									onError: { target: 'finishing', actions: 'finishFailure' }
+									onError: (args) => {
+										return { target: 'finishing', context: patchFinishFailure(args) }
+									}
 								},
 								on: {
-									REQUEST_TRANSFER_MUTATION: [
-										{
-											guard: 'admitRequest',
-											actions: 'queueRequest'
-										},
-										{ actions: 'rejectRequest' }
-									],
-									CANCEL_TRANSFER_MUTATION: [
-										{
-											guard: 'cancelsCurrent',
-											actions: sendTo('unlinkOperation', { type: 'SHUTDOWN' })
-										},
-										{ actions: ['cancelQueued', 'removeCancelled'] }
-									],
-									TRANSFER_SCOPE_CHANGED: {
-										guard: 'legacyMode',
-										actions: [
-											sendTo('unlinkOperation', { type: 'SHUTDOWN' }),
-											'rejectQueue',
-											'setWorkspace',
-											assign({ queue: [] })
-										]
+									REQUEST_TRANSFER_MUTATION: (args, enq) => {
+										const { context, event } = args
+										if (
+											matchesState({ running: { control: 'active' } }, args.value) &&
+											event.type === 'REQUEST_TRANSFER_MUTATION' &&
+											event.request.workspaceId === context.workspaceId &&
+											(context.scope
+												? sameScope(event.request.scope, context.scope) &&
+													context.scopeResult?.settlement !== 'unresolved'
+												: event.request.scope === undefined)
+										) {
+											return { context: patchQueueRequest(args) }
+										}
+										enq(args.actions.rejectRequest, args)
+										return {}
+									},
+									CANCEL_TRANSFER_MUTATION: (args, enq) => {
+										if (args.guards.cancelsCurrent(args)) {
+											enq.sendTo('unlinkOperation', { type: 'SHUTDOWN' })
+											return {}
+										}
+										enq(args.actions.cancelQueued, args)
+										return { context: patchRemoveCancelled(args) }
+									},
+									TRANSFER_SCOPE_CHANGED: (args, enq) => {
+										if (!args.guards.legacyMode(args)) return
+										enq.sendTo('unlinkOperation', { type: 'SHUTDOWN' })
+										enq(args.actions.rejectQueue, args)
+										return { context: { ...patchSetWorkspace(args), queue: [] } }
 									}
 								}
 							},
@@ -675,126 +762,198 @@ export function createInternalTransferMutationOwner() {
 									id: 'deleteOperation',
 									src: 'delete',
 									input: ({ context }) => deleteRequest(context.request).input,
-									onDone: {
-										target: 'finishing',
-										actions: assign(({ context, event }) => ({
-											result: {
-												type: 'TRANSFER_MUTATION_RESULT',
-												requestId: required(context.request).requestId,
-												result: { operation: 'delete', result: event.output }
+									onDone: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													type: 'TRANSFER_MUTATION_RESULT',
+													requestId: required(args.context.request).requestId,
+													result: { operation: 'delete', result: args.event.output }
+												}
 											}
-										}))
+										}
 									},
-									onError: { target: 'finishing', actions: 'finishFailure' }
+									onError: (args) => {
+										return { target: 'finishing', context: patchFinishFailure(args) }
+									}
 								},
 								on: {
-									REQUEST_TRANSFER_MUTATION: [
-										{
-											guard: 'admitRequest',
-											actions: 'queueRequest'
-										},
-										{ actions: 'rejectRequest' }
-									],
-									CANCEL_TRANSFER_MUTATION: [
-										{
-											guard: 'cancelsCurrent',
-											actions: sendTo('deleteOperation', { type: 'SHUTDOWN' })
-										},
-										{ actions: ['cancelQueued', 'removeCancelled'] }
-									],
-									TRANSFER_SCOPE_CHANGED: {
-										guard: 'legacyMode',
-										actions: [
-											sendTo('deleteOperation', { type: 'SHUTDOWN' }),
-											'rejectQueue',
-											'setWorkspace',
-											assign({ queue: [] })
-										]
+									REQUEST_TRANSFER_MUTATION: (args, enq) => {
+										const { context, event } = args
+										if (
+											matchesState({ running: { control: 'active' } }, args.value) &&
+											event.type === 'REQUEST_TRANSFER_MUTATION' &&
+											event.request.workspaceId === context.workspaceId &&
+											(context.scope
+												? sameScope(event.request.scope, context.scope) &&
+													context.scopeResult?.settlement !== 'unresolved'
+												: event.request.scope === undefined)
+										) {
+											return { context: patchQueueRequest(args) }
+										}
+										enq(args.actions.rejectRequest, args)
+										return {}
+									},
+									CANCEL_TRANSFER_MUTATION: (args, enq) => {
+										if (args.guards.cancelsCurrent(args)) {
+											enq.sendTo('deleteOperation', { type: 'SHUTDOWN' })
+											return {}
+										}
+										enq(args.actions.cancelQueued, args)
+										return { context: patchRemoveCancelled(args) }
+									},
+									TRANSFER_SCOPE_CHANGED: (args, enq) => {
+										if (!args.guards.legacyMode(args)) return
+										enq.sendTo('deleteOperation', { type: 'SHUTDOWN' })
+										enq(args.actions.rejectQueue, args)
+										return { context: { ...patchSetWorkspace(args), queue: [] } }
 									}
 								}
 							},
 							finishing: {
-								entry: ['recordScopeResult', 'reportResult'],
-								always: [
-									{ guard: 'pendingDrain', target: 'classifyingDrain' },
-									{
-										guard: and(['closingControl', 'unresolvedBound']),
-										target: '#internal-transfer-mutation-owner.unresolved',
-										actions: 'clearCurrent'
-									},
-									{ guard: 'closingControl', target: 'stopped', actions: 'clearCurrent' },
-									{
-										guard: 'unresolvedBound',
-										target: 'idle',
-										actions: ['rejectQueue', 'clearCurrent']
-									},
-									{
-										guard: 'queuedRequestInScope',
-										target: 'dispatching',
-										actions: 'startNext'
-									},
-									{ target: 'idle', actions: assign({ request: undefined, result: undefined }) }
-								],
+								entry: (args, enq) => {
+									let context = args.context
+									let patch = {}
+									patch = { ...patch, ...patchRecordScopeResult(args) }
+									context = { ...args.context, ...patch }
+									enq(args.actions.reportResult, { ...args, context })
+									return { context: patch }
+								},
+								always: (args, enq) => {
+									const { context } = args
+									if (args.guards.pendingDrain(args)) {
+										return { target: 'classifyingDrain' }
+									}
+									if (
+										matchesState({ running: { control: 'closing' } }, args.value) &&
+										args.guards.unresolvedBound(args)
+									) {
+										return {
+											target: '#internal-transfer-mutation-owner.unresolved',
+											context: patchClearCurrent()
+										}
+									}
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'stopped', context: patchClearCurrent() }
+									}
+									if (args.guards.unresolvedBound(args)) {
+										enq(args.actions.rejectQueue, args)
+										return { target: 'idle', context: patchClearCurrent() }
+									}
+									if (
+										matchesState({ running: { control: 'active' } }, args.value) &&
+										context.queue[0] !== undefined &&
+										context.queue[0].workspaceId === context.workspaceId &&
+										(context.scope
+											? sameScope(context.queue[0].scope, context.scope)
+											: context.queue[0].scope === undefined)
+									) {
+										return { target: 'dispatching', context: patchStartNext(args) }
+									}
+									return { target: 'idle', context: { request: undefined, result: undefined } }
+								},
 								on: {
-									REQUEST_TRANSFER_MUTATION: [
-										{
-											guard: 'admitRequest',
-											actions: 'queueRequest'
-										},
-										{ actions: 'rejectRequest' }
-									]
+									REQUEST_TRANSFER_MUTATION: (args, enq) => {
+										const { context, event } = args
+										if (
+											matchesState({ running: { control: 'active' } }, args.value) &&
+											event.type === 'REQUEST_TRANSFER_MUTATION' &&
+											event.request.workspaceId === context.workspaceId &&
+											(context.scope
+												? sameScope(event.request.scope, context.scope) &&
+													context.scopeResult?.settlement !== 'unresolved'
+												: event.request.scope === undefined)
+										) {
+											return { context: patchQueueRequest(args) }
+										}
+										enq(args.actions.rejectRequest, args)
+										return {}
+									}
 								}
 							},
 							classifyingDrain: {
-								always: [
-									{ guard: 'unresolvedResult', target: 'unresolvedDrain' },
-									{ guard: 'recoveryRequiredResult', target: 'partialDrain' },
-									{ target: 'releasedDrain' }
-								]
+								always: (args) => {
+									if (args.guards.unresolvedResult(args)) {
+										return { target: 'unresolvedDrain' }
+									}
+									if (args.guards.recoveryRequiredResult(args)) {
+										return { target: 'partialDrain' }
+									}
+									return { target: 'releasedDrain' }
+								}
 							},
 							unresolvedDrain: {
-								entry: [
-									assign(({ context }) => ({
+								entry: (args, enq) => {
+									let context = args.context
+									let patch = {}
+									patch = {
+										...patch,
 										drainResult: {
 											type: 'TRANSFER_SCOPE_DRAIN_RESULT',
 											request: required(context.drain).request,
 											outcome: 'unresolved'
 										}
-									})),
-									'reportDrain',
-									'clearCurrent'
-								],
-								always: '#internal-transfer-mutation-owner.unresolved'
+									}
+									context = { ...args.context, ...patch }
+									enq(args.actions.reportDrain, { ...args, context })
+									patch = { ...patch, ...patchClearCurrent() }
+									context = { ...args.context, ...patch }
+									return { context: patch }
+								},
+								always: { target: '#internal-transfer-mutation-owner.unresolved' }
 							},
 							partialDrain: {
-								entry: [
-									assign(({ context }) => ({
+								entry: (args, enq) => {
+									let context = args.context
+									let patch = {}
+									patch = {
+										...patch,
 										drainResult: {
 											type: 'TRANSFER_SCOPE_DRAIN_RESULT',
 											request: required(context.drain).request,
 											outcome: 'releasedWithFailure'
 										}
-									})),
-									'reportDrain',
-									'clearCurrent',
-									raise({ type: 'SCOPE_RELEASED' })
-								],
-								always: [{ guard: 'closingControl', target: 'stopped' }, { target: 'idle' }]
+									}
+									context = { ...args.context, ...patch }
+									enq(args.actions.reportDrain, { ...args, context })
+									patch = { ...patch, ...patchClearCurrent() }
+									context = { ...args.context, ...patch }
+									enq.raise({ type: 'SCOPE_RELEASED' })
+									return { context: patch }
+								},
+								always: (args) => {
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'stopped' }
+									}
+									return { target: 'idle' }
+								}
 							},
 							releasedDrain: {
-								entry: [
-									assign(({ context }) => ({
+								entry: (args, enq) => {
+									let context = args.context
+									let patch = {}
+									patch = {
+										...patch,
 										drainResult: {
 											type: 'TRANSFER_SCOPE_DRAIN_RESULT',
 											request: required(context.drain).request,
 											outcome: 'released'
 										}
-									})),
-									'reportDrain',
-									'clearCurrent',
-									raise({ type: 'SCOPE_RELEASED' })
-								],
-								always: [{ guard: 'closingControl', target: 'stopped' }, { target: 'idle' }]
+									}
+									context = { ...args.context, ...patch }
+									enq(args.actions.reportDrain, { ...args, context })
+									patch = { ...patch, ...patchClearCurrent() }
+									context = { ...args.context, ...patch }
+									enq.raise({ type: 'SCOPE_RELEASED' })
+									return { context: patch }
+								},
+								always: (args) => {
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'stopped' }
+									}
+									return { target: 'idle' }
+								}
 							},
 							stopped: { type: 'final' }
 						}
@@ -803,29 +962,35 @@ export function createInternalTransferMutationOwner() {
 			},
 			unresolved: {
 				type: 'final',
-				entry: assign({
-					request: undefined,
-					queue: [],
-					result: undefined,
-					scopeResult: undefined,
-					drain: undefined
-				})
+				entry: () => {
+					return {
+						context: {
+							request: undefined,
+							queue: [],
+							result: undefined,
+							scopeResult: undefined,
+							drain: undefined
+						}
+					}
+				}
 			},
 			closed: {
 				type: 'final',
-				entry: [
-					assign({
-						workspaceId: undefined,
-						scope: undefined,
-						request: undefined,
-						queue: [],
-						result: undefined,
-						scopeResult: undefined,
-						drain: undefined,
-						drainResult: undefined
-					}),
-					sendParent({ type: 'TRANSFER_MUTATION_OWNER_CLOSED' })
-				]
+				entry: (args, enq) => {
+					enq.sendTo(args.parent, { type: 'TRANSFER_MUTATION_OWNER_CLOSED' })
+					return {
+						context: {
+							workspaceId: undefined,
+							scope: undefined,
+							request: undefined,
+							queue: [],
+							result: undefined,
+							scopeResult: undefined,
+							drain: undefined,
+							drainResult: undefined
+						}
+					}
+				}
 			}
 		}
 	})

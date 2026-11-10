@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { createPwaUpdateMachine, selectPwaUpdateView, type UpdateEvent } from './pwa-update.js'
+import { createActor, waitFor } from 'xstate'
 
 function fixture() {
 	const original = { postMessage: vi.fn<(message: { type: 'ACTIVATE_UPDATE' }) => void>() }

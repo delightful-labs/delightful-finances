@@ -1,4 +1,3 @@
-import { setup, types, createAsyncLogic } from 'xstate-v6'
 import { accountStoreLock, type AccountLockInput } from './account-store-lock.js'
 import { definitelyNotIssued, type AccountStoreStorage } from './account-store-contracts.js'
 import {
@@ -7,6 +6,7 @@ import {
 	withoutDroppedAccountRoots,
 	type AccountSelection
 } from '../../runtime/worker/account-selection.js'
+import { setup, types, createAsyncLogic } from 'xstate'
 
 type Input = {
 	key: string
@@ -33,22 +33,38 @@ const actors = {
 		run: ({ input }: { input: AccountStoreStorage }) => input.closeHostAndDrain()
 	})
 }
+const events0 = {
+	LOCKED: types(),
+	RELEASED: types(),
+	LOCK_FAILED: types(),
+	HOST_CLOSED: types<{ scope: string }>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof actors.lock>
+			| import('xstate').OutputFrom<typeof actors.read>
+			| import('xstate').OutputFrom<typeof actors.write>
+			| import('xstate').OutputFrom<typeof actors.drain>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 const model = setup({
 	schemas: {
 		context: types<Context>(),
 		input: types<Input>(),
 		output: types<boolean>(),
-		events: {
-			LOCKED: types(),
-			RELEASED: types(),
-			LOCK_FAILED: types(),
-			HOST_CLOSED: types<{ scope: string }>()
-		},
+		events: events0,
 		children: {
-			lock: types<import('xstate-v6').ActorRefFrom<typeof actors.lock>>(),
-			read: types<import('xstate-v6').ActorRefFrom<typeof actors.read>>(),
-			write: types<import('xstate-v6').ActorRefFrom<typeof actors.write>>(),
-			drain: types<import('xstate-v6').ActorRefFrom<typeof actors.drain>>()
+			lock: types<import('xstate').ActorRefFrom<typeof actors.lock>>(),
+			read: types<import('xstate').ActorRefFrom<typeof actors.read>>(),
+			write: types<import('xstate').ActorRefFrom<typeof actors.write>>(),
+			drain: types<import('xstate').ActorRefFrom<typeof actors.drain>>()
 		}
 	},
 	states: {
@@ -63,9 +79,14 @@ const model = setup({
 	},
 	actors,
 	guards: {
-		needsScrub: (_, params: { selection: AccountSelection; dropped: string[] }) =>
-			hasDroppedAccountRoots(params.selection, params.dropped),
-		definitelyNotIssued: (_, params: { error: unknown }) => definitelyNotIssued(params.error)
+		needsScrub: (
+			_: { context: Context; event: NativeEvent0; value: import('xstate').StateValue },
+			params: { selection: AccountSelection; dropped: string[] }
+		) => hasDroppedAccountRoots(params.selection, params.dropped),
+		definitelyNotIssued: (
+			_: { context: Context; event: NativeEvent0; value: import('xstate').StateValue },
+			params: { error: unknown }
+		) => definitelyNotIssued(params.error)
 	}
 })
 /** Primary selection is already acknowledged. This child owns the earlier key

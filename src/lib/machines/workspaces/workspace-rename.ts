@@ -1,6 +1,5 @@
 import { ORGANIZATION_ROLE } from '#lib/domain/organization-role.js'
 import type { AccountCurrency } from '#lib/domain/account-currency.js'
-import { assign, setup, type SnapshotFrom } from 'xstate'
 import type {
 	FormCapability,
 	FormChildEvent,
@@ -17,6 +16,9 @@ import {
 	createWorkspaceNamingPersistence,
 	type WorkspaceNamingPersistence
 } from './workspace-naming-persistence.js'
+import { setup, types } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Values = { name: string; defaultCurrency: AccountCurrency }
 
@@ -40,71 +42,81 @@ export function sameWorkspaceRenameScope(
 
 /** One domain policy chart, used for displayed availability and pre-write authorization. */
 export function createWorkspaceRenameAvailability(binding: object) {
-	return setup<
-		{ observation: FormObservation<WorkspaceRenameObservation> },
-		FormChildEvent<WorkspaceRenameObservation>,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<WorkspaceRenameObservation>
-	>({}).createMachine({
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<WorkspaceRenameObservation>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<{ observation: FormObservation<WorkspaceRenameObservation> }>(),
+			events: events0,
+			input: types<FormObservation<WorkspaceRenameObservation>>()
+		}
+	}).createMachine({
 		id: 'workspace-rename-availability',
 		initial: 'assessing',
 		context: ({ input }) => ({ observation: input }),
 		on: {
-			OBSERVE: {
-				target: '.assessing',
-				actions: assign({ observation: ({ event }) => event.observation })
+			OBSERVE: (args) => {
+				return { target: '.assessing', context: { observation: args.event.observation } }
 			}
 		},
 		states: {
 			assessing: {
-				always: [
-					{
-						guard: ({
+				always: (args) => {
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => !facts.sessionReady || !facts.identityId || facts.binding !== binding,
-						target: 'sessionUnavailable'
-					},
-					{
-						guard: ({
+						}) => !facts.sessionReady || !facts.identityId || facts.binding !== binding)(args)
+					) {
+						return { target: 'sessionUnavailable' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => !facts.organizationId,
-						target: 'selectWorkspace'
-					},
-					{
-						guard: ({
+						}) => !facts.organizationId)(args)
+					) {
+						return { target: 'selectWorkspace' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => facts.workspaceError || facts.membershipError,
-						target: 'loadFailed'
-					},
-					{
-						guard: ({
+						}) => facts.workspaceError || facts.membershipError)(args)
+					) {
+						return { target: 'loadFailed' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => facts.workspaceLoading || facts.membershipLoading,
-						target: 'loading'
-					},
-					{
-						guard: ({
+						}) => facts.workspaceLoading || facts.membershipLoading)(args)
+					) {
+						return { target: 'loading' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
-						}) => facts.workspace?.id !== facts.organizationId,
-						target: 'workspaceUnavailable'
-					},
-					{
-						guard: ({
+						}) => facts.workspace?.id !== facts.organizationId)(args)
+					) {
+						return { target: 'workspaceUnavailable' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts }
 							}
@@ -112,11 +124,12 @@ export function createWorkspaceRenameAvailability(binding: object) {
 							facts.membership?.userId !== facts.identityId ||
 							facts.membership?.organizationId !== facts.organizationId ||
 							(facts.membership?.role !== ORGANIZATION_ROLE.OWNER &&
-								facts.membership?.role !== ORGANIZATION_ROLE.ADMIN),
-						target: 'readOnly'
-					},
-					{ target: 'ready' }
-				]
+								facts.membership?.role !== ORGANIZATION_ROLE.ADMIN))(args)
+					) {
+						return { target: 'readOnly' }
+					}
+					return { target: 'ready' }
+				}
 			},
 			sessionUnavailable: {},
 			selectWorkspace: {},

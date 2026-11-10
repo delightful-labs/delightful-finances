@@ -1,9 +1,9 @@
 import { getContext, type Snippet } from 'svelte'
 import type { Readable } from 'svelte/store'
-import type { ActorRefFrom, SnapshotFrom } from 'xstate'
 import type { BankStatus, LastSync } from '#lib/machines/bank-sync/types.js'
 import type { createApplicationReadinessMachine } from '#lib/machines/runtime/application-readiness.js'
 import type { createBankSyncMachine } from '#lib/machines/bank-sync/index.js'
+import type { ActorRefFrom, SnapshotFrom } from 'xstate'
 
 export type {
 	BankEvent as BankSyncEvent,

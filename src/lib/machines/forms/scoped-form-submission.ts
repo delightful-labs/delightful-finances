@@ -1,4 +1,3 @@
-import type { ActorLogic, Snapshot } from 'xstate'
 import { z } from 'zod'
 import { createScopedFormSubmissionMachine as createSharedSubmission } from 'delightful-local-first/forms/submission'
 import type {
@@ -6,6 +5,7 @@ import type {
 	FormOperationInput,
 	FormOperationResult
 } from '#lib/contracts/form-contract.js'
+import type { ActorLogic, Snapshot } from 'xstate'
 
 /** Finance supplies its existing parser and native issue mapping; the library owns the workflow. */
 export function createScopedFormSubmissionMachine<

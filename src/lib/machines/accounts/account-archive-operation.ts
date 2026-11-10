@@ -1,7 +1,8 @@
-import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { Account, OrganizationMember } from '#lib/schema.js'
 import { canWriteAccount } from '#lib/domain/organization-permissions.js'
 import { accountArchiveSchema } from '#lib/validation/accounts.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type ArchiveObservation = {
 	identityId: string | null
@@ -84,35 +85,44 @@ export function createAccountArchiveOperation(
 	persist: (request: ArchiveRequest) => Promise<unknown>,
 	observe: () => ArchiveObservation
 ) {
-	const actors = { persist: fromPromise<unknown, ArchiveRequest>(({ input }) => persist(input)) }
-	const workflow = setup<
-		Context,
-		Event,
-		typeof actors,
-		{},
-		{},
-		{ shuttingDown: undefined; scopeChanged: undefined; cancelling: undefined },
-		never,
-		string,
-		Input,
-		ArchiveResult
-	>({
+	const actors = {
+		persist: createAsyncLogic<unknown, ArchiveRequest>({ run: ({ input }) => persist(input) })
+	}
+	const events0 = {
+		OBSERVE: types<EventPayload<Event, 'OBSERVE'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<import('xstate').OutputFrom<(typeof actors)['persist']>>
+		| import('xstate').ErrorActorEvent
+	const workflow = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<ArchiveResult>(),
+			children: { persist: types<import('xstate').ActorRefFrom<(typeof actors)['persist']>>() }
+		},
 		actors,
 		guards: {
-			shuttingDown: stateIn({ writing: 'settlingShutdown' }),
-			scopeChanged: stateIn({ writing: 'settlingScopeChange' }),
-			cancelling: stateIn({ writing: 'settlingCancellation' })
+			shuttingDown: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ writing: 'settlingShutdown' }, args.value),
+			scopeChanged: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ writing: 'settlingScopeChange' }, args.value),
+			cancelling: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ writing: 'settlingCancellation' }, args.value)
 		}
-	})
-	const observeEvent = workflow.assign({
-		observation: ({ event }) => (event.type === 'OBSERVE' ? event.observation : observe())
 	})
 	const finish = (outcome: 'invalid' | 'denied' | 'unavailable') =>
 		workflow.createStateConfig({
 			type: 'final',
-			entry: workflow.assign({
-				result: ({ context }) => ({ outcome, request: context.request, settlement: 'notStarted' })
-			})
+			entry: (args: { context: Context }) => {
+				return {
+					context: { result: { outcome, request: args.context.request, settlement: 'notStarted' } }
+				}
+			}
 		})
 	return workflow.createMachine({
 		id: 'account-archive-operation',
@@ -122,182 +132,243 @@ export function createAccountArchiveOperation(
 			if (!context.result) throw new Error('Missing archive result')
 			return context.result
 		},
-		on: { CANCEL: '.cancelled', SHUTDOWN: '.closed', OBSERVE: { actions: observeEvent } },
+		on: {
+			CANCEL: { target: '.cancelled' },
+			SHUTDOWN: { target: '.closed' },
+			OBSERVE: (args) => {
+				return {
+					context: ((args) => ({
+						observation: (({ event }) =>
+							event.type === 'OBSERVE' ? event.observation : observe())(args)
+					}))(args)
+				}
+			}
+		},
 		states: {
 			validating: {
-				always: [
-					{
-						guard: ({ context }) =>
-							accountArchiveSchema.safeParse({
-								accountId: context.request.accountId,
-								organizationId: context.request.organizationId
-							}).success,
-						target: 'authorizing'
-					},
-					{ target: 'invalid' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (
+						accountArchiveSchema.safeParse({
+							accountId: context.request.accountId,
+							organizationId: context.request.organizationId
+						}).success
+					) {
+						return { target: 'authorizing' }
+					}
+					return { target: 'invalid' }
+				}
 			},
 			authorizing: {
-				entry: assign({ observation: () => observe() }),
-				always: [
-					{
-						guard: ({ context }) => !archiveScopeMatches(context.request, context.observation),
-						target: 'scopeChanged'
-					},
-					{
-						guard: ({ context }) =>
-							context.observation.loading ||
-							context.observation.failed ||
-							!context.observation.accounts.some(
-								(account) => account.id === context.request.accountId
-							),
-						target: 'unavailable'
-					},
-					{
-						guard: ({ context }) => !archiveAllowed(context.observation, context.request.accountId),
-						target: 'denied'
-					},
-					{ target: 'writing' }
-				]
+				entry: () => {
+					return { context: { observation: observe() } }
+				},
+				always: (args) => {
+					const { context } = args
+					if (!archiveScopeMatches(context.request, context.observation)) {
+						return { target: 'scopeChanged' }
+					}
+					if (
+						context.observation.loading ||
+						context.observation.failed ||
+						!context.observation.accounts.some(
+							(account) => account.id === context.request.accountId
+						)
+					) {
+						return { target: 'unavailable' }
+					}
+					if (!archiveAllowed(context.observation, context.request.accountId)) {
+						return { target: 'denied' }
+					}
+					return { target: 'writing' }
+				}
 			},
 			writing: {
 				initial: 'persisting',
 				invoke: {
 					src: 'persist',
 					input: ({ context }) => context.request,
-					onDone: [
-						{
-							guard: 'shuttingDown',
-							target: 'closed',
-							actions: assign({
-								result: ({ context }) => ({
-									outcome: 'closed',
-									request: context.request,
-									settlement: 'locallyPersisted'
-								})
-							})
-						},
-						{
-							guard: 'scopeChanged',
-							target: 'scopeChanged',
-							actions: assign({
-								result: ({ context }) => ({
-									outcome: 'scopeChanged',
-									request: context.request,
-									settlement: 'locallyPersisted'
-								})
-							})
-						},
-						{
-							guard: 'cancelling',
-							target: 'cancelled',
-							actions: assign({
-								result: ({ context }) => ({
-									outcome: 'cancelled',
-									request: context.request,
-									settlement: 'locallyPersisted'
-								})
-							})
-						},
-						{
+					onDone: (args) => {
+						const { context } = args
+						if (matchesState({ writing: 'settlingShutdown' }, args.value)) {
+							return {
+								target: 'closed',
+								context: {
+									result: {
+										outcome: 'closed',
+										request: context.request,
+										settlement: 'locallyPersisted'
+									}
+								}
+							}
+						}
+						if (matchesState({ writing: 'settlingScopeChange' }, args.value)) {
+							return {
+								target: 'scopeChanged',
+								context: {
+									result: {
+										outcome: 'scopeChanged',
+										request: context.request,
+										settlement: 'locallyPersisted'
+									}
+								}
+							}
+						}
+						if (matchesState({ writing: 'settlingCancellation' }, args.value)) {
+							return {
+								target: 'cancelled',
+								context: {
+									result: {
+										outcome: 'cancelled',
+										request: context.request,
+										settlement: 'locallyPersisted'
+									}
+								}
+							}
+						}
+						return {
 							target: 'succeeded',
-							actions: assign({
-								result: ({ context }) => ({
+							context: {
+								result: {
 									outcome: 'succeeded',
 									request: context.request,
 									settlement: 'locallyPersisted'
-								})
-							})
+								}
+							}
 						}
-					],
-					onError: [
-						{
-							guard: 'shuttingDown',
-							target: 'closed',
-							actions: assign({
-								result: ({ context }) => ({
-									outcome: 'closed',
-									request: context.request,
-									settlement: 'rejected'
-								})
-							})
-						},
-						{
-							guard: 'scopeChanged',
-							target: 'scopeChanged',
-							actions: assign({
-								result: ({ context }) => ({
-									outcome: 'scopeChanged',
-									request: context.request,
-									settlement: 'rejected'
-								})
-							})
-						},
-						{
-							guard: 'cancelling',
-							target: 'cancelled',
-							actions: assign({
-								result: ({ context }) => ({
-									outcome: 'cancelled',
-									request: context.request,
-									settlement: 'rejected'
-								})
-							})
-						},
-						{
+					},
+					onError: (args) => {
+						const { context } = args
+						if (matchesState({ writing: 'settlingShutdown' }, args.value)) {
+							return {
+								target: 'closed',
+								context: {
+									result: {
+										outcome: 'closed',
+										request: context.request,
+										settlement: 'rejected'
+									}
+								}
+							}
+						}
+						if (matchesState({ writing: 'settlingScopeChange' }, args.value)) {
+							return {
+								target: 'scopeChanged',
+								context: {
+									result: {
+										outcome: 'scopeChanged',
+										request: context.request,
+										settlement: 'rejected'
+									}
+								}
+							}
+						}
+						if (matchesState({ writing: 'settlingCancellation' }, args.value)) {
+							return {
+								target: 'cancelled',
+								context: {
+									result: {
+										outcome: 'cancelled',
+										request: context.request,
+										settlement: 'rejected'
+									}
+								}
+							}
+						}
+						return {
 							target: 'failed',
-							actions: assign({
-								result: ({ context }) => ({
+							context: {
+								result: {
 									outcome: 'failed',
 									request: context.request,
 									settlement: 'rejected'
-								})
-							})
+								}
+							}
 						}
-					]
+					}
 				},
-				on: { SHUTDOWN: '.settlingShutdown', CANCEL: '.settlingCancellation' },
+				on: {
+					SHUTDOWN: { target: '.settlingShutdown' },
+					CANCEL: { target: '.settlingCancellation' }
+				},
 				states: {
 					persisting: {
 						on: {
-							OBSERVE: [
-								{
-									guard: ({ context, event }) =>
-										!archiveScopeMatches(context.request, event.observation),
-									target: 'settlingScopeChange',
-									actions: observeEvent
-								},
-								{
-									guard: ({ context, event }) =>
-										event.observation.loading ||
-										event.observation.failed ||
-										event.observation.membership?.userId !== context.request.identityId ||
-										!canWriteAccount(
-											event.observation.membership,
-											context.request.organizationId,
-											context.request.accountId,
-											event.observation.grants.filter(
-												(grant) =>
-													grant.organizationId === context.request.organizationId &&
-													grant.userId === context.request.identityId
-											)
-										),
-									target: 'settlingScopeChange',
-									actions: observeEvent
-								},
-								{ actions: observeEvent }
-							]
+							OBSERVE: (args) => {
+								const { context, event } = args
+								if (!archiveScopeMatches(context.request, event.observation)) {
+									return {
+										target: 'settlingScopeChange',
+										context: ((args) => ({
+											observation: (({ event }) =>
+												event.type === 'OBSERVE' ? event.observation : observe())(args)
+										}))(args)
+									}
+								}
+								if (
+									event.observation.loading ||
+									event.observation.failed ||
+									event.observation.membership?.userId !== context.request.identityId ||
+									!canWriteAccount(
+										event.observation.membership,
+										context.request.organizationId,
+										context.request.accountId,
+										event.observation.grants.filter(
+											(grant) =>
+												grant.organizationId === context.request.organizationId &&
+												grant.userId === context.request.identityId
+										)
+									)
+								) {
+									return {
+										target: 'settlingScopeChange',
+										context: ((args) => ({
+											observation: (({ event }) =>
+												event.type === 'OBSERVE' ? event.observation : observe())(args)
+										}))(args)
+									}
+								}
+								return {
+									context: ((args) => ({
+										observation: (({ event }) =>
+											event.type === 'OBSERVE' ? event.observation : observe())(args)
+									}))(args)
+								}
+							}
 						}
 					},
 					settlingCancellation: {
-						tags: 'cancelling',
-						on: { CANCEL: {}, OBSERVE: { actions: observeEvent } }
+						tags: ['cancelling'],
+						on: {
+							CANCEL: {},
+							OBSERVE: (args) => {
+								return {
+									context: ((args) => ({
+										observation: (({ event }) =>
+											event.type === 'OBSERVE' ? event.observation : observe())(args)
+									}))(args)
+								}
+							}
+						}
 					},
 					settlingScopeChange: {
-						tags: 'scopeChanged',
-						on: { CANCEL: {}, OBSERVE: { actions: observeEvent } }
+						tags: ['scopeChanged'],
+						on: {
+							CANCEL: {},
+							OBSERVE: (args) => {
+								return {
+									context: ((args) => ({
+										observation: (({ event }) =>
+											event.type === 'OBSERVE' ? event.observation : observe())(args)
+									}))(args)
+								}
+							}
+						}
 					},
-					settlingShutdown: { tags: 'shuttingDown', on: { CANCEL: {}, SHUTDOWN: {}, OBSERVE: {} } }
+					settlingShutdown: {
+						tags: ['shuttingDown'],
+						on: { CANCEL: {}, SHUTDOWN: {}, OBSERVE: {} }
+					}
 				}
 			},
 			succeeded: { type: 'final' },
@@ -307,36 +378,48 @@ export function createAccountArchiveOperation(
 			unavailable: finish('unavailable'),
 			scopeChanged: {
 				type: 'final',
-				entry: workflow.assign({
-					result: ({ context }) =>
-						context.result ?? {
-							outcome: 'scopeChanged',
-							request: context.request,
-							settlement: 'notStarted'
+				entry: (args: { context: Context }) => {
+					const { context } = args
+					return {
+						context: {
+							result: context.result ?? {
+								outcome: 'scopeChanged',
+								request: context.request,
+								settlement: 'notStarted'
+							}
 						}
-				})
+					}
+				}
 			},
 			cancelled: {
 				type: 'final',
-				entry: workflow.assign({
-					result: ({ context }) =>
-						context.result ?? {
-							outcome: 'cancelled',
-							request: context.request,
-							settlement: 'notStarted'
+				entry: (args: { context: Context }) => {
+					const { context } = args
+					return {
+						context: {
+							result: context.result ?? {
+								outcome: 'cancelled',
+								request: context.request,
+								settlement: 'notStarted'
+							}
 						}
-				})
+					}
+				}
 			},
 			closed: {
 				type: 'final',
-				entry: workflow.assign({
-					result: ({ context }) =>
-						context.result ?? {
-							outcome: 'closed',
-							request: context.request,
-							settlement: 'notStarted'
+				entry: (args: { context: Context }) => {
+					const { context } = args
+					return {
+						context: {
+							result: context.result ?? {
+								outcome: 'closed',
+								request: context.request,
+								settlement: 'notStarted'
+							}
 						}
-				})
+					}
+				}
 			}
 		}
 	})

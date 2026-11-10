@@ -1,6 +1,7 @@
-import { assign, fromPromise, setup } from 'xstate'
 import type { PicaCanvas } from 'pica'
 import * as image from '#lib/domain/image-processing.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type ImageProcessingInput = { file: File; options: image.ImageProcessingOptions }
 export type ImageProcessingOutput =
@@ -21,55 +22,89 @@ function required<Value>(value: Value | undefined): Value {
 	if (value === undefined) throw new Error('Missing image processing resource')
 	return value
 }
+const ownedActors1 = {
+	decode: createAsyncLogic({ run: ({ input }: { input: File }) => image.decodeImage(input) }),
+	initialize: createAsyncLogic({ run: async () => image.initializeImageResizer() }),
+	canvas: createAsyncLogic({
+		run: async ({
+			input
+		}: {
+			input: { bitmap: ImageBitmap; options: image.ImageProcessingOptions }
+		}) => image.createImageCanvas(input.bitmap, input.options)
+	}),
+	resize: createAsyncLogic({
+		run: ({ input }: { input: { bitmap: ImageBitmap; canvas: PicaCanvas } }) =>
+			image.resizeImage(input.bitmap, input.canvas)
+	}),
+	encode: createAsyncLogic({
+		run: ({ input }: { input: { canvas: PicaCanvas; options: image.ImageProcessingOptions } }) =>
+			image.encodeImage(input.canvas, input.options)
+	}),
+	read: createAsyncLogic({ run: ({ input }: { input: Blob }) => image.readImageBytes(input) }),
+	closeBitmap: createAsyncLogic({
+		run: async ({ input }: { input: ImageBitmap }) => image.releaseImageBitmap(input)
+	}),
+	closeCanvas: createAsyncLogic({
+		run: async ({ input }: { input: PicaCanvas }) => image.releaseImageCanvas(input)
+	})
+}
+const patchProcessed = ({ context }: { context: Context }): Partial<Context> => ({
+	output:
+		context.blob && context.bytes && context.dimensions
+			? {
+					outcome: 'processed',
+					blob: context.blob,
+					bytes: context.bytes,
+					dimensions: context.dimensions
+				}
+			: { outcome: 'failed' }
+})
+const patchFail = (): Partial<Context> => ({ output: { outcome: 'failed' } })
+const patchInterrupt = (): Partial<Context> => ({ interrupted: true })
+const events0 = {
+	CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<(typeof ownedActors1)['decode']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['initialize']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['canvas']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['resize']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['encode']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['read']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['closeBitmap']>
+			| import('xstate').OutputFrom<(typeof ownedActors1)['closeCanvas']>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** Decodes, resizes, encodes, reads, and releases resources for one image. */
 export const imageProcessingMachine = setup({
-	types: {
-		context: {} as Context,
-		events: {} as Event,
-		input: {} as ImageProcessingInput,
-		output: {} as ImageProcessingOutput
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<ImageProcessingInput>(),
+		output: types<ImageProcessingOutput>(),
+		children: {
+			decode: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['decode']>>(),
+			initialize: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['initialize']>>(),
+			canvas: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['canvas']>>(),
+			resize: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['resize']>>(),
+			encode: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['encode']>>(),
+			read: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['read']>>(),
+			closeBitmap: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['closeBitmap']>>(),
+			closeCanvas: types<import('xstate').ActorRefFrom<(typeof ownedActors1)['closeCanvas']>>()
+		}
 	},
-	actors: {
-		decode: fromPromise(({ input }: { input: File }) => image.decodeImage(input)),
-		initialize: fromPromise(async () => image.initializeImageResizer()),
-		canvas: fromPromise(
-			async ({
-				input
-			}: {
-				input: { bitmap: ImageBitmap; options: image.ImageProcessingOptions }
-			}) => image.createImageCanvas(input.bitmap, input.options)
-		),
-		resize: fromPromise(({ input }: { input: { bitmap: ImageBitmap; canvas: PicaCanvas } }) =>
-			image.resizeImage(input.bitmap, input.canvas)
-		),
-		encode: fromPromise(
-			({ input }: { input: { canvas: PicaCanvas; options: image.ImageProcessingOptions } }) =>
-				image.encodeImage(input.canvas, input.options)
-		),
-		read: fromPromise(({ input }: { input: Blob }) => image.readImageBytes(input)),
-		closeBitmap: fromPromise(async ({ input }: { input: ImageBitmap }) =>
-			image.releaseImageBitmap(input)
-		),
-		closeCanvas: fromPromise(async ({ input }: { input: PicaCanvas }) =>
-			image.releaseImageCanvas(input)
-		)
-	},
-	actions: {
-		interrupt: assign({ interrupted: () => true }),
-		fail: assign({ output: () => ({ outcome: 'failed' as const }) }),
-		processed: assign({
-			output: ({ context }): ImageProcessingOutput =>
-				context.blob && context.bytes && context.dimensions
-					? {
-							outcome: 'processed',
-							blob: context.blob,
-							bytes: context.bytes,
-							dimensions: context.dimensions
-						}
-					: { outcome: 'failed' }
-		})
-	}
+	actors: ownedActors1,
+	actions: {}
 }).createMachine({
 	id: 'image-processing',
 	initial: 'decoding',
@@ -85,57 +120,67 @@ export const imageProcessingMachine = setup({
 	}),
 	output: ({ context }) => context.output ?? { outcome: 'failed' },
 	on: {
-		CANCEL: { actions: 'interrupt' },
-		SHUTDOWN: { actions: 'interrupt' }
+		CANCEL: (args) => {
+			return { context: patchInterrupt() }
+		},
+		SHUTDOWN: (args) => {
+			return { context: patchInterrupt() }
+		}
 	},
 	states: {
 		decoding: {
 			invoke: {
 				src: 'decode',
 				input: ({ context }) => context.file,
-				onDone: [
-					{
-						guard: ({ context }) => context.interrupted,
-						target: 'cleanup',
-						actions: assign({ bitmap: ({ event }) => event.output })
-					},
-					{ target: 'initializing', actions: assign({ bitmap: ({ event }) => event.output }) }
-				],
-				onError: { target: 'failed', actions: 'fail' }
+				onDone: (args) => {
+					const { event } = args
+					if (args.context.interrupted) {
+						return { target: 'cleanup', context: { bitmap: event.output } }
+					}
+					return { target: 'initializing', context: { bitmap: event.output } }
+				},
+				onError: (args) => {
+					return { target: 'failed', context: patchFail() }
+				}
 			}
 		},
 		initializing: {
 			invoke: {
 				src: 'initialize',
-				onDone: [
-					{ guard: ({ context }) => context.interrupted, target: 'cleanup' },
-					{ target: 'creatingCanvas' }
-				],
-				onError: { target: 'cleanup', actions: 'fail' }
+				onDone: (args) => {
+					if (args.context.interrupted) {
+						return { target: 'cleanup' }
+					}
+					return { target: 'creatingCanvas' }
+				},
+				onError: (args) => {
+					return { target: 'cleanup', context: patchFail() }
+				}
 			}
 		},
 		creatingCanvas: {
 			invoke: {
 				src: 'canvas',
 				input: ({ context }) => ({ bitmap: required(context.bitmap), options: context.options }),
-				onDone: [
-					{
-						guard: ({ context }) => context.interrupted,
-						target: 'cleanup',
-						actions: assign({ canvas: ({ event }) => event.output })
-					},
-					{
+				onDone: (args) => {
+					const { event } = args
+					if (args.context.interrupted) {
+						return { target: 'cleanup', context: { canvas: event.output } }
+					}
+					return {
 						target: 'resizing',
-						actions: assign({
-							canvas: ({ event }) => event.output,
-							dimensions: ({ event }) => ({
+						context: {
+							canvas: event.output,
+							dimensions: {
 								width: event.output.width,
 								height: event.output.height
-							})
-						})
+							}
+						}
 					}
-				],
-				onError: { target: 'cleanup', actions: 'fail' }
+				},
+				onError: (args) => {
+					return { target: 'cleanup', context: patchFail() }
+				}
 			}
 		},
 		resizing: {
@@ -145,85 +190,106 @@ export const imageProcessingMachine = setup({
 					bitmap: required(context.bitmap),
 					canvas: required(context.canvas)
 				}),
-				onDone: [
-					{ guard: ({ context }) => context.interrupted, target: 'cleanup' },
-					{ target: 'encoding' }
-				],
-				onError: { target: 'cleanup', actions: 'fail' }
+				onDone: (args) => {
+					if (args.context.interrupted) {
+						return { target: 'cleanup' }
+					}
+					return { target: 'encoding' }
+				},
+				onError: (args) => {
+					return { target: 'cleanup', context: patchFail() }
+				}
 			}
 		},
 		encoding: {
 			invoke: {
 				src: 'encode',
 				input: ({ context }) => ({ canvas: required(context.canvas), options: context.options }),
-				onDone: [
-					{
-						guard: ({ context }) => context.interrupted,
-						target: 'cleanup',
-						actions: assign({ blob: ({ event }) => event.output ?? undefined })
-					},
-					{
-						guard: ({ event }) => event.output instanceof Blob,
-						target: 'reading',
-						actions: assign({ blob: ({ event }) => event.output ?? undefined })
-					},
-					{ target: 'cleanup', actions: 'fail' }
-				],
-				onError: { target: 'cleanup', actions: 'fail' }
+				onDone: (args) => {
+					const { event } = args
+					if (args.context.interrupted) {
+						return { target: 'cleanup', context: { blob: event.output ?? undefined } }
+					}
+					if (event.output instanceof Blob) {
+						return { target: 'reading', context: { blob: event.output ?? undefined } }
+					}
+					return { target: 'cleanup', context: patchFail() }
+				},
+				onError: (args) => {
+					return { target: 'cleanup', context: patchFail() }
+				}
 			}
 		},
 		reading: {
 			invoke: {
 				src: 'read',
 				input: ({ context }) => required(context.blob),
-				onDone: {
-					target: 'cleanup',
-					actions: assign({ bytes: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'cleanup', context: { bytes: args.event.output } }
 				},
-				onError: { target: 'cleanup', actions: 'fail' }
+				onError: (args) => {
+					return { target: 'cleanup', context: patchFail() }
+				}
 			}
 		},
 		cleanup: {
 			initial: 'bitmap',
-			onDone: 'settling',
+			onDone: { target: 'settling' },
 			states: {
 				bitmap: {
-					always: [
-						{ guard: ({ context }) => context.bitmap !== undefined, target: 'closingBitmap' },
-						{ target: 'canvas' }
-					]
+					always: (args) => {
+						if (args.context.bitmap !== undefined) {
+							return { target: 'closingBitmap' }
+						}
+						return { target: 'canvas' }
+					}
 				},
 				closingBitmap: {
 					invoke: {
 						src: 'closeBitmap',
 						input: ({ context }) => required(context.bitmap),
-						onDone: { target: 'canvas', actions: assign({ bitmap: undefined }) },
-						onError: { target: 'canvas', actions: ['fail', assign({ bitmap: undefined })] }
+						onDone: () => {
+							return { target: 'canvas', context: { bitmap: undefined } }
+						},
+						onError: (args) => {
+							return { target: 'canvas', context: { ...patchFail(), bitmap: undefined } }
+						}
 					}
 				},
 				canvas: {
-					always: [
-						{ guard: ({ context }) => context.canvas !== undefined, target: 'closingCanvas' },
-						{ target: 'done' }
-					]
+					always: (args) => {
+						if (args.context.canvas !== undefined) {
+							return { target: 'closingCanvas' }
+						}
+						return { target: 'done' }
+					}
 				},
 				closingCanvas: {
 					invoke: {
 						src: 'closeCanvas',
 						input: ({ context }) => required(context.canvas),
-						onDone: { target: 'done', actions: assign({ canvas: undefined }) },
-						onError: { target: 'done', actions: ['fail', assign({ canvas: undefined })] }
+						onDone: () => {
+							return { target: 'done', context: { canvas: undefined } }
+						},
+						onError: (args) => {
+							return { target: 'done', context: { ...patchFail(), canvas: undefined } }
+						}
 					}
 				},
 				done: { type: 'final' }
 			}
 		},
 		settling: {
-			always: [
-				{ guard: ({ context }) => context.output?.outcome === 'failed', target: 'failed' },
-				{ guard: ({ context }) => context.interrupted, target: 'failed', actions: 'fail' },
-				{ target: 'completed', actions: 'processed' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (context.output?.outcome === 'failed') {
+					return { target: 'failed' }
+				}
+				if (context.interrupted) {
+					return { target: 'failed', context: patchFail() }
+				}
+				return { target: 'completed', context: patchProcessed(args) }
+			}
 		},
 		completed: { type: 'final' },
 		failed: { type: 'final' }

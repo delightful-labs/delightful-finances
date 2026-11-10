@@ -1,10 +1,12 @@
-import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import { app, type SyncAttempt, type SyncAccountResult } from '#lib/schema.js'
 import { canManageBankCredentials } from '#lib/domain/organization-permissions.js'
 import { createJazzTransactionActors } from '../persistence/jazz-transaction-actors.js'
 import { required } from './identity.js'
 import type { Dependencies } from './types.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type RetentionScope = { organizationId: string; connectionId: string; userId: string }
 export type RetentionResult = {
@@ -51,54 +53,58 @@ export function createSyncLogRetentionMachine(
 	}
 	const actors = {
 		...transactions,
-		authorization: fromPromise(async ({ input }: { input: ReadInput }) => {
-			const [members, connections] = await Promise.all([
+		authorization: createAsyncLogic({
+			run: async ({ input }: { input: ReadInput }) => {
+				const [members, connections] = await Promise.all([
+					input.reader.all(
+						app.organizationMembers.where({
+							organizationId: input.scope.organizationId,
+							userId: input.scope.userId
+						}),
+						{ tier: input.tier }
+					),
+					input.reader.all(
+						app.simplefinConnections.where({
+							id: input.scope.connectionId,
+							organizationId: input.scope.organizationId,
+							ownerId: input.scope.userId
+						}),
+						{ tier: input.tier }
+					)
+				])
+				return (
+					connections.length === 1 &&
+					members.some((member) => canManageBankCredentials(member, input.scope.organizationId))
+				)
+			}
+		}),
+		history: createAsyncLogic({
+			run: ({ input }: { input: ReadInput }) =>
 				input.reader.all(
-					app.organizationMembers.where({
-						organizationId: input.scope.organizationId,
-						userId: input.scope.userId
-					}),
+					app.simplefinSyncAttempts
+						.where({
+							organizationId: input.scope.organizationId,
+							connectionId: input.scope.connectionId,
+							outcome: { ne: 'unfinished' },
+							finishedAt: { isNull: false }
+						})
+						.orderBy('finishedAt', 'desc')
+						.orderBy('id', 'desc'),
 					{ tier: input.tier }
-				),
+				)
+		}),
+		accounts: createAsyncLogic({
+			run: ({ input }: { input: ReadInput & { ids: string[] } }) =>
 				input.reader.all(
-					app.simplefinConnections.where({
-						id: input.scope.connectionId,
+					app.simplefinSyncAccountResults.where({
 						organizationId: input.scope.organizationId,
-						ownerId: input.scope.userId
+						attemptId: { in: input.ids }
 					}),
 					{ tier: input.tier }
 				)
-			])
-			return (
-				connections.length === 1 &&
-				members.some((member) => canManageBankCredentials(member, input.scope.organizationId))
-			)
 		}),
-		history: fromPromise(({ input }: { input: ReadInput }) =>
-			input.reader.all(
-				app.simplefinSyncAttempts
-					.where({
-						organizationId: input.scope.organizationId,
-						connectionId: input.scope.connectionId,
-						outcome: { ne: 'unfinished' },
-						finishedAt: { isNull: false }
-					})
-					.orderBy('finishedAt', 'desc')
-					.orderBy('id', 'desc'),
-				{ tier: input.tier }
-			)
-		),
-		accounts: fromPromise(({ input }: { input: ReadInput & { ids: string[] } }) =>
-			input.reader.all(
-				app.simplefinSyncAccountResults.where({
-					organizationId: input.scope.organizationId,
-					attemptId: { in: input.ids }
-				}),
-				{ tier: input.tier }
-			)
-		),
-		stage: fromPromise(
-			({
+		stage: createAsyncLogic({
+			run: ({
 				input
 			}: {
 				input: {
@@ -111,24 +117,44 @@ export function createSyncLogRetentionMachine(
 				for (const row of input.attempts) input.tx.delete(app.simplefinSyncAttempts, row.id)
 				return Promise.resolve()
 			}
-		)
+		})
 	}
-	return setup<
-		Context,
-		{ type: 'CANCEL' },
-		typeof actors,
-		{},
-		{},
-		{ interrupted: undefined; identityCurrent: undefined },
-		never,
-		string,
-		Input,
-		RetentionResult
-	>({
+	const events0 = { CANCEL: types<EventPayload<{ type: 'CANCEL' }, 'CANCEL'>>() }
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['authorization']>
+				| import('xstate').OutputFrom<(typeof actors)['history']>
+				| import('xstate').OutputFrom<(typeof actors)['accounts']>
+				| import('xstate').OutputFrom<(typeof actors)['stage']>
+				| import('xstate').OutputFrom<(typeof actors)['open']>
+				| import('xstate').OutputFrom<(typeof actors)['commit']>
+				| import('xstate').OutputFrom<(typeof actors)['settle']>
+				| import('xstate').OutputFrom<(typeof actors)['rollback']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<RetentionResult>(),
+			children: {
+				authorization: types<import('xstate').ActorRefFrom<(typeof actors)['authorization']>>(),
+				history: types<import('xstate').ActorRefFrom<(typeof actors)['history']>>(),
+				accounts: types<import('xstate').ActorRefFrom<(typeof actors)['accounts']>>(),
+				stage: types<import('xstate').ActorRefFrom<(typeof actors)['stage']>>(),
+				open: types<import('xstate').ActorRefFrom<(typeof actors)['open']>>(),
+				commit: types<import('xstate').ActorRefFrom<(typeof actors)['commit']>>(),
+				settle: types<import('xstate').ActorRefFrom<(typeof actors)['settle']>>(),
+				rollback: types<import('xstate').ActorRefFrom<(typeof actors)['rollback']>>()
+			}
+		},
 		actors,
 		guards: {
-			interrupted: stateIn({ running: { control: 'cancelling' } }),
-			identityCurrent: ({ context }) => currentIdentity(context.scope)
+			interrupted: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'cancelling' } }, args.value),
+			identityCurrent: ({ context }: { context: Context }) => currentIdentity(context.scope)
 		},
 		delays: { deadline: deadlineMs }
 	}).createMachine({
@@ -152,20 +178,25 @@ export function createSyncLogRetentionMachine(
 				states: {
 					control: {
 						initial: 'active',
-						states: { active: { on: { CANCEL: 'cancelling' } }, cancelling: { on: { CANCEL: {} } } }
+						states: {
+							active: { on: { CANCEL: { target: 'cancelling' } } },
+							cancelling: { on: { CANCEL: {} } }
+						}
 					},
 					work: {
 						initial: 'checkingIdentity',
 						states: {
 							checkingIdentity: {
-								always: [
-									{ guard: 'identityCurrent', target: 'authorizingAuthority' },
-									{ target: 'finishing' }
-								]
+								always: (args) => {
+									if (args.guards.identityCurrent(args)) {
+										return { target: 'authorizingAuthority' }
+									}
+									return { target: 'finishing' }
+								}
 							},
 							authorizingAuthority: {
-								after: { deadline: 'finishing' },
-								on: { CANCEL: 'finishing' },
+								after: { deadline: { target: 'finishing' } },
+								on: { CANCEL: { target: 'finishing' } },
 								invoke: {
 									src: 'authorization',
 									input: ({ context }) => ({
@@ -173,16 +204,18 @@ export function createSyncLogRetentionMachine(
 										scope: context.scope,
 										tier: ReadTier.Remote
 									}),
-									onDone: [
-										{ guard: ({ event }) => event.output, target: 'readingAuthorityHistory' },
-										{ target: 'finishing' }
-									],
-									onError: 'finishing'
+									onDone: (args) => {
+										if (args.event.output) {
+											return { target: 'readingAuthorityHistory' }
+										}
+										return { target: 'finishing' }
+									},
+									onError: { target: 'finishing' }
 								}
 							},
 							readingAuthorityHistory: {
-								after: { deadline: 'finishing' },
-								on: { CANCEL: 'finishing' },
+								after: { deadline: { target: 'finishing' } },
+								on: { CANCEL: { target: 'finishing' } },
 								invoke: {
 									src: 'history',
 									input: ({ context }) => ({
@@ -190,30 +223,37 @@ export function createSyncLogRetentionMachine(
 										scope: context.scope,
 										tier: ReadTier.Remote
 									}),
-									onDone: {
-										target: 'selectingAuthority',
-										actions: assign({ authorityAttempts: ({ event }) => event.output })
+									onDone: (args) => {
+										return {
+											target: 'selectingAuthority',
+											context: { authorityAttempts: args.event.output }
+										}
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							selectingAuthority: {
-								always: [
-									{ guard: 'interrupted', target: 'finishing' },
-									{
-										guard: ({ context }) => context.authorityAttempts.length <= 100,
-										target: 'finishing',
-										actions: assign({
-											result: { kind: 'unchanged', deletedCount: 0, settlement: 'notStarted' }
-										})
-									},
-									{ guard: 'identityCurrent', target: 'readingAuthorityAccounts' },
-									{ target: 'finishing' }
-								]
+								always: (args) => {
+									if (args.guards.interrupted(args)) {
+										return { target: 'finishing' }
+									}
+									if (args.context.authorityAttempts.length <= 100) {
+										return {
+											target: 'finishing',
+											context: {
+												result: { kind: 'unchanged', deletedCount: 0, settlement: 'notStarted' }
+											}
+										}
+									}
+									if (args.guards.identityCurrent(args)) {
+										return { target: 'readingAuthorityAccounts' }
+									}
+									return { target: 'finishing' }
+								}
 							},
 							readingAuthorityAccounts: {
-								after: { deadline: 'finishing' },
-								on: { CANCEL: 'finishing' },
+								after: { deadline: { target: 'finishing' } },
+								on: { CANCEL: { target: 'finishing' } },
 								invoke: {
 									src: 'accounts',
 									input: ({ context }) => ({
@@ -222,30 +262,33 @@ export function createSyncLogRetentionMachine(
 										tier: ReadTier.Remote,
 										ids: context.authorityAttempts.slice(100).map((row) => row.id)
 									}),
-									onDone: {
-										target: 'opening',
-										actions: assign({ authorityAccounts: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'opening', context: { authorityAccounts: args.event.output } }
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							opening: {
 								invoke: {
 									src: 'open',
 									input: () => dependencies.db,
-									onDone: {
-										target: 'checkingOpened',
-										actions: assign({ tx: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'checkingOpened', context: { tx: args.event.output } }
 									},
-									onError: 'finishing'
+									onError: { target: 'finishing' }
 								}
 							},
 							checkingOpened: {
-								always: [{ guard: 'interrupted', target: 'rollingBack' }, { target: 'authorizing' }]
+								always: (args) => {
+									if (args.guards.interrupted(args)) {
+										return { target: 'rollingBack' }
+									}
+									return { target: 'authorizing' }
+								}
 							},
 							authorizing: {
-								after: { deadline: 'rollingBack' },
-								on: { CANCEL: 'rollingBack' },
+								after: { deadline: { target: 'rollingBack' } },
+								on: { CANCEL: { target: 'rollingBack' } },
 								invoke: {
 									src: 'authorization',
 									input: ({ context }) => ({
@@ -253,16 +296,18 @@ export function createSyncLogRetentionMachine(
 										scope: context.scope,
 										tier: ReadTier.LocalFirst
 									}),
-									onDone: [
-										{ guard: ({ event }) => event.output, target: 'readingHistory' },
-										{ target: 'rollingBack' }
-									],
-									onError: 'rollingBack'
+									onDone: (args) => {
+										if (args.event.output) {
+											return { target: 'readingHistory' }
+										}
+										return { target: 'rollingBack' }
+									},
+									onError: { target: 'rollingBack' }
 								}
 							},
 							readingHistory: {
-								after: { deadline: 'rollingBack' },
-								on: { CANCEL: 'rollingBack' },
+								after: { deadline: { target: 'rollingBack' } },
+								on: { CANCEL: { target: 'rollingBack' } },
 								invoke: {
 									src: 'history',
 									input: ({ context }) => ({
@@ -270,32 +315,30 @@ export function createSyncLogRetentionMachine(
 										scope: context.scope,
 										tier: ReadTier.LocalFirst
 									}),
-									onDone: {
-										target: 'selecting',
-										actions: assign({ observedAttempts: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'selecting', context: { observedAttempts: args.event.output } }
 									},
-									onError: 'rollingBack'
+									onError: { target: 'rollingBack' }
 								}
 							},
 							selecting: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{
-										guard: ({ context }) =>
-											!sameIds(context.authorityAttempts, context.observedAttempts),
-										target: 'rollingBack'
-									},
-									{
-										target: 'readingAccounts',
-										actions: assign({
-											attempts: ({ context }) => context.observedAttempts.slice(100)
-										})
+								always: (args) => {
+									const { context } = args
+									if (args.guards.interrupted(args)) {
+										return { target: 'rollingBack' }
 									}
-								]
+									if (!sameIds(context.authorityAttempts, context.observedAttempts)) {
+										return { target: 'rollingBack' }
+									}
+									return {
+										target: 'readingAccounts',
+										context: { attempts: context.observedAttempts.slice(100) }
+									}
+								}
 							},
 							readingAccounts: {
-								after: { deadline: 'rollingBack' },
-								on: { CANCEL: 'rollingBack' },
+								after: { deadline: { target: 'rollingBack' } },
+								on: { CANCEL: { target: 'rollingBack' } },
 								invoke: {
 									src: 'accounts',
 									input: ({ context }) => ({
@@ -304,23 +347,29 @@ export function createSyncLogRetentionMachine(
 										tier: ReadTier.LocalFirst,
 										ids: context.attempts.map((row) => row.id)
 									}),
-									onDone: {
-										target: 'checkingBeforeStage',
-										actions: assign({ accounts: ({ event }) => event.output })
+									onDone: (args) => {
+										return {
+											target: 'checkingBeforeStage',
+											context: { accounts: args.event.output }
+										}
 									},
-									onError: 'rollingBack'
+									onError: { target: 'rollingBack' }
 								}
 							},
 							checkingBeforeStage: {
-								always: [
-									{
-										guard: ({ context }) => !sameIds(context.authorityAccounts, context.accounts),
-										target: 'rollingBack'
-									},
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{ guard: 'identityCurrent', target: 'staging' },
-									{ target: 'rollingBack' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (!sameIds(context.authorityAccounts, context.accounts)) {
+										return { target: 'rollingBack' }
+									}
+									if (args.guards.interrupted(args)) {
+										return { target: 'rollingBack' }
+									}
+									if (args.guards.identityCurrent(args)) {
+										return { target: 'staging' }
+									}
+									return { target: 'rollingBack' }
+								}
 							},
 							staging: {
 								invoke: {
@@ -330,60 +379,71 @@ export function createSyncLogRetentionMachine(
 										attempts: context.attempts,
 										accounts: context.accounts
 									}),
-									onDone: 'checkingBeforeCommit',
-									onError: 'rollingBack'
+									onDone: { target: 'checkingBeforeCommit' },
+									onError: { target: 'rollingBack' }
 								}
 							},
 							checkingBeforeCommit: {
-								always: [
-									{ guard: 'interrupted', target: 'rollingBack' },
-									{ guard: 'identityCurrent', target: 'committing' },
-									{ target: 'rollingBack' }
-								]
+								always: (args) => {
+									if (args.guards.interrupted(args)) {
+										return { target: 'rollingBack' }
+									}
+									if (args.guards.identityCurrent(args)) {
+										return { target: 'committing' }
+									}
+									return { target: 'rollingBack' }
+								}
 							},
 							committing: {
 								invoke: {
 									src: 'commit',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'settling',
-										actions: assign({ write: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'settling', context: { write: args.event.output } }
 									},
-									onError: {
-										target: 'rollingBack',
-										actions: assign({
-											result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
-										})
+									onError: () => {
+										return {
+											target: 'rollingBack',
+											context: {
+												result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
+											}
+										}
 									}
 								}
 							},
 							settling: {
 								after: {
-									deadline: {
-										target: 'finishing',
-										actions: assign({
-											result: { kind: 'deferred', deletedCount: 0, settlement: 'unresolved' }
-										})
+									deadline: () => {
+										return {
+											target: 'finishing',
+											context: {
+												result: { kind: 'deferred', deletedCount: 0, settlement: 'unresolved' }
+											}
+										}
 									}
 								},
 								invoke: {
 									src: 'settle',
 									input: ({ context }) => required(context.write),
-									onDone: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ context }) => ({
-												kind: 'cleaned',
-												deletedCount: context.attempts.length,
-												settlement: 'confirmed'
-											})
-										})
+									onDone: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													kind: 'cleaned',
+													deletedCount: args.context.attempts.length,
+													settlement: 'confirmed'
+												}
+											}
+										}
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
-										})
+									onError: () => {
+										return {
+											target: 'finishing',
+											context: {
+												result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
+											}
+										}
 									}
 								}
 							},
@@ -391,37 +451,47 @@ export function createSyncLogRetentionMachine(
 								invoke: {
 									src: 'rollback',
 									input: ({ context }) => required(context.tx),
-									onDone: [
-										{ guard: ({ event }) => event.output, target: 'finishing' },
-										{
-											target: 'finishing',
-											actions: assign({
-												result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
-											})
+									onDone: (args) => {
+										if (args.event.output) {
+											return { target: 'finishing' }
 										}
-									],
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
-										})
+										return {
+											target: 'finishing',
+											context: {
+												result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
+											}
+										}
+									},
+									onError: () => {
+										return {
+											target: 'finishing',
+											context: {
+												result: { kind: 'failed', deletedCount: 0, settlement: 'unresolved' }
+											}
+										}
 									}
 								}
 							},
 							finishing: {
-								entry: assign({
-									tx: undefined,
-									write: undefined,
-									attempts: [],
-									accounts: [],
-									authorityAttempts: [],
-									authorityAccounts: [],
-									observedAttempts: []
-								}),
-								always: [
-									{ guard: 'interrupted', target: '#sync-log-retention.cancelled' },
-									{ target: '#sync-log-retention.done' }
-								]
+								entry: () => {
+									return {
+										context: {
+											tx: undefined,
+											write: undefined,
+											attempts: [],
+											accounts: [],
+											authorityAttempts: [],
+											authorityAccounts: [],
+											observedAttempts: []
+										}
+									}
+								},
+								always: (args) => {
+									if (args.guards.interrupted(args)) {
+										return { target: '#sync-log-retention.cancelled' }
+									}
+									return { target: '#sync-log-retention.done' }
+								}
 							}
 						}
 					}
@@ -429,7 +499,9 @@ export function createSyncLogRetentionMachine(
 			},
 			cancelled: {
 				type: 'final',
-				entry: assign({ result: ({ context }) => ({ ...context.result, kind: 'cancelled' }) })
+				entry: (args) => {
+					return { context: { result: { ...args.context.result, kind: 'cancelled' } } }
+				}
 			},
 			done: { type: 'final' }
 		}

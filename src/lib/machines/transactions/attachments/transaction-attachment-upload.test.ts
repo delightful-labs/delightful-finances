@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise } from 'xstate'
 import { app } from '#lib/schema.js'
 import type { TransactionAttachmentInput } from './transaction-attachment-upload.js'
 import { transactionAttachmentUploadMachine } from './transaction-attachment-upload.js'
+import { createActor, toPromise } from 'xstate'
 
 const transaction = {
 	id: '44444444-4444-4444-8444-444444444444',

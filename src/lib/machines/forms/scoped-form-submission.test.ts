@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { z } from 'zod'
 import { createScopedFormSubmissionMachine } from './scoped-form-submission.js'
 import { fixture, ready, success } from './scoped-form.fixture.js'
+import { createActor, waitFor } from 'xstate'
 
 function submission(options: Parameters<typeof fixture>[0] = {}) {
 	const f = fixture(options)

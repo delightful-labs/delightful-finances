@@ -81,6 +81,7 @@ export function createWorkerHostDrain(
 	port.addEventListener('messageerror', lost)
 	port.start()
 	return {
+		scope,
 		closeHostAndDrain() {
 			if (pending) return pending.promise
 			if (disposed) return Promise.reject(new WorkerHostError('closed', 'unknown'))

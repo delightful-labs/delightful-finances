@@ -1,12 +1,3 @@
-import {
-	assign,
-	fromCallback,
-	fromPromise,
-	sendParent,
-	enqueueActions,
-	setup,
-	stateIn
-} from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { providerAccountIdentity, providerBalanceSnapshot } from '#lib/integrations/simplefin.js'
@@ -23,6 +14,8 @@ import {
 	type ProgressEvent,
 	type ProviderResponse
 } from './types.js'
+import { createCallbackLogic, setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Link = schema.RowOf<typeof app.simplefinAccountLinks>
 type Input = {
@@ -64,22 +57,23 @@ function transactionReport(context: Context, result: TransactionResult) {
 
 export function createAccountImportMachine(dependencies: Dependencies) {
 	const actors = {
-		existing: fromPromise(({ input }: { input: { organizationId: string; accountId: string } }) =>
-			dependencies.db.all(
-				app.transactions
-					.where({
-						organizationId: input.organizationId,
-						accountId: input.accountId,
-						source: 'simplefin'
-					})
-					.orderBy('bookedOn', 'desc')
-					.orderBy('id', 'desc')
-					.select('id')
-					.limit(500),
-				{ tier: 'local-first' }
-			)
-		),
-		yieldControl: fromCallback<{ type: 'CONTINUE' }>(({ sendBack }) => {
+		existing: createAsyncLogic({
+			run: ({ input }: { input: { organizationId: string; accountId: string } }) =>
+				dependencies.db.all(
+					app.transactions
+						.where({
+							organizationId: input.organizationId,
+							accountId: input.accountId,
+							source: 'simplefin'
+						})
+						.orderBy('bookedOn', 'desc')
+						.orderBy('id', 'desc')
+						.select('id')
+						.limit(500),
+					{ tier: 'local-first' }
+				)
+		}),
+		yieldControl: createCallbackLogic<{ type: 'CONTINUE' }>(({ sendBack }) => {
 			const channel = new MessageChannel()
 			channel.port1.onmessage = () => sendBack({ type: 'CONTINUE' })
 			channel.port2.postMessage(undefined)
@@ -89,17 +83,18 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 				channel.port2.close()
 			}
 		}),
-		account: fromPromise(({ input }: { input: { accountId: string; organizationId: string } }) =>
-			dependencies.db.all(
-				app.accounts.where({
-					id: input.accountId,
-					organizationId: input.organizationId,
-					archivedAt: { isNull: true }
-				})
-			)
-		),
-		saveBalanceSnapshot: fromPromise(
-			async ({
+		account: createAsyncLogic({
+			run: ({ input }: { input: { accountId: string; organizationId: string } }) =>
+				dependencies.db.all(
+					app.accounts.where({
+						id: input.accountId,
+						organizationId: input.organizationId,
+						archivedAt: { isNull: true }
+					})
+				)
+		}),
+		saveBalanceSnapshot: createAsyncLogic({
+			run: async ({
 				input
 			}: {
 				input: { linkId: string; availableBalance: string; balanceDate: Date }
@@ -110,23 +105,46 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 						balanceDate: input.balanceDate
 					})
 					.wait({ tier: 'local' })
-		),
+		}),
 		transaction: createTransactionImportMachine(dependencies)
 	}
-	return setup<
-		Context,
-		ProgressEvent | { type: 'CANCEL' } | { type: 'CONTINUE' },
-		typeof actors,
-		{},
-		{},
-		{ isCancelling: undefined },
-		never,
-		string,
-		Input,
-		AccountImportResult
-	>({
+	const events0 = {
+		IMPORT_PROGRESS:
+			types<
+				EventPayload<ProgressEvent | { type: 'CANCEL' } | { type: 'CONTINUE' }, 'IMPORT_PROGRESS'>
+			>(),
+		CANCEL:
+			types<EventPayload<ProgressEvent | { type: 'CANCEL' } | { type: 'CONTINUE' }, 'CANCEL'>>(),
+		CONTINUE:
+			types<EventPayload<ProgressEvent | { type: 'CANCEL' } | { type: 'CONTINUE' }, 'CONTINUE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['existing']>
+				| import('xstate').OutputFrom<(typeof actors)['yieldControl']>
+				| import('xstate').OutputFrom<(typeof actors)['account']>
+				| import('xstate').OutputFrom<(typeof actors)['saveBalanceSnapshot']>
+				| import('xstate').OutputFrom<(typeof actors)['transaction']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<AccountImportResult>(),
+			children: {
+				existing: types<import('xstate').ActorRefFrom<(typeof actors)['existing']>>(),
+				yieldControl: types<import('xstate').ActorRefFrom<(typeof actors)['yieldControl']>>(),
+				account: types<import('xstate').ActorRefFrom<(typeof actors)['account']>>(),
+				saveBalanceSnapshot:
+					types<import('xstate').ActorRefFrom<(typeof actors)['saveBalanceSnapshot']>>(),
+				transaction: types<import('xstate').ActorRefFrom<(typeof actors)['transaction']>>()
+			}
+		},
 		actors,
-		guards: { isCancelling: stateIn({ processingTransaction: 'cancelling' }) },
+		guards: {},
 		delays: { existingReadDeadline: 5000 }
 	}).createMachine({
 		id: 'bank-import-account',
@@ -160,23 +178,33 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 				]
 			}
 		},
-		on: { CANCEL: '.cancelled' },
+		on: { CANCEL: { target: '.cancelled' } },
 		states: {
 			checkingMapping: {
-				always: [
-					{ guard: ({ context }) => context.matches.length === 0, target: 'unmapped' },
-					{ guard: ({ context }) => context.matches.length > 1, target: 'invalidMapping' },
-					{ target: 'loadingAccount' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.matches.length === 0) {
+						return { target: 'unmapped' }
+					}
+					if (context.matches.length > 1) {
+						return { target: 'invalidMapping' }
+					}
+					return { target: 'loadingAccount' }
+				}
 			},
 			unmapped: {
-				always: 'complete',
-				entry: assign({
-					counts: ({ context }) => ({
-						...context.counts,
-						omitted: context.provider.transactions?.length ?? 0
-					})
-				})
+				always: { target: 'complete' },
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							counts: {
+								...context.counts,
+								omitted: context.provider.transactions?.length ?? 0
+							}
+						}
+					}
+				}
 			},
 			loadingAccount: {
 				invoke: {
@@ -185,31 +213,33 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 						accountId: required(context.matches[0]).accountId,
 						organizationId: context.work.scope.organizationId
 					}),
-					onDone: {
-						target: 'checkingAccount',
-						actions: assign({ account: ({ event }) => event.output[0] })
+					onDone: (args) => {
+						return { target: 'checkingAccount', context: { account: args.event.output[0] } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			checkingAccount: {
-				always: [
-					{ guard: ({ context }) => !context.account, target: 'invalidMapping' },
-					{
-						guard: ({ context }) => !context.provider.transactions?.length,
-						target: 'checkingBalanceSnapshot'
-					},
-					{ target: 'loadingExisting' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (!context.account) {
+						return { target: 'invalidMapping' }
+					}
+					if (!context.provider.transactions?.length) {
+						return { target: 'checkingBalanceSnapshot' }
+					}
+					return { target: 'loadingExisting' }
+				}
 			},
 			loadingExisting: {
 				// This snapshot is intentionally partial: only presence enables the fast path.
 				entry: ({ context }) => context.work.trace.log('import.existing-snapshot:start'),
 				after: {
-					existingReadDeadline: {
-						target: 'checkingBalanceSnapshot',
-						actions: ({ context }: { context: Context }) =>
-							context.work.trace.log('import.existing-snapshot.timeout')
+					existingReadDeadline: (args, enq) => {
+						enq(() => args.context.work.trace.log('import.existing-snapshot.timeout'))
+						return { target: 'checkingBalanceSnapshot' }
 					}
 				},
 				invoke: {
@@ -218,30 +248,28 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 						organizationId: context.work.scope.organizationId,
 						accountId: required(context.account).id
 					}),
-					onDone: {
-						target: 'checkingBalanceSnapshot',
-						actions: [
-							({ context }) => context.work.trace.log('import.existing-snapshot:done'),
-							assign({
-								existingIds: ({ event }) => new Set(event.output.map((row) => row.id))
-							})
-						]
+					onDone: (args, enq) => {
+						enq(({ context }) => context.work.trace.log('import.existing-snapshot:done'), args)
+						return {
+							target: 'checkingBalanceSnapshot',
+							context: { existingIds: new Set(args.event.output.map((row) => row.id)) }
+						}
 					},
-					onError: {
-						target: 'checkingBalanceSnapshot',
-						actions: ({ context, event }) =>
-							context.work.trace.failed('import.existing-snapshot.failed', event.error)
+					onError: (args, enq) => {
+						enq(() =>
+							args.context.work.trace.failed('import.existing-snapshot.failed', args.event.error)
+						)
+						return { target: 'checkingBalanceSnapshot' }
 					}
 				}
 			},
 			checkingBalanceSnapshot: {
-				always: [
-					{
-						guard: ({ context }) => providerBalanceSnapshot(context.provider) === undefined,
-						target: 'nextTransaction'
-					},
-					{ target: 'savingBalanceSnapshot' }
-				]
+				always: (args) => {
+					if (providerBalanceSnapshot(args.context.provider) === undefined) {
+						return { target: 'nextTransaction' }
+					}
+					return { target: 'savingBalanceSnapshot' }
+				}
 			},
 			savingBalanceSnapshot: {
 				initial: 'working',
@@ -257,43 +285,43 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 						if (!snapshot) throw new Error('missing-provider-balance')
 						return { linkId: required(context.matches[0]).id, ...snapshot }
 					},
-					onDone: [
-						{ guard: stateIn({ savingBalanceSnapshot: 'cancelling' }), target: 'cancelled' },
-						{ target: 'nextTransaction' }
-					],
-					onError: [
-						{
-							guard: stateIn({ savingBalanceSnapshot: 'cancelling' }),
-							target: 'cancelled',
-							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
-						},
-						{
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+					onDone: (args) => {
+						if (matchesState({ savingBalanceSnapshot: 'cancelling' }, args.value)) {
+							return { target: 'cancelled' }
 						}
-					]
+						return { target: 'nextTransaction' }
+					},
+					onError: (args) => {
+						const { event } = args
+						if (matchesState({ savingBalanceSnapshot: 'cancelling' }, args.value)) {
+							return {
+								target: 'cancelled',
+								context: { error: event.error, settlement: 'unresolved' }
+							}
+						}
+						return { target: 'failed', context: { error: event.error, settlement: 'unresolved' } }
+					}
 				}
 			},
 			nextTransaction: {
-				always: [
-					{
-						guard: ({ context }) => context.index >= (context.provider.transactions?.length ?? 0),
-						target: 'complete'
-					},
-					{ target: 'processingTransaction' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.index >= (context.provider.transactions?.length ?? 0)) {
+						return { target: 'complete' }
+					}
+					return { target: 'processingTransaction' }
+				}
 			},
 			processingTransaction: {
 				initial: 'working',
 				states: { working: {}, cancelling: { on: { CANCEL: {} } } },
 				on: {
-					CANCEL: {
-						target: '.cancelling',
-						actions: enqueueActions(({ self, enqueue }) => {
-							const child = self.getSnapshot().children.transaction
-							if (child?.getSnapshot().status === 'active')
-								enqueue.sendTo(child, { type: 'CANCEL' })
-						})
+					CANCEL: (args, enq) => {
+						{
+							const child = args.children.transaction
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.cancelling' }
 					}
 				},
 				invoke: {
@@ -307,102 +335,116 @@ export function createAccountImportMachine(dependencies: Dependencies) {
 						existingIds: context.existingIds,
 						raw: context.provider.transactions?.[context.index]
 					}),
-					onDone: [
-						{
-							guard: 'isCancelling',
-							target: 'cancelled',
-							actions: assign(({ context, event }) => transactionReport(context, event.output))
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'cancelled',
-							target: 'cancelled',
-							actions: assign(({ context, event }) => transactionReport(context, event.output))
-						},
-						{
-							guard: ({ event }) =>
-								event.output.kind === 'failed' || event.output.kind === 'unresolved',
-							target: 'failed',
-							actions: assign(({ context, event }) => transactionReport(context, event.output))
-						},
-						{
+					onDone: (args) => {
+						const { context, event } = args
+						if (matchesState({ processingTransaction: 'cancelling' }, args.value)) {
+							return { target: 'cancelled', context: transactionReport(context, event.output) }
+						}
+						if (event.output.kind === 'cancelled') {
+							return { target: 'cancelled', context: transactionReport(context, event.output) }
+						}
+						if (event.output.kind === 'failed' || event.output.kind === 'unresolved') {
+							return { target: 'failed', context: transactionReport(context, event.output) }
+						}
+						return {
 							target: 'advanceTransaction',
-							actions: assign(({ context, event }) => transactionReport(context, event.output))
+							context: transactionReport(context, event.output)
 						}
-					],
-					onError: [
-						{
-							guard: 'isCancelling',
-							target: 'cancelled',
-							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
-						},
-						{
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.error, settlement: 'unresolved' })
+					},
+					onError: (args) => {
+						const { event } = args
+						if (matchesState({ processingTransaction: 'cancelling' }, args.value)) {
+							return {
+								target: 'cancelled',
+								context: { error: event.error, settlement: 'unresolved' }
+							}
 						}
-					]
+						return { target: 'failed', context: { error: event.error, settlement: 'unresolved' } }
+					}
 				}
 			},
 			advanceTransaction: {
-				entry: [
-					sendParent(({ context }) => ({ type: 'IMPORT_PROGRESS', counts: context.counts })),
-					assign({ index: ({ context }) => context.index + 1 })
-				],
-				always: [
-					{
-						guard: ({ context }) =>
-							context.index % 25 === 0 &&
-							context.index < (context.provider.transactions?.length ?? 0),
-						target: 'yielding'
-					},
-					{ target: 'nextTransaction' }
-				]
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(args.parent, { type: 'IMPORT_PROGRESS', counts: context.counts })
+					return { context: { index: context.index + 1 } }
+				},
+				always: (args) => {
+					const { context } = args
+					if (
+						context.index % 25 === 0 &&
+						context.index < (context.provider.transactions?.length ?? 0)
+					) {
+						return { target: 'yielding' }
+					}
+					return { target: 'nextTransaction' }
+				}
 			},
 			yielding: {
 				invoke: {
 					src: 'yieldControl',
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				},
-				on: { CONTINUE: 'nextTransaction' }
+				on: { CONTINUE: { target: 'nextTransaction' } }
 			},
 			complete: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'complete',
-						counts: context.counts,
-						error: undefined,
-						settlement: 'settled'
-					})
-				})
+				entry: (args) => {
+					return {
+						context: {
+							result: {
+								kind: 'complete',
+								counts: args.context.counts,
+								error: undefined,
+								settlement: 'settled'
+							}
+						}
+					}
+				}
 			},
 			cancelled: {
 				type: 'final',
-				entry: assign({
-					result: ({ context }) => ({
-						kind: 'cancelled',
-						counts: context.counts,
-						error: context.error,
-						settlement: context.settlement
-					})
-				})
+				entry: (args) => {
+					const { context } = args
+					return {
+						context: {
+							result: {
+								kind: 'cancelled',
+								counts: context.counts,
+								error: context.error,
+								settlement: context.settlement
+							}
+						}
+					}
+				}
 			},
 			invalidMapping: {
-				entry: assign({ error: () => new Error('mapping') }),
-				always: 'failed'
+				entry: () => {
+					return { context: { error: new Error('mapping') } }
+				},
+				always: { target: 'failed' }
 			},
 			failed: {
 				type: 'final',
-				entry: [
-					({ context }) => context.work.trace.failed('import.account.failed', context.error),
-					assign({
-						result: ({ context }) => ({
-							kind: 'failed',
-							counts: context.counts,
-							error: context.error,
-							settlement: context.settlement
-						})
-					})
-				]
+				entry: (args, enq) => {
+					const { context } = args
+					enq(
+						({ context }) => context.work.trace.failed('import.account.failed', context.error),
+						args
+					)
+					return {
+						context: {
+							result: {
+								kind: 'failed',
+								counts: context.counts,
+								error: context.error,
+								settlement: context.settlement
+							}
+						}
+					}
+				}
 			}
 		}
 	})

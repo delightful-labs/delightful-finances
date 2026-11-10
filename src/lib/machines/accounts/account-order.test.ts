@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createActor } from 'xstate'
 import { accountOrderMachine, orderAccounts } from './account-order.js'
+import { createActor } from 'xstate'
 
 function start(ids: readonly string[] = ['a', 'b', 'c']) {
 	const actor = createActor(accountOrderMachine).start()

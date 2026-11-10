@@ -1,5 +1,4 @@
 import { afterEach, vi } from 'vitest'
-import { createActor } from 'xstate'
 import { Transaction } from 'jazz-tools'
 import { workspaceCreationTransaction } from './workspace-creation-transaction.js'
 import { createAdditionalWorkspaceTransaction } from './workspace-additional-creation-transaction.js'
@@ -7,6 +6,7 @@ import { workspaceInitialization } from './workspace-initialization.js'
 import { createWorkspacePersistence } from './workspace-creation-persistence.js'
 import type { WorkspaceCreationAttempt } from '../../domain/workspace-creation.js'
 import { type Organization } from '../../schema.js'
+import { createActor } from 'xstate'
 
 export const userId = '11111111-1111-4111-8111-111111111111'
 export const profileId = '22222222-2222-4222-8222-222222222222'

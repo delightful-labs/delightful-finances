@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createActor, fromPromise, toPromise, type InputFrom } from 'xstate'
 import { createSetupPersistenceMachine } from './setup-persist.js'
 import { dependencies, connection, id } from './test-fixtures.js'
+import { createActor, toPromise, createAsyncLogic } from 'xstate'
+import type { InputFrom } from 'xstate'
 
 type Input = InputFrom<ReturnType<typeof createSetupPersistenceMachine>>
 const input: Input = {
@@ -33,8 +34,8 @@ describe('setup persistence outcomes', () => {
 			const actor = createActor(
 				createSetupPersistenceMachine(dependencies()).provide({
 					actors: {
-						insert: fromPromise(insert),
-						update: fromPromise(update)
+						insert: createAsyncLogic({ run: insert }),
+						update: createAsyncLogic({ run: update })
 					}
 				}),
 				{ input: { ...input, baselineStatus } }
@@ -55,8 +56,8 @@ describe('setup persistence outcomes', () => {
 			const actor = createActor(
 				createSetupPersistenceMachine(dependencies()).provide({
 					actors: {
-						insert: fromPromise(rejectWrite),
-						update: fromPromise(rejectWrite)
+						insert: createAsyncLogic({ run: rejectWrite }),
+						update: createAsyncLogic({ run: rejectWrite })
 					}
 				}),
 				{ input: { ...input, baselineStatus } }

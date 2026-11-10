@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import type { InternalTransfer, TransactionDetail } from '#lib/schema.js'
 import type { TransactionEntryObservation } from '#lib/contracts/transaction-entry-contract.js'
@@ -7,6 +6,7 @@ import { createTransactionEditFormOptions, transactionEntryScope } from './trans
 import { createTransactionEditMachine } from './transaction-edit.js'
 import type { TransferMutationGateway } from '../transfers/internal-transfer-mutation-request.js'
 import type { TransferMutationRequest } from '../transfers/internal-transfer-mutation-owner.js'
+import { createActor, waitFor } from 'xstate'
 
 const binding = {}
 const organizationId = '22222222-2222-4222-8222-222222222222'

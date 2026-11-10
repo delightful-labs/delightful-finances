@@ -1,7 +1,5 @@
 import { m } from '#lib/paraglide/messages.js'
 import type { BankPresentation } from '#lib/contracts/bank-presentation-contract.js'
-import type { ActorRefFrom, EventObject, SnapshotFrom, OutputFrom } from 'xstate'
-import { and, assign, not, or, raise, sendTo, setup, stateIn } from 'xstate'
 import {
 	bankAvailabilityMachine,
 	selectedBankConnection,
@@ -42,6 +40,9 @@ import {
 	type ProgressEvent,
 	type ProviderSummary
 } from './types.js'
+import { types, matchesState, setup, matchesState as matchesState1 } from 'xstate'
+import type { ActorRefFrom, EventObject, SnapshotFrom, OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export type { BankEvent, BankCommand } from './types.js'
 type Event =
@@ -53,7 +54,7 @@ type Event =
 	| { type: 'SHUTDOWN' }
 	| { type: 'NETWORK_CHANGED'; offline: boolean }
 	| { type: 'RETENTION_STOPPED' }
-	| { type: `xstate.error.actor.${string}`; error: unknown }
+	| import('xstate').ErrorActorEvent
 type Context = BankData & {
 	release: WorkspaceResourceRelease
 	browserOffline: boolean
@@ -71,6 +72,7 @@ type Context = BankData & {
 	error: unknown
 	discovered: ProviderSummary[]
 	counts: ImportCounts
+	retentionRelease: WorkspaceResourceRelease | undefined
 }
 
 function operationCompletion(context: Context, result: LoggedOperationResult | OperationResult) {
@@ -116,208 +118,152 @@ function operationRelease(
 	}
 }
 
-export function createBankSyncMachine(inputs: BankSyncDependencies) {
+export function createBankSyncMachine(
+	inputs: BankSyncDependencies,
+	operation?:
+		| ReturnType<typeof createBankOperationMachine>
+		| ReturnType<typeof createLoggedBankOperationMachine>
+) {
 	const dependencies: Dependencies = {
 		db: inputs.db,
 		passkeyName: inputs.passkeyName,
 		observe: () => bankObservation(inputs.read())
 	}
-	const actors: {
-		history: typeof bankHistoryMachine
-		retention: ReturnType<typeof createSyncLogRetentionCoordinator>
-		mappingRow: typeof accountOptionsMachine
-		availability: typeof bankAvailabilityMachine
-		setupConnection: ReturnType<typeof createBankSetupMachine>
-		operation:
-			| ReturnType<typeof createBankOperationMachine>
-			| ReturnType<typeof createLoggedBankOperationMachine>
-	} = {
+	const actors = {
 		history: bankHistoryMachine,
 		retention: createSyncLogRetentionCoordinator(dependencies),
 		mappingRow: accountOptionsMachine,
 		availability: bankAvailabilityMachine,
 		setupConnection: createBankSetupMachine(dependencies),
-		operation: createLoggedBankOperationMachine(dependencies)
+		operation: operation ?? createLoggedBankOperationMachine(dependencies)
 	}
-	const workflow = setup<
-		Context,
-		Event,
-		typeof actors,
-		{},
-		{
-			retainRelease: { result: WorkspaceResourceRelease }
-			markUnresolved: undefined
-			markFailure: undefined
+	const patchMarkFailure = ({ context }: { context: Context }): Partial<Context> => ({
+		release: retainResourceRelease(context.release, { outcome: 'releasedWithFailure' })
+	})
+	const patchMarkUnresolved = (): Partial<Context> => ({ release: { outcome: 'unresolved' } })
+	const patchRetainRelease = (
+		{ context }: { context: Context },
+		params: { result: WorkspaceResourceRelease }
+	): Partial<Context> => ({
+		release: retainResourceRelease(context.release, params.result)
+	})
+	const events0 = {
+		DISCOVER: types<EventPayload<Event, 'DISCOVER'>>(),
+		SYNC: types<EventPayload<Event, 'SYNC'>>(),
+		MAP: types<EventPayload<Event, 'MAP'>>(),
+		CREATE_ACCOUNT: types<EventPayload<Event, 'CREATE_ACCOUNT'>>(),
+		DISCONNECT: types<EventPayload<Event, 'DISCONNECT'>>(),
+		CONNECT: types<EventPayload<Event, 'CONNECT'>>(),
+		TEST_ENCRYPTION: types<EventPayload<Event, 'TEST_ENCRYPTION'>>(),
+		VERIFY_DECRYPTION: types<EventPayload<Event, 'VERIFY_DECRYPTION'>>(),
+		SAVE_CONNECTION: types<EventPayload<Event, 'SAVE_CONNECTION'>>(),
+		CANCEL: types<EventPayload<Event, 'CANCEL'>>(),
+		RESET: types<EventPayload<Event, 'RESET'>>(),
+		AVAILABILITY_REPORTED: types<EventPayload<Event, 'AVAILABILITY_REPORTED'>>(),
+		HISTORY_REPORTED: types<EventPayload<Event, 'HISTORY_REPORTED'>>(),
+		IMPORT_PROGRESS: types<EventPayload<Event, 'IMPORT_PROGRESS'>>(),
+		WORKSPACE_ACCESS_CHANGED: types<EventPayload<Event, 'WORKSPACE_ACCESS_CHANGED'>>(),
+		CONNECTIONS_CHANGED: types<EventPayload<Event, 'CONNECTIONS_CHANGED'>>(),
+		MAPPING_DATA_CHANGED: types<EventPayload<Event, 'MAPPING_DATA_CHANGED'>>(),
+		HISTORY_CHANGED: types<EventPayload<Event, 'HISTORY_CHANGED'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>(),
+		NETWORK_CHANGED: types<EventPayload<Event, 'NETWORK_CHANGED'>>(),
+		RETENTION_STOPPED: types<EventPayload<Event, 'RETENTION_STOPPED'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['history']>
+				| import('xstate').OutputFrom<(typeof actors)['retention']>
+				| import('xstate').OutputFrom<(typeof actors)['mappingRow']>
+				| import('xstate').OutputFrom<(typeof actors)['availability']>
+				| import('xstate').OutputFrom<(typeof actors)['setupConnection']>
+				| import('xstate').OutputFrom<(typeof actors)['operation']>
+				| import('xstate').OutputFrom<(typeof actors)['setupConnection']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const workflow = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<undefined>(),
+			output: types<WorkspaceResourceRelease>(),
+			children: {
+				history: types<import('xstate').ActorRefFrom<(typeof actors)['history']>>(),
+				retention: types<import('xstate').ActorRefFrom<(typeof actors)['retention']>>(),
+				mappingRow: types<import('xstate').ActorRefFrom<(typeof actors)['mappingRow']>>(),
+				availability: types<import('xstate').ActorRefFrom<(typeof actors)['availability']>>(),
+				setupConnection: types<import('xstate').ActorRefFrom<(typeof actors)['setupConnection']>>(),
+				operation: types<import('xstate').ActorRefFrom<(typeof actors)['operation']>>(),
+				setup: types<import('xstate').ActorRefFrom<(typeof actors)['setupConnection']>>()
+			},
+			meta: types<BankViewMeta>()
 		},
-		{
-			isNeutral: undefined
-			newAccess: undefined
-			newCredentials: undefined
-			canConnect: undefined
-			canOperate: undefined
-			acceptObservations: undefined
-		},
-		never,
-		string,
-		unknown,
-		WorkspaceResourceRelease,
-		EventObject,
-		BankViewMeta
-	>({
 		actors,
-		actions: {
-			retainRelease: assign(({ context }, params) => ({
-				release: retainResourceRelease(context.release, params.result)
-			})),
-			markUnresolved: assign({ release: { outcome: 'unresolved' } }),
-			markFailure: assign(({ context }) => ({
-				release: retainResourceRelease(context.release, { outcome: 'releasedWithFailure' })
-			}))
-		},
+		actions: {},
 		guards: {
-			acceptObservations: not(
-				or([
-					stateIn({ setup: 'shuttingDown' }),
-					stateIn({ running: 'shuttingDown' }),
-					stateIn('drainingRetention')
-				])
-			),
-			isNeutral: stateIn({ ready: 'neutral' }),
-			newAccess: and([
-				'acceptObservations',
-				({ context, event }) =>
-					event.type === 'WORKSPACE_ACCESS_CHANGED' && event.revision > context.revision
-			]),
-			newCredentials: and([
-				'acceptObservations',
-				({ context, event }) =>
+			acceptObservations: (args: { value: import('xstate').StateValue }) =>
+				!(
+					matchesState({ setup: 'shuttingDown' }, args.value) ||
+					matchesState({ running: 'shuttingDown' }, args.value) ||
+					matchesState('drainingRetention', args.value)
+				),
+			isNeutral: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ ready: 'neutral' }, args.value),
+			newAccess: (args: {
+				context: Context
+				event: NativeEvent0
+				value: import('xstate').StateValue
+			}) =>
+				!(
+					matchesState({ setup: 'shuttingDown' }, args.value) ||
+					matchesState({ running: 'shuttingDown' }, args.value) ||
+					matchesState('drainingRetention', args.value)
+				) &&
+				(({ context, event }) =>
+					event.type === 'WORKSPACE_ACCESS_CHANGED' && event.revision > context.revision)(args),
+			newCredentials: (args: {
+				context: Context
+				event: NativeEvent0
+				value: import('xstate').StateValue
+			}) =>
+				!(
+					matchesState({ setup: 'shuttingDown' }, args.value) ||
+					matchesState({ running: 'shuttingDown' }, args.value) ||
+					matchesState('drainingRetention', args.value)
+				) &&
+				(({ context, event }) =>
 					event.type === 'CONNECTIONS_CHANGED' &&
 					event.revision === context.revision &&
 					bankCredentialFingerprint(context.connection) !==
 						bankCredentialFingerprint(
 							selectedBankConnection({ ...context.access, connections: event.connections })
-						)
-			]),
-			canConnect: ({ context }) => context.availability?.canConnect === true,
-			canOperate: ({ context }) => context.availability?.canOperate === true
+						))(args),
+			canConnect: ({ context }: { context: Context }) => context.availability?.canConnect === true,
+			canOperate: ({ context }: { context: Context }) => context.availability?.canOperate === true
 		}
 	})
-	const refreshRetention = workflow.enqueueActions(({ context, self, enqueue }) => {
-		// Initial ready entry precedes actor snapshot availability and any scoped binding.
-		if (context.revision < 0) return
-		const child = self.getSnapshot()?.children.retention
-		if (child?.getSnapshot().status !== 'active') return
-		enqueue.sendTo(child, ({ context }) => ({
-			type: 'CHECK',
-			scope:
-				context.access.kind === 'allowed' && !context.browserOffline && context.connection
-					? {
-							organizationId: context.access.organizationId,
-							userId: context.access.userId,
-							connectionId: context.connection.id
-						}
-					: undefined,
-			completion: context.logging?.attemptId
-		}))
-	})
-	const shutdownRetention = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot()?.children.retention
-		const snapshot = child?.getSnapshot()
-		if (child && snapshot?.status === 'active') {
-			enqueue.sendTo(child, { type: 'SHUTDOWN' })
-			return
+	const stopRetention = workflow.createStateConfig({
+		entry: (
+			{
+				context,
+				children
+			}: { context: Context; children: { retention?: ActorRefFrom<typeof actors.retention> } },
+			enq
+		) => {
+			if (context.retentionRelease) {
+				enq.raise({ type: 'RETENTION_STOPPED' })
+				return
+			}
+			const child = children.retention
+			if (child?.getSnapshot().status === 'active') {
+				enq.sendTo('retention', { type: 'SHUTDOWN' })
+				return
+			}
+			// A completed child can be removed before its queued receipt is processed.
+			// Root onDone/onError owns that receipt; retain custody until it arrives.
 		}
-		// Finite output can precede its queued onDone event; liveness alone is not release proof.
-		if (snapshot?.status === 'done' && snapshot.output)
-			enqueue({ type: 'retainRelease', params: { result: snapshot.output } })
-		else enqueue('markUnresolved')
-		enqueue.raise({ type: 'RETENTION_STOPPED' })
-	})
-	const clear = workflow.assign({ command: undefined, setupToken: undefined })
-	const cancelOperation = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot().children.operation
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'CANCEL' })
-	})
-	const refreshMappings = workflow.enqueueActions(({ context, enqueue }) => {
-		for (const actor of context.mappingActors.values()) enqueue.stopChild(actor)
-		enqueue.assign(({ context, spawn }) => ({
-			mappingActors: new Map(
-				context.discovered.map((provider) => [
-					provider.id,
-					spawn('mappingRow', {
-						id: `mapping:${provider.id}`,
-						input: { provider, accounts: context.accounts, mappings: context.mappings }
-					})
-				])
-			)
-		}))
-	})
-	const resetResults = workflow.enqueueActions(({ enqueue }) => {
-		enqueue.assign({ discovered: [], error: undefined, counts: emptyCounts(), logging: undefined })
-		enqueue(refreshMappings)
-	})
-	const acceptAccess = workflow.enqueueActions(({ context, event, enqueue }) => {
-		if (event.type !== 'WORKSPACE_ACCESS_CHANGED') return
-		enqueue.assign({
-			access: event.access,
-			revision: event.revision,
-			generation: context.generation + 1,
-			connection: undefined,
-			accounts: [],
-			mappings: new Map(),
-			lastSync: undefined,
-			logging: undefined,
-			availability: undefined
-		})
-		enqueue(resetResults)
-		enqueue.sendTo('availability', ({ context }) => ({
-			type: 'ACCESS_CHANGED',
-			access: context.access,
-			generation: context.generation
-		}))
-		enqueue.sendTo('history', { type: 'BINDING_CHANGED', revision: event.revision })
-		enqueue(refreshRetention)
-	})
-	const acceptConnections = workflow.enqueueActions(({ context, event, enqueue }) => {
-		if (event.type !== 'CONNECTIONS_CHANGED') return
-		const connection = selectedBankConnection({ ...context.access, connections: event.connections })
-		enqueue.assign({
-			connection,
-			generation: context.generation + 1,
-			availability: undefined,
-			discovered: []
-		})
-		enqueue(refreshMappings)
-		enqueue.sendTo('availability', ({ context }) => ({
-			type: 'CONNECTION_CHANGED',
-			connection: context.connection,
-			generation: context.generation
-		}))
-		if (connection?.id !== context.connection?.id) {
-			enqueue.assign({ lastSync: undefined })
-			enqueue.sendTo('history', {
-				type: 'CONNECTION_SELECTED',
-				revision: context.revision,
-				connectionId: connection?.id
-			})
-		}
-		enqueue(refreshRetention)
-	})
-	const cancelSetup = workflow.enqueueActions(({ self, enqueue }) => {
-		const child = self.getSnapshot().children.setup
-		if (child?.getSnapshot().status === 'active') enqueue.sendTo(child, { type: 'CANCEL' })
-	})
-	const notifySetupCredential = workflow.enqueueActions(({ context, self, enqueue }) => {
-		const child = self.getSnapshot().children.setup
-		if (child?.getSnapshot().status === 'active')
-			enqueue.sendTo(child, {
-				type: 'CREDENTIAL_CHANGED',
-				fingerprint: bankCredentialFingerprint(context.connection)
-			})
-	})
-	const acceptAvailability = workflow.assign(({ context, event }) => ({
-		availability: event.type === 'AVAILABILITY_REPORTED' ? event.report : context.availability
-	}))
+	}).entry
 	return workflow.createMachine({
 		id: 'bank',
 		initial: 'ready',
@@ -326,13 +272,24 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			{
 				id: 'retention',
 				src: 'retention',
-				onDone: {
-					actions: [
-						{ type: 'retainRelease', params: ({ event }) => ({ result: event.output }) },
-						raise({ type: 'RETENTION_STOPPED' })
-					]
+				onDone: ({ context, event }, enq) => {
+					enq.raise({ type: 'RETENTION_STOPPED' })
+					return {
+						context: {
+							retentionRelease: event.output,
+							release: retainResourceRelease(context.release, event.output)
+						}
+					}
 				},
-				onError: { actions: ['markUnresolved', raise({ type: 'RETENTION_STOPPED' })] }
+				onError: (_, enq) => {
+					enq.raise({ type: 'RETENTION_STOPPED' })
+					return {
+						context: {
+							retentionRelease: { outcome: 'unresolved' },
+							release: { outcome: 'unresolved' }
+						}
+					}
+				}
 			},
 			{
 				id: 'availability',
@@ -346,7 +303,10 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					generation: context.generation,
 					recipient: self
 				}),
-				onError: { actions: ['markFailure', raise({ type: 'SHUTDOWN' })] }
+				onError: (args, enq) => {
+					enq.raise({ type: 'SHUTDOWN' })
+					return { context: patchMarkFailure(args) }
+				}
 			},
 			{
 				id: 'history',
@@ -355,7 +315,10 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					revision: context.revision,
 					recipient: self
 				}),
-				onError: { actions: ['markFailure', raise({ type: 'SHUTDOWN' })] }
+				onError: (args, enq) => {
+					enq.raise({ type: 'SHUTDOWN' })
+					return { context: patchMarkFailure(args) }
+				}
 			}
 		],
 		output: ({ context }) => context.release,
@@ -372,112 +335,429 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				lastSync: undefined,
 				logging: undefined,
 				operationConnectionId: undefined,
-				mappingActors: new Map(),
+				mappingActors: new Map<string, ActorRefFrom<typeof accountOptionsMachine>>(),
 				availability: undefined,
 				command: undefined,
 				setupToken: undefined,
 				error: undefined,
 				discovered: [],
-				counts: emptyCounts()
+				counts: emptyCounts(),
+				retentionRelease: undefined
 			}
 		},
 		on: {
 			// Mapping children are pure; active resource owners still settle via SHUTDOWN.
-			'xstate.error.actor.*': { actions: ['markFailure', raise({ type: 'SHUTDOWN' })] },
+			'xstate.error.actor': (args, enq) => {
+				if (!args.event.actorId.startsWith('mapping:')) return
+				return ((args, enq) => {
+					enq.raise({ type: 'SHUTDOWN' })
+					return { context: patchMarkFailure(args) }
+				})(args, enq)
+			},
 			SHUTDOWN: { target: '.drainingRetention' },
-			NETWORK_CHANGED: {
-				actions: [assign({ browserOffline: ({ event }) => event.offline }), refreshRetention]
+			NETWORK_CHANGED: (args, enq) => {
+				let context = args.context
+				let patch = {}
+				patch = {
+					...patch,
+					...((args) => ({ browserOffline: (({ event }) => event.offline)(args) }))(args)
+				}
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					if (contextBefore.revision < 0) {
+					} else {
+						const child = args.children.retention
+						if (child?.getSnapshot().status !== 'active') {
+						} else {
+							enq.sendTo(child, {
+								type: 'CHECK',
+								scope:
+									context.access.kind === 'allowed' && !context.browserOffline && context.connection
+										? {
+												organizationId: context.access.organizationId,
+												userId: context.access.userId,
+												connectionId: context.connection.id
+											}
+										: undefined,
+								completion: context.logging?.attemptId
+							})
+						}
+					}
+				}
+				return { context: patch }
 			},
 			RETENTION_STOPPED: {},
-			WORKSPACE_ACCESS_CHANGED: {
-				guard: 'newAccess',
-				target: '.ready.neutral',
-				actions: acceptAccess
-			},
-			CONNECTIONS_CHANGED: { guard: 'newCredentials', actions: acceptConnections },
-			MAPPING_DATA_CHANGED: {
-				guard: and([
-					'acceptObservations',
-					({ context, event }) => event.revision === context.revision
-				]),
-				actions: [assign(({ event }) => event.data), refreshMappings]
-			},
-			HISTORY_CHANGED: {
-				guard: and([
-					'acceptObservations',
-					({ context, event }) => event.revision === context.revision
-				]),
-				actions: sendTo('history', ({ event }) => event)
-			},
-			HISTORY_REPORTED: {
-				guard: and([
-					'acceptObservations',
-					({ context, event }) =>
-						event.revision === context.revision && event.connectionId === context.connection?.id
-				]),
-				actions: assign({ lastSync: ({ event }) => event.summary })
-			},
-			AVAILABILITY_REPORTED: [
+			WORKSPACE_ACCESS_CHANGED: (args, enq) => {
+				let context = args.context
+				if (!args.guards.newAccess(args)) return
+				const { event } = args
+				let patch = {}
 				{
-					guard: and([
-						'acceptObservations',
-						'isNeutral',
-						({ context, event }) => event.report.generation === context.generation
-					]),
-					target: '.ready.neutral',
-					actions: acceptAvailability
-				},
-				{
-					guard: and([
-						'acceptObservations',
-						({ context, event }) => event.report.generation === context.generation
-					]),
-					actions: acceptAvailability
+					const contextBefore = args.context
+					if (event.type !== 'WORKSPACE_ACCESS_CHANGED') {
+					} else {
+						patch = {
+							...patch,
+							...((assignedArgs) => ({
+								access: event.access,
+								revision: event.revision,
+								generation: contextBefore.generation + 1,
+								connection: undefined,
+								accounts: [],
+								mappings: new Map(),
+								lastSync: undefined,
+								logging: undefined,
+								availability: undefined
+							}))({ ...args, context })
+						}
+						context = { ...args.context, ...patch }
+						patch = {
+							...patch,
+							...((assignedArgs) => ({
+								discovered: [],
+								error: undefined,
+								counts: emptyCounts(),
+								logging: undefined
+							}))({ ...args, context })
+						}
+						context = { ...args.context, ...patch }
+						{
+							const contextBefore = context
+							for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+							patch = {
+								...patch,
+								...(({ context, spawn }) => ({
+									mappingActors: new Map(
+										context.discovered.map((provider) => [
+											provider.id,
+											spawn('mappingRow', {
+												id: `mapping:${provider.id}`,
+												input: { provider, accounts: context.accounts, mappings: context.mappings }
+											})
+										])
+									)
+								}))({ ...args, context, spawn: enq.spawn })
+							}
+							context = { ...args.context, ...patch }
+						}
+						enq.sendTo('availability', {
+							type: 'ACCESS_CHANGED',
+							access: context.access,
+							generation: context.generation
+						})
+						enq.sendTo('history', { type: 'BINDING_CHANGED', revision: event.revision })
+						{
+							const contextBefore = context
+							if (contextBefore.revision < 0) {
+							} else {
+								const child = args.children.retention
+								if (child?.getSnapshot().status !== 'active') {
+								} else {
+									enq.sendTo(child, {
+										type: 'CHECK',
+										scope:
+											context.access.kind === 'allowed' &&
+											!context.browserOffline &&
+											context.connection
+												? {
+														organizationId: context.access.organizationId,
+														userId: context.access.userId,
+														connectionId: context.connection.id
+													}
+												: undefined,
+										completion: context.logging?.attemptId
+									})
+								}
+							}
+						}
+					}
 				}
-			],
-			RESET: {
-				target: '.ready.neutral',
-				actions: [
-					clear,
-					assign({ error: undefined, discovered: [], counts: emptyCounts() }),
-					refreshMappings
-				]
+				return { target: '.ready.neutral', context: patch }
+			},
+			CONNECTIONS_CHANGED: (args, enq) => {
+				let context = args.context
+				if (!args.guards.newCredentials(args)) return
+				const { event } = args
+				let patch = {}
+				{
+					const contextBefore = args.context
+					if (event.type !== 'CONNECTIONS_CHANGED') {
+					} else {
+						const connection = selectedBankConnection({
+							...contextBefore.access,
+							connections: event.connections
+						})
+						patch = {
+							...patch,
+							...((assignedArgs) => ({
+								connection: connection,
+								generation: contextBefore.generation + 1,
+								availability: undefined,
+								discovered: []
+							}))({ ...args, context })
+						}
+						context = { ...args.context, ...patch }
+						{
+							const contextBefore = context
+							for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+							patch = {
+								...patch,
+								...(({ context, spawn }) => ({
+									mappingActors: new Map(
+										context.discovered.map((provider) => [
+											provider.id,
+											spawn('mappingRow', {
+												id: `mapping:${provider.id}`,
+												input: { provider, accounts: context.accounts, mappings: context.mappings }
+											})
+										])
+									)
+								}))({ ...args, context, spawn: enq.spawn })
+							}
+							context = { ...args.context, ...patch }
+						}
+						enq.sendTo('availability', {
+							type: 'CONNECTION_CHANGED',
+							connection: context.connection,
+							generation: context.generation
+						})
+						if (connection?.id !== contextBefore.connection?.id) {
+							patch = {
+								...patch,
+								...((assignedArgs) => ({ lastSync: undefined }))({ ...args, context })
+							}
+							context = { ...args.context, ...patch }
+							enq.sendTo('history', {
+								type: 'CONNECTION_SELECTED',
+								revision: contextBefore.revision,
+								connectionId: connection?.id
+							})
+						}
+						{
+							const contextBefore = context
+							if (contextBefore.revision < 0) {
+							} else {
+								const child = args.children.retention
+								if (child?.getSnapshot().status !== 'active') {
+								} else {
+									enq.sendTo(child, {
+										type: 'CHECK',
+										scope:
+											context.access.kind === 'allowed' &&
+											!context.browserOffline &&
+											context.connection
+												? {
+														organizationId: context.access.organizationId,
+														userId: context.access.userId,
+														connectionId: context.connection.id
+													}
+												: undefined,
+										completion: context.logging?.attemptId
+									})
+								}
+							}
+						}
+					}
+				}
+				return { context: patch }
+			},
+			MAPPING_DATA_CHANGED: (args, enq) => {
+				let context = args.context
+				const { event } = args
+				if (!(args.guards.acceptObservations(args) && event.revision === context.revision)) return
+				let patch = {}
+				patch = { ...patch, ...event.data }
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+					patch = {
+						...patch,
+						...(({ context, spawn }) => ({
+							mappingActors: new Map(
+								context.discovered.map((provider) => [
+									provider.id,
+									spawn('mappingRow', {
+										id: `mapping:${provider.id}`,
+										input: { provider, accounts: context.accounts, mappings: context.mappings }
+									})
+								])
+							)
+						}))({ ...args, context, spawn: enq.spawn })
+					}
+					context = { ...args.context, ...patch }
+				}
+				return { context: patch }
+			},
+			HISTORY_CHANGED: (args, enq) => {
+				const { event } = args
+				if (!(
+					!(
+						matchesState({ setup: 'shuttingDown' }, args.value) ||
+						matchesState({ running: 'shuttingDown' }, args.value) ||
+						matchesState('drainingRetention', args.value)
+					) && event.revision === args.context.revision
+				))
+					return
+				enq.sendTo('history', event)
+			},
+			HISTORY_REPORTED: (args) => {
+				const { context, event } = args
+				if (!(
+					!(
+						matchesState({ setup: 'shuttingDown' }, args.value) ||
+						matchesState({ running: 'shuttingDown' }, args.value) ||
+						matchesState('drainingRetention', args.value)
+					) &&
+					event.revision === context.revision &&
+					event.connectionId === context.connection?.id
+				))
+					return
+				return { context: { lastSync: event.summary } }
+			},
+			AVAILABILITY_REPORTED: (args) => {
+				const { context, event } = args
+				if (
+					args.guards.acceptObservations(args) &&
+					args.guards.isNeutral(args) &&
+					event.report.generation === context.generation
+				) {
+					return {
+						target: '.ready.neutral',
+						context: {
+							availability:
+								event.type === 'AVAILABILITY_REPORTED' ? event.report : context.availability
+						}
+					}
+				}
+				if (
+					args.guards.acceptObservations(args) &&
+					event.report.generation === context.generation
+				) {
+					return {
+						context: {
+							availability:
+								event.type === 'AVAILABILITY_REPORTED' ? event.report : context.availability
+						}
+					}
+				}
+			},
+			RESET: (args, enq) => {
+				let context = args.context
+				let patch = {}
+				patch = { ...patch, ...((args) => ({ command: undefined, setupToken: undefined }))(args) }
+				context = { ...args.context, ...patch }
+				patch = {
+					...patch,
+					...((args) => ({ error: undefined, discovered: [], counts: emptyCounts() }))({
+						...args,
+						context
+					})
+				}
+				context = { ...args.context, ...patch }
+				{
+					const contextBefore = context
+					for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+					patch = {
+						...patch,
+						...(({ context, spawn }) => ({
+							mappingActors: new Map(
+								context.discovered.map((provider) => [
+									provider.id,
+									spawn('mappingRow', {
+										id: `mapping:${provider.id}`,
+										input: { provider, accounts: context.accounts, mappings: context.mappings }
+									})
+								])
+							)
+						}))({ ...args, context, spawn: enq.spawn })
+					}
+					context = { ...args.context, ...patch }
+				}
+				return { target: '.ready.neutral', context: patch }
 			}
 		},
 		states: {
 			ready: {
 				initial: 'neutral',
-				entry: [refreshMappings, refreshRetention],
+				entry: (args, enq) => {
+					let context = args.context
+					let patch = {}
+					{
+						const contextBefore = args.context
+						for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+						patch = {
+							...patch,
+							...(({ context, spawn }) => ({
+								mappingActors: new Map(
+									context.discovered.map((provider) => [
+										provider.id,
+										spawn('mappingRow', {
+											id: `mapping:${provider.id}`,
+											input: { provider, accounts: context.accounts, mappings: context.mappings }
+										})
+									])
+								)
+							}))({ ...args, context, spawn: enq.spawn })
+						}
+						context = { ...args.context, ...patch }
+					}
+					{
+						const contextBefore = context
+						if (contextBefore.revision < 0) {
+						} else {
+							const child = args.children.retention
+							if (child?.getSnapshot().status !== 'active') {
+							} else {
+								enq.sendTo(child, {
+									type: 'CHECK',
+									scope:
+										context.access.kind === 'allowed' &&
+										!context.browserOffline &&
+										context.connection
+											? {
+													organizationId: context.access.organizationId,
+													userId: context.access.userId,
+													connectionId: context.connection.id
+												}
+											: undefined,
+									completion: context.logging?.attemptId
+								})
+							}
+						}
+					}
+					return { context: patch }
+				},
 				on: {
-					CONNECT: {
-						guard: 'canConnect',
-						target: '#bank.setup',
-						actions: assign({ setupToken: ({ event }) => event.token })
+					CONNECT: (args) => {
+						if (!args.guards.canConnect(args)) return
+						return { target: '#bank.setup', context: { setupToken: args.event.token } }
 					},
-					DISCOVER: {
-						guard: 'canOperate',
-						target: '#bank.running',
-						actions: assign({ command: ({ event }) => event })
+					DISCOVER: (args) => {
+						if (!args.guards.canOperate(args)) return
+						const { event } = args
+						return { target: '#bank.running', context: { command: event } }
 					},
-					SYNC: {
-						guard: 'canOperate',
-						target: '#bank.running',
-						actions: assign({ command: ({ event }) => event })
+					SYNC: (args) => {
+						if (!args.guards.canOperate(args)) return
+						const { event } = args
+						return { target: '#bank.running', context: { command: event } }
 					},
-					MAP: {
-						guard: 'canOperate',
-						target: '#bank.running',
-						actions: assign({ command: ({ event }) => event })
+					MAP: (args) => {
+						if (!args.guards.canOperate(args)) return
+						const { event } = args
+						return { target: '#bank.running', context: { command: event } }
 					},
-					CREATE_ACCOUNT: {
-						guard: 'canOperate',
-						target: '#bank.running',
-						actions: assign({ command: ({ event }) => event })
+					CREATE_ACCOUNT: (args) => {
+						if (!args.guards.canOperate(args)) return
+						const { event } = args
+						return { target: '#bank.running', context: { command: event } }
 					},
-					DISCONNECT: {
-						guard: 'canOperate',
-						target: '#bank.running',
-						actions: assign({ command: ({ event }) => event })
+					DISCONNECT: (args) => {
+						if (!args.guards.canOperate(args)) return
+						const { event } = args
+						return { target: '#bank.running', context: { command: event } }
 					}
 				},
 				states: {
@@ -485,21 +765,19 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						initial: 'checking',
 						states: {
 							checking: {
-								always: [
-									{
-										guard: ({ context }) => context.access.kind !== 'allowed',
-										target: 'restricted'
-									},
-									{
-										guard: ({ context }) => context.availability?.mode === 'connected',
-										target: 'locked'
-									},
-									{
-										guard: ({ context }) => context.connection?.status === 'active',
-										target: 'waiting'
-									},
-									{ target: 'disconnected' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (context.access.kind !== 'allowed') {
+										return { target: 'restricted' }
+									}
+									if (context.availability?.mode === 'connected') {
+										return { target: 'locked' }
+									}
+									if (context.connection?.status === 'active') {
+										return { target: 'waiting' }
+									}
+									return { target: 'disconnected' }
+								}
 							},
 							disconnected: {
 								meta: {
@@ -538,54 +816,43 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						initial: 'classifying',
 						states: {
 							classifying: {
-								always: [
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'mode_mismatch',
-										target: 'modeMismatch'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'passkey_failure',
-										target: 'passkey'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'claim_failure',
-										target: 'claim'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'invalid_setup_token',
-										target: 'invalidToken'
-									},
-									{
-										guard: ({ context }) =>
-											bankErrorCode(context.error) === 'account_already_linked',
-										target: 'accountConflict'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'save_failure',
-										target: 'save'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'other_tab',
-										target: 'otherTab'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'locking_unavailable',
-										target: 'lockingUnavailable'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'unlock_failure',
-										target: 'unlock'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'provider_failure',
-										target: 'provider'
-									},
-									{
-										guard: ({ context }) => bankErrorCode(context.error) === 'mapping',
-										target: 'mapping'
-									},
-									{ target: 'unexpected' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (bankErrorCode(context.error) === 'mode_mismatch') {
+										return { target: 'modeMismatch' }
+									}
+									if (bankErrorCode(context.error) === 'passkey_failure') {
+										return { target: 'passkey' }
+									}
+									if (bankErrorCode(context.error) === 'claim_failure') {
+										return { target: 'claim' }
+									}
+									if (bankErrorCode(context.error) === 'invalid_setup_token') {
+										return { target: 'invalidToken' }
+									}
+									if (bankErrorCode(context.error) === 'account_already_linked') {
+										return { target: 'accountConflict' }
+									}
+									if (bankErrorCode(context.error) === 'save_failure') {
+										return { target: 'save' }
+									}
+									if (bankErrorCode(context.error) === 'other_tab') {
+										return { target: 'otherTab' }
+									}
+									if (bankErrorCode(context.error) === 'locking_unavailable') {
+										return { target: 'lockingUnavailable' }
+									}
+									if (bankErrorCode(context.error) === 'unlock_failure') {
+										return { target: 'unlock' }
+									}
+									if (bankErrorCode(context.error) === 'provider_failure') {
+										return { target: 'provider' }
+									}
+									if (bankErrorCode(context.error) === 'mapping') {
+										return { target: 'mapping' }
+									}
+									return { target: 'unexpected' }
+								}
 							},
 							modeMismatch: {
 								meta: {
@@ -657,9 +924,9 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				}
 			},
 			drainingRetention: {
-				entry: shutdownRetention,
+				entry: stopRetention,
 				on: {
-					RETENTION_STOPPED: 'closed',
+					RETENTION_STOPPED: { target: 'closed' },
 					SHUTDOWN: {},
 					RESET: {},
 					CANCEL: {},
@@ -670,17 +937,43 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 			},
 			closed: {
 				type: 'final',
-				entry: [
-					clear,
-					assign({
-						discovered: [],
-						lastSync: undefined,
-						logging: undefined,
-						error: undefined,
-						counts: emptyCounts()
-					}),
-					refreshMappings
-				]
+				entry: (args, enq) => {
+					let context = args.context
+					let patch = {}
+					patch = { ...patch, ...((args) => ({ command: undefined, setupToken: undefined }))(args) }
+					context = { ...args.context, ...patch }
+					patch = {
+						...patch,
+						...((args) => ({
+							discovered: [],
+							lastSync: undefined,
+							logging: undefined,
+							error: undefined,
+							counts: emptyCounts()
+						}))({ ...args, context })
+					}
+					context = { ...args.context, ...patch }
+					{
+						const contextBefore = context
+						for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+						patch = {
+							...patch,
+							...(({ context, spawn }) => ({
+								mappingActors: new Map(
+									context.discovered.map((provider) => [
+										provider.id,
+										spawn('mappingRow', {
+											id: `mapping:${provider.id}`,
+											input: { provider, accounts: context.accounts, mappings: context.mappings }
+										})
+									])
+								)
+							}))({ ...args, context, spawn: enq.spawn })
+						}
+						context = { ...args.context, ...patch }
+					}
+					return { context: patch }
+				}
 			},
 			setup: {
 				initial: 'working',
@@ -690,7 +983,97 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					resetting: {
 						on: {
 							CANCEL: {},
-							CONNECTIONS_CHANGED: { guard: 'newCredentials', actions: acceptConnections }
+							CONNECTIONS_CHANGED: (args, enq) => {
+								let context = args.context
+								if (!args.guards.newCredentials(args)) return
+								const { event } = args
+								let patch = {}
+								{
+									const contextBefore = args.context
+									if (event.type !== 'CONNECTIONS_CHANGED') {
+									} else {
+										const connection = selectedBankConnection({
+											...contextBefore.access,
+											connections: event.connections
+										})
+										patch = {
+											...patch,
+											...((assignedArgs) => ({
+												connection: connection,
+												generation: contextBefore.generation + 1,
+												availability: undefined,
+												discovered: []
+											}))({ ...args, context })
+										}
+										context = { ...args.context, ...patch }
+										{
+											const contextBefore = context
+											for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+											patch = {
+												...patch,
+												...(({ context, spawn }) => ({
+													mappingActors: new Map(
+														context.discovered.map((provider) => [
+															provider.id,
+															spawn('mappingRow', {
+																id: `mapping:${provider.id}`,
+																input: {
+																	provider,
+																	accounts: context.accounts,
+																	mappings: context.mappings
+																}
+															})
+														])
+													)
+												}))({ ...args, context, spawn: enq.spawn })
+											}
+											context = { ...args.context, ...patch }
+										}
+										enq.sendTo('availability', {
+											type: 'CONNECTION_CHANGED',
+											connection: context.connection,
+											generation: context.generation
+										})
+										if (connection?.id !== contextBefore.connection?.id) {
+											patch = {
+												...patch,
+												...((assignedArgs) => ({ lastSync: undefined }))({ ...args, context })
+											}
+											context = { ...args.context, ...patch }
+											enq.sendTo('history', {
+												type: 'CONNECTION_SELECTED',
+												revision: contextBefore.revision,
+												connectionId: connection?.id
+											})
+										}
+										{
+											const contextBefore = context
+											if (contextBefore.revision < 0) {
+											} else {
+												const child = args.children.retention
+												if (child?.getSnapshot().status !== 'active') {
+												} else {
+													enq.sendTo(child, {
+														type: 'CHECK',
+														scope:
+															context.access.kind === 'allowed' &&
+															!context.browserOffline &&
+															context.connection
+																? {
+																		organizationId: context.access.organizationId,
+																		userId: context.access.userId,
+																		connectionId: context.connection.id
+																	}
+																: undefined,
+														completion: context.logging?.attemptId
+													})
+												}
+											}
+										}
+									}
+								}
+								return { context: patch }
+							}
 						}
 					},
 					shuttingDown: { on: { CANCEL: {}, RESET: {}, SHUTDOWN: {} } }
@@ -701,8 +1084,14 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					setupView: 'creating',
 					setupStep: 1
 				},
-				entry: [assign({ error: undefined }), sendTo('availability', { type: 'SETUP_STARTED' })],
-				exit: [clear, sendTo('availability', { type: 'SETUP_ENDED' })],
+				entry: (args, enq) => {
+					enq.sendTo('availability', { type: 'SETUP_STARTED' })
+					return { context: { error: undefined } }
+				},
+				exit: (args, enq) => {
+					enq.sendTo('availability', { type: 'SETUP_ENDED' })
+					return { context: ((args) => ({ command: undefined, setupToken: undefined }))(args) }
+				},
 				invoke: {
 					id: 'setup',
 					src: 'setupConnection',
@@ -710,106 +1099,343 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						if (!context.setupToken) throw new Error('missing-token')
 						return { token: context.setupToken }
 					},
-					onSnapshot: { actions: assign({ setupToken: undefined }) },
-					onDone: [
-						{
-							guard: stateIn({ setup: 'shuttingDown' }),
-							target: 'drainingRetention',
-							actions: {
-								type: 'retainRelease',
-								params: ({ event }) => ({ result: setupRelease(event.output) })
-							}
-						},
-						{
-							guard: stateIn({ setup: 'resetting' }),
-							target: 'ready.neutral',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: setupRelease(event.output) })
-								},
-								assign({ error: undefined, counts: emptyCounts() })
-							]
-						},
-						{
-							guard: stateIn({ setup: 'cancelling' }),
-							target: 'ready.cancelled',
-							actions: {
-								type: 'retainRelease',
-								params: ({ event }) => ({ result: setupRelease(event.output) })
-							}
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'cancelled',
-							target: 'ready.cancelled',
-							actions: {
-								type: 'retainRelease',
-								params: ({ event }) => ({ result: setupRelease(event.output) })
-							}
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'failed',
-							target: 'ready.failure',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: setupRelease(event.output) })
-								},
-								assign({
-									error: ({ event }) =>
-										event.output.kind === 'failed' ? event.output.error : undefined
-								})
-							]
-						},
-						{
-							target: 'ready.success.complete',
-							actions: {
-								type: 'retainRelease',
-								params: ({ event }) => ({ result: setupRelease(event.output) })
+					onSnapshot: () => {
+						return { context: { setupToken: undefined } }
+					},
+					onDone: (args, enq) => {
+						const { event } = args
+						if (matchesState1({ setup: 'shuttingDown' }, args.value)) {
+							const patchRetainReleaseResult20 = patchRetainRelease(args, {
+								result: setupRelease(event.output)
+							})
+							return { target: 'drainingRetention', context: patchRetainReleaseResult20 }
+						}
+						if (matchesState1({ setup: 'resetting' }, args.value)) {
+							const patchRetainReleaseResult19 = patchRetainRelease(args, {
+								result: setupRelease(event.output)
+							})
+							return {
+								target: 'ready.neutral',
+								context: {
+									...patchRetainReleaseResult19,
+									...((args) => ({ error: undefined, counts: emptyCounts() }))(args)
+								}
 							}
 						}
-					],
-					onError: [
-						{
-							guard: stateIn({ setup: 'shuttingDown' }),
-							target: 'drainingRetention',
-							actions: 'markUnresolved'
-						},
-						{
-							guard: stateIn({ setup: 'resetting' }),
-							target: 'ready.neutral',
-							actions: ['markUnresolved', assign({ error: undefined, counts: emptyCounts() })]
-						},
-						{
-							guard: stateIn({ setup: 'cancelling' }),
-							target: 'ready.cancelled',
-							actions: ['markUnresolved', assign({ error: undefined })]
-						},
-						{
-							target: 'ready.failure',
-							actions: ['markUnresolved', assign({ error: ({ event }) => event.error })]
+						if (matchesState1({ setup: 'cancelling' }, args.value)) {
+							const patchRetainReleaseResult18 = patchRetainRelease(args, {
+								result: setupRelease(event.output)
+							})
+							return { target: 'ready.cancelled', context: patchRetainReleaseResult18 }
 						}
-					]
+						if (event.output.kind === 'cancelled') {
+							const patchRetainReleaseResult17 = patchRetainRelease(args, {
+								result: setupRelease(event.output)
+							})
+							return { target: 'ready.cancelled', context: patchRetainReleaseResult17 }
+						}
+						if (event.output.kind === 'failed') {
+							const patchRetainReleaseResult16 = patchRetainRelease(args, {
+								result: setupRelease(event.output)
+							})
+							return {
+								target: 'ready.failure',
+								context: {
+									...patchRetainReleaseResult16,
+									...((args) => ({
+										error: (({ event }) =>
+											event.output.kind === 'failed' ? event.output.error : undefined)(args)
+									}))(args)
+								}
+							}
+						}
+						const patchRetainReleaseResult15 = patchRetainRelease(args, {
+							result: setupRelease(event.output)
+						})
+						return { target: 'ready.success.complete', context: patchRetainReleaseResult15 }
+					},
+					onError: (args, enq) => {
+						if (matchesState1({ setup: 'shuttingDown' }, args.value)) {
+							const patchMarkUnresolvedResult14 = patchMarkUnresolved()
+							return { target: 'drainingRetention', context: patchMarkUnresolvedResult14 }
+						}
+						if (matchesState1({ setup: 'resetting' }, args.value)) {
+							const patchMarkUnresolvedResult13 = patchMarkUnresolved()
+							return {
+								target: 'ready.neutral',
+								context: {
+									...patchMarkUnresolvedResult13,
+									...((args) => ({ error: undefined, counts: emptyCounts() }))(args)
+								}
+							}
+						}
+						if (matchesState1({ setup: 'cancelling' }, args.value)) {
+							const patchMarkUnresolvedResult12 = patchMarkUnresolved()
+							return {
+								target: 'ready.cancelled',
+								context: {
+									...patchMarkUnresolvedResult12,
+									...((args) => ({ error: undefined }))(args)
+								}
+							}
+						}
+						const patchMarkUnresolvedResult11 = patchMarkUnresolved()
+						return {
+							target: 'ready.failure',
+							context: {
+								...patchMarkUnresolvedResult11,
+								...((args) => ({ error: (({ event }) => event.error)(args) }))(args)
+							}
+						}
+					}
 				},
 				on: {
-					WORKSPACE_ACCESS_CHANGED: {
-						guard: 'newAccess',
-						target: '.resetting',
-						actions: [acceptAccess, cancelSetup]
+					WORKSPACE_ACCESS_CHANGED: (args, enq) => {
+						let context = args.context
+						if (!args.guards.newAccess(args)) return
+						const { event, self } = args
+						let patch = {}
+						{
+							const contextBefore = args.context
+							if (event.type !== 'WORKSPACE_ACCESS_CHANGED') {
+							} else {
+								patch = {
+									...patch,
+									...((assignedArgs) => ({
+										access: event.access,
+										revision: event.revision,
+										generation: contextBefore.generation + 1,
+										connection: undefined,
+										accounts: [],
+										mappings: new Map(),
+										lastSync: undefined,
+										logging: undefined,
+										availability: undefined
+									}))({ ...args, context })
+								}
+								context = { ...args.context, ...patch }
+								patch = {
+									...patch,
+									...((assignedArgs) => ({
+										discovered: [],
+										error: undefined,
+										counts: emptyCounts(),
+										logging: undefined
+									}))({ ...args, context })
+								}
+								context = { ...args.context, ...patch }
+								{
+									const contextBefore = context
+									for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+									patch = {
+										...patch,
+										...(({ context, spawn }) => ({
+											mappingActors: new Map(
+												context.discovered.map((provider) => [
+													provider.id,
+													spawn('mappingRow', {
+														id: `mapping:${provider.id}`,
+														input: {
+															provider,
+															accounts: context.accounts,
+															mappings: context.mappings
+														}
+													})
+												])
+											)
+										}))({ ...args, context, spawn: enq.spawn })
+									}
+									context = { ...args.context, ...patch }
+								}
+								enq.sendTo('availability', {
+									type: 'ACCESS_CHANGED',
+									access: context.access,
+									generation: context.generation
+								})
+								enq.sendTo('history', { type: 'BINDING_CHANGED', revision: event.revision })
+								{
+									const contextBefore = context
+									if (contextBefore.revision < 0) {
+									} else {
+										const child = self.getSnapshot()?.children.retention
+										if (child?.getSnapshot().status !== 'active') {
+										} else {
+											enq.sendTo(child, {
+												type: 'CHECK',
+												scope:
+													context.access.kind === 'allowed' &&
+													!context.browserOffline &&
+													context.connection
+														? {
+																organizationId: context.access.organizationId,
+																userId: context.access.userId,
+																connectionId: context.connection.id
+															}
+														: undefined,
+												completion: context.logging?.attemptId
+											})
+										}
+									}
+								}
+							}
+						}
+						{
+							const child = self.getSnapshot().children.setup
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.resetting', context: patch }
 					},
-					SHUTDOWN: { target: '.shuttingDown', actions: [cancelSetup, shutdownRetention] },
-					RESET: {
-						target: '.resetting',
-						actions: [assign({ discovered: [] }), refreshMappings, cancelSetup]
+					SHUTDOWN: (args, enq) => {
+						if (args.children.setup?.getSnapshot().status === 'active')
+							enq.sendTo('setup', { type: 'CANCEL' })
+						return { target: '.shuttingDown', ...(stopRetention(args, enq) ?? {}) }
 					},
-					CANCEL: { target: '.cancelling', actions: cancelSetup },
-					CONNECTIONS_CHANGED: {
-						guard: 'newCredentials',
-						actions: [acceptConnections, notifySetupCredential]
+					RESET: (args, enq) => {
+						let context = args.context
+						let patch = {}
+						patch = { ...patch, ...((args) => ({ discovered: [] }))(args) }
+						context = { ...args.context, ...patch }
+						{
+							const contextBefore = context
+							for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+							patch = {
+								...patch,
+								...(({ context, spawn }) => ({
+									mappingActors: new Map(
+										context.discovered.map((provider) => [
+											provider.id,
+											spawn('mappingRow', {
+												id: `mapping:${provider.id}`,
+												input: { provider, accounts: context.accounts, mappings: context.mappings }
+											})
+										])
+									)
+								}))({ ...args, context, spawn: enq.spawn })
+							}
+							context = { ...args.context, ...patch }
+						}
+						{
+							const child = args.children.setup
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.resetting', context: patch }
 					},
-					TEST_ENCRYPTION: { actions: sendTo('setup', { type: 'TEST_ENCRYPTION' }) },
-					VERIFY_DECRYPTION: { actions: sendTo('setup', { type: 'VERIFY_DECRYPTION' }) },
-					SAVE_CONNECTION: { actions: sendTo('setup', { type: 'SAVE_CONNECTION' }) }
+					CANCEL: (args, enq) => {
+						{
+							const child = args.children.setup
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.cancelling' }
+					},
+					CONNECTIONS_CHANGED: (args, enq) => {
+						let context = args.context
+						if (!args.guards.newCredentials(args)) return
+						const { event, self } = args
+						let patch = {}
+						{
+							const contextBefore = args.context
+							if (event.type !== 'CONNECTIONS_CHANGED') {
+							} else {
+								const connection = selectedBankConnection({
+									...contextBefore.access,
+									connections: event.connections
+								})
+								patch = {
+									...patch,
+									...((assignedArgs) => ({
+										connection: connection,
+										generation: contextBefore.generation + 1,
+										availability: undefined,
+										discovered: []
+									}))({ ...args, context })
+								}
+								context = { ...args.context, ...patch }
+								{
+									const contextBefore = context
+									for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+									patch = {
+										...patch,
+										...(({ context, spawn }) => ({
+											mappingActors: new Map(
+												context.discovered.map((provider) => [
+													provider.id,
+													spawn('mappingRow', {
+														id: `mapping:${provider.id}`,
+														input: {
+															provider,
+															accounts: context.accounts,
+															mappings: context.mappings
+														}
+													})
+												])
+											)
+										}))({ ...args, context, spawn: enq.spawn })
+									}
+									context = { ...args.context, ...patch }
+								}
+								enq.sendTo('availability', {
+									type: 'CONNECTION_CHANGED',
+									connection: context.connection,
+									generation: context.generation
+								})
+								if (connection?.id !== contextBefore.connection?.id) {
+									patch = {
+										...patch,
+										...((assignedArgs) => ({ lastSync: undefined }))({ ...args, context })
+									}
+									context = { ...args.context, ...patch }
+									enq.sendTo('history', {
+										type: 'CONNECTION_SELECTED',
+										revision: contextBefore.revision,
+										connectionId: connection?.id
+									})
+								}
+								{
+									const contextBefore = context
+									if (contextBefore.revision < 0) {
+									} else {
+										const child = self.getSnapshot()?.children.retention
+										if (child?.getSnapshot().status !== 'active') {
+										} else {
+											enq.sendTo(child, {
+												type: 'CHECK',
+												scope:
+													context.access.kind === 'allowed' &&
+													!context.browserOffline &&
+													context.connection
+														? {
+																organizationId: context.access.organizationId,
+																userId: context.access.userId,
+																connectionId: context.connection.id
+															}
+														: undefined,
+												completion: context.logging?.attemptId
+											})
+										}
+									}
+								}
+							}
+						}
+						{
+							const contextBefore = context
+							const child = self.getSnapshot().children.setup
+							if (child?.getSnapshot().status === 'active')
+								enq.sendTo(child, {
+									type: 'CREDENTIAL_CHANGED',
+									fingerprint: bankCredentialFingerprint(contextBefore.connection)
+								})
+						}
+						return { context: patch }
+					},
+					TEST_ENCRYPTION: (args, enq) => {
+						enq.sendTo('setup', { type: 'TEST_ENCRYPTION' })
+					},
+					VERIFY_DECRYPTION: (args, enq) => {
+						enq.sendTo('setup', { type: 'VERIFY_DECRYPTION' })
+					},
+					SAVE_CONNECTION: (args, enq) => {
+						enq.sendTo('setup', { type: 'SAVE_CONNECTION' })
+					}
 				}
 			},
 			running: {
@@ -821,7 +1447,97 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 						on: {
 							CANCEL: {},
 							IMPORT_PROGRESS: {},
-							CONNECTIONS_CHANGED: { guard: 'newCredentials', actions: acceptConnections }
+							CONNECTIONS_CHANGED: (args, enq) => {
+								let context = args.context
+								if (!args.guards.newCredentials(args)) return
+								const { event } = args
+								let patch = {}
+								{
+									const contextBefore = args.context
+									if (event.type !== 'CONNECTIONS_CHANGED') {
+									} else {
+										const connection = selectedBankConnection({
+											...contextBefore.access,
+											connections: event.connections
+										})
+										patch = {
+											...patch,
+											...((assignedArgs) => ({
+												connection: connection,
+												generation: contextBefore.generation + 1,
+												availability: undefined,
+												discovered: []
+											}))({ ...args, context })
+										}
+										context = { ...args.context, ...patch }
+										{
+											const contextBefore = context
+											for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+											patch = {
+												...patch,
+												...(({ context, spawn }) => ({
+													mappingActors: new Map(
+														context.discovered.map((provider) => [
+															provider.id,
+															spawn('mappingRow', {
+																id: `mapping:${provider.id}`,
+																input: {
+																	provider,
+																	accounts: context.accounts,
+																	mappings: context.mappings
+																}
+															})
+														])
+													)
+												}))({ ...args, context, spawn: enq.spawn })
+											}
+											context = { ...args.context, ...patch }
+										}
+										enq.sendTo('availability', {
+											type: 'CONNECTION_CHANGED',
+											connection: context.connection,
+											generation: context.generation
+										})
+										if (connection?.id !== contextBefore.connection?.id) {
+											patch = {
+												...patch,
+												...((assignedArgs) => ({ lastSync: undefined }))({ ...args, context })
+											}
+											context = { ...args.context, ...patch }
+											enq.sendTo('history', {
+												type: 'CONNECTION_SELECTED',
+												revision: contextBefore.revision,
+												connectionId: connection?.id
+											})
+										}
+										{
+											const contextBefore = context
+											if (contextBefore.revision < 0) {
+											} else {
+												const child = args.children.retention
+												if (child?.getSnapshot().status !== 'active') {
+												} else {
+													enq.sendTo(child, {
+														type: 'CHECK',
+														scope:
+															context.access.kind === 'allowed' &&
+															!context.browserOffline &&
+															context.connection
+																? {
+																		organizationId: context.access.organizationId,
+																		userId: context.access.userId,
+																		connectionId: context.connection.id
+																	}
+																: undefined,
+														completion: context.logging?.attemptId
+													})
+												}
+											}
+										}
+									}
+								}
+								return { context: patch }
+							}
 						}
 					},
 					shuttingDown: {
@@ -835,13 +1551,19 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 				},
 				tags: ['operating', 'busy'],
 				meta: { status: { key: 'bank.working', label: () => m['bank.working']() } },
-				entry: assign({
-					error: undefined,
-					counts: emptyCounts(),
-					logging: undefined,
-					operationConnectionId: ({ context }) => context.connection?.id
-				}),
-				exit: clear,
+				entry: (args) => {
+					return {
+						context: ((args) => ({
+							error: undefined,
+							counts: emptyCounts(),
+							logging: undefined,
+							operationConnectionId: (({ context }) => context.connection?.id)(args)
+						}))(args)
+					}
+				},
+				exit: (args) => {
+					return { context: ((args) => ({ command: undefined, setupToken: undefined }))(args) }
+				},
 				invoke: {
 					id: 'operation',
 					src: 'operation',
@@ -851,140 +1573,461 @@ export function createBankSyncMachine(inputs: BankSyncDependencies) {
 					},
 					// Observe child transitions without mirroring their state into context.
 					onSnapshot: {},
-					onDone: [
-						{
-							guard: stateIn({ running: 'shuttingDown' }),
-							target: 'drainingRetention',
-							actions: {
-								type: 'retainRelease',
-								params: ({ event }) => ({ result: operationRelease(event.output) })
+					onDone: (args, enq) => {
+						const { context, event } = args
+						if (matchesState1({ running: 'shuttingDown' }, args.value)) {
+							const patchRetainReleaseResult10 = patchRetainRelease(args, {
+								result: operationRelease(event.output)
+							})
+							return { target: 'drainingRetention', context: patchRetainReleaseResult10 }
+						}
+						if (matchesState1({ running: 'resetting' }, args.value)) {
+							const patchRetainReleaseResult9 = patchRetainRelease(args, {
+								result: operationRelease(event.output)
+							})
+							return {
+								target: 'ready.neutral',
+								context: {
+									...patchRetainReleaseResult9,
+									...((args) => ({ error: undefined, counts: emptyCounts() }))(args)
+								}
 							}
-						},
-						{
-							guard: stateIn({ running: 'resetting' }),
-							target: 'ready.neutral',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: operationRelease(event.output) })
-								},
-								assign({ error: undefined, counts: emptyCounts() })
-							]
-						},
-						{
-							guard: stateIn({ running: 'cancelling' }),
-							target: 'ready.cancelled',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: operationRelease(event.output) })
-								},
-								assign(({ context, event }) => operationCompletion(context, event.output))
-							]
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'cancelled',
-							target: 'ready.cancelled',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: operationRelease(event.output) })
-								},
-								assign(({ context, event }) => ({
-									...operationCompletion(context, event.output),
-									error: event.output.kind === 'cancelled' ? event.output.error : undefined
-								}))
-							]
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'failed',
-							target: 'ready.failure',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: operationRelease(event.output) })
-								},
-								assign(({ context, event }) => ({
-									...operationCompletion(context, event.output),
-									error: event.output.kind === 'failed' ? event.output.error : undefined
-								}))
-							]
-						},
-						{
-							guard: ({ event }) => event.output.kind === 'partial',
-							target: 'ready.success.partial',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: operationRelease(event.output) })
-								},
-								assign(({ context, event }) => ({
-									...operationCompletion(context, event.output),
-									discovered: event.output.discovered ?? context.discovered
-								}))
-							]
-						},
-						{
+						}
+						if (matchesState1({ running: 'cancelling' }, args.value)) {
+							const patchRetainReleaseResult8 = patchRetainRelease(args, {
+								result: operationRelease(event.output)
+							})
+							return {
+								target: 'ready.cancelled',
+								context: {
+									...patchRetainReleaseResult8,
+									...operationCompletion(context, event.output)
+								}
+							}
+						}
+						if (event.output.kind === 'cancelled') {
+							const patchRetainReleaseResult7 = patchRetainRelease(args, {
+								result: operationRelease(event.output)
+							})
+							return {
+								target: 'ready.cancelled',
+								context: {
+									...patchRetainReleaseResult7,
+									...{
+										...operationCompletion(context, event.output),
+										error: event.output.kind === 'cancelled' ? event.output.error : undefined
+									}
+								}
+							}
+						}
+						if (event.output.kind === 'failed') {
+							const patchRetainReleaseResult6 = patchRetainRelease(args, {
+								result: operationRelease(event.output)
+							})
+							return {
+								target: 'ready.failure',
+								context: {
+									...patchRetainReleaseResult6,
+									...{
+										...operationCompletion(context, event.output),
+										error: event.output.kind === 'failed' ? event.output.error : undefined
+									}
+								}
+							}
+						}
+						if (event.output.kind === 'partial') {
+							const patchRetainReleaseResult5 = patchRetainRelease(args, {
+								result: operationRelease(event.output)
+							})
+							return {
+								target: 'ready.success.partial',
+								context: {
+									...patchRetainReleaseResult5,
+									...{
+										...operationCompletion(context, event.output),
+										discovered: event.output.discovered ?? context.discovered
+									}
+								}
+							}
+						}
+						const patchRetainReleaseResult4 = patchRetainRelease(args, {
+							result: operationRelease(event.output)
+						})
+						return {
 							target: 'ready.success.complete',
-							actions: [
-								{
-									type: 'retainRelease',
-									params: ({ event }) => ({ result: operationRelease(event.output) })
-								},
-								assign(({ context, event }) => ({
+							context: {
+								...patchRetainReleaseResult4,
+								...{
 									...operationCompletion(context, event.output),
 									discovered: event.output.discovered ?? context.discovered
-								}))
-							]
+								}
+							}
 						}
-					],
-					onError: [
-						{
-							guard: stateIn({ running: 'shuttingDown' }),
-							target: 'drainingRetention',
-							actions: 'markUnresolved'
-						},
-						{
-							guard: stateIn({ running: 'resetting' }),
-							target: 'ready.neutral',
-							actions: ['markUnresolved', assign({ error: undefined, counts: emptyCounts() })]
-						},
-						{
-							guard: stateIn({ running: 'cancelling' }),
-							target: 'ready.cancelled',
-							actions: ['markUnresolved', assign({ error: undefined })]
-						},
-						{
+					},
+					onError: (args, enq) => {
+						if (matchesState1({ running: 'shuttingDown' }, args.value)) {
+							const patchMarkUnresolvedResult3 = patchMarkUnresolved()
+							return { target: 'drainingRetention', context: patchMarkUnresolvedResult3 }
+						}
+						if (matchesState1({ running: 'resetting' }, args.value)) {
+							const patchMarkUnresolvedResult2 = patchMarkUnresolved()
+							return {
+								target: 'ready.neutral',
+								context: {
+									...patchMarkUnresolvedResult2,
+									...((args) => ({ error: undefined, counts: emptyCounts() }))(args)
+								}
+							}
+						}
+						if (matchesState1({ running: 'cancelling' }, args.value)) {
+							const patchMarkUnresolvedResult1 = patchMarkUnresolved()
+							return {
+								target: 'ready.cancelled',
+								context: {
+									...patchMarkUnresolvedResult1,
+									...((args) => ({ error: undefined }))(args)
+								}
+							}
+						}
+						const patchMarkUnresolvedResult0 = patchMarkUnresolved()
+						return {
 							target: 'ready.failure',
-							actions: ['markUnresolved', assign({ error: ({ event }) => event.error })]
+							context: {
+								...patchMarkUnresolvedResult0,
+								...((args) => ({ error: (({ event }) => event.error)(args) }))(args)
+							}
 						}
-					]
+					}
 				},
 				on: {
-					WORKSPACE_ACCESS_CHANGED: {
-						guard: 'newAccess',
-						target: '.resetting',
-						actions: [acceptAccess, cancelOperation]
-					},
-					SHUTDOWN: { target: '.shuttingDown', actions: [cancelOperation, shutdownRetention] },
-					RESET: {
-						target: '.resetting',
-						actions: [assign({ discovered: [] }), refreshMappings, cancelOperation]
-					},
-					CANCEL: { target: '.cancelling', actions: cancelOperation },
-					CONNECTIONS_CHANGED: [
+					WORKSPACE_ACCESS_CHANGED: (args, enq) => {
+						let context = args.context
+						if (!args.guards.newAccess(args)) return
+						const { event, self } = args
+						let patch = {}
 						{
-							guard: and([
-								'newCredentials',
-								({ context }) =>
-									context.command?.type === 'SYNC' || context.command?.type === 'DISCOVER'
-							]),
-							target: '.cancelling',
-							actions: [acceptConnections, cancelOperation]
-						},
-						{ guard: 'newCredentials', actions: acceptConnections }
-					],
-					IMPORT_PROGRESS: { actions: assign({ counts: ({ event }) => event.counts }) }
+							const contextBefore = args.context
+							if (event.type !== 'WORKSPACE_ACCESS_CHANGED') {
+							} else {
+								patch = {
+									...patch,
+									...((assignedArgs) => ({
+										access: event.access,
+										revision: event.revision,
+										generation: contextBefore.generation + 1,
+										connection: undefined,
+										accounts: [],
+										mappings: new Map(),
+										lastSync: undefined,
+										logging: undefined,
+										availability: undefined
+									}))({ ...args, context })
+								}
+								context = { ...args.context, ...patch }
+								patch = {
+									...patch,
+									...((assignedArgs) => ({
+										discovered: [],
+										error: undefined,
+										counts: emptyCounts(),
+										logging: undefined
+									}))({ ...args, context })
+								}
+								context = { ...args.context, ...patch }
+								{
+									const contextBefore = context
+									for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+									patch = {
+										...patch,
+										...(({ context, spawn }) => ({
+											mappingActors: new Map(
+												context.discovered.map((provider) => [
+													provider.id,
+													spawn('mappingRow', {
+														id: `mapping:${provider.id}`,
+														input: {
+															provider,
+															accounts: context.accounts,
+															mappings: context.mappings
+														}
+													})
+												])
+											)
+										}))({ ...args, context, spawn: enq.spawn })
+									}
+									context = { ...args.context, ...patch }
+								}
+								enq.sendTo('availability', {
+									type: 'ACCESS_CHANGED',
+									access: context.access,
+									generation: context.generation
+								})
+								enq.sendTo('history', { type: 'BINDING_CHANGED', revision: event.revision })
+								{
+									const contextBefore = context
+									if (contextBefore.revision < 0) {
+									} else {
+										const child = self.getSnapshot()?.children.retention
+										if (child?.getSnapshot().status !== 'active') {
+										} else {
+											enq.sendTo(child, {
+												type: 'CHECK',
+												scope:
+													context.access.kind === 'allowed' &&
+													!context.browserOffline &&
+													context.connection
+														? {
+																organizationId: context.access.organizationId,
+																userId: context.access.userId,
+																connectionId: context.connection.id
+															}
+														: undefined,
+												completion: context.logging?.attemptId
+											})
+										}
+									}
+								}
+							}
+						}
+						{
+							const child = self.getSnapshot().children.operation
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.resetting', context: patch }
+					},
+					SHUTDOWN: (args, enq) => {
+						if (args.children.operation?.getSnapshot().status === 'active')
+							enq.sendTo('operation', { type: 'CANCEL' })
+						return { target: '.shuttingDown', ...(stopRetention(args, enq) ?? {}) }
+					},
+					RESET: (args, enq) => {
+						let context = args.context
+						let patch = {}
+						patch = { ...patch, ...((args) => ({ discovered: [] }))(args) }
+						context = { ...args.context, ...patch }
+						{
+							const contextBefore = context
+							for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+							patch = {
+								...patch,
+								...(({ context, spawn }) => ({
+									mappingActors: new Map(
+										context.discovered.map((provider) => [
+											provider.id,
+											spawn('mappingRow', {
+												id: `mapping:${provider.id}`,
+												input: { provider, accounts: context.accounts, mappings: context.mappings }
+											})
+										])
+									)
+								}))({ ...args, context, spawn: enq.spawn })
+							}
+							context = { ...args.context, ...patch }
+						}
+						{
+							const child = args.children.operation
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.resetting', context: patch }
+					},
+					CANCEL: (args, enq) => {
+						{
+							const child = args.children.operation
+							if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+						}
+						return { target: '.cancelling' }
+					},
+					CONNECTIONS_CHANGED: (args, enq) => {
+						const { context, event, self } = args
+						if (
+							args.guards.newCredentials(args) &&
+							(context.command?.type === 'SYNC' || context.command?.type === 'DISCOVER')
+						) {
+							let context = args.context
+							let patch = {}
+							{
+								const contextBefore = args.context
+								if (event.type !== 'CONNECTIONS_CHANGED') {
+								} else {
+									const connection = selectedBankConnection({
+										...contextBefore.access,
+										connections: event.connections
+									})
+									patch = {
+										...patch,
+										...((assignedArgs) => ({
+											connection: connection,
+											generation: contextBefore.generation + 1,
+											availability: undefined,
+											discovered: []
+										}))({ ...args, context })
+									}
+									context = { ...args.context, ...patch }
+									{
+										const contextBefore = context
+										for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+										patch = {
+											...patch,
+											...(({ context, spawn }) => ({
+												mappingActors: new Map(
+													context.discovered.map((provider) => [
+														provider.id,
+														spawn('mappingRow', {
+															id: `mapping:${provider.id}`,
+															input: {
+																provider,
+																accounts: context.accounts,
+																mappings: context.mappings
+															}
+														})
+													])
+												)
+											}))({ ...args, context, spawn: enq.spawn })
+										}
+										context = { ...args.context, ...patch }
+									}
+									enq.sendTo('availability', {
+										type: 'CONNECTION_CHANGED',
+										connection: context.connection,
+										generation: context.generation
+									})
+									if (connection?.id !== contextBefore.connection?.id) {
+										patch = {
+											...patch,
+											...((assignedArgs) => ({ lastSync: undefined }))({ ...args, context })
+										}
+										context = { ...args.context, ...patch }
+										enq.sendTo('history', {
+											type: 'CONNECTION_SELECTED',
+											revision: contextBefore.revision,
+											connectionId: connection?.id
+										})
+									}
+									{
+										const contextBefore = context
+										if (contextBefore.revision < 0) {
+										} else {
+											const child = self.getSnapshot()?.children.retention
+											if (child?.getSnapshot().status !== 'active') {
+											} else {
+												enq.sendTo(child, {
+													type: 'CHECK',
+													scope:
+														context.access.kind === 'allowed' &&
+														!context.browserOffline &&
+														context.connection
+															? {
+																	organizationId: context.access.organizationId,
+																	userId: context.access.userId,
+																	connectionId: context.connection.id
+																}
+															: undefined,
+													completion: context.logging?.attemptId
+												})
+											}
+										}
+									}
+								}
+							}
+							{
+								const child = self.getSnapshot().children.operation
+								if (child?.getSnapshot().status === 'active') enq.sendTo(child, { type: 'CANCEL' })
+							}
+							return { target: '.cancelling', context: patch }
+						}
+						if (args.guards.newCredentials(args)) {
+							let context = args.context
+							let patch = {}
+							{
+								const contextBefore = args.context
+								if (event.type !== 'CONNECTIONS_CHANGED') {
+								} else {
+									const connection = selectedBankConnection({
+										...contextBefore.access,
+										connections: event.connections
+									})
+									patch = {
+										...patch,
+										...((assignedArgs) => ({
+											connection: connection,
+											generation: contextBefore.generation + 1,
+											availability: undefined,
+											discovered: []
+										}))({ ...args, context })
+									}
+									context = { ...args.context, ...patch }
+									{
+										const contextBefore = context
+										for (const actor of contextBefore.mappingActors.values()) enq.stop(actor)
+										patch = {
+											...patch,
+											...(({ context, spawn }) => ({
+												mappingActors: new Map(
+													context.discovered.map((provider) => [
+														provider.id,
+														spawn('mappingRow', {
+															id: `mapping:${provider.id}`,
+															input: {
+																provider,
+																accounts: context.accounts,
+																mappings: context.mappings
+															}
+														})
+													])
+												)
+											}))({ ...args, context, spawn: enq.spawn })
+										}
+										context = { ...args.context, ...patch }
+									}
+									enq.sendTo('availability', {
+										type: 'CONNECTION_CHANGED',
+										connection: context.connection,
+										generation: context.generation
+									})
+									if (connection?.id !== contextBefore.connection?.id) {
+										patch = {
+											...patch,
+											...((assignedArgs) => ({ lastSync: undefined }))({ ...args, context })
+										}
+										context = { ...args.context, ...patch }
+										enq.sendTo('history', {
+											type: 'CONNECTION_SELECTED',
+											revision: contextBefore.revision,
+											connectionId: connection?.id
+										})
+									}
+									{
+										const contextBefore = context
+										if (contextBefore.revision < 0) {
+										} else {
+											const child = self.getSnapshot()?.children.retention
+											if (child?.getSnapshot().status !== 'active') {
+											} else {
+												enq.sendTo(child, {
+													type: 'CHECK',
+													scope:
+														context.access.kind === 'allowed' &&
+														!context.browserOffline &&
+														context.connection
+															? {
+																	organizationId: context.access.organizationId,
+																	userId: context.access.userId,
+																	connectionId: context.connection.id
+																}
+															: undefined,
+													completion: context.logging?.attemptId
+												})
+											}
+										}
+									}
+								}
+							}
+							return { context: patch }
+						}
+					},
+					IMPORT_PROGRESS: (args) => {
+						return { context: { counts: args.event.counts } }
+					}
 				}
 			}
 		}
@@ -1015,6 +2058,7 @@ export function selectBankView(
 		operation,
 		nestedOperation && 'getMeta' in nestedOperation ? nestedOperation : undefined
 	)
+	const mappingActors: Context['mappingActors'] = snapshot.context.mappingActors
 	return {
 		mode:
 			!snapshot.context.availability || snapshot.context.availability.mode === 'restricted'
@@ -1034,8 +2078,8 @@ export function selectBankView(
 		logging: snapshot.context.logging,
 
 		providerAccounts: Array.from(
-			snapshot.context.mappingActors.values(),
-			(actor): ProviderAccountView => {
+			mappingActors.values(),
+			(actor: ActorRefFrom<typeof accountOptionsMachine>): ProviderAccountView => {
 				const row = actor.getSnapshot()
 				return {
 					...row.context.provider,

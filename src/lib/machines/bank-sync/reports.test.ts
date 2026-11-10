@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createActor } from 'xstate'
 import {
 	bankAvailabilityMachine,
 	availabilityObservation,
@@ -9,6 +8,7 @@ import { bankHistoryMachine, type HistoryEvent } from './history.js'
 import { collectReports, publishAvailability } from './reports.fixture.js'
 import { connection, id, source } from './test-fixtures.js'
 import { bankCredentialFingerprint, type BankSource, type Connection } from './types.js'
+import { createActor } from 'xstate'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {

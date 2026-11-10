@@ -1,4 +1,3 @@
-import { assign, fromPromise, setup, stateIn } from 'xstate'
 import type { schema } from 'jazz-tools'
 import { app } from '#lib/schema.js'
 import { createAuthorizationMachine } from './authorization.js'
@@ -10,6 +9,8 @@ import {
 	type OperationWork,
 	type Result
 } from './types.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Link = schema.RowOf<typeof app.simplefinAccountLinks>
 type Input = { work: OperationWork; providerId: string }
@@ -18,38 +19,61 @@ type Context = Input & { links: Link[]; index: number; error: unknown }
 export function createAccountUnlinkMachine(dependencies: Dependencies) {
 	const { db } = dependencies
 	const actors = {
-		links: fromPromise(({ input }: { input: Input }) =>
-			db.all(
-				app.simplefinAccountLinks.where({
-					organizationId: input.work.scope.organizationId,
-					simplefinAccountId: input.providerId
-				})
-			)
-		),
+		links: createAsyncLogic({
+			run: ({ input }: { input: Input }) =>
+				db.all(
+					app.simplefinAccountLinks.where({
+						organizationId: input.work.scope.organizationId,
+						simplefinAccountId: input.providerId
+					})
+				)
+		}),
 		authorize: createAuthorizationMachine(dependencies),
-		remove: fromPromise<void, Link>(async ({ input, signal }) => {
-			signal.throwIfAborted()
-			await db.delete(app.simplefinAccountLinks, input.id).wait({ tier: 'local' })
+		remove: createAsyncLogic<void, Link>({
+			run: async ({ input, signal }) => {
+				signal.throwIfAborted()
+				await db.delete(app.simplefinAccountLinks, input.id).wait({ tier: 'local' })
+			}
 		})
 	}
-	return setup<
-		Context,
-		{ type: 'UNLINK' } | MappingInterruption,
-		typeof actors,
-		{},
-		{},
-		{ isDraining: undefined },
-		never,
-		string,
-		Input,
-		Result<undefined>
-	>({ actors, guards: { isDraining: stateIn({ removingLink: 'draining' }) } }).createMachine({
+	const events0 = {
+		UNLINK: types<EventPayload<{ type: 'UNLINK' } | MappingInterruption, 'UNLINK'>>(),
+		CANCEL: types<EventPayload<{ type: 'UNLINK' } | MappingInterruption, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<{ type: 'UNLINK' } | MappingInterruption, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['links']>
+				| import('xstate').OutputFrom<(typeof actors)['authorize']>
+				| import('xstate').OutputFrom<(typeof actors)['remove']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Result<undefined>>(),
+			children: {
+				links: types<import('xstate').ActorRefFrom<(typeof actors)['links']>>(),
+				authorize: types<import('xstate').ActorRefFrom<(typeof actors)['authorize']>>(),
+				remove: types<import('xstate').ActorRefFrom<(typeof actors)['remove']>>()
+			}
+		},
+		actors,
+		guards: {}
+	}).createMachine({
 		id: 'bank-account-unlink',
 		context: ({ input }) => ({ ...input, links: [], index: 0, error: undefined }),
 		initial: 'loadingLinks',
 		on: {
-			CANCEL: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) },
-			SHUTDOWN: { target: '.failed', actions: assign({ error: () => new Error('disconnected') }) }
+			CANCEL: () => {
+				return { target: '.failed', context: { error: new Error('disconnected') } }
+			},
+			SHUTDOWN: () => {
+				return { target: '.failed', context: { error: new Error('disconnected') } }
+			}
 		},
 		output: ({ context }) =>
 			context.error === undefined
@@ -60,32 +84,37 @@ export function createAccountUnlinkMachine(dependencies: Dependencies) {
 				invoke: {
 					src: 'links',
 					input: ({ context }) => context,
-					onDone: {
-						target: 'choosingLink',
-						actions: assign({ links: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'choosingLink', context: { links: args.event.output } }
 					},
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			choosingLink: {
-				always: [
-					{ guard: ({ context }) => context.index >= context.links.length, target: 'complete' },
-					{ target: 'authorizingRemoval' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.index >= context.links.length) {
+						return { target: 'complete' }
+					}
+					return { target: 'authorizingRemoval' }
+				}
 			},
 			authorizingRemoval: {
 				invoke: {
 					src: 'authorize',
 					input: ({ context }) => credentialAuthorization(context.work),
-					onDone: [
-						{
-							guard: ({ event }) => event.output.error !== undefined,
-							target: 'failed',
-							actions: assign({ error: ({ event }) => event.output.error })
-						},
-						{ target: 'removingLink' }
-					],
-					onError: { target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
+					onDone: (args) => {
+						const { event } = args
+						if (event.output.error !== undefined) {
+							return { target: 'failed', context: { error: event.output.error } }
+						}
+						return { target: 'removingLink' }
+					},
+					onError: (args) => {
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			removingLink: {
@@ -95,29 +124,28 @@ export function createAccountUnlinkMachine(dependencies: Dependencies) {
 					draining: { on: { CANCEL: {}, SHUTDOWN: {} } }
 				},
 				on: {
-					CANCEL: {
-						target: '.draining',
-						actions: assign({ error: () => new Error('disconnected') })
+					CANCEL: () => {
+						return { target: '.draining', context: { error: new Error('disconnected') } }
 					},
-					SHUTDOWN: {
-						target: '.draining',
-						actions: assign({ error: () => new Error('disconnected') })
+					SHUTDOWN: () => {
+						return { target: '.draining', context: { error: new Error('disconnected') } }
 					}
 				},
 				invoke: {
 					src: 'remove',
 					input: ({ context }) => required(context.links[context.index]),
-					onDone: [
-						{ guard: 'isDraining', target: 'failed' },
-						{
-							target: 'choosingLink',
-							actions: assign({ index: ({ context }) => context.index + 1 })
+					onDone: (args) => {
+						if (matchesState({ removingLink: 'draining' }, args.value)) {
+							return { target: 'failed' }
 						}
-					],
-					onError: [
-						{ guard: 'isDraining', target: 'failed' },
-						{ target: 'failed', actions: assign({ error: ({ event }) => event.error }) }
-					]
+						return { target: 'choosingLink', context: { index: args.context.index + 1 } }
+					},
+					onError: (args) => {
+						if (matchesState({ removingLink: 'draining' }, args.value)) {
+							return { target: 'failed' }
+						}
+						return { target: 'failed', context: { error: args.event.error } }
+					}
 				}
 			},
 			complete: { type: 'final' },

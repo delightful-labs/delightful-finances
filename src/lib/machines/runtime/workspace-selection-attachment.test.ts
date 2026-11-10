@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createActor, fromCallback } from 'xstate'
 import { createWorkspaceSelectionMachine } from 'delightful-local-first/workspace/workflow'
 import type {
 	WorkspaceDrainRequest,
@@ -10,6 +9,7 @@ import {
 	type WorkspaceSelectionAttachmentReport,
 	type WorkspaceSelectionBinding
 } from './workspace-selection-attachment.js'
+import { createActor, createCallbackLogic } from 'xstate'
 
 const actors = new Set<{ stop: () => void }>()
 afterEach(() => {
@@ -29,7 +29,7 @@ function fixture(
 ) {
 	const reports: WorkspaceSelectionAttachmentReport[] = []
 	const recipient = createActor(
-		fromCallback<WorkspaceSelectionAttachmentReport>(({ receive }) => {
+		createCallbackLogic<WorkspaceSelectionAttachmentReport>(({ receive }) => {
 			receive((report) => {
 				reports.push(report)
 				onReport?.(report)
@@ -280,10 +280,10 @@ describe('workspace selection attachment', () => {
 		}
 	)
 
-	it('classifies a real child action crash without reporting clean release', () => {
+	it('classifies a real child calculation crash without reporting clean release', () => {
 		const selection = createWorkspaceSelectionMachine().provide({
-			actions: {
-				reportSelected: () => {
+			guards: {
+				freshSelection: () => {
 					throw new Error('controlled child crash')
 				}
 			}

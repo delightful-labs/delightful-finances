@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createActor, toPromise, waitFor } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import { fakeDataSetup } from './fake-data.js'
 import { prepareFakeData } from '../../domain/fake-data.js'
 import { categories, organizationId, organization, seedFixture } from './fake-data.fixture.js'
+import { createActor, toPromise, waitFor } from 'xstate'
 
 afterEach(() => vi.restoreAllMocks())
 

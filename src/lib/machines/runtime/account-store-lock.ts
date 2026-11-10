@@ -1,4 +1,4 @@
-import { createCallbackLogic } from 'xstate-v6'
+import { createCallbackLogic } from 'xstate'
 
 export type AccountLockInput = { key: string; locks: Pick<LockManager, 'request'> }
 /** Native Web Lock lease only. RELEASE acknowledges actual lock-request

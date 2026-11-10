@@ -1,5 +1,4 @@
 import { normalizedName } from '#lib/domain/names.js'
-import { assign, getInitialSnapshot, setup, type SnapshotFrom } from 'xstate'
 import type { z } from 'zod'
 import { createSingleWriteFormOptions } from '../forms/scoped-form-policy.js'
 import type {
@@ -14,6 +13,9 @@ import type {
 	ManagementScope
 } from '#lib/contracts/management-contract.js'
 import { canEditCategoriesAndTags } from '#lib/domain/organization-permissions.js'
+import { setup, types, initialTransition } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 export function managementScope(facts: ManagementObservation): ManagementScope {
 	return {
@@ -30,72 +32,82 @@ export function sameManagementScope(a: ManagementScope, b: ManagementScope) {
 	)
 }
 export function createManagementAvailability(binding: object) {
-	return setup<
-		{ observation: FormObservation<ManagementObservation> },
-		FormChildEvent<ManagementObservation>,
-		{},
-		{},
-		{},
-		{},
-		never,
-		string,
-		FormObservation<ManagementObservation>
-	>({}).createMachine({
+	const events0 = {
+		INVALIDATE: types<EventPayload<FormChildEvent<ManagementObservation>, 'INVALIDATE'>>(),
+		CANCEL: types<EventPayload<FormChildEvent<ManagementObservation>, 'CANCEL'>>(),
+		SHUTDOWN: types<EventPayload<FormChildEvent<ManagementObservation>, 'SHUTDOWN'>>(),
+		OBSERVE: types<EventPayload<FormChildEvent<ManagementObservation>, 'OBSERVE'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<never>
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<{ observation: FormObservation<ManagementObservation> }>(),
+			events: events0,
+			input: types<FormObservation<ManagementObservation>>()
+		}
+	}).createMachine({
 		initial: 'checking',
 		context: ({ input }) => ({ observation: input }),
 		on: {
-			OBSERVE: {
-				target: '.checking',
-				actions: assign({ observation: ({ event }) => event.observation })
+			OBSERVE: (args) => {
+				return { target: '.checking', context: { observation: args.event.observation } }
 			}
 		},
 		states: {
 			checking: {
-				always: [
-					{
-						guard: ({
+				always: (args) => {
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => !f.sessionReady || !f.identityId || f.binding !== binding,
-						target: 'sessionUnavailable'
-					},
-					{
-						guard: ({
+						}) => !f.sessionReady || !f.identityId || f.binding !== binding)(args)
+					) {
+						return { target: 'sessionUnavailable' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => !f.organizationId,
-						target: 'selectWorkspace'
-					},
-					{
-						guard: ({
+						}) => !f.organizationId)(args)
+					) {
+						return { target: 'selectWorkspace' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => f.failed,
-						target: 'loadFailed'
-					},
-					{
-						guard: ({
+						}) => f.failed)(args)
+					) {
+						return { target: 'loadFailed' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
-						}) => f.loading,
-						target: 'loading'
-					},
-					{
-						guard: ({
+						}) => f.loading)(args)
+					) {
+						return { target: 'loading' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
 						}) =>
 							f.membership?.userId !== f.identityId ||
-							!canEditCategoriesAndTags(f.membership, f.organizationId),
-						target: 'readOnly'
-					},
-					{
-						guard: ({
+							!canEditCategoriesAndTags(f.membership, f.organizationId))(args)
+					) {
+						return { target: 'readOnly' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -104,11 +116,12 @@ export function createManagementAvailability(binding: object) {
 							f.categories.some(
 								(c) =>
 									c.id === archiveIntentId(f) && c.organizationId === f.organizationId && c.isSystem
-							),
-						target: 'protectedRecord'
-					},
-					{
-						guard: ({
+							))(args)
+					) {
+						return { target: 'protectedRecord' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -120,11 +133,12 @@ export function createManagementAvailability(binding: object) {
 										c.id === archiveIntentId(f) &&
 										c.organizationId === f.organizationId &&
 										c.archivedAt === null
-								)),
-						target: 'unavailableReference'
-					},
-					{
-						guard: ({
+								)))(args)
+					) {
+						return { target: 'unavailableReference' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -136,11 +150,12 @@ export function createManagementAvailability(binding: object) {
 										t.id === archiveIntentId(f) &&
 										t.organizationId === f.organizationId &&
 										t.archivedAt === null
-								)),
-						target: 'unavailableReference'
-					},
-					{
-						guard: ({
+								)))(args)
+					) {
+						return { target: 'unavailableReference' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -157,11 +172,12 @@ export function createManagementAvailability(binding: object) {
 										category.archivedAt === null
 								)
 							)
-						},
-						target: 'unavailableReference'
-					},
-					{
-						guard: ({
+						})(args)
+					) {
+						return { target: 'unavailableReference' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -177,11 +193,12 @@ export function createManagementAvailability(binding: object) {
 										normalizedName(tag.name) === normalizedName(intent.name)
 								)
 							)
-						},
-						target: 'duplicateName'
-					},
-					{
-						guard: ({
+						})(args)
+					) {
+						return { target: 'duplicateName' }
+					}
+					if (
+						(({
 							context: {
 								observation: { facts: f }
 							}
@@ -197,11 +214,12 @@ export function createManagementAvailability(binding: object) {
 										normalizedName(category.name) === normalizedName(intent.name)
 								)
 							)
-						},
-						target: 'duplicateName'
-					},
-					{ target: 'ready' }
-				]
+						})(args)
+					) {
+						return { target: 'duplicateName' }
+					}
+					return { target: 'ready' }
+				}
 			},
 			sessionUnavailable: {},
 			selectWorkspace: {},
@@ -238,10 +256,10 @@ export function selectManagementArchiveIds(
 	return (kind === 'archiveCategory' ? facts.categories : facts.tags)
 		.filter((row) => {
 			const snapshot = selectManagementAvailability(
-				getInitialSnapshot(machine, {
+				initialTransition(machine, {
 					revision: 0,
 					facts: { ...facts, intent: { kind, id: row.id, organizationId: row.organizationId } }
-				})
+				})[0]
 			)
 			return snapshot.readiness.kind === 'ready'
 		})

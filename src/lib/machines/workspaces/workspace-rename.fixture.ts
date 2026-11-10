@@ -1,5 +1,4 @@
 import { afterEach, vi } from 'vitest'
-import { createActor, type SnapshotFrom } from 'xstate'
 import type {
 	WorkspaceRenameObservation,
 	WorkspaceRenameReason,
@@ -7,6 +6,8 @@ import type {
 } from '#lib/contracts/workspace-rename-contract.js'
 import { createWorkspaceRenameFormOptions, workspaceRenameScope } from './workspace-rename.js'
 import { createScopedFormMachine, selectScopedFormView } from '../forms/scoped-form.js'
+import { createActor } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
 
 const cleanups: (() => void)[] = []
 function settings(name: string): { name: string; defaultCurrency: 'USD' | 'TZS' } {

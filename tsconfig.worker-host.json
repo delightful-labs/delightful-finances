@@ -14,6 +14,7 @@
 		"src/lib/runtime/worker/host-protocol.ts",
 		"src/lib/runtime/worker/host-drain.ts",
 		"src/lib/runtime/worker/host-drain.test.ts",
+		"src/lib/runtime/worker/host-legacy.test.ts",
 		"src/lib/runtime/worker/host-client.ts",
 		"src/lib/runtime/worker/window-host.ts",
 		"src/lib/runtime/worker/host-protocol.test.ts",

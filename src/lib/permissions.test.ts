@@ -2,7 +2,6 @@ import { Buffer } from 'node:buffer'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createPolicyTestApp, type PolicyTestApp, type TestDb } from 'jazz-tools/testing'
 import { app, type TransactionRow } from './schema.js'
-import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import {
 	transactionAttachmentReplacementMachine,
 	type AttachmentReplacementInput
@@ -11,6 +10,7 @@ import { savedTransactionImageEditorMachine } from './machines/transactions/atta
 import { mockEditorPlatform } from './testing/image-editor/fixtures.js'
 import { vi } from 'vitest'
 import permissions from './permissions.js'
+import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 const organizationId = crypto.randomUUID()
 const otherOrganizationId = crypto.randomUUID()
@@ -768,7 +768,7 @@ describe('transaction attachment permissions', () => {
 		const pending = Promise.withResolvers<typeof transaction>()
 		const actor = createActor(
 			transactionAttachmentReplacementMachine.provide({
-				actors: { open: fromPromise(() => pending.promise) }
+				actors: { open: createAsyncLogic({ run: () => pending.promise }) }
 			}),
 			{ input: replacementInput({ id: link.id, fileId: file.id }) }
 		).start()
@@ -812,9 +812,9 @@ describe('transaction attachment permissions', () => {
 				actors: {
 					persist: transactionAttachmentReplacementMachine.provide({
 						actors: {
-							settle: fromPromise(({ input }: { input: import('jazz-tools').WriteHandle }) =>
-								settle(input)
-							)
+							settle: createAsyncLogic({
+								run: ({ input }: { input: import('jazz-tools').WriteHandle }) => settle(input)
+							})
 						}
 					})
 				}
@@ -863,8 +863,8 @@ describe('transaction attachment permissions', () => {
 		const actor = createActor(
 			transactionAttachmentReplacementMachine.provide({
 				actors: {
-					stage: fromPromise(
-						async ({
+					stage: createAsyncLogic({
+						run: async ({
 							input
 						}: {
 							input: {
@@ -880,7 +880,7 @@ describe('transaction attachment permissions', () => {
 							})
 							throw new Error('Injected part staging failure')
 						}
-					)
+					})
 				}
 			}),
 			{ input: replacementInput({ id: link.id, fileId: file.id }) }
@@ -905,8 +905,10 @@ describe('transaction attachment permissions', () => {
 		const actor = createActor(
 			transactionAttachmentReplacementMachine.provide({
 				actors: {
-					settle: fromPromise(async (): Promise<void> => {
-						throw new Error('Lost settlement acknowledgement')
+					settle: createAsyncLogic({
+						run: async (): Promise<void> => {
+							throw new Error('Lost settlement acknowledgement')
+						}
 					})
 				}
 			}),

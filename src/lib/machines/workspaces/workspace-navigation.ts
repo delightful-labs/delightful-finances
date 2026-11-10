@@ -1,4 +1,3 @@
-import { assign, fromPromise, raise, setup } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '../../schema.js'
 import {
@@ -14,6 +13,9 @@ import type {
 	NavigationStatusEvent,
 	WorkspaceNavigate
 } from '../../contracts/workspace-orchestration-contract.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
+
 export type { WorkspaceNavigationFacts } from '../../contracts/workspace-orchestration-contract.js'
 type Input = { facts: WorkspaceNavigationFacts; recipient: NavigationRecipient }
 type Context = Input & {
@@ -32,30 +34,45 @@ export function createWorkspaceNavigationMachine(
 	navigate: WorkspaceNavigate
 ) {
 	const actors = {
-		lookup: fromPromise(({ input }: { input: string }) =>
-			db.one(app.transactions.where({ id: input }))
-		),
-		navigate: fromPromise(
-			({
+		lookup: createAsyncLogic({
+			run: ({ input }: { input: string }) => db.one(app.transactions.where({ id: input }))
+		}),
+		navigate: createAsyncLogic({
+			run: ({
 				input,
 				signal
 			}: {
 				input: { destination: string; expectedHref: string; replace: boolean }
 				signal: AbortSignal
 			}) => navigate(input.destination, signal, input.expectedHref, input.replace)
-		)
+		})
 	}
-	const model = setup<Context, Event, typeof actors, {}, {}, {}, never, string, Input>({
+	const events0 = {
+		OBSERVED: types<EventPayload<Event, 'OBSERVED'>>(),
+		SELECT: types<EventPayload<Event, 'SELECT'>>(),
+		REEVALUATE: types<EventPayload<Event, 'REEVALUATE'>>(),
+		RETRY: types<EventPayload<Event, 'RETRY'>>(),
+		SHUTDOWN: types<EventPayload<Event, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['lookup']>
+				| import('xstate').OutputFrom<(typeof actors)['navigate']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			children: {
+				lookup: types<import('xstate').ActorRefFrom<(typeof actors)['lookup']>>(),
+				navigate: types<import('xstate').ActorRefFrom<(typeof actors)['navigate']>>()
+			}
+		},
 		actors
 	})
-	const report = (status: NavigationStatus) =>
-		model.sendTo(
-			({ context }) => context.recipient,
-			({ context }): NavigationStatusEvent => ({
-				type: 'NAVIGATION_STATUS',
-				report: { generation: context.facts.generation, status }
-			})
-		)
 	return model.createMachine({
 		id: 'workspace-navigation',
 		context: ({ input }) => ({
@@ -68,25 +85,29 @@ export function createWorkspaceNavigationMachine(
 		}),
 		initial: 'assessing',
 		on: {
-			SHUTDOWN: '.closed',
-			SELECT: {
-				target: '.navigating',
-				actions: assign({
-					emptyEntry: undefined,
-					replace: false,
-					destination: ({ context, event }) =>
-						switchedWorkspaceHref(
-							event.workspaceId,
+			SHUTDOWN: { target: '.closed' },
+			SELECT: (args) => {
+				const { context } = args
+				return {
+					target: '.navigating',
+					context: {
+						emptyEntry: undefined,
+						replace: false,
+						destination: switchedWorkspaceHref(
+							args.event.workspaceId,
 							context.facts.pathname,
 							context.facts.search,
 							context.facts.hash
 						)
-				})
+					}
+				}
 			},
-			OBSERVED: {
-				actions: [
-					assign({
-						emptyEntry: ({ context, event }) => {
+			OBSERVED: (args, enq) => {
+				const { event } = args
+				enq.raise({ type: 'REEVALUATE' })
+				return {
+					context: {
+						emptyEntry: (({ context, event }) => {
 							const origin = context.emptyEntry
 							const facts = event.facts
 							if (
@@ -101,150 +122,194 @@ export function createWorkspaceNavigationMachine(
 							)
 								return undefined
 							return origin
-						},
-						facts: ({ event }) => event.facts
-					}),
-					raise({ type: 'REEVALUATE' })
-				]
+						})(args),
+						facts: event.facts
+					}
+				}
 			},
-			REEVALUATE: '.assessing',
-			RETRY: '.assessing'
+			REEVALUATE: { target: '.assessing' },
+			RETRY: { target: '.assessing' }
 		},
 		states: {
 			assessing: {
-				entry: assign({ replace: true }),
-				always: [
-					{
-						guard: ({ context }) => !context.facts.ready,
-						target: 'waiting'
-					},
-					{
-						guard: ({ context }) =>
-							context.emptyEntry !== undefined &&
-							context.facts.pathname === '/settings/workspace' &&
-							!context.facts.loading &&
-							context.facts.error == null &&
-							context.facts.organizations.length === 1,
-						target: 'navigating',
-						actions: assign({
-							destination: ({ context }) =>
-								workspaceHref(
+				entry: () => {
+					return { context: { replace: true } }
+				},
+				always: (args) => {
+					const { context } = args
+					if (!context.facts.ready) {
+						return { target: 'waiting' }
+					}
+					if (
+						context.emptyEntry !== undefined &&
+						context.facts.pathname === '/settings/workspace' &&
+						!context.facts.loading &&
+						context.facts.error == null &&
+						context.facts.organizations.length === 1
+					) {
+						return {
+							target: 'navigating',
+							context: {
+								destination: workspaceHref(
 									context.facts.organizations[0]?.id ?? null,
 									`${context.emptyEntry?.pathname}${context.emptyEntry?.search}${context.emptyEntry?.hash}`
 								),
-							emptyEntry: undefined
-						})
-					},
-					{
-						guard: ({ context }) => context.facts.pathname === '/settings/workspace',
-						target: 'directory'
-					},
-					{
-						guard: ({ context }) => ['/account', '/login'].includes(context.facts.pathname),
-						target: 'global'
-					},
-					{ guard: ({ context }) => context.facts.loading, target: 'waiting' },
-					{ guard: ({ context }) => context.facts.error != null, target: 'failed' },
-					{
-						guard: ({ context }) => workspaceRoute(context.facts.search).scoped,
-						target: 'checkingScope'
-					},
-					{
-						guard: ({ context }) =>
-							/^\/(expenses|income)\/(?!new$)[^/]+$/.test(context.facts.pathname),
-						target: 'resolvingLegacy'
-					},
-					{
-						guard: ({ context }) => context.facts.organizations.length === 1,
-						target: 'navigating',
-						actions: assign({
-							destination: ({ context }) =>
-								workspaceHref(
+								emptyEntry: undefined
+							}
+						}
+					}
+					if (context.facts.pathname === '/settings/workspace') {
+						return { target: 'directory' }
+					}
+					if (['/account', '/login'].includes(context.facts.pathname)) {
+						return { target: 'global' }
+					}
+					if (context.facts.loading) {
+						return { target: 'waiting' }
+					}
+					if (context.facts.error != null) {
+						return { target: 'failed' }
+					}
+					if (workspaceRoute(context.facts.search).scoped) {
+						return { target: 'checkingScope' }
+					}
+					if (/^\/(expenses|income)\/(?!new$)[^/]+$/.test(context.facts.pathname)) {
+						return { target: 'resolvingLegacy' }
+					}
+					if (context.facts.organizations.length === 1) {
+						return {
+							target: 'navigating',
+							context: {
+								destination: workspaceHref(
 									context.facts.organizations[0]?.id ?? null,
 									`${context.facts.pathname}${context.facts.search}${context.facts.hash}`
 								)
-						})
-					},
-					{
-						target: 'navigating',
-						actions: assign({
-							emptyEntry: ({ context }) =>
-								context.facts.organizations.length === 0 ? context.facts : undefined,
-							destination: '/settings/workspace'
-						})
+							}
+						}
 					}
-				]
+					return {
+						target: 'navigating',
+						context: {
+							emptyEntry: context.facts.organizations.length === 0 ? context.facts : undefined,
+							destination: '/settings/workspace'
+						}
+					}
+				}
 			},
 			checkingScope: {
-				always: [
-					{ guard: ({ context }) => context.facts.access === 'waiting', target: 'waiting' },
-					{ guard: ({ context }) => context.facts.access === 'failed', target: 'failed' },
-					{ guard: ({ context }) => context.facts.access === 'ready', target: 'scoped' },
-					{ target: 'unavailable' }
-				]
+				always: (args) => {
+					const { context } = args
+					if (context.facts.access === 'waiting') {
+						return { target: 'waiting' }
+					}
+					if (context.facts.access === 'failed') {
+						return { target: 'failed' }
+					}
+					if (context.facts.access === 'ready') {
+						return { target: 'scoped' }
+					}
+					return { target: 'unavailable' }
+				}
 			},
 			resolvingLegacy: {
-				entry: [assign({ resolving: ({ context }) => context.facts }), report('waiting')],
+				entry: (args, enq) => {
+					let context = args.context
+					let patch = {}
+					patch = {
+						...patch,
+						...((args) => ({ resolving: (({ context }) => context.facts)(args) }))(args)
+					}
+					context = { ...args.context, ...patch }
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'waiting' }
+					})
+					return { context: patch }
+				},
 				on: {
-					REEVALUATE: [
-						{
-							guard: ({ context }) =>
-								context.facts.pathname !== context.resolving?.pathname ||
-								context.facts.search !== context.resolving?.search ||
-								context.facts.hash !== context.resolving?.hash ||
-								context.facts.userId !== context.resolving?.userId ||
-								!context.facts.ready,
-							target: 'assessing'
-						},
-						{ actions: report('waiting') }
-					]
+					REEVALUATE: (args, enq) => {
+						const { context } = args
+						if (
+							context.facts.pathname !== context.resolving?.pathname ||
+							context.facts.search !== context.resolving?.search ||
+							context.facts.hash !== context.resolving?.hash ||
+							context.facts.userId !== context.resolving?.userId ||
+							!context.facts.ready
+						) {
+							return { target: 'assessing' }
+						}
+						enq.sendTo(context.recipient, {
+							type: 'NAVIGATION_STATUS',
+							report: { generation: context.facts.generation, status: 'waiting' }
+						})
+						return {}
+					}
 				},
 				invoke: {
 					src: 'lookup',
 					input: ({ context }) => context.facts.pathname.split('/').at(-1) ?? '',
-					onDone: {
-						target: 'checkingLegacy',
-						actions: assign({ transaction: ({ event }) => event.output })
+					onDone: (args) => {
+						return { target: 'checkingLegacy', context: { transaction: args.event.output } }
 					},
-					onError: 'failed'
+					onError: { target: 'failed' }
 				}
 			},
 			checkingLegacy: {
-				always: [
-					{
-						guard: ({ context }) =>
-							context.transaction != null &&
-							context.facts.organizations.some(
-								(row) => row.id === context.transaction?.organizationId
-							),
-						target: 'navigating',
-						actions: assign({
-							destination: ({ context }) =>
-								workspaceHref(
+				always: (args) => {
+					const { context } = args
+					if (
+						context.transaction != null &&
+						context.facts.organizations.some(
+							(row) => row.id === context.transaction?.organizationId
+						)
+					) {
+						return {
+							target: 'navigating',
+							context: {
+								destination: workspaceHref(
 									context.transaction?.organizationId ?? null,
 									`${context.facts.pathname}${context.facts.search}${context.facts.hash}`
 								)
-						})
-					},
-					{ target: 'unavailable' }
-				]
+							}
+						}
+					}
+					return { target: 'unavailable' }
+				}
 			},
 			navigating: {
-				entry: [assign({ resolving: ({ context }) => context.facts }), report('waiting')],
+				entry: (args, enq) => {
+					let context = args.context
+					let patch = {}
+					patch = {
+						...patch,
+						...((args) => ({ resolving: (({ context }) => context.facts)(args) }))(args)
+					}
+					context = { ...args.context, ...patch }
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'waiting' }
+					})
+					return { context: patch }
+				},
 				on: {
-					REEVALUATE: [
-						{
-							guard: ({ context }) =>
-								context.facts.userId !== context.resolving?.userId ||
-								!context.facts.ready ||
-								(`${context.facts.pathname}${context.facts.search}${context.facts.hash}` !==
-									`${context.resolving?.pathname}${context.resolving?.search}${context.resolving?.hash}` &&
-									`${context.facts.pathname}${context.facts.search}${context.facts.hash}` !==
-										context.destination),
-							target: 'assessing'
-						},
-						{ actions: report('waiting') }
-					]
+					REEVALUATE: (args, enq) => {
+						const { context } = args
+						if (
+							context.facts.userId !== context.resolving?.userId ||
+							!context.facts.ready ||
+							(`${context.facts.pathname}${context.facts.search}${context.facts.hash}` !==
+								`${context.resolving?.pathname}${context.resolving?.search}${context.resolving?.hash}` &&
+								`${context.facts.pathname}${context.facts.search}${context.facts.hash}` !==
+									context.destination)
+						) {
+							return { target: 'assessing' }
+						}
+						enq.sendTo(context.recipient, {
+							type: 'NAVIGATION_STATUS',
+							report: { generation: context.facts.generation, status: 'waiting' }
+						})
+						return {}
+					}
 				},
 				invoke: {
 					src: 'navigate',
@@ -256,26 +321,83 @@ export function createWorkspaceNavigationMachine(
 							replace: context.replace
 						}
 					},
-					onDone: [
-						{
-							guard: ({ context }) =>
-								context.destination ===
-								`${context.facts.pathname}${context.facts.search}${context.facts.hash}`,
-							target: 'assessing'
-						},
-						{ target: 'settled' }
-					],
-					onError: 'failed'
+					onDone: (args) => {
+						const { context } = args
+						if (
+							context.destination ===
+							`${context.facts.pathname}${context.facts.search}${context.facts.hash}`
+						) {
+							return { target: 'assessing' }
+						}
+						return { target: 'settled' }
+					},
+					onError: { target: 'failed' }
 				}
 			},
-			waiting: { entry: report('waiting') },
-			directory: { entry: report('directory') },
-			global: { entry: report('global') },
-			scoped: { entry: report('scoped') },
-			settled: { entry: report('waiting') },
+			waiting: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'waiting' }
+					})
+				}
+			},
+			directory: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'directory' }
+					})
+				}
+			},
+			global: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'global' }
+					})
+				}
+			},
+			scoped: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'scoped' }
+					})
+				}
+			},
+			settled: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'waiting' }
+					})
+				}
+			},
 			closed: { type: 'final' },
-			unavailable: { entry: report('unavailable') },
-			failed: { entry: report('failed') }
+			unavailable: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'unavailable' }
+					})
+				}
+			},
+			failed: {
+				entry: (args, enq) => {
+					const { context } = args
+					enq.sendTo(context.recipient, {
+						type: 'NAVIGATION_STATUS',
+						report: { generation: context.facts.generation, status: 'failed' }
+					})
+				}
+			}
 		}
 	})
 }

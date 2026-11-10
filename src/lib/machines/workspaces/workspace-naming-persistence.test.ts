@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor } from 'xstate'
 import { createWorkspaceNamingPersistence } from './workspace-naming-persistence.js'
 import { renameFixture } from './workspace-rename.fixture.js'
+import { createActor, waitFor } from 'xstate'
+
 const actors = new Set<{ stop: () => void }>()
 afterEach(() => {
 	for (const actor of actors) actor.stop()

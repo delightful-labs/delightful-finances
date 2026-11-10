@@ -24,10 +24,14 @@
 		oncomplete?: (file: File) => void
 		oncancel?: () => void
 	} = $props()
-	const owner = untrack(() => providedActor === undefined)
-	const actor = untrack(
-		() => providedActor ?? createActor(imageEditorMachine, { input: { file, mode } })
+	const ownedActor = untrack(() =>
+		providedActor ? undefined : createActor(imageEditorMachine, { input: { file, mode } })
 	)
+	const actor = untrack(() => {
+		const selected = providedActor ?? ownedActor
+		if (!selected) throw new Error('Missing image editor actor')
+		return selected
+	})
 	let view = $state.raw(imageEditorPresentation(actor.getSnapshot()))
 
 	function send(event: ImageEditorEvent) {
@@ -46,11 +50,10 @@
 				view = imageEditorPresentation(actor.getSnapshot())
 			}
 		})
-		if (owner) actor.start()
+		ownedActor?.start()
 		return () => {
 			subscription.unsubscribe()
-			if (!owner) return
-			stopAfterShutdown(actor)
+			if (ownedActor) stopAfterShutdown(ownedActor)
 		}
 	})
 </script>

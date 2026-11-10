@@ -1,10 +1,10 @@
-import type { ActorRef, Snapshot } from 'xstate'
 import type { OrganizationMember } from '../schema.js'
 import type {
 	IntegrityIssue,
 	IntegrityScope
 } from '../machines/workspaces/workspace-integrity-assessment.js'
 import type { IntegrityResult } from '../machines/workspaces/workspace-integrity-transaction.js'
+import type { ActorRef, Snapshot } from 'xstate'
 
 export type IntegrityBinding = IntegrityScope & {
 	membershipId: string

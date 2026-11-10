@@ -1,12 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import {
-	createActor,
-	fromCallback,
-	fromPromise,
-	toPromise,
-	waitFor,
-	type AnyActorRef
-} from 'xstate'
 import { createLoggedBankOperationMachine } from './logged-operation.js'
 import { createSyncLogMachine } from './sync-log.js'
 import { syncAttemptSchema } from '#lib/validation/bank-sync-log.js'
@@ -17,8 +9,19 @@ import type {
 	SyncLogCompletion,
 	SyncLogAccountResult
 } from '#lib/contracts/bank-sync-log.js'
+import {
+	createActor,
+	setup,
+	types,
+	type ActorRefFrom,
+	createCallbackLogic,
+	toPromise,
+	waitFor,
+	createAsyncLogic
+} from 'xstate'
+import type { AnyActorRef } from 'xstate'
 
-const parents: AnyActorRef[] = []
+const parents: { stop: () => void }[] = []
 afterEach(() => {
 	vi.restoreAllMocks()
 	for (const parent of parents.splice(0)) parent.stop()
@@ -37,30 +40,47 @@ function start(
 	const accounts: SyncLogAccountResult[] = []
 	const log = createSyncLogMachine(deps).provide({
 		actors: {
-			recordStart: fromPromise<void, SyncLogStart>(async ({ input }) => {
-				starts.push(input)
-				await options.begin?.(input)
+			recordStart: createAsyncLogic<void, SyncLogStart>({
+				run: async ({ input }) => {
+					starts.push(input)
+					await options.begin?.(input)
+				}
 			}),
-			recordResult: fromPromise<void, { start: SyncLogStart; result: SyncLogCompletion }>(
-				async ({ input }) => {
+			recordResult: createAsyncLogic<void, { start: SyncLogStart; result: SyncLogCompletion }>({
+				run: async ({ input }) => {
 					results.push(input.result)
 					await options.finish?.(input.result)
 				}
-			),
-			recordAccount: fromPromise<
+			}),
+			recordAccount: createAsyncLogic<
 				void,
 				{ id: string; values: SyncLogAccountResult & { attemptId: string; organizationId: string } }
-			>(async ({ input }) => {
-				accounts.push(input.values)
+			>({
+				run: async ({ input }) => {
+					accounts.push(input.values)
+				}
 			})
 		}
 	})
-	const parent = createActor(fromCallback(() => {})).start()
-	parents.push(parent)
-	const actor = createActor(
-		createLoggedBankOperationMachine(deps).provide({ actors: { operation: f.operation, log } }),
-		{ input: { command: { type: options.command ?? 'SYNC' }, discovered: [] }, parent }
+	const logic = createLoggedBankOperationMachine(deps).provide({
+		actors: { operation: f.operation, log }
+	})
+	const parent = createActor(
+		setup({
+			actors: { operation: logic },
+			schemas: { children: { operation: types<ActorRefFrom<typeof logic>>() } }
+		}).createMachine({
+			invoke: {
+				id: 'operation',
+				src: 'operation',
+				input: { command: { type: options.command ?? 'SYNC' }, discovered: [] }
+			}
+		})
 	).start()
+	parents.push(parent)
+	const actor = parent.getSnapshot().children.operation
+	if (!actor) throw new Error('Missing supervised bank operation')
+
 	return { ...f, actor, starts, results, accounts }
 }
 it('records the start before fetching, and records account results only after the lock is released', async () => {
@@ -96,7 +116,7 @@ it.each(['write', 'invalid', 'crash'])(
 	async (mode) => {
 		if (mode !== 'write') {
 			const parse = syncAttemptSchema.safeParse.bind(syncAttemptSchema)
-			vi.spyOn(syncAttemptSchema, 'safeParse').mockImplementationOnce(() => {
+			vi.spyOn(syncAttemptSchema, 'safeParse').mockImplementation(() => {
 				if (mode === 'crash') throw new Error('Unexpected log guard failure')
 				return parse({})
 			})
@@ -301,11 +321,16 @@ it('passes discovery through without creating a sync attempt', async () => {
 
 it('preserves successful imports when the logging actor unexpectedly crashes at completion', async () => {
 	const parse = syncAttemptSchema.safeParse.bind(syncAttemptSchema)
-	vi.spyOn(syncAttemptSchema, 'safeParse')
-		.mockImplementationOnce((value) => parse(value))
-		.mockImplementationOnce(() => {
+	vi.spyOn(syncAttemptSchema, 'safeParse').mockImplementation((value) => {
+		if (
+			typeof value === 'object' &&
+			value !== null &&
+			'outcome' in value &&
+			value.outcome !== 'unfinished'
+		)
 			throw new Error('Unexpected log guard failure')
-		})
+		return parse(value)
+	})
 	const f = start()
 	expect(await toPromise(f.actor)).toMatchObject({
 		kind: 'complete',

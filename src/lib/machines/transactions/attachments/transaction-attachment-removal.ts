@@ -1,7 +1,7 @@
-import { assign, fromPromise, setup } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { app } from '#lib/schema.js'
+import { setup, types, createAsyncLogic } from 'xstate'
 
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'delete'>
 export type TransactionAttachmentRemovalInput = {
@@ -12,16 +12,9 @@ export type TransactionAttachmentRemovalInput = {
 export type TransactionAttachmentRemovalResult = { outcome: 'removed' | 'failed' }
 type Output = TransactionAttachmentRemovalResult
 type Context = TransactionAttachmentRemovalInput & { output: Output | undefined }
-
-/** Removes the authorized link while retaining file data for shared references and future recovery. */
-export const transactionAttachmentRemovalMachine = setup({
-	types: {
-		context: {} as Context,
-		input: {} as TransactionAttachmentRemovalInput,
-		output: {} as Output
-	},
-	actors: {
-		readAttachment: fromPromise(async ({ input }: { input: TransactionAttachmentRemovalInput }) =>
+const ownedActors2 = {
+	readAttachment: createAsyncLogic({
+		run: async ({ input }: { input: TransactionAttachmentRemovalInput }) =>
 			input.db.all(
 				app.transactionAttachments.where({
 					id: input.attachmentId,
@@ -29,16 +22,31 @@ export const transactionAttachmentRemovalMachine = setup({
 				}),
 				{ tier: ReadTier.LocalFirst }
 			)
-		),
-		deleteLink: fromPromise(async ({ input }: { input: TransactionAttachmentRemovalInput }) => {
+	}),
+	deleteLink: createAsyncLogic({
+		run: async ({ input }: { input: TransactionAttachmentRemovalInput }) => {
 			const result = input.db.delete(app.transactionAttachments, input.attachmentId)
 			await result.wait({ tier: 'local' })
-		})
+		}
+	})
+}
+const patchRemoved = (): Partial<Context> => ({ output: { outcome: 'removed' } })
+const patchFail = (): Partial<Context> => ({ output: { outcome: 'failed' } })
+
+/** Removes the authorized link while retaining file data for shared references and future recovery. */
+export const transactionAttachmentRemovalMachine = setup({
+	schemas: {
+		context: types<Context>(),
+		input: types<TransactionAttachmentRemovalInput>(),
+		output: types<Output>(),
+		children: {
+			readAttachment:
+				types<import('xstate').ActorRefFrom<(typeof ownedActors2)['readAttachment']>>(),
+			deleteLink: types<import('xstate').ActorRefFrom<(typeof ownedActors2)['deleteLink']>>()
+		}
 	},
-	actions: {
-		fail: assign({ output: () => ({ outcome: 'failed' as const }) }),
-		removed: assign({ output: () => ({ outcome: 'removed' as const }) })
-	},
+	actors: ownedActors2,
+	actions: {},
 	guards: { found: ({ event }) => event.output.length === 1 }
 }).createMachine({
 	id: 'transaction-attachment-removal',
@@ -50,19 +58,27 @@ export const transactionAttachmentRemovalMachine = setup({
 			invoke: {
 				src: 'readAttachment',
 				input: ({ context }) => context,
-				onDone: [
-					{ guard: 'found', target: 'deletingLink' },
-					{ target: 'failed', actions: 'fail' }
-				],
-				onError: { target: 'failed', actions: 'fail' }
+				onDone: (args) => {
+					if (args.guards.found(args)) {
+						return { target: 'deletingLink' }
+					}
+					return { target: 'failed', context: patchFail() }
+				},
+				onError: (args) => {
+					return { target: 'failed', context: patchFail() }
+				}
 			}
 		},
 		deletingLink: {
 			invoke: {
 				src: 'deleteLink',
 				input: ({ context }) => context,
-				onDone: { target: 'removed', actions: 'removed' },
-				onError: { target: 'failed', actions: 'fail' }
+				onDone: (args) => {
+					return { target: 'removed', context: patchRemoved() }
+				},
+				onError: (args) => {
+					return { target: 'failed', context: patchFail() }
+				}
 			}
 		},
 		removed: { type: 'final' },

@@ -1,4 +1,3 @@
-import { setup, types, createAsyncLogic } from 'xstate-v6'
 import type { AccountStoreStorage } from './account-store-contracts.js'
 import {
 	earlierSelection,
@@ -6,6 +5,7 @@ import {
 	type AccountStorageBinding,
 	type EarlierSelection
 } from '../../runtime/worker/account-selection.js'
+import { setup, types, createAsyncLogic } from 'xstate'
 
 type Input = { binding: AccountStorageBinding; storage: AccountStoreStorage }
 type Context = Input & { value: string | null }
@@ -21,7 +21,7 @@ export const accountStoreReadMachine = setup({
 		context: types<Context>(),
 		input: types<Input>(),
 		output: types<{ value: string | null }>(),
-		children: { snapshot: types<import('xstate-v6').ActorRefFrom<typeof actors.snapshot>>() }
+		children: { snapshot: types<import('xstate').ActorRefFrom<typeof actors.snapshot>>() }
 	},
 	actors,
 	guards: {

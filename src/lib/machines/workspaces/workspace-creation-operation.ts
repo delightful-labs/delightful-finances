@@ -1,5 +1,4 @@
 import { createWorkspaceCreationOperation as createSharedOperation } from 'delightful-local-first/workspace/creation-operation'
-import type { SnapshotFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import type { Organization } from '../../schema.js'
 import { workspaceNameFormSchema } from '../../validation/identity.js'
@@ -11,6 +10,8 @@ import {
 import { workspaceCreationReconciliation } from './workspace-creation-reconciliation.js'
 import { createWorkspacePersistence } from './workspace-creation-persistence.js'
 import type { WorkspacePersistenceResult } from './workspace-creation-transaction.js'
+import type { SnapshotFrom } from 'xstate'
+
 export type CreationBinding = { key: string; userId: string; profileId: string }
 export type CreationRequest =
 	| { mode: 'load' }

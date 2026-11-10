@@ -129,6 +129,7 @@ export function createWorkerHostClient(port: MessagePort, scope: string, onFailu
 		})
 	}
 	return {
+		scope,
 		accountStorage: {
 			readSnapshot: async () => {
 				const reply = await request({ type: 'READ_ACCOUNT_SNAPSHOT' }, 'SNAPSHOT')

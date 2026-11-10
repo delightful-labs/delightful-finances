@@ -1,4 +1,6 @@
-import { assign, fromCallback, fromPromise, setup, type SnapshotFrom } from 'xstate'
+import { createCallbackLogic, setup, types, createAsyncLogic } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type UpdateWorker = { postMessage: (message: { type: 'ACTIVATE_UPDATE' }) => void }
 type UpdateRegistration = EventTarget & {
@@ -19,24 +21,52 @@ export function createPwaUpdateMachine(platform: {
 	reload: () => void
 }) {
 	const actors = {
-		registration: fromPromise(() => platform.registration()),
-		observe: fromCallback<UpdateEvent, UpdateRegistration>(({ input, sendBack }) =>
+		registration: createAsyncLogic({ run: () => platform.registration() }),
+		observe: createCallbackLogic<UpdateEvent, UpdateRegistration>(({ input, sendBack }) =>
 			platform.observe(input, sendBack)
 		),
-		activate: fromPromise<void, UpdateWorker>(async ({ input }) => {
-			input.postMessage({ type: 'ACTIVATE_UPDATE' })
+		activate: createAsyncLogic<void, UpdateWorker>({
+			run: async ({ input }) => {
+				input.postMessage({ type: 'ACTIVATE_UPDATE' })
+			}
 		}),
-		reload: fromPromise(async () => platform.reload())
+		reload: createAsyncLogic({ run: async () => platform.reload() })
 	}
-	return setup<
-		{
-			registration: UpdateRegistration | undefined
-			worker: UpdateWorker | null
-			originalController: UpdateWorker | null
+	const events0 = {
+		READY: types<EventPayload<UpdateEvent, 'READY'>>(),
+		ACTIVATED: types<EventPayload<UpdateEvent, 'ACTIVATED'>>(),
+		ACCEPT: types<EventPayload<UpdateEvent, 'ACCEPT'>>(),
+		LATER: types<EventPayload<UpdateEvent, 'LATER'>>(),
+		RETRY: types<EventPayload<UpdateEvent, 'RETRY'>>(),
+		SHUTDOWN: types<EventPayload<UpdateEvent, 'SHUTDOWN'>>(),
+		OBSERVER_FAILED: types<EventPayload<UpdateEvent, 'OBSERVER_FAILED'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['registration']>
+				| import('xstate').OutputFrom<(typeof actors)['observe']>
+				| import('xstate').OutputFrom<(typeof actors)['activate']>
+				| import('xstate').OutputFrom<(typeof actors)['reload']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<{
+				registration: UpdateRegistration | undefined
+				worker: UpdateWorker | null
+				originalController: UpdateWorker | null
+			}>(),
+			events: events0,
+			children: {
+				registration: types<import('xstate').ActorRefFrom<(typeof actors)['registration']>>(),
+				observe: types<import('xstate').ActorRefFrom<(typeof actors)['observe']>>(),
+				activate: types<import('xstate').ActorRefFrom<(typeof actors)['activate']>>(),
+				reload: types<import('xstate').ActorRefFrom<(typeof actors)['reload']>>()
+			}
 		},
-		UpdateEvent,
-		typeof actors
-	>({ actors }).createMachine({
+		actors
+	}).createMachine({
 		id: 'pwa-update',
 		context: () => ({
 			registration: undefined,
@@ -44,20 +74,19 @@ export function createPwaUpdateMachine(platform: {
 			originalController: platform.controller()
 		}),
 		initial: 'discovering',
-		on: { SHUTDOWN: '.cancelled' },
+		on: { SHUTDOWN: { target: '.cancelled' } },
 		states: {
 			discovering: {
 				invoke: {
 					src: 'registration',
-					onDone: [
-						{
-							guard: ({ event }) => event.output !== undefined,
-							target: 'watching',
-							actions: assign({ registration: ({ event }) => event.output })
-						},
-						{ target: 'unsupported' }
-					],
-					onError: 'unavailable'
+					onDone: (args) => {
+						const { event } = args
+						if (event.output !== undefined) {
+							return { target: 'watching', context: { registration: event.output } }
+						}
+						return { target: 'unsupported' }
+					},
+					onError: { target: 'unavailable' }
 				}
 			},
 			watching: {
@@ -67,41 +96,42 @@ export function createPwaUpdateMachine(platform: {
 						if (!context.registration) throw new Error('Missing service worker registration')
 						return context.registration
 					},
-					onError: '#pwa-update.unavailable'
+					onError: { target: '#pwa-update.unavailable' }
 				},
 				initial: 'idle',
 				on: {
-					OBSERVER_FAILED: '#pwa-update.unavailable',
-					READY: {
-						guard: ({ context, event }) => context.worker !== event.worker,
-						target: '.ready',
-						actions: assign({ worker: ({ event }) => event.worker })
+					OBSERVER_FAILED: { target: '#pwa-update.unavailable' },
+					READY: (args) => {
+						const { event } = args
+						if (!(args.context.worker !== event.worker)) return
+						return { target: '.ready', context: { worker: event.worker } }
 					},
-					ACTIVATED: '.reloadReady'
+					ACTIVATED: { target: '.reloadReady' }
 				},
 				states: {
 					idle: {},
-					ready: { on: { ACCEPT: 'checking', LATER: 'dismissed' } },
+					ready: { on: { ACCEPT: { target: 'checking' }, LATER: { target: 'dismissed' } } },
 					dismissed: {},
-					reloadReady: { on: { ACCEPT: 'reloading', LATER: 'dismissed' } },
+					reloadReady: { on: { ACCEPT: { target: 'reloading' }, LATER: { target: 'dismissed' } } },
 					checking: {
-						always: [
-							{
-								guard: ({ context }) => context.registration?.waiting != null,
-								target: 'activating',
-								actions: assign({ worker: ({ context }) => context.registration?.waiting ?? null })
-							},
-							{
-								guard: ({ context }) => platform.controller() !== context.originalController,
-								target: 'reloading'
-							},
-							{ target: 'failed' }
-						]
+						always: (args) => {
+							const { context } = args
+							if (context.registration?.waiting != null) {
+								return {
+									target: 'activating',
+									context: { worker: context.registration?.waiting ?? null }
+								}
+							}
+							if (platform.controller() !== context.originalController) {
+								return { target: 'reloading' }
+							}
+							return { target: 'failed' }
+						}
 					},
 					activating: {
 						initial: 'requesting',
-						after: { 15000: 'failed' },
-						on: { ACTIVATED: 'reloading', READY: {} },
+						after: { 15000: { target: 'failed' } },
+						on: { ACTIVATED: { target: 'reloading' }, READY: {} },
 						states: {
 							requesting: {
 								invoke: {
@@ -110,8 +140,8 @@ export function createPwaUpdateMachine(platform: {
 										if (!context.worker) throw new Error('Missing waiting worker')
 										return context.worker
 									},
-									onDone: 'waiting',
-									onError: '#pwa-update.watching.failed'
+									onDone: { target: 'waiting' },
+									onError: { target: '#pwa-update.watching.failed' }
 								}
 							},
 							waiting: {}
@@ -119,13 +149,13 @@ export function createPwaUpdateMachine(platform: {
 					},
 					reloading: {
 						on: { READY: {}, ACTIVATED: {} },
-						invoke: { src: 'reload', onError: 'failed' },
-						after: { 15000: 'failed' }
+						invoke: { src: 'reload', onError: { target: 'failed' } },
+						after: { 15000: { target: 'failed' } }
 					},
-					failed: { on: { RETRY: 'checking', LATER: 'dismissed' } }
+					failed: { on: { RETRY: { target: 'checking' }, LATER: { target: 'dismissed' } } }
 				}
 			},
-			unavailable: { on: { RETRY: 'discovering', LATER: 'unsupported' } },
+			unavailable: { on: { RETRY: { target: 'discovering' }, LATER: { target: 'unsupported' } } },
 			unsupported: { type: 'final' },
 			cancelled: { type: 'final' }
 		}

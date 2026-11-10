@@ -28,10 +28,13 @@ This remains inactive infrastructure. A worker-tree SDK AccountStore facade,
 admission/shutdown supervision, and session/workspace handoff still remain.
 Neither an SDK owner nor a second persistent replica is started by this batch.
 
-Source checks only until review. Affected native tests: valid inventory, malformed
+After implementation approval, `pnpm test:worker-host` passes all 36 native
+bridge cases on Node 24.22.2, including 12 legacy-storage cases. The standalone
+strict type check passes. `pnpm test:worker-state` also passes all 11 cases,
+including the 100-run generated custody campaign. Native coverage includes: valid inventory, malformed
 and ambiguous legacy values preserved as facts, primary-key binding mismatch,
 foreign environment/path rejection before I/O, bounded inventory failure rather
 than truncation, legacy write acknowledgement/replay and uncertain-write handling.
-The existing generated account-store campaign should also run after review of
-the shared pure namespace extraction. Browser cold persistence and multi-tab
+The shared pure namespace extraction is covered by the native cases and the
+account-store campaign. Browser cold persistence and multi-tab
 identity reuse remain required for eventual activation.

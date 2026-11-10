@@ -1,9 +1,10 @@
-import type { Snapshot } from 'xstate'
 import { createScopedFormController as createSharedController } from 'delightful-local-first/forms/svelte'
 import { inspectActor } from '#lib/diagnostics/inspector.js'
 import { formDependencies } from './form-dependencies.js'
 import type { ScopedFormOptions } from '#lib/machines/forms/scoped-form.js'
 import type { FormOperationResult } from '#lib/contracts/form-contract.js'
+import type { Snapshot } from 'xstate'
+
 type OperationValue<S extends Snapshot<unknown>> =
 	Extract<S['output'], { outcome: 'succeeded' }> extends { value: infer Value } ? Value : never
 export function createScopedFormController<

@@ -1,4 +1,3 @@
-import { assign, fromPromise, sendTo, setup, stateIn } from 'xstate'
 import { ReadTier } from 'jazz-tools'
 import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
@@ -14,16 +13,20 @@ import {
 	type IntegrityEvent,
 	type IntegrityResult
 } from './workspace-integrity-transaction.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Db = Pick<ReturnType<typeof getDb>, 'all' | 'beginTransaction' | 'getConfig'>
 type Input = IntegrityScope & { db: Db }
-const prepare = fromPromise(async ({ input }: { input: Input }) => {
-	z.uuid().parse(input.userId)
-	z.uuid().parse(input.profileId)
-	z.uuid().parse(input.organizationId)
+const prepare = createAsyncLogic({
+	run: async ({ input }: { input: Input }) => {
+		z.uuid().parse(input.userId)
+		z.uuid().parse(input.profileId)
+		z.uuid().parse(input.organizationId)
+	}
 })
-const discover = fromPromise(
-	async ({
+const discover = createAsyncLogic({
+	run: async ({
 		input
 	}: {
 		input: Input & { tier: typeof ReadTier.LocalFirst | typeof ReadTier.Remote }
@@ -36,7 +39,7 @@ const discover = fromPromise(
 		])
 		return { profiles, organizations, memberships }
 	}
-)
+})
 type Context = Input & {
 	records: IntegrityRecords | undefined
 	assessment: IntegrityAssessment | undefined
@@ -46,25 +49,76 @@ function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error('Missing workspace integrity observation')
 	return value
 }
+const events0 = {
+	CANCEL: types<EventPayload<IntegrityEvent, 'CANCEL'>>(),
+	SHUTDOWN: types<EventPayload<IntegrityEvent, 'SHUTDOWN'>>()
+}
+type NativeEvent0 =
+	| import('xstate').InferEvents<typeof events0>
+	| import('xstate').DoneActorEvent<
+			| import('xstate').OutputFrom<typeof prepare>
+			| import('xstate').OutputFrom<typeof discover>
+			| import('xstate').OutputFrom<typeof workspaceIntegrityAssessment>
+			| import('xstate').OutputFrom<typeof workspaceIntegrityTransaction>
+	  >
+	| import('xstate').ErrorActorEvent
+	| import('xstate').AfterEvent
+	| import('xstate').DoneStateEvent
+	| import('xstate').SnapshotEvent
+	| import('xstate').TimeoutEvent
+	| import('xstate').ActorTimeoutEvent
+	| import('xstate').ErrorPlatformEvent
 
 /** Fixed to one identity/workspace/database binding. Its owner must drain it before replacement. */
-export const workspaceIntegrity = setup<
-	Context,
-	IntegrityEvent,
-	{
-		prepare: typeof prepare
-		discover: typeof discover
-		assess: typeof workspaceIntegrityAssessment
-		transaction: typeof workspaceIntegrityTransaction
+export const workspaceIntegrity = setup({
+	schemas: {
+		context: types<Context>(),
+		events: events0,
+		input: types<Input>(),
+		output: types<IntegrityResult>(),
+		children: {
+			prepare: types<
+				import('xstate').ActorRefFrom<
+					{
+						prepare: typeof prepare
+						discover: typeof discover
+						assess: typeof workspaceIntegrityAssessment
+						transaction: typeof workspaceIntegrityTransaction
+					}['prepare']
+				>
+			>(),
+			discover: types<
+				import('xstate').ActorRefFrom<
+					{
+						prepare: typeof prepare
+						discover: typeof discover
+						assess: typeof workspaceIntegrityAssessment
+						transaction: typeof workspaceIntegrityTransaction
+					}['discover']
+				>
+			>(),
+			assess: types<
+				import('xstate').ActorRefFrom<
+					{
+						prepare: typeof prepare
+						discover: typeof discover
+						assess: typeof workspaceIntegrityAssessment
+						transaction: typeof workspaceIntegrityTransaction
+					}['assess']
+				>
+			>(),
+			transaction: types<
+				import('xstate').ActorRefFrom<
+					{
+						prepare: typeof prepare
+						discover: typeof discover
+						assess: typeof workspaceIntegrityAssessment
+						transaction: typeof workspaceIntegrityTransaction
+					}['transaction']
+				>
+			>()
+		}
 	},
-	{},
-	{},
-	{ closing: undefined; cancelling: undefined },
-	never,
-	string,
-	Input,
-	IntegrityResult
->({
 	actors: {
 		prepare,
 		discover,
@@ -72,8 +126,10 @@ export const workspaceIntegrity = setup<
 		transaction: workspaceIntegrityTransaction
 	},
 	guards: {
-		closing: stateIn({ repairing: 'closing' }),
-		cancelling: stateIn({ repairing: 'cancelling' })
+		closing: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ repairing: 'closing' }, args.value),
+		cancelling: (args: { value: import('xstate').StateValue }) =>
+			matchesState({ repairing: 'cancelling' }, args.value)
 	}
 }).createMachine({
 	id: 'workspace-integrity',
@@ -85,22 +141,24 @@ export const workspaceIntegrity = setup<
 	}),
 	initial: 'validatingScope',
 	output: ({ context }) => required(context.result),
-	on: { CANCEL: '.cancelled', SHUTDOWN: '.closed' },
+	on: { CANCEL: { target: '.cancelled' }, SHUTDOWN: { target: '.closed' } },
 	states: {
 		validatingScope: {
 			invoke: {
 				src: 'prepare',
 				input: ({ context }) => context,
-				onDone: 'readingLocal',
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): IntegrityResult => ({
-							outcome: 'failed',
-							settlement: 'notStarted',
-							error: event.error
-						})
-					})
+				onDone: { target: 'readingLocal' },
+				onError: (args) => {
+					return {
+						target: 'failed',
+						context: {
+							result: {
+								outcome: 'failed',
+								settlement: 'notStarted',
+								error: args.event.error
+							}
+						}
+					}
 				}
 			}
 		},
@@ -108,19 +166,20 @@ export const workspaceIntegrity = setup<
 			invoke: {
 				src: 'discover',
 				input: ({ context }) => ({ ...context, tier: ReadTier.LocalFirst }),
-				onDone: {
-					target: 'assessingLocal',
-					actions: assign({ records: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'assessingLocal', context: { records: args.event.output } }
 				},
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): IntegrityResult => ({
-							outcome: 'failed',
-							settlement: 'notStarted',
-							error: event.error
-						})
-					})
+				onError: (args) => {
+					return {
+						target: 'failed',
+						context: {
+							result: {
+								outcome: 'failed',
+								settlement: 'notStarted',
+								error: args.event.error
+							}
+						}
+					}
 				}
 			}
 		},
@@ -128,41 +187,41 @@ export const workspaceIntegrity = setup<
 			invoke: {
 				src: 'assess',
 				input: ({ context }) => ({ ...context, records: required(context.records) }),
-				onDone: {
-					target: 'choosingLocal',
-					actions: assign({ assessment: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'choosingLocal', context: { assessment: args.event.output } }
 				},
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): IntegrityResult => ({
-							outcome: 'failed',
-							settlement: 'notStarted',
-							error: event.error
-						})
-					})
+				onError: (args) => {
+					return {
+						target: 'failed',
+						context: {
+							result: {
+								outcome: 'failed',
+								settlement: 'notStarted',
+								error: args.event.error
+							}
+						}
+					}
 				}
 			}
 		},
 		choosingLocal: {
-			always: [
-				{
-					guard: ({ context }) => context.assessment?.outcome === 'repair',
-					target: 'checkingAuthority'
-				},
-				{ target: 'acceptingAssessment' }
-			]
+			always: (args) => {
+				if (args.context.assessment?.outcome === 'repair') {
+					return { target: 'checkingAuthority' }
+				}
+				return { target: 'acceptingAssessment' }
+			}
 		},
 		checkingAuthority: {
-			always: [
-				{
-					guard: ({ context }) => Boolean(context.db.getConfig().serverUrl),
-					target: 'awaitingAuthority'
-				},
-				{
+			always: (args) => {
+				const { context } = args
+				if (Boolean(context.db.getConfig().serverUrl)) {
+					return { target: 'awaitingAuthority' }
+				}
+				return {
 					target: 'partial',
-					actions: assign({
-						result: ({ context }): IntegrityResult => {
+					context: {
+						result: (({ context }): IntegrityResult => {
 							const assessment = required(context.assessment)
 							if (assessment.outcome !== 'repair') throw new Error('Expected suspected repair')
 
@@ -171,28 +230,29 @@ export const workspaceIntegrity = setup<
 								settlement: 'notStarted',
 								issues: ['profileLink']
 							}
-						}
-					})
+						})(args)
+					}
 				}
-			]
+			}
 		},
 		awaitingAuthority: {
 			invoke: {
 				src: 'discover',
 				input: ({ context }) => ({ ...context, tier: ReadTier.Remote }),
-				onDone: {
-					target: 'assessingAuthority',
-					actions: assign({ records: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'assessingAuthority', context: { records: args.event.output } }
 				},
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): IntegrityResult => ({
-							outcome: 'failed',
-							settlement: 'notStarted',
-							error: event.error
-						})
-					})
+				onError: (args) => {
+					return {
+						target: 'failed',
+						context: {
+							result: {
+								outcome: 'failed',
+								settlement: 'notStarted',
+								error: args.event.error
+							}
+						}
+					}
 				}
 			}
 		},
@@ -200,43 +260,56 @@ export const workspaceIntegrity = setup<
 			invoke: {
 				src: 'assess',
 				input: ({ context }) => ({ ...context, records: required(context.records) }),
-				onDone: {
-					target: 'choosingAuthority',
-					actions: assign({ assessment: ({ event }) => event.output })
+				onDone: (args) => {
+					return { target: 'choosingAuthority', context: { assessment: args.event.output } }
 				},
-				onError: {
-					target: 'failed',
-					actions: assign({
-						result: ({ event }): IntegrityResult => ({
-							outcome: 'failed',
-							settlement: 'notStarted',
-							error: event.error
-						})
-					})
+				onError: (args) => {
+					return {
+						target: 'failed',
+						context: {
+							result: {
+								outcome: 'failed',
+								settlement: 'notStarted',
+								error: args.event.error
+							}
+						}
+					}
 				}
 			}
 		},
 		choosingAuthority: {
-			always: [
-				{ guard: ({ context }) => context.assessment?.outcome === 'repair', target: 'repairing' },
-				{ target: 'acceptingAssessment' }
-			]
+			always: (args) => {
+				if (args.context.assessment?.outcome === 'repair') {
+					return { target: 'repairing' }
+				}
+				return { target: 'acceptingAssessment' }
+			}
 		},
 		acceptingAssessment: {
-			entry: assign({
-				result: ({ context }): IntegrityResult => {
-					const assessment = required(context.assessment)
-					if (assessment.outcome === 'repair') throw new Error('Expected terminal assessment')
-					return { ...assessment, settlement: 'notStarted' }
+			entry: (args) => {
+				return {
+					context: {
+						result: (({ context }): IntegrityResult => {
+							const assessment = required(context.assessment)
+							if (assessment.outcome === 'repair') throw new Error('Expected terminal assessment')
+							return { ...assessment, settlement: 'notStarted' }
+						})(args)
+					}
 				}
-			}),
-			always: 'finishing'
+			},
+			always: { target: 'finishing' }
 		},
 		repairing: {
 			initial: 'active',
 			on: {
-				CANCEL: { target: '.cancelling', actions: sendTo('transaction', { type: 'CANCEL' }) },
-				SHUTDOWN: { target: '.closing', actions: sendTo('transaction', { type: 'SHUTDOWN' }) }
+				CANCEL: (args, enq) => {
+					enq.sendTo('transaction', { type: 'CANCEL' })
+					return { target: '.cancelling' }
+				},
+				SHUTDOWN: (args, enq) => {
+					enq.sendTo('transaction', { type: 'SHUTDOWN' })
+					return { target: '.closing' }
+				}
 			},
 			states: {
 				active: {},
@@ -251,72 +324,81 @@ export const workspaceIntegrity = setup<
 					if (assessment.outcome !== 'repair') throw new Error('Expected authorized repair')
 					return { ...context, expected: assessment.plan }
 				},
-				onDone: [
-					{
-						guard: 'closing',
-						target: 'closed',
-						actions: assign({ result: ({ event }) => event.output })
-					},
-					{
-						guard: 'cancelling',
-						target: 'cancelled',
-						actions: assign({ result: ({ event }) => event.output })
-					},
-					{ target: 'finishing', actions: assign({ result: ({ event }) => event.output }) }
-				],
-				onError: [
-					{
-						guard: 'closing',
-						target: 'closed',
-						actions: assign({
-							result: ({ event }): IntegrityResult => ({
-								outcome: 'failed',
-								settlement: 'unresolved',
-								error: event.error
-							})
-						})
-					},
-					{
-						guard: 'cancelling',
-						target: 'cancelled',
-						actions: assign({
-							result: ({ event }): IntegrityResult => ({
-								outcome: 'failed',
-								settlement: 'unresolved',
-								error: event.error
-							})
-						})
-					},
-					{
-						target: 'unresolved',
-						actions: assign({
-							result: ({ event }): IntegrityResult => ({
-								outcome: 'failed',
-								settlement: 'unresolved',
-								error: event.error
-							})
-						})
+				onDone: (args) => {
+					const { event } = args
+					if (args.guards.closing(args)) {
+						return { target: 'closed', context: { result: event.output } }
 					}
-				]
+					if (args.guards.cancelling(args)) {
+						return { target: 'cancelled', context: { result: event.output } }
+					}
+					return { target: 'finishing', context: { result: event.output } }
+				},
+				onError: (args) => {
+					const { event } = args
+					if (args.guards.closing(args)) {
+						return {
+							target: 'closed',
+							context: {
+								result: {
+									outcome: 'failed',
+									settlement: 'unresolved',
+									error: event.error
+								}
+							}
+						}
+					}
+					if (args.guards.cancelling(args)) {
+						return {
+							target: 'cancelled',
+							context: {
+								result: {
+									outcome: 'failed',
+									settlement: 'unresolved',
+									error: event.error
+								}
+							}
+						}
+					}
+					return {
+						target: 'unresolved',
+						context: {
+							result: {
+								outcome: 'failed',
+								settlement: 'unresolved',
+								error: event.error
+							}
+						}
+					}
+				}
 			}
 		},
 		finishing: {
-			always: [
-				{ guard: ({ context }) => context.result?.outcome === 'complete', target: 'complete' },
-				{ guard: ({ context }) => context.result?.outcome === 'partial', target: 'partial' },
-				{
-					guard: ({ context }) => context.result?.outcome === 'unavailable',
-					target: 'unavailable'
-				},
-				{ guard: ({ context }) => context.result?.outcome === 'conflict', target: 'conflict' },
-				{ guard: ({ context }) => context.result?.outcome === 'cancelled', target: 'cancelled' },
-				{ guard: ({ context }) => context.result?.outcome === 'closed', target: 'closed' },
-				{
-					guard: ({ context }) => context.result?.settlement === 'unresolved',
-					target: 'unresolved'
-				},
-				{ target: 'failed' }
-			]
+			always: (args) => {
+				const { context } = args
+				if (context.result?.outcome === 'complete') {
+					return { target: 'complete' }
+				}
+				if (context.result?.outcome === 'partial') {
+					return { target: 'partial' }
+				}
+				if (context.result?.outcome === 'unavailable') {
+					return { target: 'unavailable' }
+				}
+				if (context.result?.outcome === 'conflict') {
+					return { target: 'conflict' }
+				}
+				if (context.result?.outcome === 'cancelled') {
+					return { target: 'cancelled' }
+				}
+				if (context.result?.outcome === 'closed') {
+					return { target: 'closed' }
+				}
+				if (context.result?.settlement === 'unresolved') {
+					return { target: 'unresolved' }
+				}
+				return { target: 'failed' }
+			}
 		},
 		complete: { type: 'final' },
 		partial: { type: 'final' },
@@ -326,21 +408,29 @@ export const workspaceIntegrity = setup<
 		unresolved: { type: 'final' },
 		cancelled: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): IntegrityResult => ({
-					outcome: 'cancelled',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'cancelled',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		},
 		closed: {
 			type: 'final',
-			entry: assign({
-				result: ({ context }): IntegrityResult => ({
-					outcome: 'closed',
-					settlement: context.result?.settlement ?? 'notStarted'
-				})
-			})
+			entry: (args) => {
+				return {
+					context: {
+						result: {
+							outcome: 'closed',
+							settlement: args.context.result?.settlement ?? 'notStarted'
+						}
+					}
+				}
+			}
 		}
 	}
 })

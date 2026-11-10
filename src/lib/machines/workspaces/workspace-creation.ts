@@ -53,7 +53,7 @@ export function selectWorkspaceCreationView(
 	return {
 		draftRevision: snapshot.context.draftRevision,
 		mode,
-		name: replacing ? '' : (snapshot.context.record?.attempt.workspace.name ?? ''),
+		name: replacing ? '' : (snapshot.context.bindingState.record?.attempt.workspace.name ?? ''),
 		workspace:
 			!replacing && snapshot.context.result?.outcome === 'complete'
 				? snapshot.context.result.workspace
@@ -78,7 +78,10 @@ export const unavailableWorkspaceCreationView: WorkspaceCreationView = {
 export function selectWorkspaceCreationReport(
 	snapshot: import('xstate').SnapshotFrom<ReturnType<typeof createWorkspaceCreationMachine>>
 ) {
-	return { binding: snapshot.context.binding, view: selectWorkspaceCreationView(snapshot) }
+	return {
+		binding: snapshot.context.bindingState.binding,
+		view: selectWorkspaceCreationView(snapshot)
+	}
 }
 
 /** The owner classifies feedback; consumers only translate the supplied descriptor. */

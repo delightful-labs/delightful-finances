@@ -1,17 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-	assign,
-	createActor,
-	createMachine,
-	fromCallback,
-	fromPromise,
-	setup,
-	toPromise,
-	waitFor,
-	type ActorRefFrom,
-	type InputFrom,
-	type OutputFrom
-} from 'xstate'
 import * as passkeys from '#lib/integrations/passkey.js'
 import * as provider from '#lib/integrations/simplefin.js'
 import { createBankTrace } from '#lib/integrations/diagnostics.js'
@@ -20,6 +7,18 @@ import type { Dependencies, LockEvent } from './types.js'
 import type { bankLock } from './lock.js'
 import type { createPreparationMachine } from './preparation.js'
 import type { createSetupPersistenceMachine } from './setup-persist.js'
+import {
+	createActor,
+	createMachine,
+	createCallbackLogic,
+	setup,
+	toPromise,
+	waitFor,
+	types,
+	createAsyncLogic
+} from 'xstate'
+import type { ActorFromLogic, InputFrom, OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 vi.mock('#lib/integrations/passkey.js', () => ({
 	createPasskey: vi.fn(),
@@ -48,19 +47,22 @@ vi.mock('./setup-baseline.js', () => ({
 }))
 vi.mock('./setup-persist.js', () => ({
 	createSetupPersistenceMachine: () => {
-		const save = fromPromise<PersistOutput, PersistInput>(persist)
-		return setup<
-			{ input: PersistInput; result: PersistOutput | undefined },
-			{ type: 'SAVE' },
-			{ save: typeof save },
-			{},
-			{},
-			{},
-			never,
-			string,
-			PersistInput,
-			PersistOutput
-		>({ actors: { save } }).createMachine({
+		const save = createAsyncLogic<PersistOutput, PersistInput>({ run: persist })
+		const events0 = { SAVE: types<EventPayload<{ type: 'SAVE' }, 'SAVE'>>() }
+		type NativeEvent0 =
+			| import('xstate').InferEvents<typeof events0>
+			| import('xstate').DoneActorEvent<import('xstate').OutputFrom<typeof save>>
+			| import('xstate').ErrorActorEvent
+		return setup({
+			schemas: {
+				context: types<{ input: PersistInput; result: PersistOutput | undefined }>(),
+				events: events0,
+				input: types<PersistInput>(),
+				output: types<PersistOutput>(),
+				children: { save: types<import('xstate').ActorFromLogic<{ save: typeof save }['save']>>() }
+			},
+			actors: { save }
+		}).createMachine({
 			context: ({ input }) => ({ input, result: undefined }),
 			initial: 'saving',
 			states: {
@@ -68,7 +70,9 @@ vi.mock('./setup-persist.js', () => ({
 					invoke: {
 						src: 'save',
 						input: ({ context }) => context.input,
-						onDone: { target: 'complete', actions: assign({ result: ({ event }) => event.output }) }
+						onDone: (args) => {
+							return { target: 'complete', context: { result: args.event.output } }
+						}
 					}
 				},
 				complete: { type: 'final' }
@@ -89,7 +93,7 @@ function success<T>(output: T) {
 }
 type PersistOutput = OutputFrom<ReturnType<typeof createSetupPersistenceMachine>>
 type PersistInput = InputFrom<ReturnType<typeof createSetupPersistenceMachine>>
-type SetupActor = ActorRefFrom<ReturnType<typeof createBankSetupMachine>>
+type SetupActor = ActorFromLogic<ReturnType<typeof createBankSetupMachine>>
 
 const scope = { ownerId: 'owner', organizationId: 'organization', connectionId: 'connection' }
 const descriptor = { credentialId: 'credential', prfSalt: 'salt' }
@@ -125,7 +129,7 @@ function start(): SetupActor {
 		passkeyName: () => 'Test'
 	}).provide({
 		actors: {
-			lock: fromCallback<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
+			lock: createCallbackLogic<LockEvent, InputFrom<typeof bankLock>>(({ sendBack }) => {
 				acquireLock()
 				sendBack({ type: 'LOCK_ACQUIRED' })
 				return releaseLock

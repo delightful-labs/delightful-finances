@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, toPromise, waitFor, type ActorRefFrom } from 'xstate'
 import { providerRequestMachine, type ProviderRequest } from './provider-request.js'
+import { createActor, toPromise, waitFor } from 'xstate'
+import type { ActorFromLogic } from 'xstate'
 
 const input: ProviderRequest = {
 	endpoint: 'https://finance.example/api/simplefin',
@@ -19,7 +20,7 @@ const response = {
 		}
 	]
 }
-const actors: ActorRefFrom<typeof providerRequestMachine>[] = []
+const actors: ActorFromLogic<typeof providerRequestMachine>[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
 	vi.unstubAllGlobals()

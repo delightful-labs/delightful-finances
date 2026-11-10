@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor } from 'xstate'
 import {
 	createTransferMutationRequestMachine,
 	type TransferMutationRequestInput
 } from './internal-transfer-mutation-request.js'
 import type { TransferMutationRequest } from './internal-transfer-mutation-owner.js'
+import { createActor } from 'xstate'
 
 const actors = new Set<{ stop: () => void }>()
 afterEach(() => {

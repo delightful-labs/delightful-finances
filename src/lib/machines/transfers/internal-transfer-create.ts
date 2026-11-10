@@ -13,10 +13,12 @@ import {
 	dateOnlyText,
 	defaultTransactionCategory
 } from '#lib/validation/transactions.js'
-import { assign, fromPromise, setup, stateIn, type OutputFrom } from 'xstate'
 import type { getDb } from 'jazz-tools/svelte'
 import { z } from 'zod'
 import { createJazzTransactionActors } from '../persistence/jazz-transaction-actors.js'
+import { setup, types, createAsyncLogic, matchesState } from 'xstate'
+import type { OutputFrom } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type JazzTransaction = ReturnType<ReturnType<typeof getDb>['beginTransaction']>
 type LocalWrite = { txId: Promise<string>; wait(options: { tier: 'local' }): Promise<void> }
@@ -109,37 +111,39 @@ const requestSchema = z.strictObject({
 	incomeCurrency: z.string().regex(/^[A-Z]{3}$/),
 	bookedOn: dateOnlyText
 })
-const validate = fromPromise(({ input }: { input: InternalTransferCreateInput }) =>
-	Promise.resolve(
-		requestSchema.safeParse({
-			identityId: input.identityId,
-			organizationId: input.organizationId,
-			expenseAccountId: input.expenseAccountId,
-			incomeAccountId: input.incomeAccountId,
-			expenseAmountMinor: input.expenseAmountMinor,
-			incomeAmountMinor: input.incomeAmountMinor,
-			expenseCurrency: input.expenseCurrency,
-			incomeCurrency: input.incomeCurrency,
-			bookedOn: input.bookedOn
+const validate = createAsyncLogic({
+	run: ({ input }: { input: InternalTransferCreateInput }) =>
+		Promise.resolve(
+			requestSchema.safeParse({
+				identityId: input.identityId,
+				organizationId: input.organizationId,
+				expenseAccountId: input.expenseAccountId,
+				incomeAccountId: input.incomeAccountId,
+				expenseAmountMinor: input.expenseAmountMinor,
+				incomeAmountMinor: input.incomeAmountMinor,
+				expenseCurrency: input.expenseCurrency,
+				incomeCurrency: input.incomeCurrency,
+				bookedOn: input.bookedOn
+			})
+		)
+})
+const allocate = createAsyncLogic({
+	run: (): Promise<Identifiers> =>
+		Promise.resolve({
+			expenseTransactionId: crypto.randomUUID(),
+			incomeTransactionId: crypto.randomUUID(),
+			transferId: crypto.randomUUID()
 		})
-	)
-)
-const allocate = fromPromise((): Promise<Identifiers> =>
-	Promise.resolve({
-		expenseTransactionId: crypto.randomUUID(),
-		incomeTransactionId: crypto.randomUUID(),
-		transferId: crypto.randomUUID()
-	})
-)
+})
 
 const transactionActors = createJazzTransactionActors(
 	(db: Db) => db.beginTransaction(),
 	(write: LocalWrite) => write.wait({ tier: 'local' })
 )
 const { open, commit, settle, rollback } = transactionActors
-const identifyWrite = fromPromise(({ input }: { input: TrackedWrite }) => input.txId)
-const read = fromPromise(
-	async ({ input }: { input: { tx: Transaction; request: InternalTransferCreateInput } }) => {
+const identifyWrite = createAsyncLogic({ run: ({ input }: { input: TrackedWrite }) => input.txId })
+const read = createAsyncLogic({
+	run: async ({ input }: { input: { tx: Transaction; request: InternalTransferCreateInput } }) => {
 		const { tx, request } = input
 		const [expenseAccount, incomeAccount, membership, grants, categories] = await Promise.all([
 			tx.one(app.accounts.where({ id: request.expenseAccountId })),
@@ -166,7 +170,7 @@ const read = fromPromise(
 			categories
 		}
 	}
-)
+})
 
 function assess(records: Records, request: InternalTransferCreateInput): Assessment {
 	const { expenseAccount, incomeAccount, membership, grants, categories } = records
@@ -239,8 +243,8 @@ function settlementResult(result: Result | undefined, rolledBack: boolean): Resu
 	return { ...result, settlement: 'unresolved' }
 }
 
-const stage = fromPromise(
-	({
+const stage = createAsyncLogic({
+	run: ({
 		input
 	}: {
 		input: {
@@ -303,37 +307,55 @@ const stage = fromPromise(
 		)
 		return Promise.resolve()
 	}
-)
+})
 
 export function createInternalTransferCreateMachine() {
 	const actors = { validate, allocate, open, read, stage, commit, identifyWrite, settle, rollback }
-	const model = setup<
-		Context,
-		InternalTransferCreateEvent,
-		{
-			validate: typeof validate
-			allocate: typeof allocate
-			open: typeof open
-			read: typeof read
-			stage: typeof stage
-			commit: typeof commit
-			identifyWrite: typeof identifyWrite
-			settle: typeof settle
-			rollback: typeof rollback
+	const events0 = {
+		CANCEL: types<EventPayload<InternalTransferCreateEvent, 'CANCEL'>>(),
+		INVALIDATE: types<EventPayload<InternalTransferCreateEvent, 'INVALIDATE'>>(),
+		SHUTDOWN: types<EventPayload<InternalTransferCreateEvent, 'SHUTDOWN'>>()
+	}
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['validate']>
+				| import('xstate').OutputFrom<(typeof actors)['allocate']>
+				| import('xstate').OutputFrom<(typeof actors)['open']>
+				| import('xstate').OutputFrom<(typeof actors)['read']>
+				| import('xstate').OutputFrom<(typeof actors)['stage']>
+				| import('xstate').OutputFrom<(typeof actors)['commit']>
+				| import('xstate').OutputFrom<(typeof actors)['identifyWrite']>
+				| import('xstate').OutputFrom<(typeof actors)['settle']>
+				| import('xstate').OutputFrom<(typeof actors)['rollback']>
+		  >
+		| import('xstate').ErrorActorEvent
+	const model = setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<InternalTransferCreateInput>(),
+			output: types<InternalTransferCreateResult>(),
+			children: {
+				validate: types<import('xstate').ActorRefFrom<(typeof actors)['validate']>>(),
+				allocate: types<import('xstate').ActorRefFrom<(typeof actors)['allocate']>>(),
+				open: types<import('xstate').ActorRefFrom<(typeof actors)['open']>>(),
+				read: types<import('xstate').ActorRefFrom<(typeof actors)['read']>>(),
+				stage: types<import('xstate').ActorRefFrom<(typeof actors)['stage']>>(),
+				commit: types<import('xstate').ActorRefFrom<(typeof actors)['commit']>>(),
+				identifyWrite: types<import('xstate').ActorRefFrom<(typeof actors)['identifyWrite']>>(),
+				settle: types<import('xstate').ActorRefFrom<(typeof actors)['settle']>>(),
+				rollback: types<import('xstate').ActorRefFrom<(typeof actors)['rollback']>>()
+			}
 		},
-		{},
-		{},
-		{ closing: undefined; cancelling: undefined; invalidated: undefined },
-		never,
-		string,
-		InternalTransferCreateInput,
-		InternalTransferCreateResult
-	>({
 		actors,
 		guards: {
-			closing: stateIn({ running: { control: 'closing' } }),
-			cancelling: stateIn({ running: { control: 'cancelling' } }),
-			invalidated: stateIn({ running: { control: 'invalidated' } })
+			closing: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'closing' } }, args.value),
+			cancelling: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'cancelling' } }, args.value),
+			invalidated: (args: { value: import('xstate').StateValue }) =>
+				matchesState({ running: { control: 'invalidated' } }, args.value)
 		}
 	})
 	return model.createMachine({
@@ -359,13 +381,13 @@ export function createInternalTransferCreateMachine() {
 						states: {
 							active: {
 								on: {
-									CANCEL: 'cancelling',
-									INVALIDATE: 'invalidated',
-									SHUTDOWN: 'closing'
+									CANCEL: { target: 'cancelling' },
+									INVALIDATE: { target: 'invalidated' },
+									SHUTDOWN: { target: 'closing' }
 								}
 							},
-							cancelling: { on: { CANCEL: {}, SHUTDOWN: 'closing' } },
-							invalidated: { on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: 'closing' } },
+							cancelling: { on: { CANCEL: {}, SHUTDOWN: { target: 'closing' } } },
+							invalidated: { on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: { target: 'closing' } } },
 							closing: { on: { CANCEL: {}, INVALIDATE: {}, SHUTDOWN: {} } }
 						}
 					},
@@ -376,34 +398,44 @@ export function createInternalTransferCreateMachine() {
 								invoke: {
 									src: 'validate',
 									input: ({ context }) => context.request,
-									onDone: [
-										{ guard: 'closing', target: 'finishing' },
-										{ guard: 'cancelling', target: 'finishing' },
-										{ guard: 'invalidated', target: 'finishing' },
-										{ guard: ({ event }) => event.output.success, target: 'allocating' },
-										{
-											target: 'finishing',
-											actions: assign({
-												result: ({ event }): Result =>
-													event.output.success
-														? { outcome: 'unavailable', settlement: 'notStarted' }
-														: {
-																outcome: 'invalid',
-																settlement: 'notStarted',
-																issues: event.output.error.issues
-															}
-											})
+									onDone: (args) => {
+										const { event } = args
+										if (matchesState({ running: { control: 'closing' } }, args.value)) {
+											return { target: 'finishing' }
 										}
-									],
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'notStarted',
-												error: event.error
-											})
-										})
+										if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+											return { target: 'finishing' }
+										}
+										if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+											return { target: 'finishing' }
+										}
+										if (event.output.success) {
+											return { target: 'allocating' }
+										}
+										return {
+											target: 'finishing',
+											context: {
+												result: event.output.success
+													? { outcome: 'unavailable', settlement: 'notStarted' }
+													: {
+															outcome: 'invalid',
+															settlement: 'notStarted',
+															issues: event.output.error.issues
+														}
+											}
+										}
+									},
+									onError: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'notStarted',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
@@ -411,108 +443,139 @@ export function createInternalTransferCreateMachine() {
 								invoke: {
 									src: 'allocate',
 									input: undefined,
-									onDone: {
-										target: 'checkingAfterAllocate',
-										actions: assign({ identifiers: ({ event }) => event.output })
+									onDone: (args) => {
+										return {
+											target: 'checkingAfterAllocate',
+											context: { identifiers: args.event.output }
+										}
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'notStarted',
-												error: event.error
-											})
-										})
+									onError: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'notStarted',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
 							checkingAfterAllocate: {
-								always: [
-									{ guard: 'closing', target: 'finishing' },
-									{ guard: 'cancelling', target: 'finishing' },
-									{ guard: 'invalidated', target: 'finishing' },
-									{ target: 'opening' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+										return { target: 'finishing' }
+									}
+									return { target: 'opening' }
+								}
 							},
 							opening: {
 								invoke: {
 									src: 'open',
 									input: ({ context }) => context.request.db,
-									onDone: {
-										target: 'checkingAfterOpen',
-										actions: assign({ tx: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'checkingAfterOpen', context: { tx: args.event.output } }
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'notStarted',
-												error: event.error
-											})
-										})
+									onError: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'notStarted',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
 							checkingAfterOpen: {
-								always: [
-									{ guard: 'closing', target: 'rollingBack' },
-									{ guard: 'cancelling', target: 'rollingBack' },
-									{ guard: 'invalidated', target: 'rollingBack' },
-									{ target: 'reading' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									return { target: 'reading' }
+								}
 							},
 							reading: {
 								invoke: {
 									src: 'read',
 									input: ({ context }) => ({ tx: required(context.tx), request: context.request }),
-									onDone: {
-										target: 'checkingAfterRead',
-										actions: assign({ records: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'checkingAfterRead', context: { records: args.event.output } }
 									},
-									onError: {
-										target: 'rollingBack',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'notStarted',
-												error: event.error
-											})
-										})
+									onError: (args) => {
+										return {
+											target: 'rollingBack',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'notStarted',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
 							checkingAfterRead: {
-								always: [
-									{ guard: 'closing', target: 'rollingBack' },
-									{ guard: 'cancelling', target: 'rollingBack' },
-									{ guard: 'invalidated', target: 'rollingBack' },
-									{ target: 'assessing' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									return { target: 'assessing' }
+								}
 							},
 							assessing: {
-								always: {
-									target: 'checkingAssessment',
-									actions: assign({
-										assessment: ({ context }) => assess(required(context.records), context.request)
-									})
+								always: (args) => {
+									const { context } = args
+									return {
+										target: 'checkingAssessment',
+										context: { assessment: assess(required(context.records), context.request) }
+									}
 								}
 							},
 							checkingAssessment: {
-								always: [
-									{ guard: 'closing', target: 'rollingBack' },
-									{ guard: 'cancelling', target: 'rollingBack' },
-									{ guard: 'invalidated', target: 'rollingBack' },
-									{
-										guard: ({ context }) => required(context.assessment).outcome !== 'eligible',
-										target: 'rollingBack',
-										actions: assign({
-											result: ({ context }) => rejectedAssessment(context.assessment)
-										})
-									},
-									{ target: 'staging' }
-								]
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (required(context.assessment).outcome !== 'eligible') {
+										return {
+											target: 'rollingBack',
+											context: { result: rejectedAssessment(context.assessment) }
+										}
+									}
+									return { target: 'staging' }
+								}
 							},
 							staging: {
 								invoke: {
@@ -523,46 +586,53 @@ export function createInternalTransferCreateMachine() {
 										identifiers: required(context.identifiers),
 										assessment: required(context.assessment)
 									}),
-									onDone: {
-										target: 'checkingAfterStage'
-									},
-									onError: {
-										target: 'rollingBack',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'notStarted',
-												error: event.error
-											})
-										})
+									onDone: { target: 'checkingAfterStage' },
+									onError: (args) => {
+										return {
+											target: 'rollingBack',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'notStarted',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
 							checkingAfterStage: {
-								always: [
-									{ guard: 'closing', target: 'rollingBack' },
-									{ guard: 'cancelling', target: 'rollingBack' },
-									{ guard: 'invalidated', target: 'rollingBack' },
-									{ target: 'committing' }
-								]
+								always: (args) => {
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+										return { target: 'rollingBack' }
+									}
+									return { target: 'committing' }
+								}
 							},
 							committing: {
 								invoke: {
 									src: 'commit',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'settling',
-										actions: assign({ write: ({ event }) => event.output })
+									onDone: (args) => {
+										return { target: 'settling', context: { write: args.event.output } }
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'unresolved',
-												error: event.error
-											})
-										})
+									onError: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'unresolved',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
@@ -573,27 +643,32 @@ export function createInternalTransferCreateMachine() {
 										invoke: {
 											src: 'identifyWrite',
 											input: ({ context }) => required(context.write),
-											onDone: {
-												target: 'waiting',
-												actions: [
-													assign({ transactionId: ({ event }) => event.output }),
-													({ context, event }) =>
-														context.request.trackWrite({
-															transactionId: event.output,
-															operation: 'create',
-															transferId: required(context.identifiers).transferId
-														})
-												]
-											},
-											onError: {
-												target: '#internal-transfer-create.terminal',
-												actions: assign({
-													result: ({ event }): Result => ({
-														outcome: 'unavailable',
-														settlement: 'unresolved',
-														error: event.error
+											onDone: (args, enq) => {
+												let context = args.context
+												const { event } = args
+												let patch = {}
+												patch = { ...patch, transactionId: event.output }
+												context = { ...args.context, ...patch }
+												enq(() =>
+													context.request.trackWrite({
+														transactionId: event.output,
+														operation: 'create',
+														transferId: required(context.identifiers).transferId
 													})
-												})
+												)
+												return { target: 'waiting', context: patch }
+											},
+											onError: (args) => {
+												return {
+													target: '#internal-transfer-create.terminal',
+													context: {
+														result: {
+															outcome: 'unavailable',
+															settlement: 'unresolved',
+															error: args.event.error
+														}
+													}
+												}
 											}
 										}
 									},
@@ -601,28 +676,33 @@ export function createInternalTransferCreateMachine() {
 										invoke: {
 											src: 'settle',
 											input: ({ context }) => required(context.write),
-											onDone: {
-												target: '#internal-transfer-create.terminal',
-												actions: assign({
-													result: ({ context }): Result => ({
-														outcome: 'succeeded',
-														settlement: 'locallyPersisted',
-														transferId: required(context.identifiers).transferId,
-														expenseTransactionId: required(context.identifiers)
-															.expenseTransactionId,
-														incomeTransactionId: required(context.identifiers).incomeTransactionId
-													})
-												})
+											onDone: (args) => {
+												const { context } = args
+												return {
+													target: '#internal-transfer-create.terminal',
+													context: {
+														result: {
+															outcome: 'succeeded',
+															settlement: 'locallyPersisted',
+															transferId: required(context.identifiers).transferId,
+															expenseTransactionId: required(context.identifiers)
+																.expenseTransactionId,
+															incomeTransactionId: required(context.identifiers).incomeTransactionId
+														}
+													}
+												}
 											},
-											onError: {
-												target: '#internal-transfer-create.terminal',
-												actions: assign({
-													result: ({ event }): Result => ({
-														outcome: 'unavailable',
-														settlement: 'unresolved',
-														error: event.error
-													})
-												})
+											onError: (args) => {
+												return {
+													target: '#internal-transfer-create.terminal',
+													context: {
+														result: {
+															outcome: 'unavailable',
+															settlement: 'unresolved',
+															error: args.event.error
+														}
+													}
+												}
 											}
 										}
 									}
@@ -632,59 +712,63 @@ export function createInternalTransferCreateMachine() {
 								invoke: {
 									src: 'rollback',
 									input: ({ context }) => required(context.tx),
-									onDone: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ context, event }): Result =>
-												settlementResult(context.result, event.output)
-										})
+									onDone: (args) => {
+										return {
+											target: 'finishing',
+											context: { result: settlementResult(args.context.result, args.event.output) }
+										}
 									},
-									onError: {
-										target: 'finishing',
-										actions: assign({
-											result: ({ event }): Result => ({
-												outcome: 'unavailable',
-												settlement: 'unresolved',
-												error: event.error
-											})
-										})
+									onError: (args) => {
+										return {
+											target: 'finishing',
+											context: {
+												result: {
+													outcome: 'unavailable',
+													settlement: 'unresolved',
+													error: args.event.error
+												}
+											}
+										}
 									}
 								}
 							},
 							finishing: {
-								always: [
-									{
-										guard: 'closing',
-										target: '#internal-transfer-create.terminal',
-										actions: assign({
-											result: ({ context }): Result =>
-												context.result ?? { outcome: 'closed', settlement: 'notStarted' }
-										})
-									},
-									{
-										guard: 'cancelling',
-										target: '#internal-transfer-create.terminal',
-										actions: assign({
-											result: ({ context }): Result =>
-												context.result ?? { outcome: 'cancelled', settlement: 'notStarted' }
-										})
-									},
-									{
-										guard: 'invalidated',
-										target: '#internal-transfer-create.terminal',
-										actions: assign({
-											result: ({ context }): Result =>
-												context.result ?? { outcome: 'scopeChanged', settlement: 'notStarted' }
-										})
-									},
-									{
-										target: '#internal-transfer-create.terminal',
-										actions: assign({
-											result: ({ context }): Result =>
-												context.result ?? { outcome: 'unavailable', settlement: 'notStarted' }
-										})
+								always: (args) => {
+									const { context } = args
+									if (matchesState({ running: { control: 'closing' } }, args.value)) {
+										return {
+											target: '#internal-transfer-create.terminal',
+											context: {
+												result: context.result ?? { outcome: 'closed', settlement: 'notStarted' }
+											}
+										}
 									}
-								]
+									if (matchesState({ running: { control: 'cancelling' } }, args.value)) {
+										return {
+											target: '#internal-transfer-create.terminal',
+											context: {
+												result: context.result ?? { outcome: 'cancelled', settlement: 'notStarted' }
+											}
+										}
+									}
+									if (matchesState({ running: { control: 'invalidated' } }, args.value)) {
+										return {
+											target: '#internal-transfer-create.terminal',
+											context: {
+												result: context.result ?? {
+													outcome: 'scopeChanged',
+													settlement: 'notStarted'
+												}
+											}
+										}
+									}
+									return {
+										target: '#internal-transfer-create.terminal',
+										context: {
+											result: context.result ?? { outcome: 'unavailable', settlement: 'notStarted' }
+										}
+									}
+								}
 							}
 						}
 					}

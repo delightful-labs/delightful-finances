@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Transaction } from 'jazz-tools'
-import { createActor, fromPromise, toPromise, waitFor } from 'xstate'
 import { app } from '#lib/schema.js'
 import { createCheckCreationMachine, type CheckCreationInput } from './check-create-persistence.js'
+import { createActor, toPromise, waitFor, createAsyncLogic } from 'xstate'
 
 const input: CheckCreationInput = {
 	id: '11111111-1111-4111-8111-111111111111',
@@ -28,7 +28,16 @@ function fixture() {
 	const commit = vi.spyOn(tx, 'commit').mockImplementation(vi.fn().mockReturnValue({ wait }))
 	const beginTransaction = vi.fn(() => tx)
 	const machine = createCheckCreationMachine({ beginTransaction })
-	function start(values = input, logic = machine) {
+	function start(
+		values = input,
+		logic: import('xstate').ActorLogic<
+			import('xstate').SnapshotFrom<typeof machine>,
+			import('xstate').EventFromLogic<typeof machine>,
+			import('xstate').InputFrom<typeof machine>,
+			import('xstate').AnyActorSystem,
+			import('xstate').EmittedFrom<typeof machine>
+		> = machine
+	) {
 		const actor = createActor(logic, { input: values })
 		cleanups.push(() => actor.stop())
 		return actor.start()
@@ -168,7 +177,7 @@ describe('Check creation interruptions', () => {
 		const opened = Promise.withResolvers<typeof f.tx>()
 		const actor = f.start(
 			input,
-			f.machine.provide({ actors: { open: fromPromise(() => opened.promise) } })
+			f.machine.provide({ actors: { open: createAsyncLogic({ run: () => opened.promise }) } })
 		)
 		await waitFor(actor, (s) => s.matches({ running: { flow: 'opening' } }))
 		actor.send({ type: 'INVALIDATE' })
@@ -187,7 +196,7 @@ describe('Check creation interruptions', () => {
 		const staged = Promise.withResolvers<void>()
 		const actor = f.start(
 			input,
-			f.machine.provide({ actors: { stage: fromPromise(() => staged.promise) } })
+			f.machine.provide({ actors: { stage: createAsyncLogic({ run: () => staged.promise }) } })
 		)
 		await waitFor(actor, (s) => s.matches({ running: { flow: 'staging' } }))
 		actor.send({ type: 'CANCEL' })

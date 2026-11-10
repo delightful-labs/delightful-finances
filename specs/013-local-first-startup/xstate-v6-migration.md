@@ -1,9 +1,11 @@
 # XState v6 and UI/worker ownership specification
 
-Status: proposed for review, 2026-11-09. Source baseline: main `218bd98`.
+Status: approved; implementation in progress. Source baseline: main `218bd98`.
 This supplements startup planning without changing the active feature, provider
 consent, permissions, localization, visual design or accepted qualification limits.
-No runtime implementation is included in this specification PR.
+The specification was approved separately. See
+`xstate-v6-finance-implementation.md` for the current implementation checkpoint,
+qualification, and remaining application-worker handoff.
 
 ## Goal and dependency boundary
 

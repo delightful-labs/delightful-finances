@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { waitFor } from 'xstate'
 import type { FormOperationResult } from '#lib/contracts/form-contract.js'
 import { fixture, ready, success } from './scoped-form.fixture.js'
+import { waitFor } from 'xstate'
 
 describe('post-save navigation ownership', () => {
 	it('keeps fields visible and disabled from persistence through navigation, without a success screen', async () => {

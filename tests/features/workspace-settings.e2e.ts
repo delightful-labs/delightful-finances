@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
 import { performance } from 'node:perf_hooks'
-import { createActor, toPromise } from 'xstate'
 import { prepareArchiveOpen } from 'delightful-local-first/backup/envelope'
 import { createArchiveEnvelopeMachine } from 'delightful-local-first/backup/envelope/workflow'
 import { financeBackupProfile } from '../../src/lib/backup/workspace.js'
@@ -8,6 +7,7 @@ import { financeBackupProfile } from '../../src/lib/backup/workspace.js'
 import { expect } from '@playwright/test'
 import { test, start, installWorkspaceSettingsTest } from '../helpers/workspace.js'
 import { openCreationModal, selectWorkspace, navigateSidebar } from '../helpers/ui.js'
+import { createActor, toPromise } from 'xstate'
 
 test(
 	'owner can rename, reject whitespace, retry, and retain the name after reload',

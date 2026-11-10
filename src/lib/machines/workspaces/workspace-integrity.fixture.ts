@@ -1,5 +1,4 @@
 import { afterEach, vi } from 'vitest'
-import { createActor, type AnyActorRef } from 'xstate'
 import { Transaction } from 'jazz-tools'
 import {
 	workspaceIntegrityAssessment,
@@ -9,6 +8,8 @@ import {
 } from './workspace-integrity-assessment.js'
 import { workspaceIntegrityTransaction } from './workspace-integrity-transaction.js'
 import { workspaceIntegrity } from './workspace-integrity.js'
+import { createActor } from 'xstate'
+import type { AnyActorRef } from 'xstate'
 
 export const scope = {
 	userId: '11111111-1111-4111-8111-111111111111',
@@ -58,12 +59,12 @@ export function assess(input: Partial<IntegrityAssessmentInput> = {}) {
 		.start()
 		.getSnapshot()
 }
-const actors: AnyActorRef[] = []
+const actors: { stop: () => void }[] = []
 afterEach(() => {
 	for (const actor of actors.splice(0)) actor.stop()
 	vi.restoreAllMocks()
 })
-function start<T extends AnyActorRef>(actor: T): T {
+function start<T extends { start: () => unknown; stop: () => void }>(actor: T): T {
 	actors.push(actor)
 	actor.start()
 	return actor

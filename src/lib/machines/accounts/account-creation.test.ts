@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createActor, waitFor, type SnapshotFrom } from 'xstate'
 import type { Account } from '#lib/schema.js'
 import type {
 	AccountCreationObservation,
@@ -12,6 +11,8 @@ import {
 	selectAccountCreationAvailability
 } from './account-creation-access.js'
 import { createScopedFormMachine, selectScopedFormView } from '../forms/scoped-form.js'
+import { createActor, waitFor } from 'xstate'
+import type { SnapshotFrom } from 'xstate'
 
 const cleanups: (() => void)[] = []
 afterEach(() => cleanups.splice(0).forEach((fn) => fn()))

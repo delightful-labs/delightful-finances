@@ -1,7 +1,8 @@
-import { assign, fromPromise, setup } from 'xstate'
 import { app } from '#lib/schema.js'
 import type { CredentialEnvelope, CredentialScope } from '#lib/validation/integrations.js'
 import type { Connection, Dependencies } from './types.js'
+import { setup, types, createAsyncLogic } from 'xstate'
+import type { EventPayload } from '../../contracts/event-payload.js'
 
 type Input = {
 	scope: CredentialScope
@@ -41,20 +42,42 @@ type Output =
 
 export function createSetupPersistenceMachine({ db }: Dependencies) {
 	const actors = {
-		insert: fromPromise<void, Write>(async ({ input, signal }) => {
-			signal.throwIfAborted()
-			await db
-				.insert(app.simplefinConnections, input.values, { id: input.scope.connectionId })
-				.wait({ tier: 'local' })
+		insert: createAsyncLogic<void, Write>({
+			run: async ({ input, signal }) => {
+				signal.throwIfAborted()
+				await db
+					.insert(app.simplefinConnections, input.values, { id: input.scope.connectionId })
+					.wait({ tier: 'local' })
+			}
 		}),
-		update: fromPromise<void, Write>(async ({ input, signal }) => {
-			signal.throwIfAborted()
-			await db
-				.update(app.simplefinConnections, input.scope.connectionId, input.values)
-				.wait({ tier: 'local' })
+		update: createAsyncLogic<void, Write>({
+			run: async ({ input, signal }) => {
+				signal.throwIfAborted()
+				await db
+					.update(app.simplefinConnections, input.scope.connectionId, input.values)
+					.wait({ tier: 'local' })
+			}
 		})
 	}
-	return setup<Context, { type: 'SAVE' }, typeof actors, {}, {}, {}, never, string, Input, Output>({
+	const events0 = { SAVE: types<EventPayload<{ type: 'SAVE' }, 'SAVE'>>() }
+	type NativeEvent0 =
+		| import('xstate').InferEvents<typeof events0>
+		| import('xstate').DoneActorEvent<
+				| import('xstate').OutputFrom<(typeof actors)['insert']>
+				| import('xstate').OutputFrom<(typeof actors)['update']>
+		  >
+		| import('xstate').ErrorActorEvent
+	return setup({
+		schemas: {
+			context: types<Context>(),
+			events: events0,
+			input: types<Input>(),
+			output: types<Output>(),
+			children: {
+				insert: types<import('xstate').ActorRefFrom<(typeof actors)['insert']>>(),
+				update: types<import('xstate').ActorRefFrom<(typeof actors)['update']>>()
+			}
+		},
 		actors
 	}).createMachine({
 		id: 'bank-setup-persistence',
@@ -66,29 +89,36 @@ export function createSetupPersistenceMachine({ db }: Dependencies) {
 				: { settlement: 'locallyPersisted', error: undefined },
 		states: {
 			choosingWrite: {
-				always: [
-					{ guard: ({ context }) => context.baselineStatus !== null, target: 'updating' },
-					{ target: 'inserting' }
-				]
+				always: (args) => {
+					if (args.context.baselineStatus !== null) {
+						return { target: 'updating' }
+					}
+					return { target: 'inserting' }
+				}
 			},
 			inserting: {
 				invoke: {
 					src: 'insert',
 					input: ({ context }) => ({ scope: context.scope, values: context.values }),
-					onDone: 'saved',
-					onError: 'failed'
+					onDone: { target: 'saved' },
+					onError: { target: 'failed' }
 				}
 			},
 			updating: {
 				invoke: {
 					src: 'update',
 					input: ({ context }) => ({ scope: context.scope, values: context.values }),
-					onDone: 'saved',
-					onError: 'failed'
+					onDone: { target: 'saved' },
+					onError: { target: 'failed' }
 				}
 			},
 			saved: { type: 'final' },
-			failed: { type: 'final', entry: assign({ error: () => new Error('save_failure') }) }
+			failed: {
+				type: 'final',
+				entry: () => {
+					return { context: { error: new Error('save_failure') } }
+				}
+			}
 		}
 	})
 }
