@@ -280,3 +280,60 @@ Sharing/capability administration, invitations, ownership changes, departure, ar
 merge are future work. Keep their approved decisions in the specification. Bank, generic-form, application/session and diagnostics follow-through are recorded in
 [008 tasks](../008-actor-orchestration/tasks.md) and the [final ownership map](../008-actor-orchestration/architecture.md).
 They were separately resumed by the user; completing the workspace feature alone did not authorize them.
+
+## Workspace session recovery and automatic selection
+
+Unscoped sign-in and finance entry no longer require a choice before navigation works.
+The navigation chart keeps explicit scopes and legacy transaction ownership intact.
+For multiple accessible workspaces it follows `resolvingDefault` (one local profile
+read) -> `choosingDefault` (guarded preference/fallback) -> `navigating`. A sole
+workspace needs no profile read. The fallback sorts stable workspace IDs; labels and
+personal/business kind do not determine selection. Empty-catalog route intent survives
+late arrival of one or several workspaces. Identity/route changes cancel preference
+resolution, and navigation failure retains the existing retry path. Directory rows
+choose a requested scope; the coordinator still establishes its authorization.
+
+Extend the existing alpha.60 package patch so a joining browser tab supplies its fresh
+self-signed proof to native peer admission. Match the retained runtime’s application,
+claimed author and replica identity, and keep native signature/expiry verification.
+Do not change persistence encodings, clear browser data, or bypass permissions. Patch
+both the module and the shipped broker bundle used in production.
+
+Implementation review precedes automated tests under AGENTS.md. Affected coverage:
+`workspace-navigation.test.ts`, readiness/application-readiness navigation fixtures,
+`tests/authentication.e2e.ts` (multiple-workspace sign-in), and navigation browser flows.
+SDK regression coverage must retain a worker beyond its opening proof expiry, attach
+with a fresh same-identity proof, and reject expired, mismatched-author and wrong-app
+proofs. Run browser checks with disposable storage after approval; production reads
+identified the failure but do not prove the patch correct.
+
+Review checklist:
+- [x] Prepare the credential-admission patch and automatic selection machine.
+- [x] Preserve explicit scopes and existing authorization checks.
+- [x] Review implementation before adding/running tests (user approved).
+- [x] Update affected fixtures and add fresh/expired/mismatched-proof regressions.
+- [x] Verify multi-workspace sign-in, partial discovery, linking/remapping and idempotent sync in disposable browser storage; verify expiry recovery against real native proof admission.
+- [ ] Deploy and verify production recovery.
+
+The same production recovery review also includes the reported missing SimpleFIN
+discovery list after reconnection. `checkingDiscovery` rejects only an errors-only
+response; `discovering` returns usable account summaries through the existing
+`partial` result when provider errors accompany them. The parent already retains
+partial discovery results and rebuilds mapping controls. Existing localized partial
+status is reused; discovery does not import transactions or persist sync history.
+Review impact: `bank-sync/operation.test.ts`, the parent `index.test.ts`, and
+`tests/bank-sync.e2e.ts` need mixed accounts/errors and errors-only coverage after
+implementation approval. The passkey-enabled user's live failure remains unverified;
+the connected diagnostic browser lacks that passkey.
+
+Validation on the current production base (`2cfba58`): 187 focused unit tests
+passed, including real WASM signature/expiry admission and mismatched proof rejection.
+Four Playwright flows passed: multi-workspace sign-in, partial discovery, normal
+account creation/idempotent import, and existing-account linking/remapping.
+Application/test type checks and focused formatting checks passed. No real bank
+credential was decrypted or provider request initiated by the agent. The live
+passkey-enabled browser still requires user verification after release.
+
+The local production bundle also builds successfully. The Vercel deployment manifest
+excludes local build/test artifacts and environment files via `.vercelignore`.
+Production deployment and verification remain pending review.
