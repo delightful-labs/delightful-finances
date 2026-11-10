@@ -11,6 +11,13 @@
 		"noEmit": true
 	},
 	"include": [
+		"tests/worker-host.browser.test.ts",
+		"tests/worker-host/*.ts",
+		"vitest.worker-browser.config.ts",
+		"src/lib/runtime/worker/account-lock-protocol.ts",
+		"src/lib/runtime/worker/window-account-locks.ts",
+		"src/lib/runtime/worker/worker-account-locks.ts",
+		"src/lib/runtime/worker/account-locks.test.ts",
 		"src/lib/runtime/worker/host-protocol.ts",
 		"src/lib/runtime/worker/host-drain.ts",
 		"src/lib/runtime/worker/host-drain.test.ts",

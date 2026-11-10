@@ -12,12 +12,19 @@ const correlation = {
 	sequence: 1
 }
 it.each([
-	{ ...correlation, version: 2, type: 'READ_ACCOUNT' },
+	{ ...correlation, version: 1, type: 'READ_ACCOUNT' },
 	{ ...correlation, scope: 'old-binding', type: 'READ_ACCOUNT' },
 	{ ...correlation, sequence: 0, type: 'READ_ACCOUNT' },
 	{ ...correlation, sequence: Number.MAX_SAFE_INTEGER + 1, type: 'READ_ACCOUNT' },
 	{ ...correlation, type: 'READ_ACCOUNT', key: 'other-account' },
-	{ ...correlation, type: 'WRITE_ACCOUNT', value: 'x'.repeat(MAX_ACCOUNT_STORE_LENGTH + 1) },
+	{
+		...correlation,
+		type: 'WRITE_ACCOUNT',
+		leaseId: correlation.requestId,
+		value: 'x'.repeat(MAX_ACCOUNT_STORE_LENGTH + 1)
+	},
+	{ ...correlation, type: 'WRITE_ACCOUNT', value: 'missing lease' },
+	{ ...correlation, type: 'WRITE_ACCOUNT', leaseId: 'obsolete', value: 'invalid lease' },
 	{ ...correlation, type: 'WRITE_GENERATION', key: 'generation', value: '-1' },
 	{ ...correlation, type: 'WRITE_GENERATION', key: 'generation', value: '9007199254740992' }
 ])('rejects invalid or oversized native commands %#', (message) => {

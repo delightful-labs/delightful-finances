@@ -1,9 +1,9 @@
 # Finance application worker handoff
 
-Status: draft implementation tracking. This branch follows merged Finance PR #66 on main,
-which incorporates merged PR #65. The live SDK, domain machines and subscriptions
-still run in Window. This document opens the follow-up PR; it does not claim the
-worker handoff is implemented or qualified.
+Status: native host custody implemented and tested; application handoff unfinished.
+This branch follows merged Finance PR #66 on main, which incorporates merged
+PR #65. The live SDK, domain machines and subscriptions still run in Window.
+The draft does not claim the application worker handoff is implemented or qualified.
 
 The approved ownership and behavior requirements remain in
 [xstate-v6-migration.md](./xstate-v6-migration.md). The conversion and existing
@@ -55,6 +55,64 @@ worker foundations are recorded in
       affected browser flows, formatting and CI. Record exact commands, results
       and remaining qualification limits in this document and the PR.
 
-Only this tracking document is changed in the opening commit. No runtime code,
-localization or production deployment is included. The draft remains unfinished
-until the implementation and qualification above are complete.
+## Implemented: native account-selection custody
+
+The Window host now holds account-selection Web Locks on behalf of the worker.
+Terminating a worker cannot release its lock while Window can still execute
+queued storage messages. Host closure removes data admission before releasing
+native leases, and native lock release is acknowledged only after the actual
+Web Lock request settles. Lock-port disposal alone never releases Window custody.
+
+The existing account-store chart retains its sequence:
+lock → read → transform → write → earlier-store scrub → release.
+It now accepts the private native-lock adapter, retaining the original storage
+namespace, earlier-selection fallback and credential-scrubbing transformations.
+There is no second SDK session and no application-worker activation in this batch.
+
+Host storage protocol **v2** requires the exact Window lease UUID on primary and
+earlier-store writes. A delayed write cannot use a later acquisition of the same
+key. The independent lock protocol **v1** validates version, scope, request UUID,
+lease UUID and monotonically increasing sequence. It bounds outstanding leases
+at two (primary plus earlier store), rejects replay and restricts lock names to
+the captured namespace. Abort cancels pending acquisition; a granted lease stays
+held until its callback settles. Native transport failures stay sanitized.
+
+Same-Window replacement also synchronously closes the previous host for the same
+origin and account-storage key before admitting its replacement. Stale disposers
+cannot unregister the current host. Bindings are copied before native admission.
+These adapters perform native operations and resource cleanup; they contain no
+financial or identity workflow. They do not acknowledge uncertain financial
+writes, roll back completed storage writes, or authorize terminating an SDK owner.
+
+## Focused verification
+
+The user authorized continuing implementation including tests. Verified locally
+with Node **24.22.2**, pnpm **10.22.0** and the lockfile-pinned dependencies:
+
+- `pnpm exec tsc --project tsconfig.worker-host.json` — passed, including native
+  host/client and browser harness types.
+- `pnpm --filter @delightful-finances/worker-state-tests check` — passed.
+- `pnpm test:worker-host` — **51 passed**. Coverage includes storage admission,
+  stale/replayed writes and leases, cancellation, native callback failure,
+  legacy-key scrubbing, immutable bindings, lost ports and host replacement.
+- `pnpm test:worker-state` — **20 passed**, including the existing generated
+  campaigns and three account-store/Window-host integration regressions.
+- `pnpm test:worker-browser` — **3 passed**: Chromium, Firefox and WebKit. Each
+  uses real dedicated workers, native Web Locks, isolated browser storage and
+  two competing tabs. A worker-issued write is held at Window, the worker is
+  terminated, and the replacement remains blocked until Window closes the old
+  host. Replaying the old write cannot overwrite the replacement's value.
+- Focused Prettier and `git diff --check` — passed.
+
+The browser harness starts a disposable Vite server on an available network port,
+prints its local/LAN URLs and closes it after the suite. It does not start the
+Finance app or touch the user's Jazz replica. CI now runs native host types and
+tests plus this three-engine browser regression in a dedicated job.
+
+The first implementation checklist item remains unchecked at application scope:
+this qualifies the native account-selection boundary, not a live worker-owned
+Jazz session, broker-generation recovery, cold/offline Finance persistence,
+financial custody or UI migration. Full application types/build and the affected
+application browser suites have not been rerun for an activated handoff. The
+remaining implementation and acceptance gates above are still required before
+this PR can leave draft. No localization or deployment changes are included.

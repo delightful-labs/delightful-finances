@@ -40,6 +40,7 @@ function fixture(entries: [string, string][] = []) {
 	const native = {
 		origin: 'https://finance.example',
 		storage,
+		accountLocks: { owns: () => true, close: async () => {} },
 		inventory,
 		openBroker: () => {
 			throw new Error('unused')
@@ -52,7 +53,10 @@ function fixture(entries: [string, string][] = []) {
 		broker: { url: 'https://finance.example/broker.js', baseName: 'jazz-runtime:test' }
 	}
 	const stop = serveWindowHost(ports.port2, hostBinding, native)
-	const client = createWorkerHostClient(ports.port1, scope, () => {})
+	const client = createWorkerHostClient(ports.port1, scope, () => {}, {
+		primary: () => scope,
+		earlier: () => scope
+	})
 	cleanup.add(stop)
 	cleanup.add(client.close)
 	cleanup.add(() => ports.port2.close())
@@ -164,6 +168,7 @@ it('does not replay an admitted earlier-key write with the same sequence', async
 				requestId: crypto.randomUUID(),
 				sequence: 1,
 				type: 'WRITE_EARLIER',
+				leaseId: scope,
 				key,
 				value
 			})

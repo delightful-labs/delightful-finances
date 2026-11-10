@@ -24,11 +24,22 @@ type NativeHost = {
 	storage: Pick<Storage, 'getItem' | 'setItem'>
 	inventory?: Pick<Storage, 'length' | 'key'>
 	openBroker: (url: string, name: string) => BrokerHandle
+	accountLocks: { owns: (key: string, leaseId: string) => boolean; close: () => Promise<void> }
 }
+
+// Window owns these synchronous effects even when the requesting worker dies.
+// Fence replacements in this realm before opening their data-port admission.
+// This is not a cross-tab lock or evidence that an unacknowledged write rolled back.
+const accountHosts = new Map<string, () => void>()
 
 /** Window-only primitives on a private capability port. The worker selects the
  * operation; this adapter performs no SDK, identity, authorization or finance workflow. */
 export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, native: NativeHost) {
+	binding = {
+		...binding,
+		broker: { ...binding.broker },
+		...(binding.accountSelection ? { accountSelection: { ...binding.accountSelection } } : {})
+	}
 	hostScopeSchema.parse(binding.scope)
 	const brokerUrl = new URL(binding.broker.url)
 	if (
@@ -51,6 +62,7 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 	const admittedEarlier = (key: string) =>
 		selectionBinding !== undefined && isEarlierSelectionKey(selectionBinding, key)
 	const generationKey = `jazz:shared-worker-generation:${binding.broker.baseName}`
+	const hostKey = JSON.stringify([new URL(native.origin).origin, binding.accountStorageKey])
 	const workers = new Set<BrokerHandle>()
 	let lastSequence = 0
 	let closed = false
@@ -71,8 +83,12 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 	function close() {
 		if (closed) return
 		closed = true
+		if (accountHosts.get(hostKey) === close) accountHosts.delete(hostKey)
 		port.removeEventListener('message', receive)
 		port.removeEventListener('messageerror', lost)
+		// Admission is closed before Window releases native leases. A competing
+		// tab can acquire them only after old storage messages are unable to run.
+		void native.accountLocks.close()
 		for (const worker of workers) worker.removeEventListener('error', lost)
 		workers.clear()
 		port.close()
@@ -143,6 +159,10 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 					return
 				}
 				if (request.type === 'WRITE_EARLIER') {
+					if (!native.accountLocks.owns(request.key, request.leaseId)) {
+						reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
+						return
+					}
 					native.storage.setItem(request.key, request.value)
 					reply({ ...correlation, type: 'WRITTEN' })
 				} else {
@@ -161,6 +181,10 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 				return
 			}
 			if (request.type === 'WRITE_ACCOUNT') {
+				if (!native.accountLocks.owns(binding.accountStorageKey, request.leaseId)) {
+					reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
+					return
+				}
 				native.storage.setItem(binding.accountStorageKey, request.value)
 				reply({ ...correlation, type: 'WRITTEN' })
 				return
@@ -206,6 +230,11 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 			reply({ ...correlation, type: 'FAILED', reason: 'unavailable' })
 		}
 	}
+	// Both close and storage primitives are synchronous in Window. Removing the
+	// old listener before admitting this host prevents its queued messages from
+	// overwriting replacement state, even after native worker termination.
+	accountHosts.get(hostKey)?.()
+	accountHosts.set(hostKey, close)
 	port.addEventListener('message', receive)
 	port.addEventListener('messageerror', lost)
 	port.start()

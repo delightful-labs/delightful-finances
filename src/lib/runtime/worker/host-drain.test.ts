@@ -45,6 +45,7 @@ function fixture() {
 		{
 			origin: 'https://finance.example',
 			storage,
+			accountLocks: { owns: () => true, close: async () => {} },
 			openBroker: () => {
 				throw new Error('unused')
 			}
@@ -54,7 +55,10 @@ function fixture() {
 	cleanups.add(serveWindowHostDrain(control.port2, scope, stop))
 	const onClosed = vi.fn(),
 		drain = createWorkerHostDrain(control.port1, scope, onClosed)
-	const client = createWorkerHostClient(data.port1, scope, () => {})
+	const client = createWorkerHostClient(data.port1, scope, () => {}, {
+		primary: () => scope,
+		earlier: () => scope
+	})
 	cleanups.add(drain.dispose)
 	cleanups.add(client.close)
 	return { data, control, values, storage, drain, client, onClosed }

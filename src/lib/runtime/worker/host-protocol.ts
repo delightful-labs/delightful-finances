@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const HOST_PROTOCOL_VERSION = 1
+export const HOST_PROTOCOL_VERSION = 2
 export const MAX_ACCOUNT_STORE_LENGTH = 1024 * 1024
 export const MAX_STORAGE_SLOTS = 4096
 export const MAX_EARLIER_STORES = 128
@@ -44,9 +44,16 @@ export const hostRequestSchema = z.discriminatedUnion('type', [
 	correlation.extend({ type: z.literal('READ_ACCOUNT_SNAPSHOT') }).strict(),
 	correlation.extend({ type: z.literal('READ_EARLIER'), key: storageKey }).strict(),
 	correlation
-		.extend({ type: z.literal('WRITE_EARLIER'), key: storageKey, value: accountValue })
+		.extend({
+			type: z.literal('WRITE_EARLIER'),
+			key: storageKey,
+			value: accountValue,
+			leaseId: z.string().uuid()
+		})
 		.strict(),
-	correlation.extend({ type: z.literal('WRITE_ACCOUNT'), value: accountValue }).strict(),
+	correlation
+		.extend({ type: z.literal('WRITE_ACCOUNT'), value: accountValue, leaseId: z.string().uuid() })
+		.strict(),
 	correlation
 		.extend({
 			type: z.literal('OPEN_BROKER'),

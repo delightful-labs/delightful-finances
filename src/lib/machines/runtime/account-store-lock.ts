@@ -1,6 +1,7 @@
 import { createCallbackLogic } from 'xstate'
+import type { AccountLocks } from '../../runtime/worker/account-lock-protocol.js'
 
-export type AccountLockInput = { key: string; locks: Pick<LockManager, 'request'> }
+export type AccountLockInput = { key: string; locks: AccountLocks }
 /** Native Web Lock lease only. RELEASE acknowledges actual lock-request
  * settlement, including an aborted acquisition; it is not a write rollback. */
 export const accountStoreLock = createCallbackLogic<{ type: 'RELEASE' }, AccountLockInput>(

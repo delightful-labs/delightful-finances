@@ -11,6 +11,7 @@ import {
 } from './host-protocol.js'
 
 const scope = '11111111-1111-4111-8111-111111111111'
+const leases = { primary: () => scope, earlier: () => scope }
 const brokerUrl = 'https://finance.example/assets/jazz-broker.js'
 const baseName = 'jazz-runtime:finance-test:alpha60'
 const generationKey = `jazz:shared-worker-generation:${baseName}`
@@ -78,11 +79,16 @@ function fixture() {
 	const stop = serveWindowHost(
 		ports.port2,
 		{ scope, accountStorageKey: key, broker: { url: brokerUrl, baseName } },
-		{ origin: 'https://finance.example', storage, openBroker }
+		{
+			origin: 'https://finance.example',
+			storage,
+			openBroker,
+			accountLocks: { owns: () => true, close: async () => {} }
+		}
 	)
 	cleanup.add(stop)
 	const failed = vi.fn()
-	const client = createWorkerHostClient(ports.port1, scope, failed)
+	const client = createWorkerHostClient(ports.port1, scope, failed, leases)
 	cleanup.add(client.close)
 	return { ports, client, storage, values, openBroker, failed, failBroker }
 }
@@ -126,7 +132,7 @@ it('transfers the approved broker port and reports later native broker failure o
 it('does not repeat a storage write when the same sequence is delivered again', async () => {
 	const f = fixture(),
 		send = manualClient(f.ports.port1)
-	const original = { type: 'WRITE_ACCOUNT', value: 'first', sequence: 1 }
+	const original = { type: 'WRITE_ACCOUNT', value: 'first', sequence: 1, leaseId: scope }
 	expect(hostReplySchema.parse(await send(original)).type).toBe('WRITTEN')
 	expect(hostReplySchema.parse(await send({ ...original, value: 'replayed' })).type).toBe('FAILED')
 	expect(f.values.get(key)).toBe('first')
@@ -136,7 +142,7 @@ it('keeps an issued storage write uncertain when its acknowledgement is lost', a
 	vi.useFakeTimers()
 	const ports = channel(),
 		failed = vi.fn(),
-		client = createWorkerHostClient(ports.port1, scope, failed)
+		client = createWorkerHostClient(ports.port1, scope, failed, leases)
 	cleanup.add(client.close)
 	const observed = incoming(ports.port2)
 	const result = expect(client.accountStorage.write('private-selection')).rejects.toMatchObject({
@@ -151,7 +157,7 @@ it('keeps an issued storage write uncertain when its acknowledgement is lost', a
 it('does not settle a current request from an obsolete binding response', async () => {
 	vi.useFakeTimers()
 	const ports = channel(),
-		client = createWorkerHostClient(ports.port1, scope, () => {})
+		client = createWorkerHostClient(ports.port1, scope, () => {}, leases)
 	cleanup.add(client.close)
 	const observed = incoming(ports.port2)
 	const result = expect(client.accountStorage.read()).rejects.toMatchObject({ reason: 'timeout' })
@@ -171,7 +177,7 @@ it('does not settle a current request from an obsolete binding response', async 
 })
 it('bounds pending requests and rejects them all on explicit close without claiming rollback', async () => {
 	const ports = channel(),
-		client = createWorkerHostClient(ports.port1, scope, () => {})
+		client = createWorkerHostClient(ports.port1, scope, () => {}, leases)
 	cleanup.add(client.close)
 	const pending = Array.from({ length: MAX_HOST_REQUESTS }, () =>
 		expect(client.accountStorage.write('pending')).rejects.toMatchObject({
