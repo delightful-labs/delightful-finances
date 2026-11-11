@@ -36,7 +36,23 @@ describe('localized install manifest', () => {
 			start_url: '/',
 			scope: '/',
 			display: 'standalone',
-			icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+			theme_color: '#ffffff',
+			background_color: '#ffffff',
+			icons: [
+				{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+				{
+					src: '/web-app-manifest-192x192.png',
+					sizes: '192x192',
+					type: 'image/png',
+					purpose: 'maskable'
+				},
+				{
+					src: '/web-app-manifest-512x512.png',
+					sizes: '512x512',
+					type: 'image/png',
+					purpose: 'maskable'
+				}
+			]
 		})
 	})
 })
