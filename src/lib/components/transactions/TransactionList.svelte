@@ -1,4 +1,7 @@
 <script lang="ts">
+	import LedgerPagination from './LedgerPagination.svelte'
+	import type { PublicLedgerView } from '#lib/runtime/worker/ledger-protocol.js'
+	import CatalogPager from '../navigation/CatalogPager.svelte'
 	import type { Snippet } from 'svelte'
 	import type { TransactionRow } from '#lib/schema.js'
 	import { Details, Heading, Pagination, Text } from 'delightful-ui'
@@ -8,39 +11,58 @@
 	import PaginationLink from '../navigation/PaginationLink.svelte'
 	import SplitRow from '../shared/SplitRow.svelte'
 	import { getLocale } from '#lib/paraglide/runtime.js'
-	import { formatMoney } from '#lib/domain/money.js'
+	import { formatMoney, formatSignedMoney } from '#lib/domain/money.js'
 	import type { TransactionDay } from '#lib/domain/transaction-groups.js'
 	import { m } from '#lib/paraglide/messages.js'
 	import TransactionListItem from './TransactionListItem.svelte'
 
 	let {
-		groups,
-		categoryNames,
-		tagNamesByTransaction,
-		noAccountsSelected,
-		requestedPage,
-		pageHref,
-		transactionHref,
+		groups = [],
+		categoryNames = new Map(),
+		tagNamesByTransaction = new Map(),
+		noAccountsSelected = false,
+		requestedPage = 1,
+		pageHref = () => '',
+		transactionHref = () => '',
+		projection,
+		onTagPage,
 		item,
 		showTotals = true
 	}: {
-		groups: readonly TransactionDay[]
-		categoryNames: ReadonlyMap<string, string>
-		tagNamesByTransaction: ReadonlyMap<string, readonly string[]>
-		noAccountsSelected: boolean
-		requestedPage: number
-		pageHref: (page: number) => string
-		transactionHref: (id: string) => string
+		groups?: readonly TransactionDay[]
+		categoryNames?: ReadonlyMap<string, string>
+		tagNamesByTransaction?: ReadonlyMap<string, readonly string[]>
+		noAccountsSelected?: boolean
+		requestedPage?: number
+		pageHref?: (page: number) => string
+		transactionHref?: (id: string) => string
+		projection?: PublicLedgerView
+		onTagPage?: (transactionId: string, offset: number) => void
 		item?: Snippet<[TransactionRow]>
 		showTotals?: boolean
 	} = $props()
 	const pageSize = 25
 	const transactionCount = $derived(
-		groups.reduce((count, group) => count + group.transactions.length, 0)
+		projection?.total ?? groups.reduce((count, group) => count + group.transactions.length, 0)
 	)
-	const pageCount = $derived(Math.max(1, Math.ceil(transactionCount / pageSize)))
-	const page = $derived(Math.min(requestedPage, pageCount))
-	const visibleGroups = $derived.by(() => {
+	const pageCount = $derived(
+		projection?.pageCount ?? Math.max(1, Math.ceil(transactionCount / pageSize))
+	)
+	const page = $derived(projection?.page ?? Math.min(requestedPage, pageCount))
+	type RenderGroup = {
+		bookedOn: string
+		totals: ReadonlyMap<string, number | bigint>
+		transactions: readonly TransactionRow[]
+		projectedRows?: PublicLedgerView['groups'][number]['rows']
+	}
+	const visibleGroups = $derived.by<readonly RenderGroup[]>(() => {
+		if (projection)
+			return projection.groups.map((group) => ({
+				bookedOn: group.bookedOn,
+				totals: new Map(group.totals.map((total) => [total.currency, total.amountMinor])),
+				transactions: [],
+				projectedRows: group.rows
+			}))
 		let offset = 0
 		const start = (page - 1) * pageSize
 		const end = start + pageSize
@@ -57,6 +79,7 @@
 		return visible
 	})
 	const pageNumbers = $derived.by(() => {
+		if (projection) return projection.slots.map((slot) => slot.page)
 		// Five slots, including ellipses. Near either boundary, use the spare
 		// slots for page numbers so navigation never shrinks as the page changes.
 		if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1)
@@ -64,6 +87,17 @@
 		const end = page <= 3 ? 3 : page >= pageCount - 2 ? pageCount - 1 : page
 		return [1, ...Array.from({ length: end - start + 1 }, (_, index) => start + index), pageCount]
 	})
+	function displayedHref(number: number) {
+		if (!projection) return pageHref(number)
+		if (number === projection.page - 1) return projection.previousHref ?? undefined
+		if (number === projection.page + 1) return projection.nextHref ?? undefined
+		return projection.slots.find((slot) => slot.page === number)?.href
+	}
+	function money(amount: number | bigint, currency: string) {
+		return typeof amount === 'bigint'
+			? formatSignedMoney(amount, currency, getLocale())
+			: formatMoney(amount, currency, getLocale())
+	}
 	const listId = $props.id()
 	const dateFormatter = $derived(
 		new Intl.DateTimeFormat(getLocale(), {
@@ -76,9 +110,9 @@
 	)
 </script>
 
-{#if noAccountsSelected}
+{#if projection?.noAccountsSelected ?? noAccountsSelected}
 	<Text size="sm">{m['transactions.no_accounts_selected']()}</Text>
-{:else if groups.length === 0}
+{:else if visibleGroups.length === 0}
 	<Text size="sm">{m['transactions.empty.title']()}</Text>
 {:else}
 	<div class="transaction-list">
@@ -102,10 +136,10 @@
 											size="sm"
 											as="span"
 											aria-label={m['transactions.daily_total_amount']({
-												amount: formatMoney(amount, currency, getLocale())
+												amount: money(amount, currency)
 											})}
 										>
-											{formatMoney(amount, currency, getLocale())}
+											{money(amount, currency)}
 										</Text>
 									{/each}
 								</div>
@@ -113,6 +147,23 @@
 						</SplitRow>
 					{/snippet}
 					<ul class="entries">
+						{#each group.projectedRows ?? [] as row (row.id)}
+							<TransactionListItem
+								transaction={row}
+								href={row.href}
+								categoryName={row.categoryName}
+								tagNames={row.tags.names}
+							>
+								{#if onTagPage}
+									<CatalogPager
+										page={row.tags}
+										size={100}
+										subject={m['nouns.tag']({ count: 2 })}
+										onpage={(offset) => onTagPage?.(row.id, offset)}
+									/>
+								{/if}
+							</TransactionListItem>
+						{/each}
 						{#each group.transactions as transaction (transaction.id)}
 							{#if item}
 								{@render item(transaction)}
@@ -129,11 +180,13 @@
 				</Details>
 			</section>
 		{/each}
-		{#if pageCount > 1}
+		{#if projection}
+			<LedgerPagination view={projection} />
+		{:else if pageCount > 1}
 			<Pagination label={m['transactions.pagination.label']()}>
 				<PaginationLink
 					label={m['labels.previous_subject']({ subject: m['nouns.page']({ count: 1 }) })}
-					href={pageHref(page - 1)}
+					href={displayedHref(page - 1)}
 					disabled={page === 1}>‹</PaginationLink
 				>
 				{#each pageNumbers as number, index (number)}
@@ -145,13 +198,13 @@
 					{/if}
 					<PaginationLink
 						label={m['labels.page_number']({ number: number })}
-						href={pageHref(number)}
+						href={displayedHref(number)}
 						current={page === number}>{number}</PaginationLink
 					>
 				{/each}
 				<PaginationLink
 					label={m['labels.next_subject']({ subject: m['nouns.page']({ count: 1 }) })}
-					href={pageHref(page + 1)}
+					href={displayedHref(page + 1)}
 					disabled={page === pageCount}>›</PaginationLink
 				>
 			</Pagination>

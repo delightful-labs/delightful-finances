@@ -6,6 +6,15 @@ pauses. See [investigation-results.md](investigation-results.md) for the current
 The spec remains incomplete where required behavior is unbuilt or unsupported; investigations and
 rejected optimizations are not equivalent to delivery. Commit/deployment authorization is unchanged.
 
+## Active PR #67 execution order
+
+The production Jazz cutover is the immediate priority. Follow
+[production-worker-cutover.md](production-worker-cutover.md) for the current ordered
+checklist and Clipper reference implementation. The production entry now starts Jazz in its worker, with legacy route admission
+gated pending the user’s point-2 review. Harness passes do not close production
+shell/route integration tasks. The older
+startup backlog below remains historical/contextual and does not supersede this order.
+
 ## Specification and guidance
 
 - [x] T001 Resolve initial product clarification one question at a time. Q1: all accessible finance

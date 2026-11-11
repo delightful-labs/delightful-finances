@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const environment = vi.hoisted(() => ({ PUBLIC_DEBUG: 'false', dev: false }))
-vi.mock('$app/env/public', () => environment)
+vi.mock('#lib/runtime/public-flags.js', () => environment)
 vi.mock('$app/env', () => environment)
 
 beforeEach(() => vi.resetModules())

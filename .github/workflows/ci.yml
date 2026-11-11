@@ -50,6 +50,25 @@ jobs:
           PUBLIC_JAZZ_APP_ID: ci-build
           PUBLIC_JAZZ_SERVER_URL: http://127.0.0.1:9
 
+  worker-host:
+    name: Native worker host and cross-tab custody
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm exec tsc --project tsconfig.worker-host.json
+      - run: pnpm test:worker-host
+      - run: pnpm test:worker-browser
+
   browser:
     name: Browser (${{ matrix.suite }})
     runs-on: ubuntu-latest

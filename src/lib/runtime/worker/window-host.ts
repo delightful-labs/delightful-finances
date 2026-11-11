@@ -17,18 +17,29 @@ export type WindowHostBinding = {
 	scope: string
 	accountStorageKey: string
 	accountSelection?: AccountStorageBinding
-	broker: { url: string; baseName: string }
+	broker: { url: string; baseName: string } | { url: string; source: 'sdk' }
 }
 type NativeHost = {
 	origin: string
 	storage: Pick<Storage, 'getItem' | 'setItem'>
 	inventory?: Pick<Storage, 'length' | 'key'>
 	openBroker: (url: string, name: string) => BrokerHandle
+	accountLocks: { owns: (key: string, leaseId: string) => boolean; close: () => Promise<void> }
 }
+
+// Window owns these synchronous effects even when the requesting worker dies.
+// Fence replacements in this realm before opening their data-port admission.
+// This is not a cross-tab lock or evidence that an unacknowledged write rolled back.
+const accountHosts = new Map<string, () => void>()
 
 /** Window-only primitives on a private capability port. The worker selects the
  * operation; this adapter performs no SDK, identity, authorization or finance workflow. */
 export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, native: NativeHost) {
+	binding = {
+		...binding,
+		broker: { ...binding.broker },
+		...(binding.accountSelection ? { accountSelection: { ...binding.accountSelection } } : {})
+	}
 	hostScopeSchema.parse(binding.scope)
 	const brokerUrl = new URL(binding.broker.url)
 	if (
@@ -39,9 +50,12 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 	)
 		throw new Error('Invalid broker URL')
 	if (
-		!binding.broker.baseName.startsWith('jazz-runtime:') ||
-		binding.broker.baseName.length > 65_500
+		'baseName' in binding.broker &&
+		(!binding.broker.baseName.startsWith('jazz-runtime:') ||
+			binding.broker.baseName.length > 65_500)
 	)
+		throw new Error('Invalid broker binding')
+	if (!('baseName' in binding.broker) && binding.broker.source !== 'sdk')
 		throw new Error('Invalid broker binding')
 	if (!binding.accountStorageKey || binding.accountStorageKey.length > 65_536)
 		throw new Error('Invalid account storage binding')
@@ -50,7 +64,24 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 	const selectionBinding = binding.accountSelection ? { ...binding.accountSelection } : undefined
 	const admittedEarlier = (key: string) =>
 		selectionBinding !== undefined && isEarlierSelectionKey(selectionBinding, key)
-	const generationKey = `jazz:shared-worker-generation:${binding.broker.baseName}`
+	// SDK-selected physical names are admitted only on the private application
+	// worker capability port. The public UI protocol cannot choose a name/key.
+	// Account switches legitimately select different SDK roots; never copy the
+	// SDK's private physical-name derivation into Finance to predict them.
+	const brokerNames = new Set<string>()
+	function admitBrokerName(name: string) {
+		if (
+			!name.startsWith('jazz-runtime:') ||
+			name.length <= 'jazz-runtime:'.length ||
+			name.length > 65_500
+		)
+			return false
+		if ('baseName' in binding.broker) return name === binding.broker.baseName
+		if (!brokerNames.has(name) && brokerNames.size >= MAX_HOST_BROKERS) return false
+		brokerNames.add(name)
+		return true
+	}
+	const hostKey = JSON.stringify([new URL(native.origin).origin, binding.accountStorageKey])
 	const workers = new Set<BrokerHandle>()
 	let lastSequence = 0
 	let closed = false
@@ -71,8 +102,12 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 	function close() {
 		if (closed) return
 		closed = true
+		if (accountHosts.get(hostKey) === close) accountHosts.delete(hostKey)
 		port.removeEventListener('message', receive)
 		port.removeEventListener('messageerror', lost)
+		// Admission is closed before Window releases native leases. A competing
+		// tab can acquire them only after old storage messages are unable to run.
+		void native.accountLocks.close()
 		for (const worker of workers) worker.removeEventListener('error', lost)
 		workers.clear()
 		port.close()
@@ -143,6 +178,10 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 					return
 				}
 				if (request.type === 'WRITE_EARLIER') {
+					if (!native.accountLocks.owns(request.key, request.leaseId)) {
+						reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
+						return
+					}
 					native.storage.setItem(request.key, request.value)
 					reply({ ...correlation, type: 'WRITTEN' })
 				} else {
@@ -161,17 +200,21 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 				return
 			}
 			if (request.type === 'WRITE_ACCOUNT') {
+				if (!native.accountLocks.owns(binding.accountStorageKey, request.leaseId)) {
+					reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
+					return
+				}
 				native.storage.setItem(binding.accountStorageKey, request.value)
 				reply({ ...correlation, type: 'WRITTEN' })
 				return
 			}
 			if (request.type === 'OPEN_BROKER') {
-				const suffix = request.name.slice(binding.broker.baseName.length)
+				const suffix = /:generation-\d{1,16}$/.exec(request.name)?.[0]
 				if (
 					new URL(request.url).href !== brokerUrl.href ||
-					!request.name.startsWith(binding.broker.baseName) ||
-					!/^:generation-\d{1,16}$/.test(suffix) ||
-					!Number.isSafeInteger(Number(suffix.slice(':generation-'.length)))
+					!suffix ||
+					!Number.isSafeInteger(Number(suffix.slice(':generation-'.length))) ||
+					!admitBrokerName(request.name.slice(0, -suffix.length))
 				) {
 					reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
 					return
@@ -186,12 +229,16 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 				reply({ ...correlation, type: 'BROKER', port: worker.port }, [worker.port])
 				return
 			}
-			if (request.key !== generationKey) {
+			const generationPrefix = 'jazz:shared-worker-generation:'
+			if (
+				!request.key.startsWith(generationPrefix) ||
+				!admitBrokerName(request.key.slice(generationPrefix.length))
+			) {
 				reply({ ...correlation, type: 'FAILED', reason: 'rejected' })
 				return
 			}
 			if (request.type === 'READ_GENERATION') {
-				const value = native.storage.getItem(generationKey)
+				const value = native.storage.getItem(request.key)
 				// Return the raw stored representation. Generation parsing and fallback
 				// remain SDK-owned in the application worker.
 				const result = { ...correlation, type: 'GENERATION', value } satisfies HostReply
@@ -200,12 +247,17 @@ export function serveWindowHost(port: MessagePort, binding: WindowHostBinding, n
 				reply(result)
 				return
 			}
-			native.storage.setItem(generationKey, request.value)
+			native.storage.setItem(request.key, request.value)
 			reply({ ...correlation, type: 'WRITTEN' })
 		} catch {
 			reply({ ...correlation, type: 'FAILED', reason: 'unavailable' })
 		}
 	}
+	// Both close and storage primitives are synchronous in Window. Removing the
+	// old listener before admitting this host prevents its queued messages from
+	// overwriting replacement state, even after native worker termination.
+	accountHosts.get(hostKey)?.()
+	accountHosts.set(hostKey, close)
 	port.addEventListener('message', receive)
 	port.addEventListener('messageerror', lost)
 	port.start()

@@ -8,7 +8,11 @@ import type { WorkspaceResourceRelease } from './workspace-resource-release.js'
 import type { ActorRef, Snapshot } from 'xstate'
 
 export type SelectedResourceReport =
-	| { type: 'SELECTED_RESOURCES_STOPPING'; lease: WorkspaceLease; resource: 'bank' | 'integrity' }
+	| {
+			type: 'SELECTED_RESOURCES_STOPPING'
+			lease: WorkspaceLease
+			resource: 'bank' | 'integrity' | 'forms'
+	  }
 	| { type: 'SELECTED_INTEGRITY_STATUS'; lease: WorkspaceLease; report: IntegrityReport }
 	| {
 			type: 'SELECTED_RESOURCE_DRAIN_REJECTED'

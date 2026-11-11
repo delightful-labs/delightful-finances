@@ -7,7 +7,7 @@ import type { InitializationStatusEvent } from '../../contracts/workspace-orches
 import { creationFixture, profileId, userId, workspace } from './workspace-creation.fixture.js'
 
 const environment = vi.hoisted(() => ({ PUBLIC_FAKE_DATA: 'false' }))
-vi.mock('$app/env/public', () => environment)
+vi.mock('#lib/runtime/public-flags.js', () => environment)
 beforeEach(() => {
 	environment.PUBLIC_FAKE_DATA = 'false'
 })

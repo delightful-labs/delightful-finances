@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte'
 	import { Text, ScreenReaderText } from 'delightful-ui'
 	import type { TransactionRow } from '#lib/schema.js'
 	import { formatMoney } from '#lib/domain/money.js'
@@ -11,12 +12,14 @@
 		transaction,
 		href,
 		categoryName,
-		tagNames = []
+		tagNames = [],
+		children
 	}: {
 		href: string
-		transaction: TransactionRow
-		categoryName: string | undefined
+		transaction: Pick<TransactionRow, 'amountMinor' | 'currency' | 'description'>
+		categoryName: string | null | undefined
 		tagNames?: readonly string[]
+		children?: Snippet
 	} = $props()
 	const tags = $derived(new Intl.ListFormat(getLocale(), { style: 'short', type: 'unit' }))
 </script>
@@ -43,6 +46,7 @@
 		>
 	</div>
 	{#if transaction.description}<Text size="sm"><em>{transaction.description}</em></Text>{/if}
+	{@render children?.()}
 </li>
 
 <style>

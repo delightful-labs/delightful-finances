@@ -11,7 +11,7 @@ import type {
 	TransactionEntryView
 } from '#lib/contracts/transaction-entry-contract.js'
 import type { FormObservation } from '#lib/contracts/form-contract.js'
-import type { getDb } from 'jazz-tools/svelte'
+import type { TransactionSaveDb } from './transaction-save.js'
 import { createScopedFormMachine, selectScopedFormView } from '../forms/scoped-form.js'
 import {
 	createTransactionEditFormOptions,
@@ -47,7 +47,7 @@ export type TransferDeleteFeedback = {
 	variant: 'loading' | 'success' | 'error'
 }
 
-type TransferObservation = {
+export type TransactionTransferObservation = {
 	rows: readonly InternalTransferCandidate[]
 	scope: TransactionEntryScope
 	scopeGeneration: number
@@ -102,9 +102,14 @@ function deleteResult(result: TransferMutationResult): InternalTransferDeleteRes
 		: { outcome: 'unavailable', settlement: 'unresolved' }
 }
 
+export type TransactionEditDb = TransactionSaveDb &
+	InternalTransferLinkInput['db'] &
+	InternalTransferUnlinkInput['db'] &
+	InternalTransferDeleteInput['db']
+
 export function createTransactionEditMachine(
 	options: TransactionEditOptions,
-	db: ReturnType<typeof getDb>,
+	db: TransactionEditDb,
 	trackTransferWrite: (write: TransferWriteTracking) => void,
 	mutationGateway: TransferMutationGateway
 ) {
@@ -116,7 +121,7 @@ export function createTransactionEditMachine(
 		observation: FormObservation<TransactionEntryObservation>
 		scopeGeneration: number
 		formView: TransactionEntryView
-		transferObservation: TransferObservation | undefined
+		transferObservation: TransactionTransferObservation | undefined
 		candidates: readonly InternalTransferCandidate[]
 		selectedCandidateId: string | null
 		writableCandidateIds: ReadonlySet<string>
@@ -134,7 +139,7 @@ export function createTransactionEditMachine(
 		| { type: 'FORM'; event: FormEvent }
 		| { type: 'ENABLE_SEARCH' }
 		| { type: 'DISABLE_SEARCH' }
-		| { type: 'TRANSFER_OBSERVATION'; observation: TransferObservation }
+		| { type: 'TRANSFER_OBSERVATION'; observation: TransactionTransferObservation }
 		| { type: 'SELECT_COUNTERPART'; candidateId: string }
 		| { type: 'LINK_COUNTERPART'; candidateId: string }
 		| { type: 'UNLINK_TRANSFER' }
@@ -1814,7 +1819,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
 
-function transferCandidates(facts: TransactionEntryObservation, observation: TransferObservation) {
+function transferCandidates(
+	facts: TransactionEntryObservation,
+	observation: TransactionTransferObservation
+) {
 	return facts.transaction
 		? findInternalTransferCounterparts(
 				facts.transaction,

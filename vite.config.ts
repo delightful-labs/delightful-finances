@@ -7,10 +7,11 @@ import { jazzDev } from './tooling/jazz-dev.js'
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import svg from '@poppanator/sveltekit-svg'
 import { dirname, join } from 'node:path'
-import { jazzWasmEntry } from './tooling/jazz-wasm.js'
+import { jazzWasmEntry, jazzBrokerEntry } from './tooling/jazz-wasm.js'
 import { workerAssetsManifest } from './tooling/worker-assets-manifest.js'
 
 export default defineConfig({
+	envPrefix: ['VITE_', 'PUBLIC_'],
 	// A different page origin has different browser storage. Never silently change ports.
 	server: { host: '0.0.0.0', port: 5173, strictPort: true },
 	ssr: {
@@ -19,6 +20,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: [
+			{ find: /^#jazz-broker-entry/, replacement: jazzBrokerEntry },
 			{ find: /^jazz-wasm$/, replacement: jazzWasmEntry },
 			{ find: /^#jazz-wasm-binary/, replacement: join(dirname(jazzWasmEntry), 'jazz_wasm_bg.wasm') }
 		]

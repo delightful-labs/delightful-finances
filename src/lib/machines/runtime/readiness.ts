@@ -1,3 +1,4 @@
+import type { WorkspaceFormsDependencies } from '../forms/workspace-forms.js'
 import { createWorkspaceStartupMachine } from '../workspaces/workspace-startup.js'
 import {
 	createWorkspaceCreationMachine,
@@ -73,6 +74,7 @@ export type ReadinessObservation = {
 export type WorkspaceAttachment = {
 	environment: string
 	dependencies: BankSyncDependencies
+	forms?: WorkspaceFormsDependencies
 	read: () => ReadinessObservation
 	navigate: WorkspaceNavigate
 }
@@ -147,6 +149,7 @@ type Event =
 
 export function createWorkspaceReadinessMachine({
 	dependencies,
+	forms,
 	read,
 	environment,
 	navigate
@@ -961,6 +964,7 @@ export function createWorkspaceReadinessMachine({
 												integrityReport: undefined,
 												resourceActor: spawn(
 													createWorkspaceSelectedResources({
+														forms,
 														dependencies,
 														lease: resourceLease,
 														userId: required(context.source.userId)

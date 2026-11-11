@@ -78,3 +78,35 @@ describe('account actions permission-data presentation', () => {
 		expect(body).not.toContain('Allow colleague to delete transactions')
 	})
 })
+
+it('renders worker-projected controls without native member/grant rows', () => {
+	const { body } = render(AccountActionsDialog, {
+		props: {
+			...props,
+			deleteGrantView: {
+				...props.deleteGrantView,
+				members: [],
+				grants: [],
+				permissionAccountId: props.account.id,
+				permissions: [{ id: 'member', userId: 'colleague', canDelete: false }]
+			}
+		}
+	})
+	expect(body).toContain('Allow colleague to delete transactions')
+	expect(body).not.toMatch(/<input[^>]*\schecked(?:\s|=|>)/)
+})
+it('hides stale projected controls while another account dialog is acquiring its permission data', () => {
+	const { body } = render(AccountActionsDialog, {
+		props: {
+			...props,
+			deleteGrantView: {
+				...props.deleteGrantView,
+				permissionAccountId: 'previous-account',
+				permissions: [{ id: 'member', userId: 'colleague', canDelete: true }]
+			}
+		}
+	})
+	expect(body).toContain('Loading Permissions')
+	expect(body).not.toContain('Allow colleague to delete transactions')
+	expect(body).not.toMatch(/<button[^>]*disabled/)
+})

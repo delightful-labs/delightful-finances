@@ -1,4 +1,4 @@
-import { PUBLIC_FAKE_DATA } from '$app/env/public'
+import { PUBLIC_FAKE_DATA } from '#lib/runtime/public-flags.js'
 import { fakeDataSetup, type FakeDataDb, type FakeDataResult } from '../samples/fake-data.js'
 import type { WorkspacePersistenceEvent } from './workspace-creation-transaction.js'
 import { setup, types } from 'xstate'

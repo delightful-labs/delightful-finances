@@ -1,3 +1,4 @@
+import type { AccountGrantWrite } from './contracts/account-presentation-contract.js'
 import { issueLocalWrite, persistLocal } from 'delightful-local-first/backend/jazz/data'
 import type { getDb } from 'jazz-tools/svelte'
 import { app, type Account, type Category, type Organization, type Tag } from './schema.js'
@@ -96,4 +97,24 @@ export function createTag(
 
 export function archiveTag(db: Pick<Db, 'update'>, tagId: Tag['id']) {
 	return db.update(app.tags, tagId, { archivedAt: new Date() }).wait({ tier: 'local' })
+}
+
+/** One write already selected and authorized by the delete-grant chart. */
+export function persistAccountDeleteGrant(
+	db: Pick<Db, 'update' | 'insert'>,
+	write: AccountGrantWrite
+) {
+	return write.kind === 'update'
+		? db
+				.update(app.accountMemberships, write.grantId, { canDelete: write.canDelete })
+				.wait({ tier: 'local' })
+		: db
+				.insert(app.accountMemberships, {
+					organizationId: write.organizationId,
+					accountId: write.accountId,
+					userId: write.userId,
+					access: 'read',
+					canDelete: write.canDelete
+				})
+				.wait({ tier: 'local' })
 }

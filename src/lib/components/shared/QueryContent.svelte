@@ -2,7 +2,6 @@
 	import { StatusMessage } from 'delightful-ui'
 	import LoadingContent from './LoadingContent.svelte'
 	import type { Snippet } from 'svelte'
-	import type { QuerySubscription } from 'jazz-tools/svelte'
 
 	let {
 		queries,
@@ -11,14 +10,14 @@
 		children,
 		keepContentWhileLoading = false
 	}: {
-		queries: readonly Pick<QuerySubscription<{ id: string }>, 'isLoading' | 'error'>[]
+		queries: readonly { isLoading: boolean; error: unknown }[]
 		loadingMessage: string
 		errorMessage: string
 		keepContentWhileLoading?: boolean
 		children: Snippet
 	} = $props()
 
-	const failed = $derived(queries.some((query) => query.error !== null))
+	const failed = $derived(queries.some((query) => query.error != null))
 	const loading = $derived(queries.some((query) => query.isLoading))
 </script>
 

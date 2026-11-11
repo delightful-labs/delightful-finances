@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { EXPENSE } from '#lib/domain/transaction-kind.js'
-	import TransactionEntry from '#lib/components/transactions/TransactionEntry.svelte'
+	import WorkerTransactionEntry from '#lib/components/transactions/WorkerTransactionEntry.svelte'
+	import { getPageNavigation } from '#lib/components/navigation/page-navigation.js'
+	const navigation = getPageNavigation()
 </script>
 
-<TransactionEntry kind={EXPENSE} />
+<WorkerTransactionEntry {navigation} />

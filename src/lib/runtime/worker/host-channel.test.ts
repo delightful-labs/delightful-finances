@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createWorkerHostClient } from './host-client.js'
-import { serveWindowHost } from './window-host.js'
+import { serveWindowHost, type WindowHostBinding } from './window-host.js'
 import {
 	HOST_PROTOCOL_VERSION,
 	HOST_REQUEST_TIMEOUT_MS,
@@ -11,6 +11,7 @@ import {
 } from './host-protocol.js'
 
 const scope = '11111111-1111-4111-8111-111111111111'
+const leases = { primary: () => scope, earlier: () => scope }
 const brokerUrl = 'https://finance.example/assets/jazz-broker.js'
 const baseName = 'jazz-runtime:finance-test:alpha60'
 const generationKey = `jazz:shared-worker-generation:${baseName}`
@@ -58,7 +59,7 @@ function manualClient(port: MessagePort) {
 			})
 		})
 }
-function fixture() {
+function fixture(broker: WindowHostBinding['broker'] = { url: brokerUrl, baseName }) {
 	const ports = channel(),
 		values = new Map<string, string>()
 	const storage = {
@@ -77,12 +78,17 @@ function fixture() {
 	}
 	const stop = serveWindowHost(
 		ports.port2,
-		{ scope, accountStorageKey: key, broker: { url: brokerUrl, baseName } },
-		{ origin: 'https://finance.example', storage, openBroker }
+		{ scope, accountStorageKey: key, broker },
+		{
+			origin: 'https://finance.example',
+			storage,
+			openBroker,
+			accountLocks: { owns: () => true, close: async () => {} }
+		}
 	)
 	cleanup.add(stop)
 	const failed = vi.fn()
-	const client = createWorkerHostClient(ports.port1, scope, failed)
+	const client = createWorkerHostClient(ports.port1, scope, failed, leases)
 	cleanup.add(client.close)
 	return { ports, client, storage, values, openBroker, failed, failBroker }
 }
@@ -126,7 +132,7 @@ it('transfers the approved broker port and reports later native broker failure o
 it('does not repeat a storage write when the same sequence is delivered again', async () => {
 	const f = fixture(),
 		send = manualClient(f.ports.port1)
-	const original = { type: 'WRITE_ACCOUNT', value: 'first', sequence: 1 }
+	const original = { type: 'WRITE_ACCOUNT', value: 'first', sequence: 1, leaseId: scope }
 	expect(hostReplySchema.parse(await send(original)).type).toBe('WRITTEN')
 	expect(hostReplySchema.parse(await send({ ...original, value: 'replayed' })).type).toBe('FAILED')
 	expect(f.values.get(key)).toBe('first')
@@ -136,7 +142,7 @@ it('keeps an issued storage write uncertain when its acknowledgement is lost', a
 	vi.useFakeTimers()
 	const ports = channel(),
 		failed = vi.fn(),
-		client = createWorkerHostClient(ports.port1, scope, failed)
+		client = createWorkerHostClient(ports.port1, scope, failed, leases)
 	cleanup.add(client.close)
 	const observed = incoming(ports.port2)
 	const result = expect(client.accountStorage.write('private-selection')).rejects.toMatchObject({
@@ -151,7 +157,7 @@ it('keeps an issued storage write uncertain when its acknowledgement is lost', a
 it('does not settle a current request from an obsolete binding response', async () => {
 	vi.useFakeTimers()
 	const ports = channel(),
-		client = createWorkerHostClient(ports.port1, scope, () => {})
+		client = createWorkerHostClient(ports.port1, scope, () => {}, leases)
 	cleanup.add(client.close)
 	const observed = incoming(ports.port2)
 	const result = expect(client.accountStorage.read()).rejects.toMatchObject({ reason: 'timeout' })
@@ -171,7 +177,7 @@ it('does not settle a current request from an obsolete binding response', async 
 })
 it('bounds pending requests and rejects them all on explicit close without claiming rollback', async () => {
 	const ports = channel(),
-		client = createWorkerHostClient(ports.port1, scope, () => {})
+		client = createWorkerHostClient(ports.port1, scope, () => {}, leases)
 	cleanup.add(client.close)
 	const pending = Array.from({ length: MAX_HOST_REQUESTS }, () =>
 		expect(client.accountStorage.write('pending')).rejects.toMatchObject({
@@ -196,4 +202,23 @@ it('sanitizes native storage errors instead of exposing private exception conten
 		reason: 'unavailable',
 		writeOutcome: 'unknown'
 	})
+})
+
+it('admits bounded SDK-selected account roots on the private channel without changing the script capability', async () => {
+	const f = fixture({ url: brokerUrl, source: 'sdk' })
+	for (const name of ['jazz-runtime:first-account', 'jazz-runtime:second-account']) {
+		const generation = `jazz:shared-worker-generation:${name}`
+		expect(await f.client.broker.readGeneration(generation)).toBeNull()
+		await f.client.broker.writeGeneration(generation, '1')
+		const opened = await f.client.broker.open(brokerUrl, `${name}:generation-1`)
+		cleanup.add(() => opened.port.close())
+		expect(f.values.get(generation)).toBe('1')
+	}
+	await expect(
+		f.client.broker.open('https://foreign.example/broker.js', 'jazz-runtime:third:generation-0')
+	).rejects.toMatchObject({ reason: 'rejected' })
+	await expect(f.client.broker.readGeneration('unrelated-storage-key')).rejects.toMatchObject({
+		reason: 'rejected'
+	})
+	expect(f.openBroker).toHaveBeenCalledTimes(2)
 })

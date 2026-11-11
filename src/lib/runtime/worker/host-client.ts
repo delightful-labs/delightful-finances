@@ -1,4 +1,5 @@
 import type { RuntimeSourcesConfig } from 'jazz-tools'
+import type { AccountStorageLeases } from './account-lock-protocol.js'
 import {
 	HOST_PROTOCOL_VERSION,
 	HOST_REQUEST_TIMEOUT_MS,
@@ -23,7 +24,12 @@ type Pending = {
 }
 /** Low-level correlated native requests only. Account read/transform/write decisions and
  * Web Lock ownership belong to the account-store chart, not this transport. */
-export function createWorkerHostClient(port: MessagePort, scope: string, onFailure: () => void) {
+export function createWorkerHostClient(
+	port: MessagePort,
+	scope: string,
+	onFailure: () => void,
+	leases?: AccountStorageLeases
+) {
 	hostScopeSchema.parse(scope)
 	const pending = new Map<string, Pending>()
 	let sequence = 0
@@ -142,7 +148,9 @@ export function createWorkerHostClient(port: MessagePort, scope: string, onFailu
 				return reply.value
 			},
 			writeEarlier: async (key: string, value: string) => {
-				await request({ type: 'WRITE_EARLIER', key, value }, 'WRITTEN')
+				const leaseId = leases?.earlier(key)
+				if (!leaseId) throw new WorkerHostError('rejected', 'not-issued')
+				await request({ type: 'WRITE_EARLIER', key, value, leaseId }, 'WRITTEN')
 			},
 			read: async () => {
 				const reply = await request({ type: 'READ_ACCOUNT' }, 'ACCOUNT')
@@ -150,7 +158,9 @@ export function createWorkerHostClient(port: MessagePort, scope: string, onFailu
 				return reply.value
 			},
 			write: async (value: string) => {
-				await request({ type: 'WRITE_ACCOUNT', value }, 'WRITTEN')
+				const leaseId = leases?.primary()
+				if (!leaseId) throw new WorkerHostError('rejected', 'not-issued')
+				await request({ type: 'WRITE_ACCOUNT', value, leaseId }, 'WRITTEN')
 			}
 		},
 		broker: {
