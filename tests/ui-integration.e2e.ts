@@ -175,7 +175,7 @@ test('localized manifest keeps the install URL and declares its language', async
 	expect(response.headers()['content-type']).toContain('application/manifest+json')
 	expect(await response.json()).toMatchObject({
 		name: 'Delightful Finance',
-		short_name: 'Delightful',
+		short_name: 'Finance',
 		description: 'A local-first personal finance tracker.',
 		lang: 'en',
 		dir: 'ltr',

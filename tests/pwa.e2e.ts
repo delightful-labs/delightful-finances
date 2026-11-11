@@ -56,7 +56,7 @@ test('caches only same-origin public shells and build assets', async ({ page }) 
 		const url = new URL(path)
 		expect(url.origin).toBe(new URL(page.url()).origin)
 		expect(url.pathname).toMatch(
-			/^\/(?:$|_app\/immutable\/|app-icon\.svg$|favicon\.svg$|settings\/(?:categories|tags|workspace|banks)$|robots\.txt$|manifest\.webmanifest$|offline$|accounts$|account$|expenses(?:\/new)?$|income(?:\/new)?$|transfers(?:\/new)?$|login$)/
+			/^\/(?:$|_app\/immutable\/|app-icon\.svg$|favicon\.(?:svg|ico)$|favicon-96x96\.png$|apple-touch-icon\.png$|web-app-manifest-(?:192x192|512x512)\.png$|settings\/(?:categories|tags|workspace|banks)$|robots\.txt$|manifest\.webmanifest$|offline$|accounts$|account$|expenses(?:\/new)?$|income(?:\/new)?$|transfers(?:\/new)?$|login$)/
 		)
 	}
 })
@@ -190,7 +190,7 @@ test('serves the localized install manifest from the service worker while offlin
 		expect(manifest.contentType).toContain('application/manifest+json')
 		expect(manifest.value).toMatchObject({
 			name: 'Delightful Finance',
-			short_name: 'Delightful',
+			short_name: 'Finance',
 			description: 'A local-first personal finance tracker.',
 			lang: 'en',
 			dir: 'ltr',

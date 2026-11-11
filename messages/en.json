@@ -62,7 +62,7 @@
 	"app": {
 		"description": "A local-first personal finance tracker.",
 		"name": "Delightful Finance",
-		"short_name": "Delightful"
+		"short_name": "Finance"
 	},
 	"archive_filter": {
 		"active": "Default (not archived)",
